@@ -114,7 +114,7 @@ fn declared_raw_cuts_closure_and_window_codon_use_current_wire_and_reject_noncur
     .unwrap();
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 88);
+    assert_eq!(tag, 86);
     let AnalysisResult::AssemblyJunctionInspection(decoded) =
         protocol::decode_response(&bytes).unwrap().result
     else {

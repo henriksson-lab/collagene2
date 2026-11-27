@@ -43,17 +43,6 @@ fn hash(value: &impl Serialize, max: usize) -> Result<String, Error> {
     serde_json::to_writer(&mut writer, value).map_err(|_| Error::TooLarge)?;
     Ok(writer.hash.finalize().to_hex().to_string())
 }
-fn identities(inputs: &[topo::Input]) -> Result<Vec<topo::SourceIdentity>, Error> {
-    inputs
-        .iter()
-        .map(|input| {
-            Ok(topo::SourceIdentity {
-                role: input.role.clone(),
-                revision: hash(&input.molecule, MAX_BYTES)?,
-            })
-        })
-        .collect()
-}
 /// Source adapter's borrowed count/tree/interval/policy guard; no preparation,
 /// primer-site scanning, physical graph reconstruction or target comparison.
 pub fn source_preflight(inputs: &[topo::Input], request: &topo::Request) -> Result<(), Error> {
@@ -70,18 +59,7 @@ pub fn simulation_revision(
     inputs: &[topo::Input],
     request: &topo::Request,
 ) -> Result<String, Error> {
-    source_preflight(inputs, request)?;
-    hash(
-        &(
-            topo::ENGINE_VERSION,
-            physical::ENGINE,
-            physical::PRIMARY_MODEL,
-            projection::ENGINE,
-            identities(inputs)?,
-            request,
-        ),
-        MAX_BYTES,
-    )
+    topo::batch_revision(inputs, request)
 }
 pub fn orientations_revision(
     inputs: &[topo::Input],
@@ -90,58 +68,14 @@ pub fn orientations_revision(
     insert: [usize; 2],
     directional: bool,
 ) -> Result<String, Error> {
-    source_preflight(inputs, request)?;
-    if !request.transfers.is_empty() {
-        return Err(bad("orientation inspection requires no initial transfers"));
-    }
-    let strands = request
-        .recipe
-        .materials
-        .iter()
-        .map(|m| match m {
-            topo::MaterialRecipe::Prepared { strands, .. } => strands.len(),
-            topo::MaterialRecipe::ExactPcr { .. } => 2,
-        })
-        .sum::<usize>();
-    if vector.iter().chain(&insert).any(|&i| i >= strands) {
-        return Err(bad("orientation strand outside preparation"));
-    }
-    hash(
-        &(
-            topo::ENGINE_VERSION,
-            "two-declared-orientations",
-            identities(inputs)?,
-            request,
-            vector,
-            insert,
-            directional,
-        ),
-        MAX_BYTES,
-    )
+    topo::orientations_revision(inputs, request, vector, insert, directional)
 }
 pub fn projection_revision(
     inputs: &[topo::Input],
     request: &topo::Request,
     selection: &topo::Selection,
 ) -> Result<String, Error> {
-    let batch = simulation_revision(inputs, request)?;
-    if !hex(&selection.batch_revision)
-        || selection.batch_revision != batch
-        || selection.component >= 64
-    {
-        return Err(bad(
-            "selection does not bind these source inputs and request",
-        ));
-    }
-    hash(
-        &(
-            topo::ENGINE_VERSION,
-            "selected-physical-component",
-            batch,
-            selection,
-        ),
-        MAX_BYTES,
-    )
+    topo::product_revision(inputs, request, selection)
 }
 pub fn target_revision(
     inputs: &[topo::Input],
@@ -150,18 +84,7 @@ pub fn target_revision(
     target: &Molecule,
     policy: &topo::AcceptancePolicy,
 ) -> Result<String, Error> {
-    target_preflight(target)?;
-    let product = projection_revision(inputs, request, selection)?;
-    hash(
-        &(
-            topo::ENGINE_VERSION,
-            "independent-target",
-            product,
-            hash(target, MAX_BYTES)?,
-            policy,
-        ),
-        MAX_BYTES,
-    )
+    topo::target_revision(inputs, request, selection, target, policy)
 }
 fn binding(actual: &str, expected: &str) -> Result<(), Error> {
     if !hex(actual) || actual != expected {
@@ -171,7 +94,7 @@ fn binding(actual: &str, expected: &str) -> Result<(), Error> {
     }
 }
 fn source_identities(sources: &[topo::SourceIdentity]) -> Result<(), Error> {
-    if sources.is_empty() || sources.len() > 32 {
+    if sources.is_empty() || sources.len() > 64 {
         return Err(Error::TooLarge);
     }
     let mut roles = BTreeSet::new();
@@ -193,7 +116,7 @@ pub(crate) fn preparation(preparation: &topo::PreparationEvidence) -> Result<(),
         || preparation.substrates.pairing.len() > 1024
         || preparation.maps.len() > 4096
         || preparation.not_represented.len() > 4096
-        || preparation.assumptions.len() > 32
+        || preparation.assumptions.len() > 128
         || preparation.assumptions.iter().any(|s| s.len() > 4096)
     {
         return Err(Error::TooLarge);
@@ -238,6 +161,71 @@ pub(crate) fn preparation(preparation: &topo::PreparationEvidence) -> Result<(),
             return Err(bad("source map outside prepared strand"));
         }
     }
+    if preparation.retained_transfers.len() > 64
+        || preparation.layout.len() > 256
+        || preparation.graph_origins.len() > 128
+    {
+        return Err(Error::TooLarge);
+    }
+    for transfer in &preparation.retained_transfers {
+        if transfer.donor >= strands.len() || transfer.acceptor >= strands.len() {
+            return Err(bad(
+                "retained transfer lies outside original source strands",
+            ));
+        }
+    }
+    for layout in &preparation.layout {
+        if layout.material >= 64
+            || layout.owner.as_ref().is_some_and(|owner| !hex(owner))
+            || layout.source_strands.is_empty()
+            || layout.source_strands.len() > 64
+            || layout.source_strands.iter().any(|&i| i >= strands.len())
+            || layout.source_roles.len() > 64
+            || layout.source_roles.iter().any(|(a, b)| {
+                a.trim().is_empty() || b.trim().is_empty() || a.len() > 256 || b.len() > 256
+            })
+        {
+            return Err(bad("invalid native material/source layout"));
+        }
+        if layout.source_strands.iter().collect::<BTreeSet<_>>().len()
+            != layout.source_strands.len()
+        {
+            return Err(bad("native material layout repeats a source strand"));
+        }
+    }
+    for origin in &preparation.graph_origins {
+        if !hex(&origin.selection.record_hash)
+            || !hex(&origin.selection.state_revision)
+            || origin.strand_start >= origin.strand_end
+            || origin.strand_end > strands.len()
+            || origin.after_transfers > preparation.retained_transfers.len()
+            || origin.transfer_map.len() > 64
+            || origin
+                .transfer_map
+                .iter()
+                .any(|&i| i >= origin.after_transfers)
+            || origin.activation_unmap.len() > 64
+            || origin.activation_unmap.iter().any(|(a, b)| {
+                a.trim().is_empty() || b.trim().is_empty() || a.len() > 256 || b.len() > 256
+            })
+        {
+            return Err(bad("invalid retained graph source checkpoint description"));
+        }
+        if origin
+            .transfer_map
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+            || origin
+                .activation_unmap
+                .iter()
+                .map(|(a, _)| a)
+                .collect::<BTreeSet<_>>()
+                .len()
+                != origin.activation_unmap.len()
+        {
+            return Err(bad("retained graph source mapping is not one-to-one"));
+        }
+    }
     Ok(())
 }
 fn physical_shape(
@@ -250,7 +238,7 @@ fn physical_shape(
         || !hex(&report.batch_revision)
         || report.source_revisions.len() != preparation.substrates.strands.len()
         || report.source_revisions.iter().any(|s| !hex(s))
-        || report.steps.len() > 16
+        || report.steps.len() > 64
         || report.source_bases > 100_000
         || graph.chains.len() > 64
         || graph.components.len() > 64
@@ -258,7 +246,7 @@ fn physical_shape(
         || graph.unpaired.len() > 100_000
         || graph.source_pairing.len() > 100_000
         || graph.released_activations.len() > 32
-        || report.assumptions.len() > 32
+        || report.assumptions.len() > 128
     {
         return Err(bad("invalid physical report bounds/engine"));
     }
@@ -293,10 +281,33 @@ fn physical_shape(
         if run.chain >= graph.chains.len()
             || run.start >= run.end
             || run.end > graph.chains[run.chain].sequence.len()
-            || run.displaced_by.len() > 16
+            || run.displaced_by.len() > 64
         {
             return Err(bad("unpaired description outside graph"));
         }
+    }
+    let prefix = &preparation.retained_transfers;
+    if report.steps.len() < prefix.len()
+        || report.steps.iter().enumerate().any(|(i, s)| s.step != i)
+        || report
+            .steps
+            .iter()
+            .zip(prefix)
+            .any(|(s, t)| &s.transfer != t)
+        || report.all_requested_transfers_applied
+            != report
+                .steps
+                .iter()
+                .all(|s| s.outcome == physical::Outcome::Applied)
+        || report.unsupported_or_unknown
+            != report.steps.iter().any(|s| {
+                matches!(
+                    s.outcome,
+                    physical::Outcome::Unsupported | physical::Outcome::Unknown
+                )
+            })
+    {
+        return Err(bad("physical prefix/outcome descriptions disagree"));
     }
     Ok(())
 }
@@ -313,6 +324,20 @@ pub fn validate_simulation(
         return Err(bad("adapter engine mismatch"));
     }
     physical_shape(&report.physical, &report.preparation)?;
+    if (!report.physical.all_requested_transfers_applied
+        || report.physical.unsupported_or_unknown
+        || report
+            .preparation
+            .graph_origins
+            .iter()
+            .any(|o| o.incomplete))
+        && !report.incomplete
+    {
+        return Err(bad("native source or transfer incompleteness was lost"));
+    }
+    if report.findings.len() > 128 || report.findings.iter().any(|s| s.len() > 4096) {
+        return Err(Error::TooLarge);
+    }
     hash(report, MAX_BYTES)?;
     Ok(())
 }
@@ -327,6 +352,9 @@ pub fn validate_orientations(
         || report.reference.engine != physical::ENGINE
         || report.reference.candidates.len() > 2
         || report.candidate_requests.len() != report.reference.candidates.len()
+        || report.reference.pending_transfers.len() != report.reference.candidates.len()
+        || report.reference.satisfied_prefix_steps.len() != report.reference.candidates.len()
+        || report.reference.checkpoints.len() != report.preparation.graph_origins.len()
         || report.reference.biochemical_mixture_exhaustive
     {
         return Err(bad("invalid orientation report description"));
@@ -334,11 +362,69 @@ pub fn validate_orientations(
     for candidate in &report.reference.candidates {
         physical_shape(candidate, &report.preparation)?;
     }
-    for request in &report.candidate_requests {
-        if request.recipe.materials.len() > 16 || request.transfers.len() > 16 {
+    for (index, request) in report.candidate_requests.iter().enumerate() {
+        if request.recipe.materials.len() > 64 || request.transfers.len() > 16 {
             return Err(Error::TooLarge);
         }
-        hash(request, 1024 * 1024)?;
+        crate::run_material::native_origins_preflight(request.recipe.materials.iter().filter_map(
+            |m| {
+                if let topo::MaterialRecipe::SavedGraph { origin, .. } = m {
+                    Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+                } else {
+                    None
+                }
+            },
+        ))?;
+        let candidate = &report.reference.candidates[index];
+        let pending = &report.reference.pending_transfers[index];
+        let prefix = report.preparation.retained_transfers.len();
+        let satisfied = &report.reference.satisfied_prefix_steps[index];
+        if &request.transfers != pending
+            || pending.len() > 2
+            || candidate.steps.len() != prefix + pending.len()
+            || candidate.steps[prefix..]
+                .iter()
+                .zip(pending)
+                .any(|(s, t)| &s.transfer != t)
+            || satisfied.len() > 2
+            || satisfied
+                .iter()
+                .any(|&i| i >= prefix || candidate.steps[i].outcome != physical::Outcome::Applied)
+            || satisfied.iter().collect::<BTreeSet<_>>().len() != satisfied.len()
+        {
+            return Err(bad(
+                "orientation suffix/prefix satisfaction description changed",
+            ));
+        }
+        hash(request, MAX_BYTES)?;
+    }
+    for (origin, graph) in report
+        .preparation
+        .graph_origins
+        .iter()
+        .zip(&report.reference.checkpoints)
+    {
+        if graph.chains.len() > 64
+            || graph.components.len() > 64
+            || graph.nicks.len() > 100_000
+            || graph.unpaired.len() > 100_000
+            || graph.source_pairing.len() > 100_000
+            || graph.released_activations.len() > 64
+            || graph
+                .chains
+                .iter()
+                .try_fold(0usize, |n, c| n.checked_add(c.sequence.len()))
+                .is_none_or(|n| n > 100_000)
+        {
+            return Err(Error::TooLarge);
+        }
+        if hash(
+            &(crate::topo_graph_history::ENGINE_VERSION, graph),
+            MAX_BYTES,
+        )? != origin.selection.state_revision
+        {
+            return Err(bad("retained native graph checkpoint state changed"));
+        }
     }
     hash(report, MAX_BYTES)?;
     Ok(())
@@ -372,8 +458,8 @@ pub fn validate_projection(product: &topo::Product, expected_revision: &str) -> 
         )?,
     )?;
     physical_shape(&proof.physical, &product.preparation)?;
-    match (&proof.outcome, &product.reference) {
-        (projection::Outcome::Proven(view), Some(reference)) => {
+    match (&proof.outcome, &product.reference, &product.annotations) {
+        (projection::Outcome::Proven(view), Some(reference), Some(annotations)) => {
             collagene_model::bounds::model_preflight(&[reference])?;
             if reference.sequence.alphabet() != Alphabet::Dna
                 || reference.sequence.len() > 100_000
@@ -401,9 +487,27 @@ pub fn validate_projection(product: &topo::Product, expected_revision: &str) -> 
                     "reference view disagrees with restrictive contour description",
                 ));
             }
+            annotation_sources_shape(annotations, &product.sources, reference.sequence.len())?;
+            if reference.features != annotations.features || reference.original_genbank.is_some() {
+                return Err(bad("canonical reference annotation evidence changed"));
+            }
+            let metadata = std::collections::BTreeMap::from([
+                ("source:legacy:chemistry_unmapped".to_owned(), "true".to_owned()),
+                ("topo:physical_graph_required".to_owned(), "true".to_owned()),
+                ("topo:adapter_batch_revision".to_owned(), product.selection.batch_revision.clone()),
+                (topo::RECIPE_KEY.to_owned(), serde_json::to_string(&(&product.selection.batch_revision, &product.selection, &product.sources)).map_err(|_| Error::TooLarge)?),
+                ("topo:annotation_engine".to_owned(), topo::ANNOTATION_ENGINE_VERSION.to_owned()),
+                ("topo:annotation_revision".to_owned(), product.batch_revision.clone()),
+                ("topo:annotation_scope".to_owned(), "Source-coordinate correspondence only; no inherited chemistry or biological validity claim.".to_owned()),
+            ]);
+            if reference.metadata != metadata {
+                return Err(bad(
+                    "canonical reference restriction/correspondence metadata changed",
+                ));
+            }
             reference.validate()?;
         }
-        (projection::Outcome::Withheld(_), None) => {}
+        (projection::Outcome::Withheld(_), None, None) => {}
         _ => {
             return Err(bad(
                 "withheld/proven contour and reference presence disagree",
@@ -470,31 +574,13 @@ pub fn validate_target(
     Ok(())
 }
 
-/// Annotated revisions bind the existing physical request plus the independent
-/// coordinate-projection engine. These helpers do not reconstruct either layer.
-pub fn annotated_projection_revision(
-    inputs: &[topo::Input],
-    request: &topo::Request,
-    selection: &topo::Selection,
-) -> Result<String, Error> {
-    topo::annotated_product_revision(inputs, request, selection)
-}
-pub fn annotated_target_revision(
-    inputs: &[topo::Input],
-    request: &topo::Request,
-    selection: &topo::Selection,
-    target: &Molecule,
-    policy: &topo::AcceptancePolicy,
-) -> Result<String, Error> {
-    topo::annotated_target_revision(inputs, request, selection, target, policy)
-}
 pub(crate) fn annotation_sources_shape(
     evidence: &crate::topo_annotations::AnnotationEvidence,
     sources: &[topo::SourceIdentity],
     length: usize,
 ) -> Result<(), Error> {
     if evidence.sources.len() != sources.len()
-        || evidence.sources.len() > 32
+        || evidence.sources.len() > 64
         || evidence.features.len() > 4096
         || evidence.warnings.len() > 65
         || evidence.warnings.iter().any(|s| s.len() > 4096)
@@ -556,163 +642,5 @@ pub(crate) fn annotation_sources_shape(
     }
     hash(&evidence.features, 4 * 1024 * 1024)?;
     hash(evidence, 16 * 1024 * 1024)?;
-    Ok(())
-}
-/// Readonly shape/source/recipe consistency. A decoded wrapper never authorizes
-/// annotation projection or restores terminal/duplex/modification chemistry.
-pub fn validate_annotated_projection(
-    product: &topo::AnnotatedProduct,
-    expected_revision: &str,
-) -> Result<(), Error> {
-    binding(&product.batch_revision, expected_revision)?;
-    if product.engine_version != topo::ANNOTATION_ENGINE_VERSION {
-        return Err(bad("annotation engine mismatch"));
-    }
-    // Guard every native feature tree before recursive validation/hashing.
-    if let Some(reference) = &product.reference {
-        collagene_model::bounds::model_preflight(&[reference])?;
-        if reference.sequence.len() > 100_000 {
-            return Err(Error::TooLarge);
-        }
-    }
-    if let Some(evidence) = &product.annotations {
-        annotation_sources_shape(
-            evidence,
-            &product.physical.sources,
-            product.reference.as_ref().map_or(0, |r| r.sequence.len()),
-        )?;
-    }
-    validate_projection(&product.physical, &product.physical.batch_revision)?;
-    binding(
-        &product.batch_revision,
-        &hash(
-            &(
-                topo::ANNOTATION_ENGINE_VERSION,
-                "annotated-product",
-                &product.physical.batch_revision,
-            ),
-            MAX_BYTES,
-        )?,
-    )?;
-    match (
-        &product.physical.reference,
-        &product.annotations,
-        &product.reference,
-    ) {
-        (Some(bare), Some(evidence), Some(reference)) => {
-            if reference.name != bare.name
-                || reference.sequence != bare.sequence
-                || reference.topology != bare.topology
-                || reference.features != evidence.features
-                || reference.original_genbank.is_some()
-                || reference
-                    .metadata
-                    .get("topo:annotation_engine")
-                    .map(String::as_str)
-                    != Some(topo::ANNOTATION_ENGINE_VERSION)
-                || reference.metadata.get("topo:annotation_revision")
-                    != Some(&product.batch_revision)
-            {
-                return Err(bad(
-                    "annotated reference disagrees with its physical view/evidence",
-                ));
-            }
-            for (key, value) in &bare.metadata {
-                if reference.metadata.get(key) != Some(value) {
-                    return Err(bad(
-                        "annotated reference removed physical restriction metadata",
-                    ));
-                }
-            }
-            for (key, value) in &reference.metadata {
-                if !matches!(
-                    key.as_str(),
-                    "topo:annotation_engine" | "topo:annotation_revision" | "topo:annotation_scope"
-                ) && bare.metadata.get(key) != Some(value)
-                {
-                    return Err(bad(
-                        "annotation metadata cannot add new inherited authority",
-                    ));
-                }
-            }
-            reference.validate()?;
-        }
-        (None, None, None) => {}
-        _ => {
-            return Err(bad(
-                "annotated evidence/reference presence disagrees with contour",
-            ));
-        }
-    }
-    hash(product, MAX_BYTES)?;
-    Ok(())
-}
-pub fn validate_annotated_target(
-    report: &topo::AnnotatedAssessment,
-    expected_revision: &str,
-) -> Result<(), Error> {
-    binding(&report.batch_revision, expected_revision)?;
-    if report.engine_version != topo::ANNOTATION_ENGINE_VERSION || !hex(&report.target_revision) {
-        return Err(bad("invalid annotated target engine/revision"));
-    }
-    validate_annotated_projection(&report.product, &report.product.batch_revision)?;
-    binding(
-        &report.batch_revision,
-        &hash(
-            &(
-                topo::ANNOTATION_ENGINE_VERSION,
-                "annotated-target",
-                &report.product.batch_revision,
-                &report.target_revision,
-                &report.policy,
-            ),
-            MAX_BYTES,
-        )?,
-    )?;
-    match &report.outcome {
-        topo::TargetOutcome::AcceptedUnderDeclaredGraph => {
-            let projection::Outcome::Proven(view) = &report.product.physical.projection.outcome
-            else {
-                return Err(bad("accepted annotated target has no paired contour"));
-            };
-            if !report.policy.allow_nicks && !view.nicks.is_empty()
-                || !report.policy.allow_unknown_terminal_chemistry
-                    && !view.fully_known_terminal_chemistry
-                || !report.policy.allow_unapplied_transfers && !view.all_requested_transfers_applied
-                || !report.policy.allow_other_components
-                    && report
-                        .product
-                        .physical
-                        .projection
-                        .physical
-                        .product
-                        .components
-                        .len()
-                        != 1
-            {
-                return Err(bad(
-                    "accepted annotated target conflicts with explicit physical policy",
-                ));
-            }
-        }
-        topo::TargetOutcome::Rejected { reasons } => {
-            if reasons.is_empty() || reasons.len() > 16 || reasons.iter().any(|s| s.len() > 4096) {
-                return Err(Error::TooLarge);
-            }
-        }
-        topo::TargetOutcome::Withheld { reason } => {
-            if reason.len() > 4096
-                || !matches!(
-                    &report.product.physical.projection.outcome,
-                    projection::Outcome::Withheld(_)
-                )
-            {
-                return Err(bad(
-                    "withheld annotated target disagrees with physical contour",
-                ));
-            }
-        }
-    }
-    hash(report, MAX_BYTES)?;
     Ok(())
 }

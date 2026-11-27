@@ -84,13 +84,13 @@ fn edited_intent_and_primer_proposal_have_stable_tags_and_reject_pre_44_headers(
     };
     let bytes = protocol::encode_request(&job).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 109);
+    assert_eq!(tag, 107);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&43u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 101);
+    assert_eq!(tag, 99);
     let AnalysisResult::EditedAssemblyIntent(intent) =
         protocol::decode_response(&bytes).unwrap().result
     else {
@@ -112,10 +112,10 @@ fn edited_intent_and_primer_proposal_have_stable_tags_and_reject_pre_44_headers(
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 110);
+    assert_eq!(tag, 108);
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 102);
+    assert_eq!(tag, 100);
     let AnalysisResult::EditedAssemblyPrimers(report) =
         protocol::decode_response(&bytes).unwrap().result
     else {

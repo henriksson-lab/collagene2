@@ -205,14 +205,14 @@ fn worker_51_binds_selection_and_rejects_borrowed_new_tags_under_old_versions() 
     };
     let wire = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&wire[42..]).unwrap();
-    assert_eq!(tag, 118);
+    assert_eq!(tag, 116);
     let mut old = wire.clone();
     old[4..6].copy_from_slice(&50u16.to_le_bytes());
     assert!(matches!(
         protocol::process_request(&old),
         Err(Error::Unsupported(_))
     ));
-    let prefix = postcard::to_allocvec(&(request.id, request.revision.as_str(), 118u32)).unwrap();
+    let prefix = postcard::to_allocvec(&(request.id, request.revision.as_str(), 116u32)).unwrap();
     let mut truncated = wire[..42].to_vec();
     truncated[4..6].copy_from_slice(&50u16.to_le_bytes());
     truncated[6..10].copy_from_slice(&(prefix.len() as u32).to_le_bytes());
@@ -224,7 +224,7 @@ fn worker_51_binds_selection_and_rejects_borrowed_new_tags_under_old_versions() 
     let response_wire = protocol::process_request(&wire).unwrap();
     let ((_, _, tag), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&response_wire[42..]).unwrap();
-    assert_eq!(tag, 110);
+    assert_eq!(tag, 108);
     let response = protocol::decode_response(&response_wire).unwrap();
     let AnalysisResult::MismatchPcrOutputs(prepared) = response.result else {
         panic!("wrong output")

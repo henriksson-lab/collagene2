@@ -901,8 +901,12 @@ mod tests {
             saved.workspace.revisions[&selection.event.revision].clone(),
             selection.event.clone(),
         ));
-        draft.methods.rows[1].run_origin =
-            Some(crate::run_origin_model::PinnedOrigin::new(origin).unwrap());
+        draft.methods.rows[1].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::from_material(
+                collagene_core::run_material::MaterialOrigin::Run(origin),
+            )
+            .unwrap(),
+        );
         draft.sync_rows();
         let intended = intent(&draft);
         let p = propose(&draft, &intended, &saved.workspace, &options);

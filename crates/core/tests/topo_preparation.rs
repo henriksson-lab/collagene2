@@ -32,25 +32,27 @@ fn fixture() -> (Vec<topo::Input>, prep::PreparationRequest) {
         ],
         prep::PreparationRequest {
             mode: prep::PreparationMode::DirectionalCacc,
-            vector: prep::PreparedVectorDeclaration {
-                declaration_id: "declared-directional-vector".into(),
-                assumption: "Explicit synthetic mechanism fixture, not stock activation evidence"
-                    .into(),
-                strands: vec![strand("vt", 14), strand("vb", 18)],
-                pairing: vec![graph::PairSpan {
-                    strand_a: 0,
-                    start_a: 0,
-                    strand_b: 1,
-                    start_b: 4,
-                    length: 14,
-                }],
-            },
-            insert: prep::ExactPcrDeclaration {
-                material_id: "actual-blunt-pcr".into(),
-                template_role: "template".into(),
-                forward: Primer::new("Forward", "CACCA", "").unwrap(),
-                reverse: Primer::new("Reverse", "CGTCA", "").unwrap(),
-                tail: None,
+            source: prep::PreparationSource::Original {
+                vector: prep::PreparedVectorDeclaration {
+                    declaration_id: "declared-directional-vector".into(),
+                    assumption:
+                        "Explicit synthetic mechanism fixture, not stock activation evidence".into(),
+                    strands: vec![strand("vt", 14), strand("vb", 18)],
+                    pairing: vec![graph::PairSpan {
+                        strand_a: 0,
+                        start_a: 0,
+                        strand_b: 1,
+                        start_b: 4,
+                        length: 14,
+                    }],
+                },
+                insert: prep::ExactPcrDeclaration {
+                    material_id: "actual-blunt-pcr".into(),
+                    template_role: "template".into(),
+                    forward: Primer::new("Forward", "CACCA", "").unwrap(),
+                    reverse: Primer::new("Reverse", "CGTCA", "").unwrap(),
+                    tail: None,
+                },
             },
             engine_limits: graph::Limits::default(),
             projection_options: projection::Options::default(),
@@ -162,8 +164,18 @@ fn literal_14_18_vector_and_actual_cacc_pcr_keep_the_flap_and_withhold_contour()
 fn literal_cacc_primer_tail_is_distinct_from_cacc_already_in_the_template() {
     let (mut inputs, mut request) = fixture();
     inputs[2] = input("template", "CATGACGTAC");
-    request.insert.forward = Primer::new("User forward", "CATGA", "CACC").unwrap();
-    request.insert.reverse = Primer::new("User reverse", "GTACG", "").unwrap();
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.forward = Primer::new("User forward", "CATGA", "CACC").unwrap();
+    }
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.reverse = Primer::new("User reverse", "GTACG", "").unwrap();
+    }
     let tailed = inspect(&inputs, &request);
     assert_eq!(
         tailed.preparation.substrates.strands[2].sequence.as_str(),
@@ -184,7 +196,12 @@ fn literal_cacc_primer_tail_is_distinct_from_cacc_already_in_the_template() {
             .any(|map| matches!(map.origin, topo::Origin::SynthesizedTail { .. }))
     );
     inputs[2] = input("template", "CACCCATGACGTAC");
-    request.insert.forward = Primer::new("Already in template", "CACCC", "").unwrap();
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.forward = Primer::new("Already in template", "CACCC", "").unwrap();
+    }
     let encoded = inspect(&inputs, &request);
     assert_eq!(
         encoded.preparation.substrates.strands[2].sequence,
@@ -197,7 +214,9 @@ fn literal_cacc_primer_tail_is_distinct_from_cacc_already_in_the_template() {
             ..
         }
     )));
-    assert!(request.insert.tail.is_none());
+    assert!(
+        matches!(&request.source, prep::PreparationSource::Original { insert, .. } if insert.tail.is_none())
+    );
 }
 #[test]
 fn reversed_drawing_missing_activation_and_missing_cacc_never_gain_transfer_authority() {
@@ -206,35 +225,85 @@ fn reversed_drawing_missing_activation_and_missing_cacc_never_gain_transfer_auth
     let wrong = inspect(&inputs, &request);
     assert!(!wrong.reference.candidates[0].all_requested_transfers_applied);
     inputs[1] = input("vb", "GGTGAAGGGATGCCCCTT");
-    request.vector.strands[0].three_prime = graph::ThreePrime::Hydroxyl;
+    {
+        let prep::PreparationSource::Original { vector, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        vector.strands[0].three_prime = graph::ThreePrime::Hydroxyl;
+    }
     let inactive = inspect(&inputs, &request);
     assert!(!inactive.reference.candidates[0].all_requested_transfers_applied);
     let (mut inputs, mut request) = fixture();
     inputs[2] = input("template", "AACCATGACG");
-    request.insert.forward = Primer::new("No CACC", "AACCA", "").unwrap();
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.forward = Primer::new("No CACC", "AACCA", "").unwrap();
+    }
     let missing = inspect(&inputs, &request);
     assert!(!missing.reference.candidates[0].all_requested_transfers_applied);
-    request.insert.tail = Some(collagene_core::tailing::TailingBase::A);
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.tail = Some(collagene_core::tailing::TailingBase::A);
+    }
     assert!(prep::compile(&request).is_err());
-    request.insert.tail = None;
-    request.vector.pairing[0].start_b = 0;
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.tail = None;
+    }
+    {
+        let prep::PreparationSource::Original { vector, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        vector.pairing[0].start_b = 0;
+    }
     assert!(prep::compile(&request).is_err());
 }
 #[test]
 fn native_declaration_bounds_and_ambiguous_actual_pcr_are_explicit() {
     let (inputs, mut request) = fixture();
-    request.insert.forward.tail = "A".repeat(196);
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.forward.tail = "A".repeat(196);
+    }
     assert!(prep::compile(&request).is_err()); //201 ordered bases
-    request.insert.forward.tail.clear();
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.forward.tail.clear();
+    }
     let mut absent = inputs.clone();
     absent.remove(1);
     assert!(prep::compile_preparation(&absent, &request).is_err());
-    request.vector.strands[1].three_prime = request.vector.strands[0].three_prime.clone();
+    {
+        let prep::PreparationSource::Original { vector, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        vector.strands[1].three_prime = vector.strands[0].three_prime.clone();
+    }
     assert!(prep::compile(&request).is_err());
     let (mut inputs, mut request) = fixture();
     inputs[2] = input("template", "CACCATGACGCACCATGACG");
-    request.insert.forward = Primer::new("Repeated forward", "CACCA", "").unwrap();
-    request.insert.reverse = Primer::new("Repeated reverse", "CGTCA", "").unwrap();
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.forward = Primer::new("Repeated forward", "CACCA", "").unwrap();
+    }
+    {
+        let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
+            panic!("original declaration fixture")
+        };
+        insert.reverse = Primer::new("Repeated reverse", "CGTCA", "").unwrap();
+    }
     let compiled = prep::compile_preparation(&inputs, &request).unwrap();
     assert!(
         topo::inspect_orientations(

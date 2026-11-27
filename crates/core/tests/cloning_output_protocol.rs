@@ -79,7 +79,7 @@ fn two_cut_choice_reconstructs_exact_fragment_and_binds_the_selected_path() {
             choice: choice.clone(),
         },
     };
-    let AnalysisResult::DigestFragmentSelected(report) = response(&request, 99, 91) else {
+    let AnalysisResult::DigestFragmentSelected(report) = response(&request, 97, 89) else {
         panic!("expected fresh cut selection")
     };
     assert_eq!(
@@ -149,7 +149,7 @@ fn order_sheet_and_html_are_exported_from_the_bound_plan_and_target() {
             delimiter: Delimiter::Comma,
         },
     };
-    let AnalysisResult::PlanOligosExported(sheet) = response(&request, 100, 92) else {
+    let AnalysisResult::PlanOligosExported(sheet) = response(&request, 98, 90) else {
         panic!("expected oligo sheet")
     };
     assert!(sheet.report.complete);
@@ -169,7 +169,7 @@ fn order_sheet_and_html_are_exported_from_the_bound_plan_and_target() {
             target: target.clone(),
         },
     };
-    let AnalysisResult::ProtocolHtml(html) = response(&request, 101, 93) else {
+    let AnalysisResult::ProtocolHtml(html) = response(&request, 99, 91) else {
         panic!("expected HTML steps")
     };
     assert!(html.contains("CGAACCGGTT"));

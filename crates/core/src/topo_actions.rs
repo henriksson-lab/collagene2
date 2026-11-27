@@ -92,7 +92,7 @@ pub fn revision(inputs: &[topo::Input], r: &Request) -> Result<String, Error> {
     preflight(inputs, r)?;
     binding(
         &topo::batch_revision(inputs, &r.preparation)?,
-        &topo::identities(inputs),
+        &topo::documentary_sources(inputs, &r.preparation)?,
         r,
     )
 }
@@ -122,18 +122,21 @@ fn inspect_preflighted(
     preparation_revision: String,
 ) -> Result<Report, Error> {
     let original = &r.preparation;
-    let sources = topo::identities(inputs);
+    let prepared = topo::prepare(inputs, original)?;
+    let sources = topo::identities(&prepared.inputs);
     let context_revision = binding(&preparation_revision, &sources, r)?;
-    let preparation = topo::prepare(inputs, original)?;
-    let projection = processed::project(
-        &preparation.substrates,
-        &original.transfers,
+    let fresh = topo::execute(&prepared, &original.engine_limits)?;
+    let projection = processed::project_fresh(
+        &prepared.evidence.substrates,
+        &prepared.effective_transfers,
         &original.engine_limits,
         &r.processing,
         &r.selection,
         &r.options,
+        fresh,
     )
     .map_err(physical_error)?;
+    let preparation = prepared.evidence;
     let (mut duplex, mut tracked, mut product, mut annotations) = (None, None, None, None);
     let mut bridge_notes=vec!["This source-backed graph bridge preserves unknown internal modification calls. Reference features describe correspondence, not inherited atoms, methylation or experimentally established material.".into()];
     bridge_notes.push("Any requested ideal flap cleavage describes only explicit graph geometry and declared new terminal chemistry. It is not a named nuclease profile, host-repair model, enzyme efficiency or biochemical mixture guarantee.".into());
@@ -147,7 +150,7 @@ fn inspect_preflighted(
                 m.metadata.insert("duplex_model".into(),ENGINE_VERSION.into());
                 m.metadata.insert("topo:actions_context".into(),context_revision.clone());
                 m.metadata.insert("topo:physical_evidence_required".into(),"true".into());
-                match topo_annotations::project(inputs,&preparation,view,&m){
+                match topo_annotations::project(&prepared.inputs,&preparation,view,&m){
                     Ok(evidence)=>{m.features=evidence.features.clone();annotations=Some(evidence);},
                     Err(error)=>bridge_notes.push(format!("Source annotations withheld: {error}. Actual duplex geometry remains retained; no substitute features were invented.")),
                 }
@@ -182,13 +185,13 @@ impl Report {
             || expected != self.context_revision
             || !digest(&self.preparation_revision)
             || self.sources.is_empty()
-            || self.sources.len() > 32
+            || self.sources.len() > 64
             || self.bridge_notes.len() > 16
             || self.bridge_notes.iter().any(|s| s.len() > 4096)
         {
             return Err(bad("report source/request bounds changed"));
         }
-        bounded(&self.request, 2 * 1024 * 1024)?;
+        bounded(&self.request, MAX_REPORT_BYTES - 65536)?;
         let mut roles = BTreeSet::new();
         for s in &self.sources {
             if s.role.trim().is_empty()
@@ -216,7 +219,7 @@ impl Report {
         topo_worker::preparation(&self.preparation)?;
         processed::validate_report(
             &self.preparation.substrates,
-            &original.transfers,
+            &topo::effective_transfers(&self.preparation, original)?,
             &original.engine_limits,
             &self.request.processing,
             &self.request.selection,
@@ -354,7 +357,7 @@ pub fn revision_actions(inputs: &[topo::Input], r: &ActionsRequest) -> Result<St
     preflight_actions(inputs, r)?;
     action_binding(
         &topo::batch_revision(inputs, &r.preparation)?,
-        &topo::identities(inputs),
+        &topo::documentary_sources(inputs, &r.preparation)?,
         r,
     )
 }
@@ -377,16 +380,19 @@ fn actions_preflighted(
     r: &ActionsRequest,
     preparation_revision: String,
 ) -> Result<Inspection, Error> {
-    let sources = topo::identities(inputs);
+    let prepared = topo::prepare(inputs, &r.preparation)?;
+    let sources = topo::identities(&prepared.inputs);
     let context_revision = action_binding(&preparation_revision, &sources, r)?;
-    let preparation = topo::prepare(inputs, &r.preparation)?;
-    let processing = actions::simulate(
-        &preparation.substrates,
-        &r.preparation.transfers,
+    let fresh = topo::execute(&prepared, &r.preparation.engine_limits)?;
+    let processing = actions::process_fresh(
+        &prepared.evidence.substrates,
+        &prepared.effective_transfers,
         &r.preparation.engine_limits,
         &r.processing,
+        fresh,
     )
     .map_err(physical_error)?;
+    let preparation = prepared.evidence;
     let out = Inspection {
         engine_version: ENGINE_VERSION.into(),
         context_revision: context_revision.clone(),
@@ -408,11 +414,11 @@ impl Inspection {
             || self.context_revision != expected
             || !digest(&self.preparation_revision)
             || self.sources.is_empty()
-            || self.sources.len() > 32
+            || self.sources.len() > 64
         {
             return Err(bad("action inspection binding shape changed"));
         }
-        bounded(&self.request, 2 * 1024 * 1024)?;
+        bounded(&self.request, MAX_REPORT_BYTES - 65536)?;
         let mut roles = BTreeSet::new();
         for s in &self.sources {
             if s.role.trim().is_empty()
@@ -439,7 +445,7 @@ impl Inspection {
         topo_worker::preparation(&self.preparation)?;
         actions::validate_report(
             &self.preparation.substrates,
-            &self.request.preparation.transfers,
+            &topo::effective_transfers(&self.preparation, &self.request.preparation)?,
             &self.request.preparation.engine_limits,
             &self.request.processing,
             &self.processing,

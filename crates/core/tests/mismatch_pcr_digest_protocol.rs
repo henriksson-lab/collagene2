@@ -67,11 +67,11 @@ fn inspect162_154_binds_real_policy_amplicon_and_catalog_without_target_or_heade
     };
     let bytes = protocol::encode_request(&r).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 162);
+    assert_eq!(tag, 160);
     assert!(protocol::process_request(&wire(b"CGQ\0", 77, &r)).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 154);
+    assert_eq!(tag, 152);
     let response = protocol::decode_response(&bytes).unwrap();
     let AnalysisResult::MismatchPcrDigestInspection(p) = &response.result else {
         panic!("inspection")

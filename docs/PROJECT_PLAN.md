@@ -3529,8 +3529,65 @@ source/event ownership, literal actual-strand expectations and privacy refusals
 remain covered. Integrated web/worker WASM compilation, formatting and diff
 checks pass. Browser and application HTTP checks remain deferred.
 
-Public8082 now serves the CI-built5e6620d quantity/protocol frontend (worker103).
-Artifact15175556403 supplied13 assets (134440924 bytes); static integrity/worker
+Public8082 now serves the CI-built actual-strand frontend `a9d7eb8` (worker104).
+Artifact15177613579 supplied13 assets (135389310 bytes); static integrity/worker
 validation and exact listener inspection passed. All three desktop CI builds
-passed. Browser and application HTTP checks remain deferred. The working
-actual-strand refactor is separate from this immutable published snapshot.
+passed. Browser and application HTTP checks remain deferred. The working TOPO
+refactor is separate from this immutable published snapshot.
+
+
+### Saved activated TOPO graphs
+
+The existing TOPO workflow now has one native graph record and three explicit
+preparation choices: original declared vector plus new PCR insert; saved activated
+vector plus new PCR insert; and continuation of a saved reaction using its existing
+vector and insert strands. Continuing a one-transfer40-call graph adds neither
+a second PCR insert nor a fresh copy of its consumed activation.
+
+Capture retains the entire bounded elementary-transfer graph as a target-free native
+attachment, with exact original source events, original generation declarations,
+retained transfers and source/activation namespaces. Component/seed selection is
+for viewing and checking only; it does not discard other components or establish
+isolation. Reopen from the native recipe and fresh execution, never from a supplied
+ProductGraph, metadata or an ordinary duplex that cannot encode phosphotyrosyl.
+Run, Derived and graph ancestry share one aggregate origin budget. Only actual
+native operation dependencies may publish graph records and their source closure.
+
+The superseded annotated-result wrappers, generic annotation-report vector and
+duplicate worker jobs are removed. One current Product/TargetAssessment contains documentary annotations and
+one reference view. Current schemas move together to worker105, candidate27,
+plan25 and science28; no older internal decoder or compatibility branch is added.
+
+The initial source category retains elementary transfers. General continuation
+after flap cleavage or nick sealing remains required work in the physical kernel;
+these modified source graphs must refuse explicitly until their effective termini
+and endpoint model can be continued faithfully. Native, MCP, sharing and web source
+are integrated; graphical acceptance remains deferred.
+PDF rendering now separates readable retained graph history from new requested
+transfers, with current source/activation/strand mappings instead of opaque
+capsule dumps. Primer exports keep saved graph PCR history as provenance and
+order only PCR explicitly requested by the current operation.
+
+Focused validation passes166 distinct native cases across the physical kernel,
+scientific adapters, source/history/archive handling, binary workers, actual MCP
+SDK calls, sharing and web models. Genuine capped ordinary origins and blocked
+transfer histories remain incomplete even after an allowed target match;
+canonical false completeness claims refuse under the same fresh scoped execution.
+The final web/worker WASM check, formatting and diff checks pass after the
+PDF-label and unused-code cleanup. Existing passing cases remain evidence for unchanged paths; this is not
+full graphical or installed-desktop acceptance. [Native contract](TOPO_GRAPH_HISTORY.md)
+· [Transport and sharing](TOPO_GRAPH_TRANSPORT.md).
+
+Unused run-only constructor and duplicate choice validators are deleted; their
+callers use current generic origins, live source/settings guards and native request
+validation directly. Internal evidence fields are required rather than defaulted
+when reading superseded layouts. No compatibility decoder or adapter was added.
+
+
+The previous actual-strand push `a9d7eb8` passed its web CI job. Ubuntu CI found
+three request-decoding failures in the fusion worker/SDK fixtures: their JSON
+still used the superseded flat intent intervals. Commit `2142615` updates those
+two fixture inputs to required typed selectors and explicit material bindings,
+without changing scientific assertions or accepting the old shape. Its CI rerun
+passes on Windows, macOS, Linux and web. The TOPO implementation is a separate
+change.

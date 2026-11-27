@@ -203,8 +203,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             selection,
         },
         revision.clone(),
-        170,
-        160,
+        168,
+        158,
     );
     let AnalysisResult::MaterialOriginInspection(report) = inspected.result else {
         panic!("material origin inspection")
@@ -219,8 +219,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             request,
         },
         revision.clone(),
-        176,
-        166,
+        174,
+        164,
     );
     let AnalysisResult::MaterialDerivationInstalled(installed) = installed.result else {
         panic!("digest installation")
@@ -247,8 +247,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             reverse: reverse.clone(),
         },
         revision,
-        171,
-        161,
+        169,
+        159,
     );
     let AnalysisResult::MaterialPcrDocuments(previews) = previews.result else {
         panic!("material PCR")
@@ -276,8 +276,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
     let outputs = checked_roundtrip(
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request },
         revision.clone(),
-        172,
-        162,
+        170,
+        160,
     );
     let AnalysisResult::MaterialPcrOutputsPrepared(outputs) = outputs.result else {
         panic!("material PCR outputs")
@@ -289,8 +289,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 26);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 24);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 27);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 25);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 27);
@@ -310,7 +310,7 @@ fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-27"));
+    assert!(report.engine_version.ends_with("/science-28"));
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
     let request = protocol::Request {
         id: 27,
@@ -381,7 +381,7 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
             .all(|s| matches!(s, Operation::Pcr { .. }))
     );
     let report = verification::verify(&plan, &origin.target);
-    assert!(report.engine_version.ends_with("/science-27"));
+    assert!(report.engine_version.ends_with("/science-28"));
     let response = protocol::Response {
         id: 1,
         revision: origin.target.revision(),
@@ -392,7 +392,7 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
     let AnalysisResult::Verification(report) = &mut historical.result else {
         unreachable!()
     };
-    report.engine_version = report.engine_version.replace("/science-27", "/science-24");
+    report.engine_version = report.engine_version.replace("/science-28", "/science-24");
     protocol::decode_response(&wire(
         b"CGR\0",
         protocol::WORKER_SCHEMA_VERSION,

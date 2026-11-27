@@ -60,7 +60,7 @@ fn ordinary_translation_uses_actual_junction_dna_and_explicit_genetic_code() {
     for (code, protein) in [(1, "K*F"), (2, "KWF")] {
         let bytes = request(plan.clone(), target.clone(), options(code));
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-        assert_eq!(tag, 96);
+        assert_eq!(tag, 94);
         let response = protocol::process_request(&bytes).unwrap();
         let decoded = protocol::decode_response(&response).unwrap();
         let AnalysisResult::AssemblyJunctionInspection(report) = decoded.result else {

@@ -72,25 +72,10 @@ fn prepared() -> (Vec<t::Input>, t::Request) {
 }
 
 #[test]
-fn additive_wrapper_preserves_legacy_physical_bytes_and_retains_unmapped_annotations_in_plan_evidence()
- {
+fn canonical_product_projects_annotations_and_retains_unmapped_source_evidence() {
     let (inputs, request) = prepared();
     let selected = selection(&inputs, &request);
-    let legacy = t::product(&inputs, &request, &selected).unwrap();
-    let annotated = t::annotated_product(&inputs, &request, &selected).unwrap();
-    assert_eq!(
-        serde_json::to_vec(&legacy).unwrap(),
-        serde_json::to_vec(&annotated.physical).unwrap()
-    );
-    assert!(
-        annotated
-            .physical
-            .reference
-            .as_ref()
-            .unwrap()
-            .features
-            .is_empty()
-    );
+    let annotated = t::product(&inputs, &request, &selected).unwrap();
     assert_eq!(annotated.reference.as_ref().unwrap().features.len(), 1);
     assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
         annotated.reference.as_ref().unwrap()
@@ -102,16 +87,17 @@ fn additive_wrapper_preserves_legacy_physical_bytes_and_retains_unmapped_annotat
     assert!(evidence.sources[0].unmapped[0].feature.needs_review);
     assert_eq!(
         annotated.batch_revision,
-        t::annotated_product_revision(&inputs, &request, &selected).unwrap()
+        t::product_revision(&inputs, &request, &selected).unwrap()
     );
-    assert_ne!(annotated.batch_revision, legacy.batch_revision);
     let target = source("AAAACCCC");
     let policy = t::AcceptancePolicy::default();
-    let checked =
-        t::check_target_annotated(&inputs, &request, &selected, &target, &policy).unwrap();
+    let checked = t::check_target(&inputs, &request, &selected, &target, &policy).unwrap();
     assert_eq!(
         checked.batch_revision,
-        t::annotated_target_revision(&inputs, &request, &selected, &target, &policy).unwrap()
+        collagene_core::topo_worker::target_revision(
+            &inputs, &request, &selected, &target, &policy
+        )
+        .unwrap()
     );
     assert!(matches!(
         checked.outcome,
@@ -137,8 +123,19 @@ fn additive_wrapper_preserves_legacy_physical_bytes_and_retains_unmapped_annotat
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert_eq!(report.products[0].features.len(), 1);
-    assert_eq!(report.annotation_reports.len(), 1);
-    assert!(
+    assert_eq!(
+        report.step_reports[0]
+            .topo
+            .as_ref()
+            .unwrap()
+            .annotations
+            .as_ref()
+            .unwrap()
+            .sources[0]
+            .projected,
+        1
+    );
+    assert_eq!(
         report.step_reports[0]
             .topo
             .as_ref()
@@ -147,7 +144,8 @@ fn additive_wrapper_preserves_legacy_physical_bytes_and_retains_unmapped_annotat
             .as_ref()
             .unwrap()
             .features
-            .is_empty()
+            .len(),
+        1
     );
     let html = export_protocol_html(&plan, &target);
     assert!(html.contains("1 projected (0 require review)"));
@@ -178,7 +176,7 @@ fn pcr_template_features_require_review_and_unproven_tailed_contours_get_no_anno
         engine_limits: p::Limits::default(),
         projection_options: v::Options::default(),
     };
-    let annotated = t::annotated_product(&inputs, &request, &selection(&inputs, &request)).unwrap();
+    let annotated = t::product(&inputs, &request, &selection(&inputs, &request)).unwrap();
     let feature = &annotated.reference.as_ref().unwrap().features[0];
     assert_eq!(feature.location.spans(), vec![(2, 10, false)]);
     assert!(feature.needs_review);
@@ -192,14 +190,10 @@ fn pcr_template_features_require_review_and_unproven_tailed_contours_get_no_anno
         *tail = Some(collagene_core::tailing::TailingBase::A);
     }
     let selected = selection(&inputs, &request);
-    let withheld = t::annotated_product(&inputs, &request, &selected).unwrap();
-    assert!(
-        withheld.reference.is_none()
-            && withheld.annotations.is_none()
-            && withheld.physical.reference.is_none()
-    );
-    assert_eq!(withheld.physical.projection.physical.source_bases, 80);
-    let checked = t::check_target_annotated(
+    let withheld = t::product(&inputs, &request, &selected).unwrap();
+    assert!(withheld.reference.is_none() && withheld.annotations.is_none());
+    assert_eq!(withheld.projection.physical.source_bases, 80);
+    let checked = t::check_target(
         &inputs,
         &request,
         &selected,

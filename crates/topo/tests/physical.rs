@@ -110,7 +110,7 @@ fn ta_both_strands_two_bonds_two_unsealed_nicks() {
 #[test]
 fn ta_orientation_alternatives_keep_actual_sources() {
     let s = ta();
-    let r = orientations(&s, [0, 1], [2, 3], false, &Limits::default()).unwrap();
+    let r = orientations(&s, &[], [0, 1], [2, 3], false, &Limits::default(), &[]).unwrap();
     assert_eq!(r.candidates.len(), 2);
     assert!(r.orientation_search_complete);
     assert!(!r.biochemical_mixture_exhaustive);
@@ -155,7 +155,16 @@ fn directional_four_actual_bottom_calls_are_retained_as_attached_flap() {
 }
 #[test]
 fn directional_reverse_is_unsupported_not_claimed_absent_and_partial_bonds_survive() {
-    let r = orientations(&directional(), [0, 1], [2, 3], true, &Limits::default()).unwrap();
+    let r = orientations(
+        &directional(),
+        &[],
+        [0, 1],
+        [2, 3],
+        true,
+        &Limits::default(),
+        &[],
+    )
+    .unwrap();
     assert!(r.candidates[0].all_requested_transfers_applied);
     let reverse = &r.candidates[1];
     assert_eq!(reverse.steps[0].outcome, Outcome::Unsupported);
@@ -315,7 +324,7 @@ fn all_declared_limits_fail_explicitly_and_never_become_absence() {
         max_output_bases: 79,
         ..Limits::default()
     };
-    assert!(orientations(&s, [0, 1], [2, 3], false, &l).is_err());
+    assert!(orientations(&s, &[], [0, 1], [2, 3], false, &l, &[]).is_err());
 }
 
 #[test]

@@ -135,8 +135,8 @@ fn worker_binds_output_selection_and_rejects_forged_old_variant_prefixes() {
     // A body truncated after its borrowed prefix must fail the schema gate before
     // decoding any new payload. The unchanged checksum is deliberately irrelevant.
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&wire[42..]).unwrap();
-    assert_eq!(tag, 117);
-    let payload = postcard::to_allocvec(&(request.id, request.revision.as_str(), 117u32)).unwrap();
+    assert_eq!(tag, 115);
+    let payload = postcard::to_allocvec(&(request.id, request.revision.as_str(), 115u32)).unwrap();
     let mut prefix = wire[..42].to_vec();
     prefix[4..6].copy_from_slice(&49u16.to_le_bytes());
     prefix[6..10].copy_from_slice(&(payload.len() as u32).to_le_bytes());
@@ -154,7 +154,7 @@ fn worker_binds_output_selection_and_rejects_forged_old_variant_prefixes() {
     assert_eq!(result.geometry.forward_start, 8);
     let ((_, _, tag), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&response_wire[42..]).unwrap();
-    assert_eq!(tag, 109);
+    assert_eq!(tag, 107);
     let mut old_response = response_wire;
     old_response[4..6].copy_from_slice(&49u16.to_le_bytes());
     assert!(matches!(

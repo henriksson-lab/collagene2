@@ -686,8 +686,30 @@ pub fn project(
     select: &Selection,
     o: &Options,
 ) -> Result<ProjectionReport, Error> {
+    let fresh = crate::simulate_with_checkpoints(s, t, engine_limits, &[])?;
+    project_fresh(s, t, engine_limits, select, o, fresh)
+}
+/// The token has a private native constructor; deserialized graphs/reports
+/// cannot be supplied as incoming projection authority.
+pub fn project_fresh(
+    s: &Substrates,
+    t: &[Transfer],
+    engine_limits: &Limits,
+    select: &Selection,
+    o: &Options,
+    mut fresh: crate::Executed,
+) -> Result<ProjectionReport, Error> {
     let batch_revision = batch_revision(s, t, engine_limits, select, o)?;
-    let physical = crate::simulate(s, t, engine_limits)?;
+    if fresh.report().batch_revision != crate::batch_revision(s, t, engine_limits)? {
+        return Err(Error::InvalidSelection(
+            "fresh native execution source differs",
+        ));
+    }
+    fresh.reserve_work(
+        crate::mul(fresh.report().source_bases, 128)?,
+        crate::mul(fresh.report().source_bases, 512)?,
+    )?;
+    let physical = fresh.into_report();
     if select.component >= physical.product.components.len() {
         return Err(Error::InvalidSelection(
             "component absent from fresh physical report",

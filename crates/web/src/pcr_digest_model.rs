@@ -1074,8 +1074,12 @@ mod overlap_extension_digest_tests {
         };
         let origin = run_material::capsule(&commit.workspace, &selection).unwrap();
         let source = commit.workspace.revisions[&selection.event.revision].clone();
-        state.rows[1].run_origin =
-            Some(crate::run_origin_model::PinnedOrigin::new(origin.clone()).unwrap());
+        state.rows[1].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::from_material(
+                collagene_core::run_material::MaterialOrigin::Run(origin.clone()),
+            )
+            .unwrap(),
+        );
         let request = build_inspection_request(&state, 1).unwrap();
         assert!(request.revision(&source, None).is_err());
         let revision = request.revision(&source, Some(&origin)).unwrap();

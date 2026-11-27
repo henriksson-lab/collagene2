@@ -91,11 +91,11 @@ fn substituted_intent_161_153_roundtrips_forward_reverse_and_origin_with_literal
         };
         let bytes = protocol::encode_request(&r).unwrap();
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-        assert_eq!(tag, 161);
+        assert_eq!(tag, 159);
         assert!(protocol::process_request(&wire(b"CGQ\0", 76, &r)).is_err());
         let bytes = protocol::process_request(&bytes).unwrap();
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-        assert_eq!(tag, 153);
+        assert_eq!(tag, 151);
         let response = protocol::decode_response(&bytes).unwrap();
         let AnalysisResult::SubstitutedAssemblyIntent(report) = &response.result else {
             panic!("intent")

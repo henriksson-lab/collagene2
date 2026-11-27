@@ -58,7 +58,7 @@ pub fn revision(inputs: &[topo::Input], r: &Request) -> Result<String, Error> {
     preflight(inputs, r)?;
     binding(
         &topo::batch_revision(inputs, &r.preparation)?,
-        &topo::identities(inputs),
+        &topo::documentary_sources(inputs, &r.preparation)?,
         r,
     )
 }
@@ -67,16 +67,19 @@ pub fn revision(inputs: &[topo::Input], r: &Request) -> Result<String, Error> {
 pub fn inspect(inputs: &[topo::Input], r: &Request) -> Result<Report, Error> {
     preflight(inputs, r)?;
     let preparation_revision = topo::batch_revision(inputs, &r.preparation)?;
-    let sources = topo::identities(inputs);
+    let prepared = topo::prepare(inputs, &r.preparation)?;
+    let sources = topo::identities(&prepared.inputs);
     let context_revision = binding(&preparation_revision, &sources, r)?;
-    let preparation = topo::prepare(inputs, &r.preparation)?;
-    let sealing = nick::simulate(
-        &preparation.substrates,
-        &r.preparation.transfers,
+    let fresh = topo::execute(&prepared, &r.preparation.engine_limits)?;
+    let sealing = nick::seal_fresh(
+        &prepared.evidence.substrates,
+        &prepared.effective_transfers,
         &r.preparation.engine_limits,
         &r.sealing,
+        fresh,
     )
     .map_err(physical_error)?;
+    let preparation = prepared.evidence;
     let result = Report {
         engine_version: ENGINE_VERSION.into(),
         context_revision: context_revision.clone(),
@@ -101,16 +104,16 @@ impl Report {
         {
             return Err(Error::TooLarge);
         }
-        bounded_with_limit(&self.request, 1024 * 1024)?;
+        bounded_with_limit(&self.request, MAX_REPORT_BYTES - 65536)?;
         if self.engine_version != ENGINE_VERSION
             || !digest(expected)
             || self.context_revision != expected
             || !digest(&self.preparation_revision)
             || self.sources.is_empty()
-            || self.sources.len() > 32
+            || self.sources.len() > 64
             || self.preparation.maps.len() > 4096
             || self.preparation.not_represented.len() > 4096
-            || self.preparation.assumptions.len() > 32
+            || self.preparation.assumptions.len() > 128
         {
             return Err(bad("report source/request shape changed"));
         }
@@ -137,7 +140,7 @@ impl Report {
         {
             return Err(bad("source/preparation/request context changed"));
         }
-        if self.preparation.substrates.strands.len() > 32
+        if self.preparation.substrates.strands.len() > 64
             || self.preparation.substrates.pairing.len() > 1024
         {
             return Err(Error::TooLarge);
@@ -151,7 +154,7 @@ impl Report {
         }
         physical::preflight(
             &self.preparation.substrates,
-            &self.request.preparation.transfers,
+            &topo::effective_transfers(&self.preparation, &self.request.preparation)?,
             &self.request.preparation.engine_limits,
         )
         .map_err(physical_error)?;
@@ -199,7 +202,7 @@ impl Report {
         }
         nick::validate_report(
             &self.preparation.substrates,
-            &self.request.preparation.transfers,
+            &topo::effective_transfers(&self.preparation, &self.request.preparation)?,
             &self.request.preparation.engine_limits,
             &self.request.sealing,
             &self.sealing,

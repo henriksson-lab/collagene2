@@ -1805,7 +1805,6 @@ impl Preview {
             || self.compiled.plan.inputs.len() > MAX_ROWS
             || self.verification.products.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
             || self.verification.step_reports.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
-            || self.verification.annotation_reports.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
             || self.compiled.plan.steps.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
             || self.compiled.assembly_step.checked_add(1) != Some(self.compiled.plan.steps.len())
         {
@@ -1829,21 +1828,12 @@ impl Preview {
         for model in models {
             crate::model::bounds::model_preflight(&[model])?;
         }
-        for report in &self.verification.annotation_reports {
-            if report.step_index >= self.compiled.plan.steps.len()
-                || report.evidence.sources.len() > MAX_ROWS
-            {
+        for report in &self.verification.step_reports {
+            if report.step_index >= self.compiled.plan.steps.len() {
                 return Err(Error::TooLarge);
             }
-            let mut budget = crate::model::bounds::ModelBudget::default();
-            budget.features(&report.evidence.features)?;
-            for role in &report.evidence.sources {
-                if role.unmapped.len() > 4096 {
-                    return Err(Error::TooLarge);
-                }
-                for unmapped in &role.unmapped {
-                    budget.features(std::slice::from_ref(&unmapped.feature))?;
-                }
+            if let Some(product) = &report.topo {
+                crate::topo_worker::validate_projection(product, &product.batch_revision)?;
             }
         }
         validate_prepared_inputs(&self.compiled.plan.inputs, &self.compiled.plan.steps)?;

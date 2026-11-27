@@ -94,7 +94,7 @@ fn discovery_keeps74_tags_but_current_retained_workspace_requires92_and_exact_co
         };
         let bytes = protocol::encode_request(&r).unwrap();
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-        assert_eq!(tag, 158);
+        assert_eq!(tag, 156);
         assert!(protocol::process_request(&wire(b"CGQ\0", 73, &r)).is_err());
         // The whole retained workspace was produced now: its native run plan
         // schema21/science26 is not a historical worker74 fixture.
@@ -102,7 +102,7 @@ fn discovery_keeps74_tags_but_current_retained_workspace_requires92_and_exact_co
         assert!(protocol::process_request(&wire(b"CGQ\0", 91, &r)).is_err());
         let reply = protocol::process_request(&bytes).unwrap();
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-        assert_eq!(tag, 150);
+        assert_eq!(tag, 148);
         let response = protocol::decode_response(&reply).unwrap();
         let AnalysisResult::RunMaterialInspection(report) = &response.result else {
             panic!("inspection")
@@ -244,11 +244,11 @@ fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_insp
     };
     let bytes = protocol::encode_request(&r).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 159);
+    assert_eq!(tag, 157);
     assert!(protocol::process_request(&wire(b"CGQ\0", 73, &r)).is_err());
     let reply = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 151);
+    assert_eq!(tag, 149);
     let response = protocol::decode_response(&reply).unwrap();
     let AnalysisResult::RunPcrDigestInspection(report) = &response.result else {
         panic!("origin-bound PCR digest")

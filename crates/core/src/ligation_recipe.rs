@@ -409,7 +409,6 @@ impl Preview {
             || self.physical.len() != self.prepared.len()
             || self.preparation_complete != (self.prepared.len() == rows)
             || self.verification.step_reports.len() > steps
-            || self.verification.annotation_reports.len() > steps
         {
             return Err(bad("invalid preview shape"));
         }
@@ -424,19 +423,12 @@ impl Preview {
         {
             crate::model::bounds::model_preflight(&[m])?;
         }
-        for report in &self.verification.annotation_reports {
-            if report.step_index >= steps || report.evidence.sources.len() > preparation::MAX_ROWS {
+        for report in &self.verification.step_reports {
+            if report.step_index >= steps {
                 return Err(Error::TooLarge);
             }
-            let mut budget = crate::model::bounds::ModelBudget::default();
-            budget.features(&report.evidence.features)?;
-            for role in &report.evidence.sources {
-                if role.unmapped.len() > 4096 {
-                    return Err(Error::TooLarge);
-                }
-                for f in &role.unmapped {
-                    budget.features(std::slice::from_ref(&f.feature))?;
-                }
+            if let Some(product) = &report.topo {
+                crate::topo_worker::validate_projection(product, &product.batch_revision)?;
             }
         }
         preparation::validate_prepared_inputs(

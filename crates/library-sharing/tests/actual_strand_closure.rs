@@ -76,8 +76,9 @@ fn actual_material_target_requires_existing_exact_parents_and_replays_their_owne
         );
         let bytes = workspace::save_workspace(&projection.workspace).unwrap();
         let loaded = workspace::load_workspace(&bytes).unwrap();
-        let origins =
-            run_material::documentary_material_origins(&loaded, &[selected.clone()]).unwrap();
+        let origins = run_material::documentary_origins(&loaded, &[selected.clone()], &[])
+            .unwrap()
+            .materials;
         origins[0]
             .replay(&loaded.revisions[&selected.event().revision])
             .unwrap();

@@ -93,13 +93,13 @@ fn selected_row_protocol_is_append_only_and_context_bound() {
     };
     let bytes = protocol::encode_request(&job).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 111);
+    assert_eq!(tag, 109);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&44u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let response = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 103);
+    assert_eq!(tag, 101);
     let AnalysisResult::SelectiveAssemblyPrimers(report) =
         protocol::decode_response(&response).unwrap().result
     else {

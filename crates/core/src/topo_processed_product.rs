@@ -86,7 +86,7 @@ pub fn revision(inputs: &[topo::Input], r: &Request) -> Result<String, Error> {
     preflight(inputs, r)?;
     binding(
         &topo::batch_revision(inputs, &r.treatment.preparation)?,
-        &topo::identities(inputs),
+        &topo::documentary_sources(inputs, &r.treatment.preparation)?,
         r,
     )
 }
@@ -178,18 +178,21 @@ pub fn inspect(inputs: &[topo::Input], r: &Request) -> Result<Report, Error> {
     preflight(inputs, r)?;
     let original = &r.treatment.preparation;
     let preparation_revision = topo::batch_revision(inputs, original)?;
-    let sources = topo::identities(inputs);
+    let prepared = topo::prepare(inputs, original)?;
+    let sources = topo::identities(&prepared.inputs);
     let context_revision = binding(&preparation_revision, &sources, r)?;
-    let preparation = topo::prepare(inputs, original)?;
-    let projection = processed::project(
-        &preparation.substrates,
-        &original.transfers,
+    let fresh = topo::execute(&prepared, &original.engine_limits)?;
+    let projection = processed::project_fresh(
+        &prepared.evidence.substrates,
+        &prepared.effective_transfers,
         &original.engine_limits,
         &r.treatment.sealing,
         &r.selection,
         &r.options,
+        fresh,
     )
     .map_err(physical_error)?;
+    let preparation = prepared.evidence;
     let (mut duplex, mut tracked, mut product, mut annotations) = (None, None, None, None);
     let mut bridge_notes=vec!["This source-backed graph bridge preserves unknown internal modification calls. Reference features describe correspondence, not inherited atoms, methylation or experimentally established material.".into()];
     bridge_notes.push("The chosen component/orientation is an explicit graph view, not physical isolation or a reaction-mixture winner. Every other component, unpaired call and released activation remains in the retained processing evidence.".into());
@@ -202,7 +205,7 @@ pub fn inspect(inputs: &[topo::Input], r: &Request) -> Result<Report, Error> {
                 m.metadata.insert("duplex_model".into(),ENGINE_VERSION.into());
                 m.metadata.insert("topo:processed_context".into(),context_revision.clone());
                 m.metadata.insert("topo:physical_evidence_required".into(),"true".into());
-                match topo_annotations::project(inputs,&preparation,view,&m){
+                match topo_annotations::project(&prepared.inputs,&preparation,view,&m){
                     Ok(evidence)=>{m.features=evidence.features.clone();annotations=Some(evidence);},
                     Err(error)=>bridge_notes.push(format!("Source annotations withheld: {error}. Actual duplex geometry remains retained; no substitute features were invented.")),
                 }
@@ -237,13 +240,13 @@ impl Report {
             || expected != self.context_revision
             || !digest(&self.preparation_revision)
             || self.sources.is_empty()
-            || self.sources.len() > 32
+            || self.sources.len() > 64
             || self.bridge_notes.len() > 16
             || self.bridge_notes.iter().any(|s| s.len() > 4096)
         {
             return Err(bad("report source/request bounds changed"));
         }
-        bounded(&self.request, 2 * 1024 * 1024)?;
+        bounded(&self.request, MAX_REPORT_BYTES - 65536)?;
         let mut roles = BTreeSet::new();
         for s in &self.sources {
             if s.role.trim().is_empty()
@@ -271,7 +274,7 @@ impl Report {
         topo_worker::preparation(&self.preparation)?;
         processed::validate_report(
             &self.preparation.substrates,
-            &original.transfers,
+            &topo::effective_transfers(&self.preparation, original)?,
             &original.engine_limits,
             &self.request.treatment.sealing,
             &self.request.selection,

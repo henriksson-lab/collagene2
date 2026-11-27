@@ -59,7 +59,7 @@ fn current_encoding_roundtrips_scientific_and_documentary_receipts() {
         report.findings
     );
     assert_eq!(report.engine_version, verification::ENGINE_VERSION);
-    assert!(report.engine_version.ends_with("/science-27"));
+    assert!(report.engine_version.ends_with("/science-28"));
     assert!(protocol::decode_response(&wire(protocol::WORKER_SCHEMA_VERSION, &response)).is_ok());
     assert!(protocol::decode_response(&wire(92, &response)).is_err());
     assert!(protocol::decode_response(&wire(91, &response)).is_err());
@@ -79,7 +79,7 @@ fn current_encoding_roundtrips_scientific_and_documentary_receipts() {
         unreachable!()
     };
     let current = verification::ENGINE_VERSION;
-    let old = current.replace("/science-27", "/science-20");
+    let old = current.replace("/science-28", "/science-20");
     report.engine_version = old.clone();
     for product in &mut report.products {
         for value in product.metadata.values_mut() {

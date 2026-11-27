@@ -140,7 +140,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     let simulated = call(
         &c,
         "simulate_topo",
-        json!({"sources":sources,"request":request}),
+        json!({"origin_workspace":null,"sources":sources,"request":request}),
     )
     .await;
     assert_eq!(
@@ -160,7 +160,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     let processed = call(
         &c,
         "seal_topo_nicks",
-        json!({"sources":sources,"request":{"preparation":request,"sealing":sealing}}),
+        json!({"origin_workspace":null,"sources":sources,"request":{"preparation":request,"sealing":sealing}}),
     )
     .await;
     assert_eq!(processed["verified"], false);
@@ -181,7 +181,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
             .iter()
             .all(|chain| chain["ends"] == "CovalentlyCircular")
     );
-    let projected=call(&c,"project_processed_topo",json!({"sources":sources,"request":{
+    let projected=call(&c,"project_processed_topo",json!({"origin_workspace":null,"sources":sources,"request":{
         "treatment":{"preparation":request,"sealing":sealing},
         "selection":{"sealing_context_revision":proof["report"]["sealing"]["context_revision"],"component":0,"reference_seed":{"strand":0,"index":0}},
         "options":{"require_all_requested_transfers_applied":true,"require_known_terminal_chemistry":true,"limits":t::physical::projection::ProjectionLimits::default()}
@@ -245,7 +245,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     let retained = call(
         &c,
         "seal_topo_nicks",
-        json!({"sources":sources,"request":{"preparation":request,"sealing":wrong}}),
+        json!({"origin_workspace":null,"sources":sources,"request":{"preparation":request,"sealing":wrong}}),
     )
     .await;
     assert!(
@@ -256,7 +256,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     let projected = call(
         &c,
         "project_topo_product",
-        json!({"sources":sources,"request":request,"selection":selection}),
+        json!({"origin_workspace":null,"sources":sources,"request":request,"selection":selection}),
     )
     .await;
     assert_eq!(projected["projection"]["state"], "paired_contour");
@@ -273,7 +273,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     );
     let target = import(&c, "independent target", "AGGGGCATCCCTTCGAATGA", true).await;
     let mut policy = t::AcceptancePolicy::default();
-    let args = json!({"sources":sources,"request":request,"selection":selection,"target":target,"policy":policy});
+    let args = json!({"origin_workspace":null,"sources":sources,"request":request,"selection":selection,"target":target,"policy":policy});
     let strict = call(&c, "check_topo_target", args.clone()).await;
     assert!(
         strict["outcome"].get("Rejected").is_some(),
@@ -297,7 +297,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
     );
     let mut orientations = request.clone();
     orientations.transfers.clear();
-    let orientations=call(&c,"inspect_topo_orientations",json!({"sources":sources,"request":orientations,"vector":[0,1],"insert":[2,3],"directional":false})).await;
+    let orientations=call(&c,"inspect_topo_orientations",json!({"origin_workspace":null,"sources":sources,"request":orientations,"vector":[0,1],"insert":[2,3],"directional":false})).await;
     assert_eq!(orientations["candidate_count"], 2);
     assert_eq!(orientations["orientation_search_complete"], true);
     assert_eq!(orientations["biochemical_mixture_exhaustive"], false);
@@ -327,7 +327,7 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
     let simulated = call(
         &c,
         "simulate_topo",
-        json!({"sources":sources,"request":request}),
+        json!({"origin_workspace":null,"sources":sources,"request":request}),
     )
     .await;
     let mut stale = sources.clone();
@@ -335,7 +335,7 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
     reject(
         &c,
         "simulate_topo",
-        json!({"sources":stale,"request":request}),
+        json!({"origin_workspace":null,"sources":stale,"request":request}),
     )
     .await;
     let mut duplicate = sources.clone();
@@ -343,20 +343,20 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
     reject(
         &c,
         "simulate_topo",
-        json!({"sources":duplicate,"request":request}),
+        json!({"origin_workspace":null,"sources":duplicate,"request":request}),
     )
     .await;
     reject(
         &c,
         "simulate_topo",
-        json!({"sources":sources,"request":request,"foreign_physical_product":simulated}),
+        json!({"origin_workspace":null,"sources":sources,"request":request,"foreign_physical_product":simulated}),
     )
     .await;
     let stale_selection = json!({"batch_revision":"0".repeat(64),"component":0,"reference_seed":{"strand":0,"index":0}});
     reject(
         &c,
         "project_topo_product",
-        json!({"sources":sources,"request":request,"selection":stale_selection}),
+        json!({"origin_workspace":null,"sources":sources,"request":request,"selection":stale_selection}),
     )
     .await;
     let mut unactivated = request.clone();
@@ -366,14 +366,14 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
     let unactivated = call(
         &c,
         "simulate_topo",
-        json!({"sources":sources,"request":unactivated}),
+        json!({"origin_workspace":null,"sources":sources,"request":unactivated}),
     )
     .await;
     assert_eq!(
         unactivated["physical"]["all_requested_transfers_applied"],
         false
     );
-    reject(&c,"inspect_topo_orientations",json!({"sources":sources,"request":request,"vector":[0,1],"insert":[2,3],"directional":false})).await;
+    reject(&c,"inspect_topo_orientations",json!({"origin_workspace":null,"sources":sources,"request":request,"vector":[0,1],"insert":[2,3],"directional":false})).await;
     c.cancel().await.unwrap();
     s.await.unwrap();
 }
@@ -393,24 +393,27 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     }
     let declaration = prep::PreparationRequest {
         mode: prep::PreparationMode::DirectionalCacc,
-        vector: prep::PreparedVectorDeclaration {
-            declaration_id: "literal directional fixture".into(),
-            assumption: "Explicit synthetic activation hypothesis, not a stock observation".into(),
-            strands: vec![strand("vt", 14, true), strand("vb", 18, true)],
-            pairing: vec![p::PairSpan {
-                strand_a: 0,
-                start_a: 0,
-                strand_b: 1,
-                start_b: 4,
-                length: 14,
-            }],
-        },
-        insert: prep::ExactPcrDeclaration {
-            material_id: "actual blunt PCR".into(),
-            template_role: "template".into(),
-            forward: Primer::new("Forward", "CACCA", "").unwrap(),
-            reverse: Primer::new("Reverse", "CGTCA", "").unwrap(),
-            tail: None,
+        source: prep::PreparationSource::Original {
+            vector: prep::PreparedVectorDeclaration {
+                declaration_id: "literal directional fixture".into(),
+                assumption: "Explicit synthetic activation hypothesis, not a stock observation"
+                    .into(),
+                strands: vec![strand("vt", 14, true), strand("vb", 18, true)],
+                pairing: vec![p::PairSpan {
+                    strand_a: 0,
+                    start_a: 0,
+                    strand_b: 1,
+                    start_b: 4,
+                    length: 14,
+                }],
+            },
+            insert: prep::ExactPcrDeclaration {
+                material_id: "actual blunt PCR".into(),
+                template_role: "template".into(),
+                forward: Primer::new("Forward", "CACCA", "").unwrap(),
+                reverse: Primer::new("Reverse", "CGTCA", "").unwrap(),
+                tail: None,
+            },
         },
         engine_limits: p::Limits::default(),
         projection_options: projection::Options::default(),
@@ -418,13 +421,13 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     let compiled = call(
         &c,
         "compile_topo_preparation",
-        json!({"sources":sources,"declaration":declaration}),
+        json!({"origin_workspace":null,"sources":sources,"template":null,"declaration":declaration}),
     )
     .await;
     assert_eq!(compiled["verified"], false);
     assert_eq!(compiled["compiled"]["directional"], true);
     assert_eq!(compiled["compiled"]["request"]["transfers"], json!([]));
-    let inspection=call(&c,"inspect_topo_orientations",json!({"sources":sources,"request":compiled["compiled"]["request"],"vector":compiled["compiled"]["vector_strands"],"insert":compiled["compiled"]["insert_strands"],"directional":true})).await;
+    let inspection=call(&c,"inspect_topo_orientations",json!({"origin_workspace":null,"sources":sources,"request":compiled["compiled"]["request"],"vector":compiled["compiled"]["vector_strands"],"insert":compiled["compiled"]["insert_strands"],"directional":true})).await;
     let full = evidence(&c, &inspection["artifact_id"]).await;
     assert!(
         full.to_string().contains("GGTGAAGGGATGCCCCTTCGTCATGGTG"),
@@ -441,7 +444,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     let inspected = call(
         &c,
         "inspect_topo_actions",
-        json!({"sources":sources,"request":{"preparation":preparation,"processing":processing}}),
+        json!({"origin_workspace":null,"sources":sources,"request":{"preparation":preparation,"processing":processing}}),
     )
     .await;
     assert_eq!(inspected["verified"], false);
@@ -460,7 +463,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     let projected = call(
         &c,
         "project_topo_actions",
-        json!({"sources":sources,"request":request}),
+        json!({"origin_workspace":null,"sources":sources,"request":request}),
     )
     .await;
     assert_eq!(projected["contour_proven"], true);
@@ -553,7 +556,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     reject(
         &c,
         "compile_topo_preparation",
-        json!({"sources":stale,"declaration":declaration}),
+        json!({"origin_workspace":null,"sources":stale,"template":null,"declaration":declaration}),
     )
     .await;
     c.cancel().await.unwrap();

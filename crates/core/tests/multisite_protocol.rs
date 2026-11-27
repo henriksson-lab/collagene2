@@ -127,7 +127,7 @@ fn simulate_job152_returns_source_bound_batch144_and_rejects_stale_sources() {
             request,
         },
     };
-    let response = dispatch(&request, 152);
+    let response = dispatch(&request, 150);
     assert_eq!(response.id, 152);
     assert_eq!(response.revision, revision);
     let protocol::AnalysisResult::MultiSiteRecombination(batch) = response.result else {
@@ -157,7 +157,7 @@ fn simulate_job152_returns_source_bound_batch144_and_rejects_stale_sources() {
     };
     let payload = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &result);
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&payload[42..]).unwrap();
-    assert_eq!(tag, 144);
+    assert_eq!(tag, 142);
     assert!(protocol::decode_response(&payload).is_ok());
     let mut stale = request;
     stale.revision = "0".repeat(64);
@@ -183,7 +183,7 @@ fn project_job153_result145_preserves_explicit_component_and_reference_only_boun
             selection: selection.clone(),
         },
     };
-    let response = dispatch(&req, 153);
+    let response = dispatch(&req, 151);
     let protocol::AnalysisResult::MultiSiteRecombinationProduct(product) = response.result else {
         panic!("expected product145")
     };
@@ -200,7 +200,7 @@ fn project_job153_result145_preserves_explicit_component_and_reference_only_boun
     };
     let payload = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &result);
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&payload[42..]).unwrap();
-    assert_eq!(tag, 145);
+    assert_eq!(tag, 143);
     assert!(protocol::decode_response(&payload).is_ok());
     let mut stale = result;
     stale.revision = "0".repeat(64);
@@ -225,7 +225,7 @@ fn check_job154_result146_binds_independent_target_and_never_accepts_wrong_targe
             target: target.clone(),
         },
     };
-    let response = dispatch(&req, 154);
+    let response = dispatch(&req, 152);
     let protocol::AnalysisResult::MultiSiteRecombinationChecked(checked) = response.result else {
         panic!("expected checked146")
     };
@@ -239,7 +239,7 @@ fn check_job154_result146_binds_independent_target_and_never_accepts_wrong_targe
     };
     let payload = wire(b"CGR\0", protocol::WORKER_SCHEMA_VERSION, &response);
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&payload[42..]).unwrap();
-    assert_eq!(tag, 146);
+    assert_eq!(tag, 144);
     assert!(protocol::decode_response(&payload).is_ok());
     let wrong = Molecule::dna(
         "Independent wrong target",
@@ -259,7 +259,7 @@ fn check_job154_result146_binds_independent_target_and_never_accepts_wrong_targe
             target: wrong,
         },
     };
-    let response = dispatch(&wrong_req, 154);
+    let response = dispatch(&wrong_req, 152);
     let protocol::AnalysisResult::MultiSiteRecombinationChecked(checked) = response.result else {
         panic!("expected checked wrong-target evidence")
     };

@@ -97,8 +97,8 @@ fn review178_reply168_preserves_exact_independent_intent_without_adopting_status
             run_id: run_id.clone(),
         },
         revision.clone(),
-        178,
-        168,
+        176,
+        166,
     );
     let AnalysisResult::SavedRunReviewPrepared(review) = response.result else {
         unreachable!()
@@ -144,8 +144,8 @@ fn map179_reply169_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
             request: request.clone(),
         },
         "a".repeat(64),
-        179,
-        169,
+        177,
+        167,
     );
     let AnalysisResult::MapSvgExported(map) = response.result else {
         unreachable!()

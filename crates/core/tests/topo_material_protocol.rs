@@ -89,25 +89,27 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     ];
     let declaration = prep::PreparationRequest {
         mode: prep::PreparationMode::DirectionalCacc,
-        vector: prep::PreparedVectorDeclaration {
-            declaration_id: "Explicit activation".into(),
-            assumption: "Synthetic vector activation hypothesis; no supplier stock authority"
-                .into(),
-            strands: vec![strand("vt", 14), strand("vb", 18)],
-            pairing: vec![t::physical::PairSpan {
-                strand_a: 0,
-                start_a: 0,
-                strand_b: 1,
-                start_b: 4,
-                length: 14,
-            }],
-        },
-        insert: prep::ExactPcrDeclaration {
-            material_id: "New TOPO insert PCR".into(),
-            template_role: "template".into(),
-            forward: Primer::new("F", "CACCA", "").unwrap(),
-            reverse: Primer::new("R", "CGTCA", "").unwrap(),
-            tail: None,
+        source: prep::PreparationSource::Original {
+            vector: prep::PreparedVectorDeclaration {
+                declaration_id: "Explicit activation".into(),
+                assumption: "Synthetic vector activation hypothesis; no supplier stock authority"
+                    .into(),
+                strands: vec![strand("vt", 14), strand("vb", 18)],
+                pairing: vec![t::physical::PairSpan {
+                    strand_a: 0,
+                    start_a: 0,
+                    strand_b: 1,
+                    start_b: 4,
+                    length: 14,
+                }],
+            },
+            insert: prep::ExactPcrDeclaration {
+                material_id: "New TOPO insert PCR".into(),
+                template_role: "template".into(),
+                forward: Primer::new("F", "CACCA", "").unwrap(),
+                reverse: Primer::new("R", "CGTCA", "").unwrap(),
+                tail: None,
+            },
         },
         engine_limits: Default::default(),
         projection_options: Default::default(),
@@ -119,21 +121,31 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
         insert: compiled.insert_strands,
         directional: compiled.directional,
     };
-    let context = saved::revision(&inputs, "template", &origin, &task).unwrap();
+    let context = saved::revision(
+        &inputs,
+        Some(&saved::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     let q = Request {
         id: 169,
         revision: context.clone(),
         job: AnalysisJob::InspectTopoRun {
             inputs: inputs.clone(),
-            template_role: "template".into(),
-            origin: origin.clone(),
+            template: Some(saved::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
             task: task.clone(),
         },
     };
     let tag = postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&q.job).unwrap())
         .unwrap()
         .0;
-    assert_eq!(tag, 169);
+    assert_eq!(tag, 167);
     let encoded = protocol::encode_request(&q).unwrap();
     assert_eq!(
         &encoded[4..6],
@@ -151,13 +163,21 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        159
+        157
     );
     let AnalysisResult::TopoRunInspection(report) = response.result else {
         panic!("fresh TOPO inspection")
     };
     report
-        .validate_for(&inputs, "template", &origin, &task, &context)
+        .validate_for(
+            &inputs,
+            Some(&saved::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
+            &task,
+            &context,
+        )
         .unwrap();
     let saved::Reply::Orientations(inspection) = report.reply else {
         panic!("orientations")
@@ -168,9 +188,9 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     wrong.revision = "0".repeat(64);
     assert!(protocol::process_request(&protocol::encode_request(&wrong).unwrap()).is_err());
     let mut wrong = q;
-    let AnalysisJob::InspectTopoRun { template_role, .. } = &mut wrong.job else {
+    let AnalysisJob::InspectTopoRun { template, .. } = &mut wrong.job else {
         unreachable!()
     };
-    *template_role = "vt".into();
+    template.as_mut().unwrap().role = "vt".into();
     assert!(protocol::encode_request(&wrong).is_err());
 }

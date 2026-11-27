@@ -163,9 +163,9 @@ fn one_private_source_frame_runs_each_row_and_captures_historical_evidence_only(
     let request = begin(&workspace, &matrix);
     let context = request.revision.clone();
     let mut session = AnalysisSession::default();
-    assert_eq!(selector(&protocol::encode_request(&request).unwrap()), 128);
+    assert_eq!(selector(&protocol::encode_request(&request).unwrap()), 126);
     let (wire, response) = ask(&mut session, &request);
-    assert_eq!(selector(&wire), 120);
+    assert_eq!(selector(&wire), 118);
     let AnalysisResult::CombinatorialBatchStarted(start) = response.result else {
         panic!("missing batch start")
     };
@@ -187,7 +187,7 @@ fn one_private_source_frame_runs_each_row_and_captures_historical_evidence_only(
     let mut evidence = vec![];
     for index in 0..3 {
         let (wire, response) = ask(&mut session, &advance(&context, index));
-        assert_eq!(selector(&wire), 121);
+        assert_eq!(selector(&wire), 119);
         let AnalysisResult::CombinatorialBatchAdvanced(progress) = response.result else {
             panic!("missing row progress")
         };
@@ -217,7 +217,7 @@ fn one_private_source_frame_runs_each_row_and_captures_historical_evidence_only(
     assert_eq!(retry.next_index, 3);
     assert_eq!(retry.row.unwrap().construct_id, "construct-good");
     let (wire, response) = ask(&mut session, &capture(&workspace, &context));
-    assert_eq!(selector(&wire), 122);
+    assert_eq!(selector(&wire), 120);
     let AnalysisResult::CombinatorialBatchCaptured(commit) = response.result else {
         panic!("missing private capture")
     };
@@ -302,20 +302,20 @@ fn schema56_full_and_borrowed_prefixes_cannot_hide_variable_length_batch_selecto
     ask(&mut session, &advance(&context, 2));
     let (capture_reply, _) = ask(&mut session, &capture(&workspace, &context));
     let pairs = [
-        (protocol::encode_request(&request).unwrap(), false, 128u32),
+        (protocol::encode_request(&request).unwrap(), false, 126u32),
         (
             protocol::encode_request(&advance(&context, 0)).unwrap(),
             false,
-            129,
+            127,
         ),
         (
             protocol::encode_request(&capture(&workspace, &context)).unwrap(),
             false,
-            130,
+            128,
         ),
-        (begin_reply, true, 120),
-        (advance_reply, true, 121),
-        (capture_reply, true, 122),
+        (begin_reply, true, 118),
+        (advance_reply, true, 119),
+        (capture_reply, true, 120),
     ];
     for (mut wire, response, tag) in pairs {
         assert_eq!(selector(&wire), tag);

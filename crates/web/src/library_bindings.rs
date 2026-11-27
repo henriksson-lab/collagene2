@@ -52,14 +52,14 @@ impl Bindings {
     }
 
     /// Only record a validated server receipt. A different document requires an
-    /// explicit unlink/save-copy action, never an accidental replacement of a CAS base.
+    /// separate local document, never an accidental replacement of a CAS base.
     pub fn record(&mut self, binding: Binding) -> Result<(), String> {
         validate_binding(&binding)?;
         if let Some(previous) = self.records.iter_mut().find(|previous| {
             previous.remote == binding.remote && previous.local_document == binding.local_document
         }) {
             if previous.remote_document != binding.remote_document {
-                return Err("This local plasmid is linked to another remote document; save a separate copy or unlink it first.".into());
+                return Err("This local plasmid is linked to another remote document; keep the existing link or use a separate local document.".into());
             }
             *previous = binding;
         } else {
@@ -69,12 +69,6 @@ impl Bindings {
             self.records.push(binding);
         }
         Ok(())
-    }
-
-    pub fn unlink(&mut self, remote: &Remote, local_document: &str) {
-        self.records.retain(|binding| {
-            &binding.remote != remote || binding.local_document != local_document
-        });
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, String> {

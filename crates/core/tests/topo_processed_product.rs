@@ -462,7 +462,7 @@ fn binary_worker_148_140_rejects_pre64_and_stale_source_context() {
             .unwrap()
             .0
             .2,
-        148
+        146
     );
     let mut old = encoded.clone();
     old[4..6].copy_from_slice(&63u16.to_le_bytes());
@@ -473,7 +473,7 @@ fn binary_worker_148_140_rejects_pre64_and_stale_source_context() {
             .unwrap()
             .0
             .2,
-        140
+        138
     );
     let mut old = response.clone();
     old[4..6].copy_from_slice(&63u16.to_le_bytes());

@@ -76,9 +76,9 @@ fn typed_reverse_copy_and_paste_keep_source_and_destination_annotations() {
     let destination_before = destination.clone();
     let request = copy_request(copy.clone());
     let request_wire = protocol::encode_request(&request).unwrap();
-    assert_eq!(tag(&request_wire), 120);
+    assert_eq!(tag(&request_wire), 118);
     let (reply_wire, reply) = round_trip(&request);
-    assert_eq!(tag(&reply_wire), 112);
+    assert_eq!(tag(&reply_wire), 110);
     let AnalysisResult::ReferenceFragment(fragment) = reply.result else {
         panic!("copy did not return a typed reference fragment");
     };
@@ -104,9 +104,9 @@ fn typed_reverse_copy_and_paste_keep_source_and_destination_annotations() {
     );
 
     let request = paste_request(&copy, destination, fragment.context_revision);
-    assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 121);
+    assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 119);
     let (reply_wire, reply) = round_trip(&request);
-    assert_eq!(tag(&reply_wire), 113);
+    assert_eq!(tag(&reply_wire), 111);
     let AnalysisResult::ReferencePaste(report) = reply.result else {
         panic!("paste did not return a typed reference report");
     };

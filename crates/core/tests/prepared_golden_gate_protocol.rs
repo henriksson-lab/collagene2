@@ -86,13 +86,13 @@ fn prepared_pool_and_unverified_selection_have_append_only_bound_47_messages() {
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 113);
+    assert_eq!(tag, 111);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&46u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 105);
+    assert_eq!(tag, 103);
     let AnalysisResult::PreparedGoldenGatePool(report) =
         protocol::decode_response(&bytes).unwrap().result
     else {
@@ -124,13 +124,13 @@ fn prepared_pool_and_unverified_selection_have_append_only_bound_47_messages() {
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 114);
+    assert_eq!(tag, 112);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&46u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 106);
+    assert_eq!(tag, 104);
     let AnalysisResult::PreparedGoldenGateCandidate(selected) =
         protocol::decode_response(&bytes).unwrap().result
     else {

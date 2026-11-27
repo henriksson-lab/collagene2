@@ -212,31 +212,33 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
         let template = json!({"id":pin.revision,"revision":pin.revision});
         let declaration = prep::PreparationRequest {
             mode: prep::PreparationMode::DirectionalCacc,
-            vector: prep::PreparedVectorDeclaration {
-                declaration_id: "Explicit vector geometry".into(),
-                assumption: "Synthetic activation hypothesis, not an observed stock or kit claim"
-                    .into(),
-                strands: vec![declared_strand("vt", 14), declared_strand("vb", 18)],
-                pairing: vec![t::physical::PairSpan {
-                    strand_a: 0,
-                    start_a: 0,
-                    strand_b: 1,
-                    start_b: 4,
-                    length: 14,
-                }],
-            },
-            insert: prep::ExactPcrDeclaration {
-                material_id: "New PCR from saved template".into(),
-                template_role: "template".into(),
-                forward: Primer::new("F", "CACCA", "").unwrap(),
-                reverse: Primer::new("R", "CGTCA", "").unwrap(),
-                tail: None,
+            source: prep::PreparationSource::Original {
+                vector: prep::PreparedVectorDeclaration {
+                    declaration_id: "Explicit vector geometry".into(),
+                    assumption:
+                        "Synthetic activation hypothesis, not an observed stock or kit claim".into(),
+                    strands: vec![declared_strand("vt", 14), declared_strand("vb", 18)],
+                    pairing: vec![t::physical::PairSpan {
+                        strand_a: 0,
+                        start_a: 0,
+                        strand_b: 1,
+                        start_b: 4,
+                        length: 14,
+                    }],
+                },
+                insert: prep::ExactPcrDeclaration {
+                    material_id: "New PCR from saved template".into(),
+                    template_role: "template".into(),
+                    forward: Primer::new("F", "CACCA", "").unwrap(),
+                    reverse: Primer::new("R", "CGTCA", "").unwrap(),
+                    tail: None,
+                },
             },
             engine_limits: Default::default(),
             projection_options: Default::default(),
         };
         let compiled = prep::compile(&declaration).unwrap();
-        let mut args = json!({"inputs":[{"id":"vt","document":vt},{"id":"vb","document":vb},{"id":"template","document":template}],"template_role":"template","origin":selection,"origin_workspace":workspace,
+        let mut args = json!({"inputs":[{"id":"vt","document":vt},{"id":"vb","document":vb},{"id":"template","document":template}],"template":{"role":"template","selection":selection},"origin_workspace":workspace,
         "task":{"Orientations":{"request":compiled.request,"vector":compiled.vector_strands,"insert":compiled.insert_strands,"directional":compiled.directional}}});
         let before = call(&client, "list_documents", json!({})).await["total"].clone();
         let schema = client
@@ -253,12 +255,10 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
                 .contains("record_bytes")
         );
         let reply = call(&client, "inspect_saved_topo", args.clone()).await;
-        assert_eq!(reply["candidate_saved"], false);
-        assert_eq!(reply["document_saved"], false);
         assert_eq!(reply["verified"], false);
-        assert_eq!(reply["origin_event"], json!(pin));
+        assert_eq!(reply["template"], args["template"]);
         let full = artifact(&client, &reply["artifact_id"]).await;
-        assert_eq!(full["origin"], json!(selection));
+        assert_eq!(full["template"]["selection"], json!(selection));
         let inspected: saved::Inspection =
             serde_json::from_value(full["inspection"].clone()).unwrap();
         inspected
@@ -310,13 +310,13 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
             .selected
             .unwrap();
         let mut bad = args.clone();
-        bad["origin"] = serde_json::to_value(closed).unwrap();
+        bad["template"]["selection"] = serde_json::to_value(closed).unwrap();
         reject(&client, bad).await;
         let mut bad = args.clone();
         bad["inputs"][2]["document"]["revision"] = json!("0".repeat(64));
         reject(&client, bad).await;
         let mut bad = args.clone();
-        bad["template_role"] = json!("vt");
+        bad["template"]["role"] = json!("vt");
         reject(&client, bad).await;
         let mut bad = args.clone();
         bad.as_object_mut().unwrap().remove("origin_workspace");
@@ -344,12 +344,6 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
         .to_string();
         args["task"] = json!({"Check":{"request":compiled.request,"selection":{"batch_revision":batch,"component":0,"reference_seed":{"strand":0,"index":0}},"target":target,"policy":t::AcceptancePolicy::default()}});
         let checked = call(&client, "inspect_saved_topo", args.clone()).await;
-        assert_eq!(checked["summary"]["kind"], "Checked");
-        assert_eq!(checked["summary"]["target_revision"], target["revision"]);
-        assert_ne!(
-            checked["summary"]["outcome"],
-            json!("AcceptedUnderDeclaredGraph")
-        );
         let checked_full = artifact(&client, &checked["artifact_id"]).await;
         assert_eq!(checked_full["task"]["Check"]["target"], target);
         let saved::Reply::Checked(assessment) =
@@ -363,6 +357,10 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
             assessment.target_revision,
             target["revision"].as_str().unwrap()
         );
+        assert!(!matches!(
+            assessment.outcome,
+            t::TargetOutcome::AcceptedUnderDeclaredGraph
+        ));
         args["task"]["Check"]["target"]["revision"] = json!("0".repeat(64));
         reject(&client, args.clone()).await;
         args["task"]["Check"]["target"] = json!({"name":"Injected target","sequence":"TTTT"});

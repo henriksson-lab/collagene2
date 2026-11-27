@@ -72,11 +72,11 @@ fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_st
     let r = message(source.clone(), request, context.clone());
     let bytes = protocol::encode_request(&r).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 164);
+    assert_eq!(tag, 162);
     assert!(protocol::process_request(&wire(b"CGQ\0", 82, &r)).is_err());
     let reply = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 156);
+    assert_eq!(tag, 154);
     let response = protocol::decode_response(&reply).unwrap();
     assert_eq!(response.revision, context);
     assert!(protocol::decode_response(&wire(b"CGR\0", 82, &response)).is_err());

@@ -5,13 +5,17 @@ use collagene_core::{topo::physical, topo_actions as actions};
 #[serde(deny_unknown_fields)]
 pub struct InspectQuery {
     pub sources: Vec<TopoSourceRef>,
-    pub request: actions::ActionsRequest,
+    pub request: topo_graph_tools::Actions,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct ProductQuery {
     pub sources: Vec<TopoSourceRef>,
-    pub request: actions::Request,
+    pub request: topo_graph_tools::ActionProduct,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 impl CollageneServer {
     pub(super) async fn inspect_actions(
@@ -20,11 +24,15 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            physical::processing::request_preflight(&args.request.processing,&args.request.preparation.engine_limits).map_err(bad)?;
-            let (inputs,_)=server.topo_sources(&args.sources,&args.request.preparation,None)?;
-            let report=actions::inspect_actions(&inputs,&args.request).map_err(bad)?;
-            report.validate_binding(&actions::revision_actions(&inputs,&args.request).map_err(bad)?).map_err(bad)?;
-            let artifact=server.text_artifact(bounded_json_limit(&json!({"sources":args.sources,"report":report}),32*1024*1024)?,"application/json","topo-action-inspection.json")?;
+            bounded_json_limit(&args.request,2*1024*1024)?;
+            let (preparation,_)=server.hydrate_topo(&args.request.preparation,args.origin_workspace.as_ref(),&[])?;
+            let native=actions::ActionsRequest{preparation,processing:args.request.processing.clone()};
+
+            physical::processing::request_preflight(&args.request.processing,&native.preparation.engine_limits).map_err(bad)?;
+            let (inputs,_)=server.topo_sources(&args.sources,&native.preparation,None)?;
+            let report=actions::inspect_actions(&inputs,&native).map_err(bad)?;
+            report.validate_binding(&actions::revision_actions(&inputs,&native).map_err(bad)?).map_err(bad)?;
+            let artifact=server.text_artifact(bounded_json_limit(&json!({"sources":args.sources,"origin_workspace":args.origin_workspace,"report":report}),32*1024*1024)?,"application/json","topo-action-inspection.json")?;
             output(json!({"state":"declared-action-graph","verified":false,"context_revision":report.context_revision,
                 "processing_context_revision":report.processing.context_revision,"source_calls":report.processing.source_bases,
                 "steps":report.processing.steps,"component_count":report.processing.product.components.len(),
@@ -39,12 +47,16 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            actions::request_preflight(&args.request).map_err(bad)?;
-            let (inputs,_)=server.topo_sources(&args.sources,&args.request.preparation,None)?;
-            let report=actions::inspect(&inputs,&args.request).map_err(bad)?;
-            report.validate_binding(&actions::revision(&inputs,&args.request).map_err(bad)?).map_err(bad)?;
+            bounded_json_limit(&args.request,2*1024*1024)?;
+            let (preparation,_)=server.hydrate_topo(&args.request.preparation,args.origin_workspace.as_ref(),&[])?;
+            let native=actions::Request{preparation,processing:args.request.processing.clone(),selection:args.request.selection.clone(),options:args.request.options.clone()};
+
+            actions::request_preflight(&native).map_err(bad)?;
+            let (inputs,_)=server.topo_sources(&args.sources,&native.preparation,None)?;
+            let report=actions::inspect(&inputs,&native).map_err(bad)?;
+            report.validate_binding(&actions::revision(&inputs,&native).map_err(bad)?).map_err(bad)?;
             let summary=report.duplex.as_ref().map(|d|d.summary()).transpose().map_err(bad)?;
-            let (artifact,document)=server.candidate_document_artifact_bounded(&json!({"sources":args.sources,"report":report}),report.product.clone(),"topo-action-product.json",32*1024*1024)?;
+            let (artifact,document)=server.candidate_document_artifact_bounded(&json!({"sources":args.sources,"origin_workspace":args.origin_workspace,"report":report}),report.product.clone(),"topo-action-product.json",32*1024*1024)?;
             output(json!({"state":"source-reconstructed-action-contour","verified":false,"context_revision":report.context_revision,
                 "contour_proven":matches!(report.projection.outcome,physical::projection::Outcome::Proven(_)),
                 "withheld":match &report.projection.outcome{physical::projection::Outcome::Withheld(r)=>Some(r),_=>None},

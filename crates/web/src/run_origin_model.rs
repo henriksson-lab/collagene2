@@ -9,9 +9,6 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 pub struct PinnedOrigin(Arc<MaterialOrigin>);
 impl PinnedOrigin {
-    pub(crate) fn new(origin: Capsule) -> Result<Self, String> {
-        Self::from_material(MaterialOrigin::Run(origin))
-    }
     pub(crate) fn from_material(origin: MaterialOrigin) -> Result<Self, String> {
         origin.validate_documentary().map_err(|e| e.to_string())?;
         Ok(Self(Arc::new(origin)))

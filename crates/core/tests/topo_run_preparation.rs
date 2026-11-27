@@ -286,7 +286,15 @@ fn saved(
                 processing: req.processing.clone(),
             },
         };
-        let inspected = adapter::inspect(&inputs, "template", &capsule, &task).unwrap();
+        let inspected = adapter::inspect(
+            &inputs,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: capsule.clone(),
+            }),
+            &task,
+        )
+        .unwrap();
         let adapter::Reply::ActionsInspected(report) = inspected.reply else {
             panic!("inspection")
         };
@@ -301,7 +309,18 @@ fn saved_template_new_pcr_processed_product_finalization_archive_and_second_reus
         topo::source_preflight(&inputs, &request.preparation).is_err(),
         "saved sequence is not standalone material"
     );
-    let plan = adapter::compile(&inputs, &target, "template", &origin, &request).unwrap();
+    let plan = adapter::compile(
+        &inputs,
+        &target,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &adapter::Task::ProcessActions {
+            request: request.clone(),
+        },
+    )
+    .unwrap();
     assert_eq!(plan.steps.len(), 2);
     let Operation::TopoActions { sources, .. } = &plan.steps[1] else {
         panic!("actions")
@@ -373,8 +392,34 @@ fn exact_capsule_and_role_pins_vector_prepared_rules_and_staggered_material_reje
         panic!("run origin")
     };
     run.selection.event.event_id = "ev-unrelated".into();
-    assert!(adapter::compile(&inputs, &target, "template", &wrong, &request).is_err());
-    assert!(adapter::compile(&inputs, &target, "vt", &origin, &request).is_err());
+    assert!(
+        adapter::compile(
+            &inputs,
+            &target,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: wrong.clone()
+            }),
+            &adapter::Task::ProcessActions {
+                request: request.clone()
+            }
+        )
+        .is_err()
+    );
+    assert!(
+        adapter::compile(
+            &inputs,
+            &target,
+            Some(&adapter::BoundTemplate {
+                role: "vt".into(),
+                origin: origin.clone()
+            }),
+            &adapter::Task::ProcessActions {
+                request: request.clone()
+            }
+        )
+        .is_err()
+    );
     let mut mixed = request.clone();
     if let topo::MaterialRecipe::Prepared { strands, .. } =
         &mut mixed.preparation.recipe.materials[0]
@@ -382,10 +427,36 @@ fn exact_capsule_and_role_pins_vector_prepared_rules_and_staggered_material_reje
         strands[0].segments[0].source_role = "template".into();
         strands[0].segments[0].length = 10;
     }
-    assert!(adapter::compile(&inputs, &target, "template", &origin, &mixed).is_err());
+    assert!(
+        adapter::compile(
+            &inputs,
+            &target,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone()
+            }),
+            &adapter::Task::ProcessActions {
+                request: mixed.clone()
+            }
+        )
+        .is_err()
+    );
     let mut changed = inputs.clone();
     changed[2].molecule.name.push_str(" changed");
-    assert!(adapter::compile(&changed, &target, "template", &origin, &request).is_err());
+    assert!(
+        adapter::compile(
+            &changed,
+            &target,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone()
+            }),
+            &adapter::Task::ProcessActions {
+                request: request.clone()
+            }
+        )
+        .is_err()
+    );
     let (_, staggered, _, cap, req) = saved(true);
     let task = adapter::Task::InspectActions {
         request: actions::ActionsRequest {
@@ -393,14 +464,35 @@ fn exact_capsule_and_role_pins_vector_prepared_rules_and_staggered_material_reje
             processing: req.processing,
         },
     };
-    assert!(adapter::inspect(&staggered, "template", &cap, &task).is_err());
+    assert!(
+        adapter::inspect(
+            &staggered,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: cap.clone()
+            }),
+            &task
+        )
+        .is_err()
+    );
     let wrong_target = Molecule::dna(
         "Independent wrong target",
         "AAGGGGCATCCCTTCACCATGACC",
         Topology::Circular,
     )
     .unwrap();
-    let plan = adapter::compile(&inputs, &wrong_target, "template", &origin, &request).unwrap();
+    let plan = adapter::compile(
+        &inputs,
+        &wrong_target,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &adapter::Task::ProcessActions {
+            request: request.clone(),
+        },
+    )
+    .unwrap();
     assert_eq!(v::verify(&plan, &wrong_target).status, Status::Invalid);
 }
 fn wire<T: serde::Serialize>(magic: &[u8; 4], version: u16, payload: &T) -> Vec<u8> {
@@ -421,20 +513,30 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
             processing: request.processing.clone(),
         },
     };
-    let revision = adapter::revision(&inputs, "template", &origin, &task).unwrap();
+    let revision = adapter::revision(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     let request = protocol::Request {
         id: 17,
         revision: revision.clone(),
         job: protocol::AnalysisJob::InspectTopoRun {
             inputs: inputs.clone(),
-            template_role: "template".into(),
-            origin: origin.clone(),
+            template: Some(adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
             task: task.clone(),
         },
     };
     let bytes = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 169);
+    assert_eq!(tag, 167);
     assert!(protocol::process_request(&wire(b"CGQ\0", 88, &request)).is_err());
     let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     assert!(protocol::decode_response(&wire(b"CGR\0", 88, &response)).is_err());
@@ -442,33 +544,65 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        159
+        157
     );
     let protocol::AnalysisResult::TopoRunInspection(inspection) = response.result else {
         panic!("saved template inspection")
     };
     inspection
-        .validate_for(&inputs, "template", &origin, &task, &revision)
+        .validate_for(
+            &inputs,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
+            &task,
+            &revision,
+        )
         .unwrap();
     let adapter::Reply::ActionsInspected(inner) = &inspection.reply else {
         panic!("actions")
     };
     inner
         .validate_binding(
-            &adapter::documentary_revision(&inputs, "template", &origin, &task).unwrap(),
+            &adapter::documentary_revision(
+                &inputs,
+                Some(&adapter::BoundTemplate {
+                    role: "template".into(),
+                    origin: origin.clone(),
+                }),
+                &task,
+            )
+            .unwrap(),
         )
         .unwrap();
     assert_ne!(inner.context_revision, revision);
     assert!(
         inspection
-            .validate_for(&inputs, "vt", &origin, &task, &revision)
+            .validate_for(
+                &inputs,
+                Some(&adapter::BoundTemplate {
+                    role: "vt".into(),
+                    origin: origin.clone()
+                }),
+                &task,
+                &revision
+            )
             .is_err()
     );
     let mut changed = inputs.clone();
     changed[0].molecule.name.push('!');
     assert!(
         inspection
-            .validate_for(&changed, "template", &origin, &task, &revision)
+            .validate_for(
+                &changed,
+                Some(&adapter::BoundTemplate {
+                    role: "template".into(),
+                    origin: origin.clone()
+                }),
+                &task,
+                &revision
+            )
             .is_err()
     );
     let mut cap = origin.clone();
@@ -478,7 +612,15 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
     run.selection.run_id.push('x');
     assert!(
         inspection
-            .validate_for(&inputs, "template", &cap, &task, &revision)
+            .validate_for(
+                &inputs,
+                Some(&adapter::BoundTemplate {
+                    role: "template".into(),
+                    origin: cap.clone()
+                }),
+                &task,
+                &revision
+            )
             .is_err()
     );
     let mut different = task.clone();
@@ -487,7 +629,15 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
     }
     assert!(
         inspection
-            .validate_for(&inputs, "template", &origin, &different, &revision)
+            .validate_for(
+                &inputs,
+                Some(&adapter::BoundTemplate {
+                    role: "template".into(),
+                    origin: origin.clone()
+                }),
+                &different,
+                &revision
+            )
             .is_err()
     );
 }
@@ -502,7 +652,15 @@ fn saved_template_orientation_projection_and_independent_check_share_exact_nativ
         insert: [2, 3],
         directional: true,
     };
-    let out = adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    let out = adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     let adapter::Reply::Orientations(orientations) = out.reply else {
         panic!("orientations")
     };
@@ -510,7 +668,15 @@ fn saved_template_orientation_projection_and_independent_check_share_exact_nativ
     let task = adapter::Task::ProcessActions {
         request: request.clone(),
     };
-    let out = adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    let out = adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     let adapter::Reply::ActionsProcessed(product) = out.reply else {
         panic!("processed")
     };
@@ -518,8 +684,10 @@ fn saved_template_orientation_projection_and_independent_check_share_exact_nativ
     let selection = topo::Selection {
         batch_revision: adapter::preparation_revision(
             &inputs,
-            "template",
-            &origin,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
             &request.preparation,
         )
         .unwrap(),
@@ -530,14 +698,30 @@ fn saved_template_orientation_projection_and_independent_check_share_exact_nativ
         request: request.preparation.clone(),
         selection: selection.clone(),
     };
-    adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     let task = adapter::Task::Check {
         request: request.preparation,
         selection,
         target,
         policy: topo::AcceptancePolicy::default(),
     };
-    adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
 }
 #[test]
 fn embedded_topo_oligos_keep_literal_domains_tails_and_exact_source_without_ordering_prepared_vectors()
@@ -650,7 +834,18 @@ fn saved_template_orders_only_new_pcr_and_unsupported_prepared_or_missing_roles_
  {
     use collagene_core::plan_oligos::{self, Options};
     let (_, inputs, target, origin, request) = saved(false);
-    let plan = adapter::compile(&inputs, &target, "template", &origin, &request).unwrap();
+    let plan = adapter::compile(
+        &inputs,
+        &target,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &adapter::Task::ProcessActions {
+            request: request.clone(),
+        },
+    )
+    .unwrap();
     let out = plan_oligos::build(&plan, &target, &Options::default()).unwrap();
     assert!(out.complete);
     assert_eq!(out.uses.len(), 2);
@@ -828,7 +1023,15 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
             processing: request.processing.clone(),
         },
     };
-    let inspected = adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    let inspected = adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     assert!(inspected.origin_incomplete);
     assert!(!inspected.origin_findings.is_empty());
     let replayed = origin.replay(&inputs[2].molecule).unwrap();
@@ -840,7 +1043,18 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
         panic!("actions")
     };
     request.selection.processing_context_revision = actual.processing.context_revision;
-    let newplan = adapter::compile(&inputs, &target, "template", &origin, &request).unwrap();
+    let newplan = adapter::compile(
+        &inputs,
+        &target,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &adapter::Task::ProcessActions {
+            request: request.clone(),
+        },
+    )
+    .unwrap();
     let fresh = v::verify(&newplan, &target);
     assert_eq!(fresh.status, Status::Incomplete, "{:?}", fresh.findings);
     assert_eq!(fresh.products.last().unwrap().sequence.as_str(), TARGET);
@@ -940,14 +1154,32 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
             processing: request.processing.clone(),
         },
     };
-    let inspection = adapter::inspect(&inputs, "template", &origin, &task).unwrap();
+    let inspection = adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap();
     inspection
         .validate_for(
             &inputs,
-            "template",
-            &origin,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
             &task,
-            &adapter::revision(&inputs, "template", &origin, &task).unwrap(),
+            &adapter::revision(
+                &inputs,
+                Some(&adapter::BoundTemplate {
+                    role: "template".into(),
+                    origin: origin.clone(),
+                }),
+                &task,
+            )
+            .unwrap(),
         )
         .unwrap();
     let adapter::Reply::ActionsInspected(actual) = inspection.reply else {
@@ -957,8 +1189,10 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     let selection = topo::Selection {
         batch_revision: adapter::preparation_revision(
             &inputs,
-            "template",
-            &origin,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone(),
+            }),
             &request.preparation,
         )
         .unwrap(),
@@ -971,12 +1205,31 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
         target: target.clone(),
         policy: topo::AcceptancePolicy::default(),
     };
-    let checked = adapter::inspect(&inputs, "template", &origin, &check).unwrap();
+    let checked = adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &check,
+    )
+    .unwrap();
     let adapter::Reply::Checked(assessment) = checked.reply else {
         panic!("target check")
     };
     assert_eq!(assessment.target_revision, target.revision());
-    let plan = adapter::compile(&inputs, &target, "template", &origin, &request).unwrap();
+    let plan = adapter::compile(
+        &inputs,
+        &target,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &adapter::Task::ProcessActions {
+            request: request.clone(),
+        },
+    )
+    .unwrap();
     assert!(
         matches!(&plan.steps[0], Operation::ReconstructMaterial { origin: bound, .. } if bound.product == product)
     );
@@ -1057,18 +1310,48 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
         panic!("derived")
     };
     capsule.product.event_id = alias_event.event_id;
-    assert!(adapter::inspect(&inputs, "template", &wrong, &task).is_err());
+    assert!(
+        adapter::inspect(
+            &inputs,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: wrong.clone()
+            }),
+            &task
+        )
+        .is_err()
+    );
     let mut wrong_source = inputs.clone();
     wrong_source[2].molecule.name.push_str(" changed");
-    assert!(adapter::inspect(&wrong_source, "template", &origin, &task).is_err());
+    assert!(
+        adapter::inspect(
+            &wrong_source,
+            Some(&adapter::BoundTemplate {
+                role: "template".into(),
+                origin: origin.clone()
+            }),
+            &task
+        )
+        .is_err()
+    );
     let wrong_target = Molecule::dna(
         "Different independent target",
         "AAGGGGCATCCCTTCACCATGACC",
         Topology::Circular,
     )
     .unwrap();
-    let wrong_plan =
-        adapter::compile(&inputs, &wrong_target, "template", &origin, &request).unwrap();
+    let wrong_plan = adapter::compile(
+        &inputs,
+        &wrong_target,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &adapter::Task::ProcessActions {
+            request: request.clone(),
+        },
+    )
+    .unwrap();
     assert_eq!(
         v::verify(&wrong_plan, &wrong_target).status,
         Status::Invalid
@@ -1181,7 +1464,15 @@ fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr()
             processing: request.processing,
         },
     };
-    let error = adapter::inspect(&inputs, "template", &origin, &task).unwrap_err();
+    let error = adapter::inspect(
+        &inputs,
+        Some(&adapter::BoundTemplate {
+            role: "template".into(),
+            origin: origin.clone(),
+        }),
+        &task,
+    )
+    .unwrap_err();
     assert!(error.to_string().contains("nicked"), "{error}");
     let after = origin.replay(&inputs[2].molecule).unwrap();
     assert_eq!(after.tracked().duplex, before.tracked().duplex);

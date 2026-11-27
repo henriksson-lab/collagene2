@@ -87,7 +87,7 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
     };
     let encoded = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 168);
+    assert_eq!(tag, 166);
     assert!(protocol::process_request(&wire(b"CGQ\0", 87, &request)).is_err());
     let bytes = protocol::process_request(&encoded).unwrap();
     let response = protocol::decode_response(&bytes).unwrap();
@@ -102,7 +102,7 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
         "{:?}",
         preview.verification.findings
     );
-    assert!(preview.verification.engine_version.ends_with("/science-27"));
+    assert!(preview.verification.engine_version.ends_with("/science-28"));
     assert_eq!(
         preview
             .verification

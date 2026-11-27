@@ -1971,8 +1971,10 @@ mod run_origin_tests {
         draft.methods.rows.truncate(1);
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
         draft.methods.rows[0].run_origin = Some(
-            crate::run_origin_model::PinnedOrigin::new(
-                run_material::capsule(&commit.workspace, &selection).unwrap(),
+            crate::run_origin_model::PinnedOrigin::from_material(
+                collagene_core::run_material::MaterialOrigin::Run(
+                    run_material::capsule(&commit.workspace, &selection).unwrap(),
+                ),
             )
             .unwrap(),
         );

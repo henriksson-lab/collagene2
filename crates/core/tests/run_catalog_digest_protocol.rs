@@ -114,11 +114,11 @@ fn actual_saved_pcr_catalog_inspection_roundtrips160_152_and_rejects_old_headers
     };
     let bytes = protocol::encode_request(&r).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 160);
+    assert_eq!(tag, 158);
     assert!(protocol::process_request(&wire(b"CGQ\0", 74, &r)).is_err());
     let reply = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 152);
+    assert_eq!(tag, 150);
     let response = protocol::decode_response(&reply).unwrap();
     let AnalysisResult::RunCatalogRestrictionInspection(report) = &response.result else {
         panic!("saved catalog inspection")

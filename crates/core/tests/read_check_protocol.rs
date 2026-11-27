@@ -44,13 +44,13 @@ fn captured_check_and_fresh_historical_replay_have_exact_stable_tags_and_reject_
     let request = fixture();
     let bytes = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 105);
+    assert_eq!(tag, 103);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&41u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 97);
+    assert_eq!(tag, 95);
     let AnalysisResult::ReadCheckCaptured(commit) =
         protocol::decode_response(&bytes).unwrap().result
     else {
@@ -72,13 +72,13 @@ fn captured_check_and_fresh_historical_replay_have_exact_stable_tags_and_reject_
     };
     let bytes = protocol::encode_request(&replay).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 106);
+    assert_eq!(tag, 104);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&41u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 98);
+    assert_eq!(tag, 96);
     let AnalysisResult::ReadCheckReplayed(checked) =
         protocol::decode_response(&bytes).unwrap().result
     else {

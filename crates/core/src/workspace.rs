@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 24;
+pub const PLAN_SCHEMA_VERSION: u32 = 25;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -398,6 +398,7 @@ impl Workspace {
         }
         crate::run_lineage::validate_workspace_runs(self)?;
         crate::material_derivation::validate_workspace_records(self)?;
+        crate::topo_graph_history::validate_workspace_records(self)?;
         crate::reference_run_evidence::validate_workspace(self)?;
         crate::contig_history::validate_workspace_assemblies(self)?;
         Ok(())

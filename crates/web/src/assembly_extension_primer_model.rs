@@ -1326,8 +1326,12 @@ mod tests {
             commit.workspace.revisions[&selection.event.revision].clone(),
             selection.event.clone(),
         ));
-        draft.methods.rows[1].run_origin =
-            Some(crate::run_origin_model::PinnedOrigin::new(origin.clone()).unwrap());
+        draft.methods.rows[1].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::from_material(
+                collagene_core::run_material::MaterialOrigin::Run(origin.clone()),
+            )
+            .unwrap(),
+        );
         draft.sync_rows();
         let intended = intent(&draft);
         let options = options(&draft);

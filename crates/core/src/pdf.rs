@@ -110,6 +110,114 @@ impl TopoText {
         String::from_utf8(self.0).map_err(|error| Error::Format(error.to_string()))
     }
 }
+// Render the declared recipe, not opaque capsule bytes or a second simulation.
+// The protocol's fresh native evidence supplies actual transfer outcomes below.
+fn topo_recipe_text(out: &mut TopoText, request: &crate::topo::Request) -> Result<(), Error> {
+    crate::run_material::native_origins_preflight(request.recipe.materials.iter().filter_map(
+        |material| match material {
+            crate::topo::MaterialRecipe::SavedGraph { origin, .. } => {
+                Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+            }
+            _ => None,
+        },
+    ))?;
+    topo_recipe_lines(out, request, None, 0)
+}
+fn topo_recipe_lines(
+    out: &mut TopoText,
+    request: &crate::topo::Request,
+    historical_graph: Option<&str>,
+    depth: usize,
+) -> Result<(), Error> {
+    use io::Write as _;
+    if depth > crate::run_material_capsule::MAX_NESTING {
+        return Err(Error::TooLarge);
+    }
+    if let Some(owner) = historical_graph {
+        writeln!(out, "Retained preparation history for saved graph {owner}; these declarations are provenance, not new orders or repeated reactions.").map_err(|_| Error::TooLarge)?;
+    } else {
+        writeln!(out, "Current material preparation and saved graph inputs:")
+            .map_err(|_| Error::TooLarge)?;
+    }
+    for (index, material) in request.recipe.materials.iter().enumerate() {
+        match material {
+            crate::topo::MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                strands,
+                pairing,
+            } => {
+                writeln!(out, "Prepared material {index} / {declaration_id}: {assumption}. Activation and terminal chemistry are explicit hypotheses.").map_err(|_| Error::TooLarge)?;
+                for strand in strands {
+                    writeln!(
+                        out,
+                        "Strand {}: 5prime {:?}; 3prime {:?}.",
+                        strand.id, strand.five_prime, strand.three_prime
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                    for interval in &strand.segments {
+                        writeln!(out, "Read source role {} from zero-based offset {} for {} bases; reverse complement {}.", interval.source_role, interval.start, interval.length, interval.reverse).map_err(|_| Error::TooLarge)?;
+                    }
+                }
+                for span in pairing {
+                    writeln!(
+                        out,
+                        "Pair {} antiparallel bases: strand {} offset {}, strand {} offset {}.",
+                        span.length, span.strand_a, span.start_a, span.strand_b, span.start_b
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                }
+            }
+            crate::topo::MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                tail,
+            } => {
+                writeln!(out, "Exact PCR material {index} / {material_id} from role {template_role:?}: forward ordered oligo {} = {} (annealing {}; explicit 5prime tail {}); reverse ordered oligo {} = {} (annealing {}; explicit 5prime tail {}). Explicit subsequent 3prime tailing {tail:?}. Copied/synthesized strands do not inherit template modifications or establish empirical amplification.", forward.name, forward.ordered_sequence(), forward.annealing.as_str(), forward.tail, reverse.name, reverse.ordered_sequence(), reverse.annealing.as_str(), reverse.tail).map_err(|_| Error::TooLarge)?;
+            }
+            crate::topo::MaterialRecipe::SavedGraph {
+                material_id,
+                origin,
+            } => {
+                let record = crate::topo_graph_history::load_record(&origin.record_bytes)?;
+                writeln!(out, "Use saved graph material {index} / {material_id}; native record {}; state {}. Retain the entire graph and its transfer prefix, including consumed activations and other components. No new insert, activation or physical isolation is inferred.", origin.selection.record_hash, origin.selection.state_revision).map_err(|_| Error::TooLarge)?;
+                for binding in &record.request.bindings {
+                    writeln!(
+                        out,
+                        "Historical source role {}: document {}; event {}; revision {}.",
+                        binding.role,
+                        binding.event.document_id,
+                        binding.event.event_id,
+                        binding.event.revision
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                }
+                topo_recipe_lines(
+                    out,
+                    &record.request.request,
+                    Some(&origin.selection.record_hash),
+                    depth + 1,
+                )?;
+            }
+        }
+    }
+    for (index, transfer) in request.transfers.iter().enumerate() {
+        if let Some(owner) = historical_graph {
+            writeln!(out, "Retained requested transfer {} in graph {}: original donor strand {} to acceptor strand {}, {:?}. Its actual outcome is retained by fresh prefix replay; do not apply it again as a new instruction.", index + 1, owner, transfer.donor, transfer.acceptor, transfer.geometry).map_err(|_| Error::TooLarge)?;
+        } else {
+            writeln!(out, "New requested transfer {}: prepared donor strand {} to acceptor strand {}, {:?} geometry. Strand indexes refer to the current native preparation layout, not output-chain indexes.", index + 1, transfer.donor, transfer.acceptor, transfer.geometry).map_err(|_| Error::TooLarge)?;
+        }
+    }
+    writeln!(out, "Physical work limits:").map_err(|_| Error::TooLarge)?;
+    out.json(&request.engine_limits)?;
+    writeln!(out, "\nPaired-contour projection options:").map_err(|_| Error::TooLarge)?;
+    out.json(&request.projection_options)?;
+    writeln!(out).map_err(|_| Error::TooLarge)?;
+    Ok(())
+}
+
 fn topo_step_text(
     sources: &[verification::TopoSource],
     request: &crate::topo::Request,
@@ -141,37 +249,9 @@ fn topo_step_text(
         )
         .map_err(|_| Error::TooLarge)?;
     }
-    // Preserve the complete typed request: strand source intervals/orientations,
-    // preparation statements, pairing, transfers and both sets of work limits.
-    writeln!(out, "Full source-role recipe and bounded request:").map_err(|_| Error::TooLarge)?;
-    out.json(request)?;
-    writeln!(out, "\nExplicit component/source-seed selection:").map_err(|_| Error::TooLarge)?;
+    topo_recipe_text(&mut out, request)?;
+    writeln!(out, "Explicit component/source-seed selection:").map_err(|_| Error::TooLarge)?;
     out.json(selection)?;
-    for (index, material) in request.recipe.materials.iter().enumerate() {
-        match material {
-            crate::topo::MaterialRecipe::Prepared {
-                declaration_id,
-                assumption,
-                ..
-            } => {
-                writeln!(
-                    out,
-                    "\nPrepared material {} / {}: {}",
-                    index, declaration_id, assumption
-                )
-                .map_err(|_| Error::TooLarge)?;
-            }
-            crate::topo::MaterialRecipe::ExactPcr {
-                material_id,
-                template_role,
-                forward,
-                reverse,
-                tail,
-            } => {
-                writeln!(out,"\nExact PCR material {} / {} from role {:?}. Ordered oligos 5′→3′: forward {} = {} (annealing {}; explicit 5′ tail {}); reverse {} = {} (annealing {}; explicit 5′ tail {}). Explicit subsequent 3′ tailing {:?}. These are ideal copied/synthesized strands, not inherited modifications or empirical amplification.",index,material_id,template_role,forward.name,forward.ordered_sequence(),forward.annealing.as_str(),forward.tail,reverse.name,reverse.ordered_sequence(),reverse.annealing.as_str(),reverse.tail,tail).map_err(|_|Error::TooLarge)?;
-            }
-        }
-    }
     writeln!(out,"\nAll reciprocal components, open nicks, retained flaps/free strands and unreleased activations remain in the physical graph. A paired contour is not covalent closure or host repair. Kit conditions, quantities, enzyme recycling, mixture kinetics and laboratory efficacy are unspecified.").map_err(|_|Error::TooLarge)?;
     if let Some(policy) = policy {
         writeln!(out,"Final-only checked TOPO target policy: accept nicks {}; accept unknown terminal chemistry {}; accept unapplied transfers {}; accept other components {}; allow circular-origin rotation {}; allow reverse-complement comparison {}.",policy.allow_nicks,policy.allow_unknown_terminal_chemistry,policy.allow_unapplied_transfers,policy.allow_other_components,policy.allow_circular_rotation,policy.allow_reverse_complement).map_err(|_|Error::TooLarge)?;
@@ -182,9 +262,57 @@ fn topo_step_text(
     }
     out.finish()
 }
+fn topo_layout_text(
+    out: &mut TopoText,
+    preparation: &crate::topo::PreparationEvidence,
+) -> Result<(), Error> {
+    use io::Write as _;
+    for layout in &preparation.layout {
+        let owner = layout
+            .owner
+            .as_deref()
+            .map(|id| format!("saved graph {id}"))
+            .unwrap_or_else(|| "current input recipe".into());
+        writeln!(
+            out,
+            "Material {} in {}: original strand slots map to current prepared strands {:?} (zero-based).",
+            layout.material, owner, layout.source_strands
+        )
+        .map_err(|_| Error::TooLarge)?;
+        for (original, current) in &layout.source_roles {
+            writeln!(
+                out,
+                "Historical source role {original:?} maps to current role {current:?}."
+            )
+            .map_err(|_| Error::TooLarge)?;
+        }
+    }
+    for origin in &preparation.graph_origins {
+        writeln!(out, "Freshly replayed saved graph {}; state {}; prepared source strands [{}..{}); retained prefix through transfer {}; inherited incompleteness {}. All source components remain present.", origin.selection.record_hash, origin.selection.state_revision, origin.strand_start, origin.strand_end, origin.after_transfers, origin.incomplete).map_err(|_| Error::TooLarge)?;
+        for (scoped, original) in &origin.activation_unmap {
+            writeln!(
+                out,
+                "Activation identity {scoped}: original declared label {original:?}."
+            )
+            .map_err(|_| Error::TooLarge)?;
+        }
+        for (original, current) in origin.transfer_map.iter().enumerate() {
+            writeln!(
+                out,
+                "Retained original transfer {} maps to current execution transfer {}.",
+                original + 1,
+                current + 1
+            )
+            .map_err(|_| Error::TooLarge)?;
+        }
+    }
+    writeln!(out, "The first {} execution transfers are retained source history, not new instructions; their individual actual outcomes remain below.", preparation.retained_transfers.len()).map_err(|_| Error::TooLarge)?;
+    Ok(())
+}
 fn topo_evidence_text(product: &crate::topo::Product) -> Result<String, Error> {
     use io::Write as _;
     let mut out = TopoText(Vec::new());
+    topo_layout_text(&mut out, &product.preparation)?;
     let physical = &product.projection.physical;
     writeln!(out,"Fresh TOPO evidence: adapter {} / {}; physical engine {} / model {}. Work complete {}; all requested transfers applied {}; unsupported/unknown {}; fully specified DNA {}.",product.engine_version,product.batch_revision,physical.engine,physical.model,physical.work_complete,physical.all_requested_transfers_applied,physical.unsupported_or_unknown,physical.fully_specified_dna).map_err(|_|Error::TooLarge)?;
     for assumption in product
@@ -269,58 +397,14 @@ fn processed_topo_step_text(
         )
         .map_err(|_| Error::TooLarge)?;
     }
-    for (index, material) in request
-        .treatment
-        .preparation
-        .recipe
-        .materials
-        .iter()
-        .enumerate()
-    {
-        match material {
-            crate::topo::MaterialRecipe::Prepared {
-                declaration_id,
-                assumption,
-                strands,
-                pairing,
-            } => {
-                writeln!(out,"Prepared material {index} / {declaration_id}: {assumption}. Activation is an explicit hypothesis, not a measured property.").map_err(|_|Error::TooLarge)?;
-                for strand in strands {
-                    writeln!(
-                        out,
-                        "Prepared strand {}: 5prime {:?}; 3prime {:?}.",
-                        strand.id, strand.five_prime, strand.three_prime
-                    )
-                    .map_err(|_| Error::TooLarge)?;
-                    for interval in &strand.segments {
-                        writeln!(out,"Read source role {} from zero-based offset {} for {} bases; reverse complement: {}.",interval.source_role,interval.start,interval.length,interval.reverse).map_err(|_|Error::TooLarge)?;
-                    }
-                }
-                for span in pairing {
-                    writeln!(out,"Pair {} antiparallel bases: prepared strand {} offset {} and strand {} offset {}.",span.length,span.strand_a,span.start_a,span.strand_b,span.start_b).map_err(|_|Error::TooLarge)?;
-                }
-            }
-            crate::topo::MaterialRecipe::ExactPcr {
-                material_id,
-                template_role,
-                forward,
-                reverse,
-                tail,
-            } => {
-                writeln!(out,"Exact PCR material {index} / {material_id} from source role {template_role:?}: forward ordered oligo {} = {} (3prime annealing {}; explicit 5prime tail {}); reverse ordered oligo {} = {} (3prime annealing {}; explicit 5prime tail {}). Explicit subsequent 3prime tailing {tail:?}. Copied/synthesized calls do not inherit original modifications or establish empirical amplification.",forward.name,forward.ordered_sequence(),forward.annealing.as_str(),forward.tail,reverse.name,reverse.ordered_sequence(),reverse.annealing.as_str(),reverse.tail).map_err(|_|Error::TooLarge)?;
-            }
-        }
-    }
+    topo_recipe_text(&mut out, &request.treatment.preparation)?;
     writeln!(out,"Explicit ligase assumption: {}. No end phosphorylation, flap removal, activation replacement, host repair or unselected nick sealing is inferred.",request.treatment.sealing.ligase_assumption).map_err(|_|Error::TooLarge)?;
     writeln!(out, "Exact selected source-call nick pairs:").map_err(|_| Error::TooLarge)?;
     for nick in &request.treatment.sealing.nicks {
         writeln!(out,"Seal source strand {} call {} (3prime side) to source strand {} call {} (5prime side); source-call offsets are zero-based.",nick.three.strand,nick.three.index,nick.five.strand,nick.five.index).map_err(|_|Error::TooLarge)?;
     }
     writeln!(out,"\nSelected component {}; immutable source seed strand {}, zero-based call {}; sealing context {}. Require all requested steps: {}; require known terminal chemistry: {}.",request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index,request.selection.sealing_context_revision,request.options.require_all_requested_transfers_applied,request.options.require_known_terminal_chemistry).map_err(|_|Error::TooLarge)?;
-    for (index, transfer) in request.treatment.preparation.transfers.iter().enumerate() {
-        writeln!(out,"Transfer {}: donor prepared strand {} to acceptor prepared strand {}, with {:?} geometry.",index+1,transfer.donor,transfer.acceptor,transfer.geometry).map_err(|_|Error::TooLarge)?;
-    }
-    writeln!(out,"\nAll original and treated components, retained nicks, unpaired calls/flaps, displacement and residual activation remain evidence. A desired target cannot choose the physical contour or repair missing material. Faithful bridging does not establish kit conditions, kinetics, experimental selection, biological function or laboratory success. The independent target is compared by fresh plan verification; this is not the legacy CheckedTopo acceptance policy.").map_err(|_|Error::TooLarge)?;
+    writeln!(out,"\nAll original and treated components, retained nicks, unpaired calls/flaps, displacement and residual activation remain evidence. A desired target cannot choose the physical contour or repair missing material. Faithful bridging does not establish kit conditions, kinetics, experimental selection, biological function or laboratory success. The independent target is compared by fresh plan verification under the operation's explicit current policy.").map_err(|_|Error::TooLarge)?;
     out.finish()
 }
 fn processed_topo_evidence_text(
@@ -328,6 +412,7 @@ fn processed_topo_evidence_text(
 ) -> Result<String, Error> {
     use io::Write as _;
     let mut out = TopoText(Vec::new());
+    topo_layout_text(&mut out, &evidence.preparation)?;
     let treatment = &evidence.projection.sealing;
     let original = &treatment.parent;
     let treated = &treatment.product;
@@ -407,52 +492,7 @@ fn topo_actions_step_text(
         )
         .map_err(|_| Error::TooLarge)?;
     }
-    for (index, material) in request.preparation.recipe.materials.iter().enumerate() {
-        match material {
-            crate::topo::MaterialRecipe::Prepared {
-                declaration_id,
-                assumption,
-                strands,
-                pairing,
-            } => {
-                writeln!(out,"Prepared material {index} / {declaration_id}: {assumption}. Activation is an explicit material hypothesis, not a measured property.").map_err(|_|Error::TooLarge)?;
-                for strand in strands {
-                    writeln!(
-                        out,
-                        "Strand {}: 5prime {:?}; 3prime {:?}.",
-                        strand.id, strand.five_prime, strand.three_prime
-                    )
-                    .map_err(|_| Error::TooLarge)?;
-                    for interval in &strand.segments {
-                        writeln!(out,"Read source role {} from zero-based offset {} for {} bases; reverse complement {}.",interval.source_role,interval.start,interval.length,interval.reverse).map_err(|_|Error::TooLarge)?;
-                    }
-                }
-                for span in pairing {
-                    writeln!(out,"Pair {} antiparallel bases: prepared strand {} offset {}, strand {} offset {}.",span.length,span.strand_a,span.start_a,span.strand_b,span.start_b).map_err(|_|Error::TooLarge)?;
-                }
-            }
-            crate::topo::MaterialRecipe::ExactPcr {
-                material_id,
-                template_role,
-                forward,
-                reverse,
-                tail,
-            } => {
-                writeln!(out,"Exact PCR material {index} / {material_id}, original template role {template_role}: forward ordered oligo {} = {} (annealing {}; 5prime tail {}); reverse ordered oligo {} = {} (annealing {}; 5prime tail {}). Explicit subsequent 3prime tailing {tail:?}. Newly copied/synthesized calls do not inherit original modifications or prove empirical amplification.",forward.name,forward.ordered_sequence(),forward.annealing.as_str(),forward.tail,reverse.name,reverse.ordered_sequence(),reverse.annealing.as_str(),reverse.tail).map_err(|_|Error::TooLarge)?;
-            }
-        }
-    }
-    for (index, transfer) in request.preparation.transfers.iter().enumerate() {
-        writeln!(
-            out,
-            "Transfer {}: prepared donor strand {} to acceptor strand {}, {:?} geometry.",
-            index + 1,
-            transfer.donor,
-            transfer.acceptor,
-            transfer.geometry
-        )
-        .map_err(|_| Error::TooLarge)?;
-    }
+    topo_recipe_text(&mut out, &request.preparation)?;
     writeln!(
         out,
         "Ordered action declarations (all source-call offsets below are zero-based):"
@@ -484,6 +524,7 @@ fn topo_actions_evidence_text(evidence: &crate::topo_actions::Report) -> Result<
     use crate::topo::physical::{processing::ActionEvidence, projection::Outcome};
     use io::Write as _;
     let mut out = TopoText(Vec::new());
+    topo_layout_text(&mut out, &evidence.preparation)?;
     let processing = &evidence.projection.processing;
     let original = &processing.parent.product;
     let product = &processing.product;
@@ -1954,13 +1995,15 @@ fn export_protocol_pdf_checked_inner(
                 }
             }
         }
-        if let Some(annotations) = report
-            .annotation_reports
+        for annotations in report
+            .step_reports
             .iter()
-            .find(|entry| entry.step_index == index)
+            .filter(|entry| entry.step_index == index)
+            .filter_map(|entry| entry.topo.as_ref())
+            .filter_map(|product| product.annotations.as_ref())
         {
             layout.paragraph_size("TOPO annotation correspondence follows actual top-reference source calls. It is not inherited chemical state or experimental validation.",9.0,INK)?;
-            for source in &annotations.evidence.sources {
+            for source in &annotations.sources {
                 layout.paragraph_size(&format!("Source role {} (revision {}): {} projected, {} outside this selected contour, {} retained only as original unmapped evidence. Projection supported: {}. Review all disrupted/PCR-derived annotations.",source.role,source.source_revision,source.projected,source.dropped,source.unmapped.len(),source.projection_supported),9.0,INK)?;
                 for warning in source.warnings.iter().take(8) {
                     layout.paragraph_size(warning, 9.0, INK)?;

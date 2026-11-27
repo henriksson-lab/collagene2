@@ -110,6 +110,9 @@ impl<'a> Index<'a> {
         for binding in native::source_bindings(&record)? {
             graph.binding(&binding)?;
         }
+        for selection in native::required_graph_records(&record)? {
+            graph.topo_graph(&selection)?;
+        }
         for run in native::required_run_ids(&record)? {
             graph.run(&run)?;
         }

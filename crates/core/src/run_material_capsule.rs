@@ -225,6 +225,8 @@ enum Pending<'a> {
     Run(std::borrow::Cow<'a, Capsule>),
     Derived(std::borrow::Cow<'a, crate::material_derivation::Capsule>),
     DerivedRecord(std::borrow::Cow<'a, crate::material_derivation::Record>),
+    TopoGraph(std::borrow::Cow<'a, crate::topo_graph_history::Capsule>),
+    TopoGraphRecord(std::borrow::Cow<'a, crate::topo_graph_history::Record>),
 }
 fn material_node(origin: &run_material::MaterialOrigin) -> Pending<'_> {
     match origin {
@@ -240,19 +242,49 @@ fn material_owned(origin: run_material::MaterialOrigin) -> Pending<'static> {
         run_material::MaterialOrigin::Derived(o) => Pending::Derived(std::borrow::Cow::Owned(o)),
     }
 }
-fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
-    plan.steps
-        .iter()
-        .filter_map(|op| match op {
-            Operation::ReconstructRunProduct { origin, .. } => {
-                Some((1, Pending::Run(std::borrow::Cow::Borrowed(origin))))
-            }
-            Operation::ReconstructMaterial { origin, .. } => {
-                Some((1, Pending::Derived(std::borrow::Cow::Borrowed(origin))))
+fn graph_nodes(request: &crate::topo::Request) -> impl Iterator<Item = Pending<'_>> {
+    request.recipe.materials.iter().filter_map(|m| match m {
+        crate::topo::MaterialRecipe::SavedGraph { origin, .. } => {
+            Some(Pending::TopoGraph(std::borrow::Cow::Borrowed(origin)))
+        }
+        _ => None,
+    })
+}
+fn owned_graph_nodes(request: crate::topo::Request) -> impl Iterator<Item = Pending<'static>> {
+    request
+        .recipe
+        .materials
+        .into_iter()
+        .filter_map(|m| match m {
+            crate::topo::MaterialRecipe::SavedGraph { origin, .. } => {
+                Some(Pending::TopoGraph(std::borrow::Cow::Owned(origin)))
             }
             _ => None,
         })
-        .collect()
+}
+fn origins(plan: &DesignPlan) -> Vec<(usize, Pending<'_>)> {
+    let mut result = vec![];
+    for op in &plan.steps {
+        match op {
+            Operation::ReconstructRunProduct { origin, .. } => {
+                result.push((1, Pending::Run(std::borrow::Cow::Borrowed(origin))))
+            }
+            Operation::ReconstructMaterial { origin, .. } => {
+                result.push((1, Pending::Derived(std::borrow::Cow::Borrowed(origin))))
+            }
+            Operation::Topo { request, .. } | Operation::CheckedTopo { request, .. } => {
+                result.extend(graph_nodes(request).map(|n| (1, n)))
+            }
+            Operation::ProcessedTopo { request, .. } => {
+                result.extend(graph_nodes(&request.treatment.preparation).map(|n| (1, n)))
+            }
+            Operation::TopoActions { request, .. } => {
+                result.extend(graph_nodes(&request.preparation).map(|n| (1, n)))
+            }
+            _ => {}
+        }
+    }
+    result
 }
 // Count bounded serialized structure without allocating a duplicate capsule. In
 // particular an opaque derived record is charged before its bytes are decoded.
@@ -363,6 +395,10 @@ fn walk<'a>(
         &crate::material_derivation::Record,
         Option<&Molecule>,
     ) -> Result<(), Error>,
+    mut graph_visit: impl FnMut(
+        &crate::topo_graph_history::Record,
+        Option<&[crate::topo::Input]>,
+    ) -> Result<(), Error>,
 ) -> Result<(), Error> {
     let mut stack = roots;
     while let Some((depth, node)) = stack.pop() {
@@ -398,6 +434,16 @@ fn walk<'a>(
                         }
                         Operation::ReconstructMaterial { origin, .. } => stack
                             .push((depth + 1, Pending::Derived(std::borrow::Cow::Owned(origin)))),
+                        Operation::Topo { request, .. }
+                        | Operation::CheckedTopo { request, .. } => {
+                            stack.extend(owned_graph_nodes(request).map(|n| (depth + 1, n)))
+                        }
+                        Operation::ProcessedTopo { request, .. } => stack.extend(
+                            owned_graph_nodes(request.treatment.preparation)
+                                .map(|n| (depth + 1, n)),
+                        ),
+                        Operation::TopoActions { request, .. } => stack
+                            .extend(owned_graph_nodes(request.preparation).map(|n| (depth + 1, n))),
                         _ => {}
                     }
                 }
@@ -427,6 +473,75 @@ fn walk<'a>(
                     record.request.origin
                 {
                     stack.push((depth + 1, material_owned(saved)));
+                }
+            }
+            Pending::TopoGraph(origin) => {
+                charge_serialized_bounded(
+                    &mut budget,
+                    origin.as_ref(),
+                    crate::topo_graph_history::MAX_CAPSULE_BYTES,
+                )?;
+                for source in &origin.source_snapshots {
+                    budget.model(&source.molecule)?;
+                }
+                let record = origin.validate_shallow()?;
+                add(
+                    &mut budget.steps,
+                    record
+                        .request
+                        .request
+                        .transfers
+                        .len()
+                        .checked_add(1)
+                        .ok_or(Error::TooLarge)?,
+                    MAX_STEPS,
+                )?;
+                graph_visit(&record, Some(&origin.source_snapshots))?;
+                for b in record.request.bindings {
+                    if let Some(o) = b.origin {
+                        stack.push((depth + 1, material_owned(o)));
+                    }
+                }
+                stack.extend(owned_graph_nodes(record.request.request).map(|n| (depth + 1, n)));
+            }
+            Pending::TopoGraphRecord(record) => {
+                charge_serialized_bounded(
+                    &mut budget,
+                    record.as_ref(),
+                    crate::topo_graph_history::MAX_RECORD_BYTES,
+                )?;
+                record.validate_documentary()?;
+                add(
+                    &mut budget.steps,
+                    record
+                        .request
+                        .request
+                        .transfers
+                        .len()
+                        .checked_add(1)
+                        .ok_or(Error::TooLarge)?,
+                    MAX_STEPS,
+                )?;
+                graph_visit(&record, None)?;
+                match record {
+                    std::borrow::Cow::Borrowed(record) => {
+                        for b in &record.request.bindings {
+                            if let Some(o) = &b.origin {
+                                stack.push((depth + 1, material_node(o)));
+                            }
+                        }
+                        stack.extend(graph_nodes(&record.request.request).map(|n| (depth + 1, n)));
+                    }
+                    std::borrow::Cow::Owned(record) => {
+                        for b in record.request.bindings {
+                            if let Some(o) = b.origin {
+                                stack.push((depth + 1, material_owned(o)));
+                            }
+                        }
+                        stack.extend(
+                            owned_graph_nodes(record.request.request).map(|n| (depth + 1, n)),
+                        );
+                    }
                 }
             }
             Pending::DerivedRecord(record) => {
@@ -463,22 +578,18 @@ impl Capsule {
             Budget::default(),
             |_, _| Ok(()),
             |_, _| Ok(()),
+            |_, _| Ok(()),
         )
     }
 }
 pub fn plan_preflight(plan: &DesignPlan) -> Result<(), Error> {
-    if !plan.steps.iter().any(|step| {
-        matches!(
-            step,
-            Operation::ReconstructRunProduct { .. } | Operation::ReconstructMaterial { .. }
-        )
-    }) {
+    if origins(plan).is_empty() {
         return Ok(());
     }
     let mut budget = Budget::default();
     budget.plan(plan)?;
     let nodes = origins(plan);
-    walk(nodes, budget, |_, _| Ok(()), |_, _| Ok(()))
+    walk(nodes, budget, |_, _| Ok(()), |_, _| Ok(()), |_, _| Ok(()))
 }
 pub fn capsules_preflight<'a>(origins: impl IntoIterator<Item = &'a Capsule>) -> Result<(), Error> {
     walk(
@@ -487,6 +598,7 @@ pub fn capsules_preflight<'a>(origins: impl IntoIterator<Item = &'a Capsule>) ->
             .map(|o| (1, Pending::Run(std::borrow::Cow::Borrowed(o))))
             .collect(),
         Budget::default(),
+        |_, _| Ok(()),
         |_, _| Ok(()),
         |_, _| Ok(()),
     )
@@ -517,7 +629,52 @@ pub fn material_capsules_preflight<'a>(
         Budget::default(),
         |_, _| Ok(()),
         |_, _| Ok(()),
+        |_, _| Ok(()),
     )
+}
+/// Scope references only; graph origins never become ordinary duplex MaterialOrigin.
+pub enum NativeOriginRef<'a> {
+    Run(&'a Capsule),
+    Derived(&'a crate::material_derivation::Capsule),
+    TopoGraph(&'a crate::topo_graph_history::Capsule),
+}
+fn native_nodes<'a>(
+    roots: impl IntoIterator<Item = NativeOriginRef<'a>>,
+) -> Vec<(usize, Pending<'a>)> {
+    roots
+        .into_iter()
+        .map(|o| {
+            (
+                1,
+                match o {
+                    NativeOriginRef::Run(o) => Pending::Run(std::borrow::Cow::Borrowed(o)),
+                    NativeOriginRef::Derived(o) => Pending::Derived(std::borrow::Cow::Borrowed(o)),
+                    NativeOriginRef::TopoGraph(o) => {
+                        Pending::TopoGraph(std::borrow::Cow::Borrowed(o))
+                    }
+                },
+            )
+        })
+        .collect()
+}
+pub fn native_origins_preflight<'a>(
+    roots: impl IntoIterator<Item = NativeOriginRef<'a>>,
+) -> Result<(), Error> {
+    walk(
+        native_nodes(roots),
+        Budget::default(),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
+}
+/// Exact native ownership only. Safe inside Workspace validation; no recursive
+/// Workspace::validate, material replay or deserialized-state adoption.
+pub fn validate_native_origins<'a>(
+    workspace: &Workspace,
+    roots: impl IntoIterator<Item = NativeOriginRef<'a>>,
+) -> Result<(), Error> {
+    workspace_walk(workspace, native_nodes(roots), Budget::default())
 }
 /// Aggregate both origin types before recipe compilers copy them.
 pub fn material_origins_preflight<'a>(
@@ -544,6 +701,7 @@ pub fn material_origins_preflight<'a>(
         Budget::default(),
         |_, _| Ok(()),
         |_, _| Ok(()),
+        |_, _| Ok(()),
     )
 }
 
@@ -554,6 +712,7 @@ pub(crate) fn derived_capsule_preflight(
     walk(
         vec![(1, Pending::Derived(std::borrow::Cow::Borrowed(origin)))],
         Budget::default(),
+        |_, _| Ok(()),
         |_, _| Ok(()),
         |_, _| Ok(()),
     )
@@ -569,6 +728,7 @@ pub(crate) fn derived_record_preflight(
         Budget::default(),
         |_, _| Ok(()),
         |_, _| Ok(()),
+        |_, _| Ok(()),
     )
 }
 /// Documentary dependency enumeration across all native material families.
@@ -580,6 +740,10 @@ pub(crate) fn derived_ancestry_walk(
         &crate::material_derivation::Record,
         Option<&Molecule>,
     ) -> Result<(), Error>,
+    graph_visit: impl FnMut(
+        &crate::topo_graph_history::Record,
+        Option<&[crate::topo::Input]>,
+    ) -> Result<(), Error>,
 ) -> Result<(), Error> {
     walk(
         vec![(
@@ -589,16 +753,45 @@ pub(crate) fn derived_ancestry_walk(
         Budget::default(),
         visit,
         derived_visit,
+        graph_visit,
+    )
+}
+
+/// Typed documentary dependencies use the SAME mixed-family ledger, not a
+/// separate graph parser or per-family ancestry allowance.
+pub(crate) fn graph_ancestry_walk(
+    record: &crate::topo_graph_history::Record,
+    run_visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
+    derived_visit: impl FnMut(
+        &crate::material_derivation::Record,
+        Option<&Molecule>,
+    ) -> Result<(), Error>,
+    graph_visit: impl FnMut(
+        &crate::topo_graph_history::Record,
+        Option<&[crate::topo::Input]>,
+    ) -> Result<(), Error>,
+) -> Result<(), Error> {
+    walk(
+        vec![(
+            1,
+            Pending::TopoGraphRecord(std::borrow::Cow::Borrowed(record)),
+        )],
+        Budget::default(),
+        run_visit,
+        derived_visit,
+        graph_visit,
     )
 }
 
 /// Build a durable declaration only after the actual saved event has been freshly
 /// reconstructed. Returned bytes carry instructions, never physical authority.
 pub fn capsule(workspace: &Workspace, selection: &Selection) -> Result<Capsule, Error> {
-    let mut roots = documentary_material_origins(
+    let mut roots = documentary_origins(
         workspace,
         &[run_material::MaterialSelection::Run(selection.clone())],
-    )?;
+        &[],
+    )?
+    .materials;
     let run_material::MaterialOrigin::Run(origin) = roots.remove(0) else {
         return Err(bad("run capsule kind differs"));
     };
@@ -611,11 +804,20 @@ pub fn capsule(workspace: &Workspace, selection: &Selection) -> Result<Capsule, 
 /// before copying candidate bytes, source models or closed child capsules. It
 /// never verifies a plan, calls reconstruct/replay, or creates live material.
 /// The eventual native consumer must freshly replay the returned origins.
-pub fn documentary_material_origins(
+pub struct DocumentaryOrigins {
+    pub materials: Vec<run_material::MaterialOrigin>,
+    pub graphs: Vec<crate::topo_graph_history::Capsule>,
+}
+pub fn documentary_origins(
     workspace: &Workspace,
     selections: &[run_material::MaterialSelection],
-) -> Result<Vec<run_material::MaterialOrigin>, Error> {
-    if selections.len() > 32 {
+    graph_selections: &[crate::topo_graph_history::Selection],
+) -> Result<DocumentaryOrigins, Error> {
+    if selections
+        .len()
+        .checked_add(graph_selections.len())
+        .is_none_or(|n| n > 32)
+    {
         return Err(Error::TooLarge);
     }
     for selection in selections {
@@ -659,8 +861,47 @@ pub fn documentary_material_origins(
             }
         }
     }
+    let mut graph_records = Vec::with_capacity(graph_selections.len());
+    for selection in graph_selections {
+        let record = crate::topo_graph_history::documentary_capsule_parts(workspace, selection)?;
+        charge_serialized_bounded(&mut loaded, &record, MAX_AGGREGATE_ORIGIN_BYTES)?;
+        graph_records.push(record);
+    }
     let mut budget = Budget::default();
     let mut nodes = vec![];
+    for (record, selection) in graph_records.iter().zip(graph_selections) {
+        let bytes = &workspace.attachments[&selection.record_hash].bytes;
+        add(
+            &mut budget.bytes,
+            bytes.len().div_ceil(3) * 4,
+            MAX_AGGREGATE_ORIGIN_BYTES,
+        )?;
+        add(&mut budget.bytes, 2048, MAX_AGGREGATE_ORIGIN_BYTES)?;
+        for binding in &record.request.bindings {
+            let source = run_material::resolve(workspace, &binding.event)?;
+            charge_serialized_bounded(
+                &mut budget,
+                &(&binding.role, source),
+                MAX_AGGREGATE_ORIGIN_BYTES,
+            )?;
+            budget.model(source)?;
+            if let Some(origin) = &binding.origin {
+                nodes.push((2, material_node(origin)));
+            }
+        }
+        add(
+            &mut budget.steps,
+            record
+                .request
+                .request
+                .transfers
+                .len()
+                .checked_add(1)
+                .ok_or(Error::TooLarge)?,
+            MAX_STEPS,
+        )?;
+        nodes.extend(graph_nodes(&record.request.request).map(|n| (2, n)));
+    }
     for root in &roots {
         match root {
             Root::Run { index, record } => {
@@ -774,11 +1015,39 @@ pub fn documentary_material_origins(
     }
     // Check actual current serialized wrappers too; this cannot expand the
     // pre-copy allowance or grant another ancestry/replay budget.
-    material_origins_preflight(&result)?;
+    let mut graphs = Vec::with_capacity(graph_records.len());
+    for (record, selection) in graph_records.into_iter().zip(graph_selections) {
+        let mut snapshots = Vec::with_capacity(record.request.bindings.len());
+        for b in record.request.bindings {
+            snapshots.push(crate::topo::Input {
+                role: b.role,
+                molecule: run_material::resolve(workspace, &b.event)?.clone(),
+            });
+        }
+        graphs.push(crate::topo_graph_history::Capsule {
+            schema_version: 1,
+            selection: selection.clone(),
+            record_bytes: workspace.attachments[&selection.record_hash].bytes.clone(),
+            source_snapshots: snapshots,
+        });
+    }
+    native_origins_preflight(
+        result
+            .iter()
+            .map(|o| match o {
+                run_material::MaterialOrigin::Run(o) => NativeOriginRef::Run(o),
+                run_material::MaterialOrigin::Derived(o) => NativeOriginRef::Derived(o),
+            })
+            .chain(graphs.iter().map(NativeOriginRef::TopoGraph)),
+    )?;
     for origin in &result {
         origin.validate_for_workspace(workspace, origin.event())?;
     }
-    Ok(result)
+    validate_native_origins(workspace, graphs.iter().map(NativeOriginRef::TopoGraph))?;
+    Ok(DocumentaryOrigins {
+        materials: result,
+        graphs,
+    })
 }
 
 /// Workspace ownership only, safe inside workspace/run structural validation.
@@ -870,11 +1139,23 @@ fn workspace_walk(
                     Pending::DerivedRecord(record) => {
                         Pending::DerivedRecord(std::borrow::Cow::Borrowed(record.as_ref()))
                     }
+                    Pending::TopoGraph(origin) => {
+                        Pending::TopoGraph(std::borrow::Cow::Borrowed(origin.as_ref()))
+                    }
+                    Pending::TopoGraphRecord(record) => {
+                        Pending::TopoGraphRecord(std::borrow::Cow::Borrowed(record.as_ref()))
+                    }
                 },
             )
         })
         .collect();
-    walk(borrowed, checked, |_, _| Ok(()), |_, _| Ok(()))?;
+    walk(
+        borrowed,
+        checked,
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )?;
     let mut records = BTreeMap::new();
     for attachment in workspace
         .attachments
@@ -893,15 +1174,13 @@ fn workspace_walk(
         |record, source| {
             crate::material_derivation::attest_record_shallow(workspace, record, source)
         },
+        |record, snapshots| {
+            crate::topo_graph_history::attest_record_shallow(workspace, record, snapshots)
+        },
     )
 }
 pub fn validate_plan_origins(workspace: &Workspace, plan: &DesignPlan) -> Result<(), Error> {
-    if !plan.steps.iter().any(|step| {
-        matches!(
-            step,
-            Operation::ReconstructRunProduct { .. } | Operation::ReconstructMaterial { .. }
-        )
-    }) {
+    if origins(plan).is_empty() {
         return Ok(());
     }
     let mut budget = Budget::default();
@@ -973,6 +1252,7 @@ pub fn visit_candidate_plans(
         nodes,
         budget,
         |_, candidate| visit(candidate),
+        |_, _| Ok(()),
         |_, _| Ok(()),
     )
 }

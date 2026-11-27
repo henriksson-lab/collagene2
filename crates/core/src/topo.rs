@@ -5,7 +5,7 @@ pub use collagene_topo as physical;
 use physical::projection;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
-pub const ENGINE_VERSION: &str = "topo-source-adapter-1";
+pub const ENGINE_VERSION: &str = "topo-source-adapter-2";
 pub const ANNOTATION_ENGINE_VERSION: &str = "topo-annotated-reference-1";
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 pub const RECIPE_KEY: &str = "topo:unverified_generation";
@@ -21,6 +21,7 @@ dto! {pub struct PreparedStrand {pub id:String,pub segments:Vec<SourceInterval>,
 dto! {pub enum MaterialRecipe {
     Prepared {declaration_id:String,assumption:String,strands:Vec<PreparedStrand>,pairing:Vec<physical::PairSpan>},
     ExactPcr {material_id:String,template_role:String,forward:analysis::Primer,reverse:analysis::Primer,tail:Option<tailing::TailingBase>},
+    SavedGraph {material_id:String,origin:crate::topo_graph_history::Capsule},
 }}
 dto! {pub struct GenerationRecipe {pub schema_version:u16,pub materials:Vec<MaterialRecipe>}}
 dto! {pub struct Request {pub recipe:GenerationRecipe,pub transfers:Vec<physical::Transfer>,pub engine_limits:physical::Limits,pub projection_options:projection::Options}}
@@ -33,17 +34,25 @@ dto! {pub enum Origin {
 }}
 dto! {pub struct PreparedMap {pub strand:usize,pub strand_start:usize,pub length:usize,pub origin:Origin}}
 dto! {pub struct ReferenceGap {pub source_role:String,pub start:usize,pub end:usize}}
-dto! {pub struct PreparationEvidence {pub substrates:physical::Substrates,pub maps:Vec<PreparedMap>,pub not_represented:Vec<ReferenceGap>,pub assumptions:Vec<String>}}
-dto! {pub struct TopoReport {pub engine_version:String,pub batch_revision:String,pub sources:Vec<SourceIdentity>,pub preparation:PreparationEvidence,pub physical:physical::Report}}
+dto! {pub struct PreparationEvidence {pub substrates:physical::Substrates,pub maps:Vec<PreparedMap>,pub not_represented:Vec<ReferenceGap>,pub assumptions:Vec<String>,pub retained_transfers:Vec<physical::Transfer>,pub layout:Vec<MaterialLayout>,pub graph_origins:Vec<GraphOriginEvidence>}}
+dto! {pub struct TopoReport {pub engine_version:String,pub batch_revision:String,pub sources:Vec<SourceIdentity>,pub preparation:PreparationEvidence,pub physical:physical::Report,pub incomplete:bool,pub findings:Vec<String>}}
 dto! {pub struct Selection {pub batch_revision:String,pub component:usize,pub reference_seed:physical::Call}}
-dto! {pub struct Product {pub engine_version:String,pub batch_revision:String,pub selection:Selection,pub sources:Vec<SourceIdentity>,pub preparation:PreparationEvidence,pub projection:projection::ProjectionReport,pub reference:Option<Molecule>}}
+dto! {pub struct Product {pub engine_version:String,pub batch_revision:String,pub selection:Selection,pub sources:Vec<SourceIdentity>,pub preparation:PreparationEvidence,pub projection:projection::ProjectionReport,pub annotations:Option<crate::topo_annotations::AnnotationEvidence>,pub reference:Option<Molecule>}}
 dto! {#[derive(Default)] pub struct AcceptancePolicy {pub allow_nicks:bool,pub allow_unknown_terminal_chemistry:bool,pub allow_unapplied_transfers:bool,pub allow_other_components:bool,pub allow_circular_rotation:bool,pub allow_reverse_complement:bool}}
 dto! {pub enum TargetOutcome {AcceptedUnderDeclaredGraph,Rejected{reasons:Vec<String>},Withheld{reason:String}}}
 dto! {pub struct TargetAssessment {pub engine_version:String,pub batch_revision:String,pub target_revision:String,pub policy:AcceptancePolicy,pub product:Product,pub outcome:TargetOutcome}}
-// Additive envelopes: Product/TargetAssessment remain unchanged for old wire
-// consumers. These fields describe correspondence, never chemical ancestry.
-dto! {pub struct AnnotatedProduct {pub engine_version:String,pub batch_revision:String,pub physical:Product,pub annotations:Option<crate::topo_annotations::AnnotationEvidence>,pub reference:Option<Molecule>}}
-dto! {pub struct AnnotatedAssessment {pub engine_version:String,pub batch_revision:String,pub target_revision:String,pub policy:AcceptancePolicy,pub product:AnnotatedProduct,pub outcome:TargetOutcome}}
+// Whole-graph evidence and a selected annotated contour answer distinct current
+// questions. There is one Product document, with documentary annotations only.
+dto! {pub struct MaterialLayout{pub owner:Option<String>,pub material:usize,pub source_strands:Vec<usize>,pub source_roles:Vec<(String,String)>}}
+dto! {pub struct GraphOriginEvidence{pub selection:crate::topo_graph_history::Selection,pub strand_start:usize,pub strand_end:usize,pub after_transfers:usize,pub activation_unmap:Vec<(String,String)>,pub transfer_map:Vec<usize>,pub incomplete:bool}}
+pub(crate) struct PreparedContext {
+    pub inputs: Vec<Input>,
+    pub evidence: PreparationEvidence,
+    pub effective_transfers: Vec<physical::Transfer>,
+    pub incomplete: bool,
+    pub origin_source_incomplete: Vec<bool>,
+    pub findings: Vec<String>,
+}
 
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("TOPO source adapter: {s}"))
@@ -90,52 +99,6 @@ fn hash<T: Serialize>(v: &T) -> Result<String, Error> {
     serde_json::to_writer(&mut h, v).map_err(|_| Error::TooLarge)?;
     Ok(h.0.finalize().to_hex().to_string())
 }
-struct AnnotationHash {
-    hash: blake3::Hasher,
-    bytes: usize,
-}
-impl Write for AnnotationHash {
-    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-        self.bytes = self
-            .bytes
-            .checked_add(bytes.len())
-            .filter(|&n| n <= MAX_REPORT_BYTES)
-            .ok_or_else(|| std::io::Error::other("bounded annotated TOPO binding"))?;
-        self.hash.update(bytes);
-        Ok(bytes.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-fn annotation_hash(value: &impl Serialize) -> Result<String, Error> {
-    let mut writer = AnnotationHash {
-        hash: blake3::Hasher::new(),
-        bytes: 0,
-    };
-    serde_json::to_writer(&mut writer, value).map_err(|_| Error::TooLarge)?;
-    Ok(writer.hash.finalize().to_hex().to_string())
-}
-fn annotated_product_binding(physical_revision: &str) -> Result<String, Error> {
-    annotation_hash(&(
-        ANNOTATION_ENGINE_VERSION,
-        "annotated-product",
-        physical_revision,
-    ))
-}
-fn annotated_target_binding(
-    product_revision: &str,
-    target_revision: &str,
-    policy: &AcceptancePolicy,
-) -> Result<String, Error> {
-    annotation_hash(&(
-        ANNOTATION_ENGINE_VERSION,
-        "annotated-target",
-        product_revision,
-        target_revision,
-        policy,
-    ))
-}
 fn engine_error(e: impl std::fmt::Display) -> Error {
     bad(&e.to_string())
 }
@@ -159,8 +122,6 @@ fn interval(inputs: &[Input], p: &SourceInterval) -> Result<(), Error> {
     }
     Ok(())
 }
-/// Borrowed aggregate guard before recursive validation, model hashes, sequence
-/// construction or rich input cloning. Bounds apply to native callers as well.
 pub fn source_preflight(inputs: &[Input], r: &Request) -> Result<(), Error> {
     source_preflight_inner(inputs, r, &BTreeSet::new())
 }
@@ -169,11 +130,43 @@ fn source_preflight_inner(
     r: &Request,
     reconstructed_templates: &BTreeSet<String>,
 ) -> Result<(), Error> {
-    if inputs.is_empty()
-        || inputs.len() > 32
+    let roots = r.recipe.materials.iter().filter_map(|m| {
+        if let MaterialRecipe::SavedGraph { origin, .. } = m {
+            Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+        } else {
+            None
+        }
+    });
+    crate::run_material::native_origins_preflight(roots)?;
+    bounded(r, MAX_REPORT_BYTES - 65536)?;
+    if r.recipe
+        .materials
+        .iter()
+        .any(|m| matches!(m, MaterialRecipe::SavedGraph { .. }))
+    {
+        let expanded = expand(inputs, r, None)?;
+        let mut roles = reconstructed_templates.clone();
+        roles.extend(
+            expanded
+                .bindings
+                .iter()
+                .filter(|b| b.origin.is_some())
+                .map(|b| b.role.clone()),
+        );
+        source_preflight_flat(&expanded.inputs, &expanded.request, &roles)
+    } else {
+        source_preflight_flat(inputs, r, reconstructed_templates)
+    }
+}
+fn source_preflight_flat(
+    inputs: &[Input],
+    r: &Request,
+    reconstructed_templates: &BTreeSet<String>,
+) -> Result<(), Error> {
+    if inputs.len() > 64
         || r.recipe.schema_version != 1
         || r.recipe.materials.is_empty()
-        || r.recipe.materials.len() > 16
+        || r.recipe.materials.len() > 64
         || r.transfers.len() > 16
     {
         return Err(Error::TooLarge);
@@ -199,6 +192,7 @@ fn source_preflight_inner(
     let mut ids = BTreeSet::new();
     for m in &r.recipe.materials {
         match m {
+            MaterialRecipe::SavedGraph { .. } => return Err(bad("unexpanded saved graph")),
             MaterialRecipe::Prepared {
                 declaration_id,
                 assumption,
@@ -233,6 +227,15 @@ fn source_preflight_inner(
                             return Err(Error::TooLarge);
                         }
                         interval(inputs, p)?;
+                        let original = source(inputs, &p.source_role)?;
+                        if chemistry::has_unmapped_physical_evidence(original)
+                            || original.metadata.contains_key("tracked_modifications")
+                            || original.metadata.keys().any(|k| k.starts_with("topo:"))
+                        {
+                            return Err(bad(
+                                "Prepared activation hypotheses require original references; a saved/marked physical document must use its exact native graph instead of redeclaring stock",
+                            ));
+                        }
                         output = output
                             .checked_add(p.length)
                             .filter(|n| *n <= 100_000)
@@ -357,6 +360,72 @@ pub(crate) fn identities(inputs: &[Input]) -> Vec<SourceIdentity> {
         })
         .collect()
 }
+pub(crate) fn documentary_batch_revision(inputs: &[Input], r: &Request) -> Result<String, Error> {
+    batch_binding(inputs, r)
+}
+pub(crate) fn documentary_sources(
+    inputs: &[Input],
+    r: &Request,
+) -> Result<Vec<SourceIdentity>, Error> {
+    expanded_source_identities(&identities(inputs), r)
+}
+/// Bounded documentary role/revision expansion; no source DNA allocation, PCR or
+/// graph replay. Native ownership is separately checked by the shared walker.
+pub(crate) fn expanded_source_identities(
+    sources: &[SourceIdentity],
+    r: &Request,
+) -> Result<Vec<SourceIdentity>, Error> {
+    let roots = r.recipe.materials.iter().filter_map(|m| {
+        if let MaterialRecipe::SavedGraph { origin, .. } = m {
+            Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+        } else {
+            None
+        }
+    });
+    crate::run_material::native_origins_preflight(roots)?;
+    fn visit(
+        sources: &[SourceIdentity],
+        r: &Request,
+        owned: bool,
+        counter: &mut usize,
+        used: &mut BTreeSet<String>,
+        out: &mut Vec<SourceIdentity>,
+    ) -> Result<(), Error> {
+        if *counter > 128 {
+            return Err(Error::TooLarge);
+        }
+        let node = *counter;
+        *counter += 1;
+        for (i, s) in sources.iter().enumerate() {
+            out.push(SourceIdentity {
+                role: if owned {
+                    resolved_role(node, i, used)?
+                } else {
+                    s.role.clone()
+                },
+                revision: s.revision.clone(),
+            });
+        }
+        if out.len() > 64 {
+            return Err(Error::TooLarge);
+        }
+        for m in &r.recipe.materials {
+            if let MaterialRecipe::SavedGraph { origin, .. } = m {
+                let record = origin.validate_shallow()?;
+                let sources = identities(&origin.source_snapshots);
+                visit(&sources, &record.request.request, true, counter, used, out)?;
+            }
+        }
+        Ok(())
+    }
+    let mut out = vec![];
+    let mut used = sources
+        .iter()
+        .map(|s| s.role.clone())
+        .collect::<BTreeSet<_>>();
+    visit(sources, r, false, &mut 0, &mut used, &mut out)?;
+    Ok(out)
+}
 pub fn batch_revision(inputs: &[Input], r: &Request) -> Result<String, Error> {
     source_preflight(inputs, r)?;
     batch_binding(inputs, r)
@@ -389,6 +458,7 @@ pub(crate) fn source_preflight_reconstructed(
         let mut used = false;
         for material in &r.recipe.materials {
             match material {
+                MaterialRecipe::SavedGraph { .. } => {}
                 MaterialRecipe::Prepared { strands, .. } => {
                     if strands
                         .iter()
@@ -479,7 +549,358 @@ fn mark(coverage: &mut [bool], start: usize, length: usize) {
         coverage[(start + k) % n] = true;
     }
 }
-pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparationEvidence, Error> {
+struct Expanded {
+    inputs: Vec<Input>,
+    request: Request,
+    bindings: Vec<crate::topo_graph_history::SourceBinding>,
+    origins: Vec<GraphOriginEvidence>,
+    layout: Vec<MaterialLayout>,
+}
+fn resolved_role(node: usize, index: usize, used: &mut BTreeSet<String>) -> Result<String, Error> {
+    let base = format!("graph{node}-source{index}");
+    for suffix in 0..=128 {
+        let name = if suffix == 0 {
+            base.clone()
+        } else {
+            format!("{base}-{suffix}")
+        };
+        if used.insert(name.clone()) {
+            return Ok(name);
+        }
+    }
+    Err(Error::TooLarge)
+}
+fn expand(
+    inputs: &[Input],
+    r: &Request,
+    root_bindings: Option<&[crate::topo_graph_history::SourceBinding]>,
+) -> Result<Expanded, Error> {
+    let roots = r.recipe.materials.iter().filter_map(|m| {
+        if let MaterialRecipe::SavedGraph { origin, .. } = m {
+            Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+        } else {
+            None
+        }
+    });
+    crate::run_material::native_origins_preflight(roots)?;
+    let mut out = Expanded {
+        inputs: vec![],
+        request: Request {
+            recipe: GenerationRecipe {
+                schema_version: 1,
+                materials: vec![],
+            },
+            transfers: vec![],
+            engine_limits: r.engine_limits.clone(),
+            projection_options: r.projection_options.clone(),
+        },
+        bindings: vec![],
+        origins: vec![],
+        layout: vec![],
+    };
+    let mut seen = BTreeSet::new();
+    let mut used = inputs
+        .iter()
+        .map(|i| i.role.clone())
+        .collect::<BTreeSet<_>>();
+    let mut counter = 0;
+    expand_node(
+        inputs,
+        r,
+        None,
+        root_bindings,
+        &mut seen,
+        &mut used,
+        &mut counter,
+        &mut out,
+    )?;
+    Ok(out)
+}
+fn native_activation_identity(
+    strand: &PreparedStrand,
+    inputs: &[Input],
+    bindings: &[crate::topo_graph_history::SourceBinding],
+) -> Result<String, Error> {
+    let enzyme = match &strand.three_prime {
+        physical::ThreePrime::Phosphotyrosyl { enzyme, .. } => *enzyme,
+        _ => return Err(bad("activation identity requires actual declared adduct")),
+    };
+    let mut h = blake3::Hasher::new();
+    h.update(b"collagene-native-topo-activation-call-v1\0");
+    h.update(hash(&(strand.five_prime, enzyme))?.as_bytes());
+    let mut calls = 0usize;
+    for segment in &strand.segments {
+        let binding = bindings
+            .iter()
+            .find(|b| b.role == segment.source_role)
+            .ok_or_else(|| bad("activated graph source lacks its exact original event"))?;
+        let molecule = source(inputs, &segment.source_role)?;
+        let n = molecule.sequence.len();
+        interval(inputs, segment)?;
+        let event = hash(&binding.event)?;
+        for j in 0..segment.length {
+            calls = calls
+                .checked_add(1)
+                .filter(|n| *n <= 100_000)
+                .ok_or(Error::TooLarge)?;
+            let position = (segment.start
+                + if segment.reverse {
+                    segment.length - 1 - j
+                } else {
+                    j
+                })
+                % n;
+            h.update(event.as_bytes());
+            h.update(&(position as u64).to_le_bytes());
+            h.update(&[u8::from(segment.reverse)]);
+        }
+    }
+    Ok(format!("activation-{}", h.finalize().to_hex()))
+}
+fn expand_node(
+    inputs: &[Input],
+    r: &Request,
+    owner: Option<&str>,
+    bindings: Option<&[crate::topo_graph_history::SourceBinding]>,
+    seen: &mut BTreeSet<String>,
+    used: &mut BTreeSet<String>,
+    counter: &mut usize,
+    out: &mut Expanded,
+) -> Result<Vec<usize>, Error> {
+    if *counter > 128 {
+        return Err(Error::TooLarge);
+    }
+    let node = *counter;
+    *counter += 1;
+    let mut roles = std::collections::BTreeMap::new();
+    for (i, input) in inputs.iter().enumerate() {
+        let role = if owner.is_some() {
+            resolved_role(node, i, used)?
+        } else {
+            input.role.clone()
+        };
+        roles.insert(input.role.clone(), role.clone());
+        out.inputs.push(Input {
+            role: role.clone(),
+            molecule: input.molecule.clone(),
+        });
+        if let Some(binding) = bindings.and_then(|b| b.iter().find(|b| b.role == input.role)) {
+            let mut b = binding.clone();
+            b.role = role;
+            out.bindings.push(b)
+        }
+    }
+    let mut strand_map = vec![];
+    for (material, m) in r.recipe.materials.iter().enumerate() {
+        let start = flat_strands(&out.request.recipe.materials);
+        match m {
+            MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                strands,
+                pairing,
+            } => {
+                let originals = strands;
+                let mut strands = strands.clone();
+                for (i, s) in strands.iter_mut().enumerate() {
+                    s.id = if owner.is_some() {
+                        format!("graph{node}-strand{material}-{i}")
+                    } else {
+                        s.id.clone()
+                    };
+                    for segment in &mut s.segments {
+                        segment.source_role = roles
+                            .get(&segment.source_role)
+                            .ok_or_else(|| bad("missing original graph source role"))?
+                            .clone();
+                    }
+                    if bindings.is_some()
+                        && matches!(s.three_prime, physical::ThreePrime::Phosphotyrosyl { .. })
+                    {
+                        let id = native_activation_identity(
+                            &originals[i],
+                            inputs,
+                            bindings
+                                .ok_or_else(|| bad("native activation source bindings absent"))?,
+                        )?;
+                        if let physical::ThreePrime::Phosphotyrosyl { activation_id, .. } =
+                            &mut s.three_prime
+                        {
+                            *activation_id = id;
+                        }
+                    }
+                }
+                let n = strands.len();
+                out.request.recipe.materials.push(MaterialRecipe::Prepared {
+                    declaration_id: if owner.is_some() {
+                        format!("graph{node}-material{material}")
+                    } else {
+                        declaration_id.clone()
+                    },
+                    assumption: assumption.clone(),
+                    strands,
+                    pairing: pairing.clone(),
+                });
+                strand_map.extend(start..start + n);
+            }
+            MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                tail,
+            } => {
+                out.request.recipe.materials.push(MaterialRecipe::ExactPcr {
+                    material_id: if owner.is_some() {
+                        format!("graph{node}-material{material}")
+                    } else {
+                        material_id.clone()
+                    },
+                    template_role: roles
+                        .get(template_role)
+                        .ok_or_else(|| bad("missing graph PCR source"))?
+                        .clone(),
+                    forward: forward.clone(),
+                    reverse: reverse.clone(),
+                    tail: *tail,
+                });
+                strand_map.extend(start..start + 2);
+            }
+            MaterialRecipe::SavedGraph { origin, .. } => {
+                if !seen.insert(origin.selection.record_hash.clone()) {
+                    return Err(bad(
+                        "the same saved graph or ancestor is supplied twice; no extra stock instance is inferred",
+                    ));
+                }
+                let record = origin.validate_shallow()?;
+                if record.engine_version != crate::topo_graph_history::ENGINE_VERSION
+                    || record.scientific_engine != crate::verification::ENGINE_VERSION
+                {
+                    return Err(bad(
+                        "historical graph model cannot provide current material",
+                    ));
+                }
+                let transfers_before = out.request.transfers.len();
+                let activation_namespace = origin.selection.record_hash.clone();
+                let indices = expand_node(
+                    &origin.source_snapshots,
+                    &record.request.request,
+                    Some(&activation_namespace),
+                    Some(&record.request.bindings),
+                    seen,
+                    used,
+                    counter,
+                    out,
+                )?;
+                let end = flat_strands(&out.request.recipe.materials);
+                let mut activation_unmap = vec![];
+                // Own primitive declarations acquire native-owner namespaces;
+                // inherited child namespaces are already canonical in this record.
+                let mut local = 0;
+                for old in &record.request.request.recipe.materials {
+                    match old {
+                        MaterialRecipe::Prepared { strands, .. } => {
+                            for st in strands {
+                                if let physical::ThreePrime::Phosphotyrosyl { .. } = &st.three_prime
+                                {
+                                    let global = indices[local];
+                                    let current =
+                                        flat_activation(&out.request.recipe.materials, global)
+                                            .ok_or_else(|| bad("lost original activated strand"))?;
+                                    activation_unmap.push((current.clone(), current));
+                                }
+                                local += 1;
+                            }
+                        }
+                        MaterialRecipe::ExactPcr { .. } => local += 2,
+                        MaterialRecipe::SavedGraph { origin, .. } => {
+                            let count = origin.strand_count()?;
+                            for k in 0..count {
+                                if let Some(current) = flat_activation(
+                                    &out.request.recipe.materials,
+                                    indices[local + k],
+                                ) {
+                                    activation_unmap.push((current.clone(), current));
+                                }
+                            }
+                            local += count;
+                        }
+                    }
+                }
+                // Include nested transfer prefixes, all in the same physical job.
+                let transfer_map =
+                    (transfers_before..out.request.transfers.len()).collect::<Vec<_>>();
+                out.origins.push(GraphOriginEvidence {
+                    selection: origin.selection.clone(),
+                    strand_start: start,
+                    strand_end: end,
+                    after_transfers: out.request.transfers.len(),
+                    activation_unmap,
+                    transfer_map,
+                    incomplete: record.incomplete,
+                });
+                strand_map.extend(indices);
+            }
+        }
+        let end = flat_strands(&out.request.recipe.materials);
+        out.layout.push(MaterialLayout {
+            owner: owner.map(str::to_owned),
+            material,
+            source_strands: (start..end).collect(),
+            source_roles: roles.iter().map(|(a, b)| (a.clone(), b.clone())).collect(),
+        });
+    }
+    for t in &r.transfers {
+        out.request.transfers.push(physical::Transfer {
+            donor: *strand_map
+                .get(t.donor)
+                .ok_or_else(|| bad("transfer donor outside original graph namespace"))?,
+            acceptor: *strand_map
+                .get(t.acceptor)
+                .ok_or_else(|| bad("transfer acceptor outside original graph namespace"))?,
+            geometry: t.geometry,
+        });
+    }
+    if out.inputs.len() > 64
+        || out.request.recipe.materials.len() > 64
+        || out.request.transfers.len() > 64
+    {
+        return Err(Error::TooLarge);
+    }
+    Ok(strand_map)
+}
+fn flat_strands(materials: &[MaterialRecipe]) -> usize {
+    materials
+        .iter()
+        .map(|m| match m {
+            MaterialRecipe::Prepared { strands, .. } => strands.len(),
+            MaterialRecipe::ExactPcr { .. } => 2,
+            MaterialRecipe::SavedGraph { .. } => unreachable!("expanded primitive recipe"),
+        })
+        .sum()
+}
+fn flat_activation(materials: &[MaterialRecipe], index: usize) -> Option<String> {
+    let mut offset = 0;
+    for m in materials {
+        match m {
+            MaterialRecipe::Prepared { strands, .. } => {
+                if index < offset + strands.len() {
+                    return match &strands[index - offset].three_prime {
+                        physical::ThreePrime::Phosphotyrosyl { activation_id, .. } => {
+                            Some(activation_id.clone())
+                        }
+                        _ => None,
+                    };
+                }
+                offset += strands.len();
+            }
+            MaterialRecipe::ExactPcr { .. } => offset += 2,
+            MaterialRecipe::SavedGraph { .. } => return None,
+        }
+    }
+    None
+}
+fn prepare_declared(inputs: &[Input], r: &Request) -> Result<PreparationEvidence, Error> {
     let mut substrates = physical::Substrates {
         strands: vec![],
         pairing: vec![],
@@ -492,6 +913,7 @@ pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparationEviden
         .collect();
     for (material, m) in r.recipe.materials.iter().enumerate() {
         match m {
+            MaterialRecipe::SavedGraph { .. } => return Err(bad("unexpanded saved graph")),
             MaterialRecipe::Prepared {
                 declaration_id,
                 assumption,
@@ -684,33 +1106,299 @@ pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparationEviden
         maps,
         not_represented,
         assumptions,
+        retained_transfers: vec![],
+        layout: vec![],
+        graph_origins: vec![],
     })
+}
+pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparedContext, Error> {
+    prepare_bound(inputs, r, &[])
+}
+fn prepare_bound(
+    inputs: &[Input],
+    r: &Request,
+    root_bindings: &[crate::topo_graph_history::SourceBinding],
+) -> Result<PreparedContext, Error> {
+    let expanded = expand(
+        inputs,
+        r,
+        if root_bindings.is_empty() {
+            None
+        } else {
+            Some(root_bindings)
+        },
+    )?;
+    let roots = expanded
+        .bindings
+        .iter()
+        .filter_map(|b| b.origin.as_ref())
+        .map(|o| match o {
+            crate::run_material::MaterialOrigin::Run(c) => {
+                crate::run_material::NativeOriginRef::Run(c)
+            }
+            crate::run_material::MaterialOrigin::Derived(c) => {
+                crate::run_material::NativeOriginRef::Derived(c)
+            }
+        });
+    crate::run_material::native_origins_preflight(roots)?;
+    let mut cache = std::collections::BTreeMap::new();
+    let mut incomplete = false;
+    let mut conditional_roles = BTreeSet::new();
+    let mut findings = vec![];
+    for b in &expanded.bindings {
+        if let Some(origin) = &b.origin {
+            let input = source(&expanded.inputs, &b.role)?;
+            let key = hash(&(&b.event, origin.selection()))?;
+            if !cache.contains_key(&key) {
+                cache.insert(key.clone(), origin.replay(input)?);
+            }
+            let fresh = &cache[&key];
+            incomplete |= fresh.incomplete();
+            if fresh.incomplete() {
+                conditional_roles.insert(b.role.clone());
+            }
+            if fresh.findings_total() > 0 {
+                findings.push(format!("Source {}: showing at most one of {} inherited native findings; complete originating closure remains retained{}.",b.role,fresh.findings_total(),if fresh.findings_truncated(){"; original excerpt was bounded"}else{""}));
+                findings.extend(
+                    fresh
+                        .findings()
+                        .iter()
+                        .take(1)
+                        .map(|s| s.chars().take(2048).collect::<String>()),
+                );
+            }
+        }
+    }
+    let mut templates = vec![];
+    for b in &expanded.bindings {
+        if let Some(origin) = &b.origin {
+            let key = hash(&(&b.event, origin.selection()))?;
+            templates.push((b.role.clone(), cache[&key].tracked()));
+        }
+    }
+    // Root Step callers already proved their actual PCR-template eligibility in
+    // source_preflight_reconstructed. Nested origins are freshly replayed here.
+    for (role, tracked) in &templates {
+        tracked.validate()?;
+        let m = source(&expanded.inputs, role)?;
+        if tracked.duplex.top != m.sequence
+            || tracked.duplex.topology != m.topology
+            || tracked.duplex.bottom_start != 0
+            || tracked.duplex.bottom != tracked.duplex.top.reverse_complement()?
+            || !tracked.duplex.nicks.is_empty()
+        {
+            return Err(bad(
+                "saved graph PCR requires an actual intact aligned template; staggered/nicked models remain unsupported",
+            ));
+        }
+    }
+    let mut evidence = prepare_declared(&expanded.inputs, &expanded.request)?;
+    let prefix = expanded
+        .request
+        .transfers
+        .len()
+        .checked_sub(r.transfers.len())
+        .ok_or(Error::TooLarge)?;
+    evidence.retained_transfers = expanded.request.transfers[..prefix].to_vec();
+    evidence.layout = expanded.layout;
+    evidence.graph_origins = expanded.origins;
+    let origin_source_incomplete=evidence.graph_origins.iter().map(|origin|evidence.maps.iter().any(|map|{
+        origin.strand_start<=map.strand&&map.strand<origin.strand_end&&matches!(&map.origin,Origin::ExactPcrCopy{template_role,..}if conditional_roles.contains(template_role))
+    })).collect();
+    // These flags are compared with actual scoped execution before any result
+    // is published; the retained record is never authority for completeness.
+    incomplete |= evidence.graph_origins.iter().any(|o| o.incomplete);
+    Ok(PreparedContext {
+        inputs: expanded.inputs,
+        evidence,
+        effective_transfers: expanded.request.transfers,
+        incomplete,
+        origin_source_incomplete,
+        findings,
+    })
+}
+pub(crate) fn effective_transfers(
+    evidence: &PreparationEvidence,
+    r: &Request,
+) -> Result<Vec<physical::Transfer>, Error> {
+    let expected = retained_transfers(r)?;
+    if expected != evidence.retained_transfers {
+        return Err(bad(
+            "retained graph transfer prefix differs from native request",
+        ));
+    }
+    let mut all = expected;
+    all.extend(r.transfers.iter().cloned());
+    if all.len() > 64 {
+        return Err(Error::TooLarge);
+    }
+    Ok(all)
+}
+fn retained_transfers(r: &Request) -> Result<Vec<physical::Transfer>, Error> {
+    let roots = r.recipe.materials.iter().filter_map(|m| {
+        if let MaterialRecipe::SavedGraph { origin, .. } = m {
+            Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+        } else {
+            None
+        }
+    });
+    crate::run_material::native_origins_preflight(roots)?;
+    fn collect(
+        r: &Request,
+        base: usize,
+        depth: usize,
+    ) -> Result<(usize, Vec<physical::Transfer>), Error> {
+        if depth > 32 {
+            return Err(Error::TooLarge);
+        }
+        let mut n = 0usize;
+        let mut out = vec![];
+        for m in &r.recipe.materials {
+            match m {
+                MaterialRecipe::Prepared { strands, .. } => n += strands.len(),
+                MaterialRecipe::ExactPcr { .. } => n += 2,
+                MaterialRecipe::SavedGraph { origin, .. } => {
+                    let record = origin.validate_shallow()?;
+                    let (count, steps) = collect(&record.request.request, base + n, depth + 1)?;
+                    n = n.checked_add(count).ok_or(Error::TooLarge)?;
+                    out.extend(steps);
+                }
+            }
+            if n > 64 || out.len() > 64 {
+                return Err(Error::TooLarge);
+            }
+        }
+        for t in &r.transfers {
+            out.push(physical::Transfer {
+                donor: base.checked_add(t.donor).ok_or(Error::TooLarge)?,
+                acceptor: base.checked_add(t.acceptor).ok_or(Error::TooLarge)?,
+                geometry: t.geometry,
+            });
+        }
+        Ok((n, out))
+    }
+    let (_, mut full) = collect(r, 0, 0)?;
+    if r.transfers.len() > full.len() {
+        return Err(Error::TooLarge);
+    }
+    full.truncate(full.len() - r.transfers.len());
+    Ok(full)
+}
+fn check_origin_incompleteness(
+    prepared: &PreparedContext,
+    actual: &physical::Report,
+) -> Result<(), Error> {
+    if prepared.origin_source_incomplete.len() != prepared.evidence.graph_origins.len() {
+        return Err(bad("source completeness scope changed"));
+    }
+    for (origin, source_incomplete) in prepared
+        .evidence
+        .graph_origins
+        .iter()
+        .zip(&prepared.origin_source_incomplete)
+    {
+        let mut computed = *source_incomplete;
+        for index in &origin.transfer_map {
+            let step = actual
+                .steps
+                .get(*index)
+                .filter(|_| *index < origin.after_transfers)
+                .ok_or_else(|| bad("source transfer completeness map changed"))?;
+            computed |= step.outcome != physical::Outcome::Applied;
+        }
+        if computed != origin.incomplete {
+            return Err(bad(
+                "native graph incomplete claim differs from fresh scoped source/transfer execution",
+            ));
+        }
+    }
+    Ok(())
+}
+pub(crate) fn execute(
+    prepared: &PreparedContext,
+    limits: &physical::Limits,
+) -> Result<physical::Executed, Error> {
+    let checkpoints = prepared
+        .evidence
+        .graph_origins
+        .iter()
+        .map(|o| physical::Checkpoint {
+            after_transfers: o.after_transfers,
+            strand_start: o.strand_start,
+            strand_end: o.strand_end,
+            activation_unmap: o.activation_unmap.iter().cloned().collect(),
+            transfer_map: o.transfer_map.clone(),
+        })
+        .collect::<Vec<_>>();
+    let fresh = physical::simulate_with_checkpoints(
+        &prepared.evidence.substrates,
+        &prepared.effective_transfers,
+        limits,
+        &checkpoints,
+    )
+    .map_err(engine_error)?;
+    check_origin_incompleteness(prepared, fresh.report())?;
+    for (origin, product) in prepared
+        .evidence
+        .graph_origins
+        .iter()
+        .zip(fresh.checkpoints())
+    {
+        if hash(&(crate::topo_graph_history::ENGINE_VERSION, product))?
+            != origin.selection.state_revision
+        {
+            return Err(bad("native graph prefix differs from retained exact state"));
+        }
+    }
+    Ok(fresh)
+}
+pub(crate) fn simulate_bound(
+    inputs: &[Input],
+    r: &Request,
+    bindings: &[crate::topo_graph_history::SourceBinding],
+) -> Result<TopoReport, Error> {
+    let roles = bindings
+        .iter()
+        .filter(|b| b.origin.is_some())
+        .map(|b| b.role.clone())
+        .collect::<BTreeSet<_>>();
+    source_preflight_inner(inputs, r, &roles)?;
+    let prepared = prepare_bound(inputs, r, bindings)?;
+    report_prepared(inputs, r, prepared)
+}
+fn report_prepared(
+    inputs: &[Input],
+    r: &Request,
+    prepared: PreparedContext,
+) -> Result<TopoReport, Error> {
+    let physical = execute(&prepared, &r.engine_limits)?.into_report();
+    let result = TopoReport {
+        engine_version: ENGINE_VERSION.into(),
+        batch_revision: batch_binding(inputs, r)?,
+        sources: identities(&prepared.inputs),
+        incomplete: prepared.incomplete
+            || physical.unsupported_or_unknown
+            || !physical.all_requested_transfers_applied,
+        findings: prepared.findings,
+        preparation: prepared.evidence,
+        physical,
+    };
+    bounded(&result, MAX_REPORT_BYTES)?;
+    Ok(result)
 }
 pub fn simulate(inputs: &[Input], r: &Request) -> Result<TopoReport, Error> {
     source_preflight(inputs, r)?;
     simulate_preflighted(inputs, r)
 }
 fn simulate_preflighted(inputs: &[Input], r: &Request) -> Result<TopoReport, Error> {
-    let batch_revision = batch_binding(inputs, r)?;
-    let preparation = prepare(inputs, r)?;
-    let physical = physical::simulate(&preparation.substrates, &r.transfers, &r.engine_limits)
-        .map_err(engine_error)?;
-    let result = TopoReport {
-        engine_version: ENGINE_VERSION.into(),
-        batch_revision,
-        sources: identities(inputs),
-        preparation,
-        physical,
-    };
-    bounded(&result, MAX_REPORT_BYTES)?;
-    Ok(result)
+    report_prepared(inputs, r, prepare(inputs, r)?)
 }
 pub fn product_revision(inputs: &[Input], r: &Request, s: &Selection) -> Result<String, Error> {
     let batch = batch_revision(inputs, r)?;
     if s.batch_revision.len() != 64 || s.batch_revision != batch || s.component >= 64 {
         return Err(bad("selection does not bind current source/recipe"));
     }
-    hash(&(ENGINE_VERSION, "selected-physical-component", batch, s))
+    hash(&(ENGINE_VERSION, "selected-physical-component", &batch, s))
 }
 /// Fresh source reconstruction; imported Product/Report values are never authority.
 pub fn product(inputs: &[Input], r: &Request, s: &Selection) -> Result<Product, Error> {
@@ -722,19 +1410,21 @@ fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<P
     if s.batch_revision != batch || s.component >= 64 {
         return Err(bad("selection does not bind current source/recipe"));
     }
-    let batch_revision = hash(&(ENGINE_VERSION, "selected-physical-component", batch, s))?;
-    let fresh = simulate_preflighted(inputs, r)?;
+    let batch_revision = hash(&(ENGINE_VERSION, "selected-physical-component", &batch, s))?;
+    let prepared = prepare(inputs, r)?;
+    let fresh = execute(&prepared, &r.engine_limits)?;
     let select = projection::Selection {
-        source_batch_revision: fresh.physical.batch_revision.clone(),
+        source_batch_revision: fresh.report().batch_revision.clone(),
         component: s.component,
         reference_seed: s.reference_seed,
     };
-    let projection = projection::project(
-        &fresh.preparation.substrates,
-        &r.transfers,
+    let projection = projection::project_fresh(
+        &prepared.evidence.substrates,
+        &prepared.effective_transfers,
         &r.engine_limits,
         &select,
         &r.projection_options,
+        fresh,
     )
     .map_err(engine_error)?;
     let reference = if let projection::Outcome::Proven(v) = &projection.outcome {
@@ -750,13 +1440,12 @@ fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<P
             .insert("source:legacy:chemistry_unmapped".into(), "true".into());
         m.metadata
             .insert("topo:physical_graph_required".into(), "true".into());
-        m.metadata.insert(
-            "topo:adapter_batch_revision".into(),
-            fresh.batch_revision.clone(),
-        );
+        m.metadata
+            .insert("topo:adapter_batch_revision".into(), batch.clone());
         m.metadata.insert(
             RECIPE_KEY.into(),
-            serde_json::to_string(&(r, s, &fresh.sources)).map_err(|_| Error::TooLarge)?,
+            serde_json::to_string(&(&batch, s, identities(&prepared.inputs)))
+                .map_err(|_| Error::TooLarge)?,
         );
         Some(m)
     } else {
@@ -766,116 +1455,54 @@ fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<P
         engine_version: ENGINE_VERSION.into(),
         batch_revision,
         selection: s.clone(),
-        sources: fresh.sources,
-        preparation: fresh.preparation,
+        sources: identities(&prepared.inputs),
+        preparation: prepared.evidence,
         projection,
+        annotations: None,
         reference,
     };
     bounded(&p, MAX_REPORT_BYTES)?;
-    Ok(p)
+    annotate_fresh_product(&prepared.inputs, p)
 }
-/// Borrowed source/request/selection binding only; no graph reconstruction or
-/// annotation projection. Annotation changes already alter the physical source
-/// revision, and this separate domain pins annotation-transform semantics.
-pub fn annotated_product_revision(
+/// Annotation correspondence is attached to the same fresh canonical Product.
+/// It never supplies native graph/terminal authority.
+fn annotate_fresh_product(inputs: &[Input], mut product: Product) -> Result<Product, Error> {
+    if let (projection::Outcome::Proven(view), Some(reference)) =
+        (&product.projection.outcome, &mut product.reference)
+    {
+        let evidence =
+            crate::topo_annotations::project(inputs, &product.preparation, view, reference)?;
+        reference.features = evidence.features.clone();
+        reference.metadata.insert(
+            "topo:annotation_engine".into(),
+            ANNOTATION_ENGINE_VERSION.into(),
+        );
+        reference.metadata.insert(
+            "topo:annotation_revision".into(),
+            product.batch_revision.clone(),
+        );
+        reference.metadata.insert("topo:annotation_scope".into(),"Source-coordinate correspondence only; no inherited chemistry or biological validity claim.".into());
+        reference.validate()?;
+        product.annotations = Some(evidence);
+    }
+    bounded(&product, MAX_REPORT_BYTES)?;
+    Ok(product)
+}
+pub fn target_revision(
     inputs: &[Input],
-    request: &Request,
-    selection: &Selection,
-) -> Result<String, Error> {
-    // Reuse the existing bounded streaming implementation of the legacy
-    // physical product domain. It hashes borrowed inputs and dispatches no job.
-    annotated_product_binding(&crate::topo_worker::projection_revision(
-        inputs, request, selection,
-    )?)
-}
-/// This private handoff accepts only a Product freshly built in this module.
-/// External serialized Product values are never accepted as annotation authority.
-fn annotate_fresh_product(inputs: &[Input], physical: Product) -> Result<AnnotatedProduct, Error> {
-    let batch_revision = annotated_product_binding(&physical.batch_revision)?;
-    let (annotations, reference) = match (&physical.projection.outcome, &physical.reference) {
-        (projection::Outcome::Proven(view), Some(destination)) => {
-            let evidence =
-                crate::topo_annotations::project(inputs, &physical.preparation, view, destination)?;
-            let mut reference = destination.clone();
-            reference.features = evidence.features.clone();
-            reference.metadata.insert(
-                "topo:annotation_engine".into(),
-                ANNOTATION_ENGINE_VERSION.into(),
-            );
-            reference
-                .metadata
-                .insert("topo:annotation_revision".into(), batch_revision.clone());
-            reference.metadata.insert("topo:annotation_scope".into(),"Source-coordinate correspondence only; not inherited chemical ancestry or biological validity. Unmapped/review evidence remains in the full annotated product.".into());
-            reference.validate()?;
-            (Some(evidence), Some(reference))
-        }
-        (projection::Outcome::Withheld(_), None) => (None, None),
-        _ => return Err(bad("fresh contour/reference presence disagrees")),
-    };
-    let result = AnnotatedProduct {
-        engine_version: ANNOTATION_ENGINE_VERSION.into(),
-        batch_revision,
-        physical,
-        annotations,
-        reference,
-    };
-    bounded(&result, MAX_REPORT_BYTES)?;
-    Ok(result)
-}
-/// Fresh physical reconstruction plus separately retained conservative annotation
-/// correspondence. The original physical Product stays annotation-free unchanged.
-pub fn annotated_product(
-    inputs: &[Input],
-    request: &Request,
-    selection: &Selection,
-) -> Result<AnnotatedProduct, Error> {
-    let fresh = product(inputs, request, selection)?;
-    annotate_fresh_product(inputs, fresh)
-}
-/// Independently bound target/policy request; this hashes borrowed data only.
-pub fn annotated_target_revision(
-    inputs: &[Input],
-    request: &Request,
-    selection: &Selection,
+    r: &Request,
+    s: &Selection,
     target: &Molecule,
     policy: &AcceptancePolicy,
 ) -> Result<String, Error> {
     target_preflight(target)?;
-    annotated_target_binding(
-        &annotated_product_revision(inputs, request, selection)?,
-        &annotation_hash(target)?,
+    hash(&(
+        ENGINE_VERSION,
+        "independent-target",
+        product_revision(inputs, r, s)?,
+        target.revision(),
         policy,
-    )
-}
-/// Reconstruct/check the physical target exactly once. Annotation correspondence
-/// enriches that same fresh graph, without changing its target-policy outcome.
-pub fn check_target_annotated(
-    inputs: &[Input],
-    request: &Request,
-    selection: &Selection,
-    target: &Molecule,
-    policy: &AcceptancePolicy,
-) -> Result<AnnotatedAssessment, Error> {
-    let TargetAssessment {
-        product,
-        policy,
-        target_revision,
-        outcome,
-        ..
-    } = check_target(inputs, request, selection, target, policy)?;
-    let product = annotate_fresh_product(inputs, product)?;
-    let batch_revision =
-        annotated_target_binding(&product.batch_revision, &target_revision, &policy)?;
-    let result = AnnotatedAssessment {
-        engine_version: ANNOTATION_ENGINE_VERSION.into(),
-        batch_revision,
-        target_revision,
-        policy,
-        product,
-        outcome,
-    };
-    bounded(&result, MAX_REPORT_BYTES)?;
-    Ok(result)
+    ))
 }
 fn target_preflight(target: &Molecule) -> Result<(), Error> {
     collagene_model::bounds::model_preflight(&[target])?;
@@ -964,6 +1591,38 @@ pub struct OrientationInspection {
     /// Exact requests to use with fresh product materialization, in matching order.
     pub candidate_requests: Vec<Request>,
 }
+pub fn orientations_revision(
+    inputs: &[Input],
+    r: &Request,
+    vector: [usize; 2],
+    insert: [usize; 2],
+    directional: bool,
+) -> Result<String, Error> {
+    source_preflight(inputs, r)?;
+    if !r.transfers.is_empty()
+        || vector.iter().chain(&insert).any(|i| *i >= 64)
+        || vector
+            .iter()
+            .chain(&insert)
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != 4
+    {
+        return Err(bad(
+            "orientation inspection needs four distinct bounded native strand handles and no new transfers",
+        ));
+    }
+    hash(&(
+        ENGINE_VERSION,
+        "two-declared-orientations",
+        identities(inputs),
+        r,
+        vector,
+        insert,
+        directional,
+    ))
+}
 pub fn inspect_orientations(
     inputs: &[Input],
     r: &Request,
@@ -986,33 +1645,66 @@ fn orientations_preflighted(
             "orientation inspection requires an empty transfer list; orientation-specific requests are returned explicitly",
         ));
     }
-    let preparation = prepare(inputs, r)?;
+    let prepared = prepare(inputs, r)?;
     if vector
         .iter()
         .chain(&insert)
-        .any(|i| *i >= preparation.substrates.strands.len())
+        .any(|i| *i >= prepared.evidence.substrates.strands.len())
     {
-        return Err(bad("orientation strand index outside prepared material"));
+        return Err(bad("orientation source outside actual graph layout"));
     }
+    let checkpoints = prepared
+        .evidence
+        .graph_origins
+        .iter()
+        .map(|o| physical::Checkpoint {
+            after_transfers: o.after_transfers,
+            strand_start: o.strand_start,
+            strand_end: o.strand_end,
+            activation_unmap: o.activation_unmap.iter().cloned().collect(),
+            transfer_map: o.transfer_map.clone(),
+        })
+        .collect::<Vec<_>>();
     let reference = physical::orientations(
-        &preparation.substrates,
+        &prepared.evidence.substrates,
+        &prepared.evidence.retained_transfers,
         vector,
         insert,
         directional,
         &r.engine_limits,
+        &checkpoints,
     )
     .map_err(engine_error)?;
+    let actual = reference
+        .candidates
+        .first()
+        .ok_or_else(|| bad("native orientation prefix evidence missing"))?;
+    check_origin_incompleteness(&prepared, actual)?;
+    for (origin, p) in prepared
+        .evidence
+        .graph_origins
+        .iter()
+        .zip(&reference.checkpoints)
+    {
+        if hash(&(crate::topo_graph_history::ENGINE_VERSION, p))? != origin.selection.state_revision
+        {
+            return Err(bad(
+                "orientation graph source differs from retained checkpoint",
+            ));
+        }
+    }
+    let sources = identities(&prepared.inputs);
+    let preparation = prepared.evidence;
     let mut candidate_requests = Vec::new();
-    for candidate in &reference.candidates {
+    for pending in &reference.pending_transfers {
         let mut request = r.clone();
-        request.transfers = candidate.steps.iter().map(|s| s.transfer.clone()).collect();
+        request.transfers = pending.clone();
         candidate_requests.push(request);
     }
-    let sources = identities(inputs);
     let batch_revision = hash(&(
         ENGINE_VERSION,
         "two-declared-orientations",
-        &sources,
+        identities(inputs),
         r,
         vector,
         insert,
@@ -1053,10 +1745,9 @@ pub(crate) fn inspect_reconstructed_task(
             *insert,
             *directional,
         )?),
-        Task::Project { request, selection } => Reply::Projected(annotate_fresh_product(
-            inputs,
-            product_preflighted(inputs, request, selection)?,
-        )?),
+        Task::Project { request, selection } => {
+            Reply::Projected(product_preflighted(inputs, request, selection)?)
+        }
         Task::Check {
             request,
             selection,
@@ -1074,14 +1765,15 @@ pub(crate) fn inspect_reconstructed_task(
                 target,
                 policy,
             )?;
-            let product = annotate_fresh_product(inputs, product)?;
-            Reply::Checked(AnnotatedAssessment {
-                engine_version: ANNOTATION_ENGINE_VERSION.into(),
-                batch_revision: annotated_target_binding(
+            Reply::Checked(TargetAssessment {
+                engine_version: ENGINE_VERSION.into(),
+                batch_revision: hash(&(
+                    ENGINE_VERSION,
+                    "independent-target",
                     &product.batch_revision,
                     &target_revision,
                     &policy,
-                )?,
+                ))?,
                 target_revision,
                 policy,
                 product,
@@ -1113,6 +1805,7 @@ pub(crate) fn declared_template_preflight(
     let mut used = false;
     for material in &r.recipe.materials {
         match material {
+            MaterialRecipe::SavedGraph { .. } => {}
             MaterialRecipe::Prepared { strands, .. }
                 if strands
                     .iter()

@@ -159,7 +159,7 @@ fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() 
         preview.compiled.rows[0].preparation.prepared_source,
         Source::Step(5)
     ));
-    assert!(preview.verification.engine_version.ends_with("/science-27"));
+    assert!(preview.verification.engine_version.ends_with("/science-28"));
     let candidate = Candidate::new(preview.compiled.plan);
     let encoded_candidate = transfer::save_candidate(&candidate).unwrap();
     assert_eq!(
@@ -327,11 +327,11 @@ fn target_free165_157_inspection_scans_actual58bp_product_and_retains_incomplete
     };
     let encoded = protocol::encode_request(&job).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 165);
+    assert_eq!(tag, 163);
     assert!(protocol::process_request(&wire(b"CGQ\0", 83, &job)).is_err());
     let reply = protocol::process_request(&encoded).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&reply[42..]).unwrap();
-    assert_eq!(tag, 157);
+    assert_eq!(tag, 155);
     let response = protocol::decode_response(&reply).unwrap();
     assert!(protocol::decode_response(&wire(b"CGR\0", 83, &response)).is_err());
     let AnalysisResult::OverlapExtensionDigestInspection(preview) = response.result else {

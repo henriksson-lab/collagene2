@@ -83,10 +83,10 @@ fn new_appended_tags_are_roundtripped_and_rejected_under_pre_planner_headers() {
         protocol::WORKER_SCHEMA_VERSION
     );
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 97);
+    assert_eq!(tag, 95);
     let response = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 89);
+    assert_eq!(tag, 87);
     let decoded = protocol::decode_response(&response).unwrap();
     assert_eq!(decoded.id, 997);
     assert_eq!(decoded.revision, revision);

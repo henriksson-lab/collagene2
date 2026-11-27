@@ -28,7 +28,7 @@ fn export(w: &workspace::Workspace, hash: &str, format: q::ExportFormat) -> q::E
         protocol::WORKER_SCHEMA_VERSION
     );
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 188);
+    assert_eq!(tag, 186);
     let a = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
     let b = protocol::decode_response(
         &protocol::AnalysisSession::default()

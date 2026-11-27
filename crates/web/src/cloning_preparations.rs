@@ -902,8 +902,12 @@ mod overlap_extension_tests {
         let capsule = run_material::capsule(&commit.workspace, &selection).unwrap();
         let saved = commit.workspace.revisions[&selection.event.revision].clone();
         let mut s = state();
-        s.rows[0].run_origin =
-            Some(crate::run_origin_model::PinnedOrigin::new(capsule.clone()).unwrap());
+        s.rows[0].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::from_material(
+                collagene_core::run_material::MaterialOrigin::Run(capsule.clone()),
+            )
+            .unwrap(),
+        );
         let (_, rows) = prepared_rows(&s, 2).unwrap();
         let assembly_recipe::Preparation::FromRun {
             origin,

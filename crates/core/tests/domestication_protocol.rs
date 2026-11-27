@@ -74,8 +74,8 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
             request: request.clone(),
         },
         design::inspect_revision(&source, &request).unwrap(),
-        139,
-        131,
+        137,
+        129,
     ) else {
         panic!("inspection required")
     };
@@ -86,8 +86,8 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
             request: request.clone(),
         },
         design::propose_revision(&source, &request).unwrap(),
-        140,
-        132,
+        138,
+        130,
     ) else {
         panic!("proposal required")
     };
@@ -102,8 +102,8 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
             selection: selection.clone(),
         },
         design::check_revision(&source, &request, &selection).unwrap(),
-        141,
-        133,
+        139,
+        131,
     ) else {
         panic!("checked literal reference required")
     };
@@ -135,8 +135,8 @@ fn inspection_proposal_check_and_original_template_preparation_keep_append_only_
             request: request.clone(),
         },
         revision,
-        142,
-        134,
+        140,
+        132,
     ) else {
         panic!("actual original-source preparation required")
     };

@@ -316,8 +316,29 @@ pub fn simulate(
     l: &Limits,
     r: &Request,
 ) -> Result<Report, Error> {
+    let fresh = crate::simulate_with_checkpoints(s, original, l, &[])?;
+    process_fresh(s, original, l, r, fresh)
+}
+/// Only a private-constructed fresh native execution can enter this phase.
+pub fn process_fresh(
+    s: &Substrates,
+    original: &[Transfer],
+    l: &Limits,
+    r: &Request,
+    mut fresh: crate::Executed,
+) -> Result<Report, Error> {
     let n = preflight(s, original, l, r)?;
-    let parent = crate::simulate(s, original, l)?;
+    if fresh.report().batch_revision != crate::batch_revision(s, original, l)? {
+        return Err(bad("fresh parent source/transcript differs"));
+    }
+    fresh.reserve_work(
+        crate::add(
+            crate::mul(n, 256)?,
+            crate::mul(original.len() + r.actions.len(), 256)?,
+        )?,
+        crate::mul(n, 512)?,
+    )?;
+    let parent = fresh.into_report();
     let context_revision = context(&parent.batch_revision, l, r)?;
     let mut g = rebuild(s, &parent, n)?;
     let mut ends = TerminalOverrides::default();

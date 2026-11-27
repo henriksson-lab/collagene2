@@ -65,8 +65,8 @@ fn signed_search_and_explicit_preparation_use_new_append_only_worker_selectors()
             request: request.clone(),
         },
         revision,
-        136,
-        128,
+        134,
+        126,
     ) else {
         panic!("fusion search response required")
     };
@@ -88,8 +88,8 @@ fn signed_search_and_explicit_preparation_use_new_append_only_worker_selectors()
             selection: selection.clone(),
         },
         revision,
-        137,
-        129,
+        135,
+        127,
     ) else {
         panic!("materialized original-source preparation required")
     };
@@ -129,8 +129,8 @@ fn empirical_scores_are_condition_bound_and_keep_missing_counts_unknown_over_bin
             ends: ends.clone(),
         },
         revision,
-        138,
-        130,
+        136,
+        128,
     ) else {
         panic!("conditional estimate required")
     };
@@ -145,8 +145,8 @@ fn empirical_scores_are_condition_bound_and_keep_missing_counts_unknown_over_bin
             physical_competitors: extras.clone(),
         },
         revision,
-        146,
-        138,
+        144,
+        136,
     ) else {
         panic!("competition report")
     };
@@ -182,8 +182,8 @@ fn published_catalog_score_and_ranking_use_version62_and_preserve_selection_cont
     let AnalysisResult::LigationProfiles(items) = exchange62(
         AnalysisJob::ListLigationProfiles,
         profiles::catalog_revision().unwrap(),
-        143,
-        135,
+        141,
+        133,
     ) else {
         panic!("catalog")
     };
@@ -203,8 +203,8 @@ fn published_catalog_score_and_ranking_use_version62_and_preserve_selection_cont
             physical_competitors: extras.clone(),
         },
         profiles::score_revision_with_competitors(&profile, &ends, &extras).unwrap(),
-        144,
-        136,
+        142,
+        134,
     ) else {
         panic!("score")
     };
@@ -223,8 +223,8 @@ fn published_catalog_score_and_ranking_use_version62_and_preserve_selection_cont
             request: request.clone(),
         },
         rank::inspect_revision(&inputs, &request).unwrap(),
-        145,
-        137,
+        143,
+        135,
     ) else {
         panic!("ranking")
     };

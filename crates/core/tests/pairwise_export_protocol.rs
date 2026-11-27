@@ -61,9 +61,9 @@ fn selector(wire: &[u8]) -> u32 {
 }
 fn roundtrip(request: &Request) -> (Vec<u8>, Response) {
     let wire = protocol::encode_request(request).unwrap();
-    assert_eq!(selector(&wire), 125);
+    assert_eq!(selector(&wire), 123);
     let reply = protocol::process_request(&wire).unwrap();
-    assert_eq!(selector(&reply), 117);
+    assert_eq!(selector(&reply), 115);
     let response = protocol::decode_response(&reply).unwrap();
     assert_eq!(response.id, request.id);
     assert_eq!(response.revision, request.revision);
@@ -225,9 +225,9 @@ fn aligned_row_search_runs_in_the_worker_with_native_coordinates_and_context_gua
         },
     };
     let wire = protocol::encode_request(&request).unwrap();
-    assert_eq!(selector(&wire), 126);
+    assert_eq!(selector(&wire), 124);
     let reply = protocol::process_request(&wire).unwrap();
-    assert_eq!(selector(&reply), 118);
+    assert_eq!(selector(&reply), 116);
     let response = protocol::decode_response(&reply).unwrap();
     assert_eq!(response.revision, request.revision);
     let mut malformed = response.clone();
@@ -293,9 +293,9 @@ fn annotation_context_worker_preserves_gap_columns_and_rejects_stale_or_old_enve
         },
     };
     let wire = protocol::encode_request(&request).unwrap();
-    assert_eq!(selector(&wire), 127);
+    assert_eq!(selector(&wire), 125);
     let reply = protocol::process_request(&wire).unwrap();
-    assert_eq!(selector(&reply), 119);
+    assert_eq!(selector(&reply), 117);
     let response = protocol::decode_response(&reply).unwrap();
     assert_eq!(response.revision, request.revision);
     let AnalysisResult::PreparedPairwiseContext(context) = &response.result else {

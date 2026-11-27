@@ -243,7 +243,7 @@ pub fn AssemblyProductView(
                 let processed=s.report.processed_step_reports.iter().filter(|r|r.step_index==index).count();
                 let physical=s.report.physical_processing_reports.iter().filter(|r|r.step_index==index).count();
                 let reference=s.report.reference_step_reports.iter().filter(|r|r.step_index==index).count();
-                let annotation=s.report.annotation_reports.iter().filter(|r|r.step_index==index).count();
+                let annotation=s.report.step_reports.iter().filter(|r|r.step_index==index&&r.topo.as_ref().is_some_and(|topo|topo.annotations.is_some())).count();
                 Some(view!{<p>{format!("Next step not reconstructed: {}. {}",index+1,operation_label(&s.plan.steps[index]))}</p><p class="helper">{format!("Retained typed evidence at this step: {graphs} graph, {processed} processed graph, {physical} physical processing, {reference} reference and {annotation} annotation reports. Export the full reconstruction JSON for complete evidence, including graph-only results with no DNA product.")}</p>})
             })}
             <Show when=move||snapshot.with_value(|s|s.prefix_available>0)>

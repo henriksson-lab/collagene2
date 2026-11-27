@@ -88,8 +88,24 @@ pub fn project(
     select: &Selection,
     o: &p::Options,
 ) -> Result<ProcessedReport, Error> {
+    let fresh = crate::simulate_with_checkpoints(s, t, l, &[])?;
+    project_fresh(s, t, l, r, select, o, fresh)
+}
+pub fn project_fresh(
+    s: &Substrates,
+    t: &[Transfer],
+    l: &Limits,
+    r: &nick::Request,
+    select: &Selection,
+    o: &p::Options,
+    mut fresh: crate::Executed,
+) -> Result<ProcessedReport, Error> {
     let context_revision = revision(s, t, l, r, select, o)?;
-    let sealing = nick::simulate(s, t, l, r)?;
+    fresh.reserve_work(
+        crate::mul(fresh.report().source_bases, 128)?,
+        crate::mul(fresh.report().source_bases, 512)?,
+    )?;
+    let sealing = nick::seal_fresh(s, t, l, r, fresh)?;
     if select.component >= sealing.product.components.len() {
         return Err(bad("component absent from freshly processed graph"));
     }

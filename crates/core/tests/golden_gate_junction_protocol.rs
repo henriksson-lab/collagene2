@@ -82,13 +82,13 @@ fn golden_gate_junction_messages_bind_edits_and_reject_pre_46_selectors() {
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 112);
+    assert_eq!(tag, 110);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&45u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let response = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 104);
+    assert_eq!(tag, 102);
     let AnalysisResult::GoldenGateJunctionPrimers(report) =
         protocol::decode_response(&response).unwrap().result
     else {

@@ -13,10 +13,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::run_material_capsule::{
-    Capsule, MAX_AGGREGATE_ORIGIN_BYTES, MaterialOriginRef, ReplayEvidence, capsule,
-    capsules_preflight, documentary_material_origins, material_capsules_preflight,
-    material_origins_preflight, plan_preflight, validate_input_origins, validate_plan_origins,
-    visit_candidate_plans,
+    Capsule, DocumentaryOrigins, MAX_AGGREGATE_ORIGIN_BYTES, MaterialOriginRef, NativeOriginRef,
+    ReplayEvidence, capsule, capsules_preflight, documentary_origins, material_capsules_preflight,
+    material_origins_preflight, native_origins_preflight, plan_preflight, validate_input_origins,
+    validate_native_origins, validate_plan_origins, visit_candidate_plans,
 };
 
 pub const ENGINE_VERSION: &str = "run-material-1";

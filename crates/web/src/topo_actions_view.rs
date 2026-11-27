@@ -28,7 +28,7 @@ pub struct OpenActions {
 }
 pub struct Capture {
     pub inputs: Vec<topo::Input>,
-    pub template_origin: Option<collagene_core::run_material::MaterialOrigin>,
+    pub template: Option<collagene_core::topo_run_preparation::BoundTemplate>,
     pub request: topo::Request,
     pub physical: physical::Report,
 }
@@ -409,7 +409,7 @@ pub fn TopoActionsView(
         };
         let revision = match crate::topo_preparation::task_revision(
             &fresh.inputs,
-            fresh.template_origin.as_ref(),
+            fresh.template.as_ref(),
             &collagene_core::topo_run_preparation::Task::InspectActions {
                 request: request.clone(),
             },
@@ -441,7 +441,7 @@ pub fn TopoActionsView(
                 executor.clone(),
                 ticket,
                 fresh.inputs,
-                fresh.template_origin,
+                fresh.template,
                 collagene_core::topo_run_preparation::Task::InspectActions { request },
             )
             .await;
@@ -551,7 +551,7 @@ pub fn TopoActionsView(
         };
         let revision = match crate::topo_preparation::task_revision(
             &fresh.inputs,
-            fresh.template_origin.as_ref(),
+            fresh.template.as_ref(),
             &collagene_core::topo_run_preparation::Task::ProcessActions {
                 request: request.clone(),
             },
@@ -581,7 +581,7 @@ pub fn TopoActionsView(
                 executor.clone(),
                 ticket,
                 fresh.inputs,
-                fresh.template_origin,
+                fresh.template,
                 collagene_core::topo_run_preparation::Task::ProcessActions { request },
             )
             .await;
@@ -667,7 +667,8 @@ pub fn TopoActionsView(
                 let key = &p.inspection.frame;
                 let fresh = capture.run(key.clone())?;
                 let origin = crate::topo_view::origin_evidence(
-                    fresh.template_origin.as_ref().map(|o| o.selection()),
+                    fresh.template.as_ref().map(|o| o.origin.selection()),
+                    key.graph.clone(),
                     captured_origin_review.as_ref(),
                 )?;
                 let evidence = Evidence {
@@ -693,7 +694,8 @@ pub fn TopoActionsView(
                 let key = &i.frame;
                 let fresh = capture.run(key.clone())?;
                 let origin = crate::topo_view::origin_evidence(
-                    fresh.template_origin.as_ref().map(|o| o.selection()),
+                    fresh.template.as_ref().map(|o| o.origin.selection()),
+                    key.graph.clone(),
                     captured_origin_review.as_ref(),
                 )?;
                 let evidence = Evidence {
@@ -750,7 +752,8 @@ pub fn TopoActionsView(
                     }
                     let fresh = capture.run(source_frame.clone())?;
                     if crate::topo_view::origin_evidence(
-                        fresh.template_origin.as_ref().map(|o| o.selection()),
+                        fresh.template.as_ref().map(|o| o.origin.selection()),
+                        source_frame.graph.clone(),
                         origin_review.get_untracked().as_ref(),
                     )? != saved_origin
                     {
@@ -775,7 +778,7 @@ pub fn TopoActionsView(
         }
     });
     view! {<details class="topo-actions"><summary>"Directional flap processing and ordered physical actions"</summary>
-        {move||origin_review.get().filter(|r|r.incomplete).map(|r|view!{<aside class="helper"><p>"The saved template's originating check remains incomplete. New PCR and explicit processing do not close its retained search limits or establish experimental isolation; the compiled plan preserves this limitation."</p><details><summary>"Retained origin findings"</summary><p>{format!("Showing {} of {} findings{}. The retained origin recipe remains available for full replay.",r.findings.len(),r.total,if r.truncated{"; displayed findings are truncated"}else{""})}</p><ul>{r.findings.into_iter().map(|s|view!{<li>{s}</li>}).collect_view()}</ul></details></aside>})}
+        {move||origin_review.get().filter(|r|r.incomplete).map(|r|view!{<aside class="helper"><p>"Retained source limits remain incomplete. Current transfers and processing do not close the source’s search limits or establish experimental isolation."</p><details><summary>"Retained origin findings"</summary><p>{format!("Showing {} of {} findings{}. The retained origin recipe remains available for full replay.",r.findings.len(),r.total,if r.truncated{"; displayed findings are truncated"}else{""})}</p><ul>{r.findings.into_iter().map(|s|view!{<li>{s}</li>}).collect_view()}</ul></details></aside>})}
         <p class="helper">"Declare ideal hydrolytic flap cleavage and nick sealing explicitly. Detached material remains as a free component; target DNA never determines what to remove. These actions do not model a repair kit or establish laboratory success."</p>
         <button class="text-tool" disabled=move||locked.get()||busy.get()||frame.get().is_none() on:click=move|_|load.run(())>"Load original selected path for action review"</button>
         <label>"Ideal hydrolytic cleavage assumption"<textarea rows="2" maxlength="4096" disabled=move||locked.get()||busy.get() prop:value=move||form.with(|f|f.hydrolysis.clone()) on:input=move|e|form.update(|f|f.hydrolysis=event_target_value(&e))/></label>

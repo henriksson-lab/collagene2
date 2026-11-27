@@ -61,13 +61,13 @@ fn review_preview_and_commit_use_exact_tags_and_reject_pre_43_headers() {
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 107);
+    assert_eq!(tag, 105);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&42u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 99);
+    assert_eq!(tag, 97);
     let AnalysisResult::ReadReviewPreview(preview) =
         protocol::decode_response(&bytes).unwrap().result
     else {
@@ -89,10 +89,10 @@ fn review_preview_and_commit_use_exact_tags_and_reject_pre_43_headers() {
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 108);
+    assert_eq!(tag, 106);
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 100);
+    assert_eq!(tag, 98);
     let AnalysisResult::ReadReviewCommitted(commit) =
         protocol::decode_response(&bytes).unwrap().result
     else {

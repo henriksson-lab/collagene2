@@ -1094,7 +1094,6 @@ impl Report {
             || self.verification.products.len() > 4
             || self.verification.physical_processing_reports.len() > 1
             || self.verification.step_reports.len() > 4
-            || self.verification.annotation_reports.len() > 4
             || self.verification.processed_step_reports.len() > 4
             || self.verification.reference_step_reports.len() > 4
             || self.verification.findings.len() > 1000

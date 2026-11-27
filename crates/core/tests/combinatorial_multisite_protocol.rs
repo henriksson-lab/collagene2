@@ -190,10 +190,10 @@ fn job155_returns_bound_inspection147_before_component_choice_and_is_never_worke
     };
     let encoded = protocol::encode_request(&req).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 155);
+    assert_eq!(tag, 153);
     let bytes = protocol::process_request(&encoded).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 147);
+    assert_eq!(tag, 145);
     let response = protocol::decode_response(&bytes).unwrap();
     let AnalysisResult::CombinatorialMultiSiteInspection(inspection) = response.result else {
         panic!("expected source-pinned inspection")

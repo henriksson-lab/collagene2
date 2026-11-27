@@ -1023,7 +1023,6 @@ impl Report {
             || self.junctions.len() > self.options.max_junctions
             || self.verification.products.len() > 1000
             || self.verification.step_reports.len() > 1000
-            || self.verification.annotation_reports.len() > 1000
             || self.warnings.len() > 64
             || self.warnings.iter().any(|s| s.len() > 8192)
         {
@@ -1037,19 +1036,12 @@ impl Report {
         for m in &self.verification.products {
             crate::model::bounds::model_preflight(&[m])?;
         }
-        for a in &self.verification.annotation_reports {
-            if a.evidence.sources.len() > 128 {
+        for report in &self.verification.step_reports {
+            if report.step_index >= 1000 {
                 return Err(Error::TooLarge);
             }
-            let mut budget = crate::model::bounds::ModelBudget::default();
-            budget.features(&a.evidence.features)?;
-            for role in &a.evidence.sources {
-                if role.unmapped.len() > 4096 {
-                    return Err(Error::TooLarge);
-                }
-                for f in &role.unmapped {
-                    budget.features(std::slice::from_ref(&f.feature))?;
-                }
+            if let Some(product) = &report.topo {
+                crate::topo_worker::validate_projection(product, &product.batch_revision)?;
             }
         }
         let presence = self.product_revision.is_some();

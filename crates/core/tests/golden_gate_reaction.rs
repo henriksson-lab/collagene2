@@ -206,13 +206,13 @@ fn reaction_protocol_is_append_only_and_changed_keys_or_substrates_cannot_reuse_
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 115);
+    assert_eq!(tag, 113);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&48u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 107);
+    assert_eq!(tag, 105);
     let AnalysisResult::GoldenGateReaction(report) =
         protocol::decode_response(&bytes).unwrap().result
     else {
@@ -243,10 +243,10 @@ fn reaction_protocol_is_append_only_and_changed_keys_or_substrates_cannot_reuse_
     })
     .unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&encoded[42..]).unwrap();
-    assert_eq!(tag, 116);
+    assert_eq!(tag, 114);
     let response = protocol::process_request(&encoded).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 108);
+    assert_eq!(tag, 106);
     let AnalysisResult::GoldenGateReactionCandidate(selected) =
         protocol::decode_response(&response).unwrap().result
     else {

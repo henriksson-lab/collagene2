@@ -85,8 +85,9 @@ pub fn fixture() -> (
         step_index: 0,
         event: saved.receipt.construct.clone(),
     });
-    let origins =
-        run_material::documentary_material_origins(&saved.workspace, &[selection.clone()]).unwrap();
+    let origins = run_material::documentary_origins(&saved.workspace, &[selection.clone()], &[])
+        .unwrap()
+        .materials;
     let reference = saved.workspace.revisions[&selection.event().revision].clone();
     let fresh = origins[0].replay(&reference).unwrap();
     assert_eq!(fresh.tracked().duplex.bottom_start, 4);

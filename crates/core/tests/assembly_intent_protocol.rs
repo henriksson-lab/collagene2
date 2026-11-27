@@ -39,10 +39,10 @@ fn declared_reference_transport_binds_source_and_regions_and_requires_its_new_he
     };
     let bytes = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 98);
+    assert_eq!(tag, 96);
     let response = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 90);
+    assert_eq!(tag, 88);
     let AnalysisResult::AssemblyIntent(report) =
         protocol::decode_response(&response).unwrap().result
     else {

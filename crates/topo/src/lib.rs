@@ -461,6 +461,7 @@ pub struct Report {
     pub fully_specified_dna: bool,
     pub assumptions: Vec<String>,
 }
+#[derive(Clone)]
 struct Graph {
     concrete: bool,
     offsets: Vec<usize>,
@@ -990,79 +991,331 @@ fn displacement(g: &Graph, removed: &[(usize, usize)]) -> Option<Displacement> {
         continuation_pair: paired.map(|call| g.call(call)),
     })
 }
+#[derive(Clone)]
+struct ExecutionState {
+    graph: Graph,
+    evidence: Vec<TransferEvidence>,
+    released: Vec<String>,
+}
+impl ExecutionState {
+    fn new(s: &Substrates, n: usize) -> Result<Self, Error> {
+        Ok(Self {
+            graph: Graph::new(s, n)?,
+            evidence: vec![],
+            released: vec![],
+        })
+    }
+    fn apply(&mut self, s: &Substrates, steps: &[Transfer]) {
+        for (offset, t) in steps.iter().enumerate() {
+            let step = self.evidence.len();
+            let _ = offset;
+            let donor_call = Call {
+                strand: t.donor,
+                index: s.strands[t.donor].sequence.len() - 1,
+            };
+            let acceptor_call = Call {
+                strand: t.acceptor,
+                index: 0,
+            };
+            let d = self.graph.flat(donor_call);
+            let a = self.graph.flat(acceptor_call);
+            let (outcome, reason, removed_pairs, added_pairs, released_activation, displacement) =
+                match eligibility(s, &self.graph, t) {
+                    Ok((remove, add)) => {
+                        // Classify the old tail's 5′ continuation before changing any pair.
+                        let displacement = displacement(&self.graph, &remove);
+                        let rp = remove.iter().map(|&(x, y)| self.graph.pair(x, y)).collect();
+                        let ap = add.iter().map(|&(x, y)| self.graph.pair(x, y)).collect();
+                        for (x, y) in remove {
+                            self.graph.pairs[x] = None;
+                            self.graph.pairs[y] = None;
+                            self.graph.displaced[y] = Some(step);
+                        }
+                        for (x, y) in add {
+                            self.graph.pairs[x] = Some(y);
+                            self.graph.pairs[y] = Some(x)
+                        }
+                        self.graph.next[d] = Some(a);
+                        self.graph.prev[a] = Some(d);
+                        let id = activation(&s.strands[t.donor].three_prime)
+                            .expect("eligible activation")
+                            .to_owned();
+                        self.released.push(id.clone());
+                        (
+                            Outcome::Applied,
+                            "one phosphotyrosyl→5′OH transfer applied; no other bond/repair inferred",
+                            rp,
+                            ap,
+                            Some(id),
+                            displacement,
+                        )
+                    }
+                    Err((outcome, reason)) => (outcome, reason, vec![], vec![], None, None),
+                };
+            self.evidence.push(TransferEvidence {
+                step,
+                transfer: t.clone(),
+                outcome,
+                reason: reason.into(),
+                donor_call,
+                acceptor_call,
+                removed_pairs,
+                added_pairs,
+                released_activation,
+                displacement,
+            });
+        }
+    }
+    fn finish(
+        self,
+        s: &Substrates,
+        steps: &[Transfer],
+        l: &Limits,
+        n: usize,
+    ) -> Result<Report, Error> {
+        let batch_revision = batch_revision(s, steps, l)?;
+        let product = output(s, &self.graph, self.released)?;
+        bounded(
+            product.source_pairing.len(),
+            l.max_pair_spans,
+            Budget::PairSpans,
+        )?;
+        let report=Report{engine:ENGINE.into(),model:PRIMARY_MODEL.into(),batch_revision,limits:l.clone(),source_revisions:s.strands.iter().map(hash).collect::<Result<_,_>>()?,all_requested_transfers_applied:self.evidence.iter().all(|e|e.outcome==Outcome::Applied),unsupported_or_unknown:self.evidence.iter().any(|e|matches!(e.outcome,Outcome::Unsupported|Outcome::Unknown)),fully_specified_dna:self.graph.fully_concrete(s),steps:self.evidence,product,source_bases:n,work_complete:true,assumptions:vec!["Source strands, pairing and terminal activation are explicitly declared chemical hypotheses; supplier names/reference sequences cannot establish activation.".into(),"Only specified elementary transfers are considered; no kinetic mixture completeness, efficacy, host repair, ligase, polymerase or proprietary kit parity is established.".into(),"All source nucleotides, displaced calls, unreacted chains, existing nicks and retained activation are preserved. Unmodeled chemical modifications remain outside this terminal/backbone model.".into(),"Exact TA and CACC invasion are supported geometry classes; excluded mismatches are unsupported, not proved unable to react.".into(),"CACC invasion classifies a duplex-anchored3′flap, a completely displaced4ntchain, or displacement with unpaired5′continuation. Only anchored duplex continuation matches the standard directional diagram; extended graph branches imply no kit efficiency.".into(),"Unknown/unsupported steps retain their incoming state. Later transfers describe that explicit retained-state branch, not an experimental distribution. Released enzyme recycling/secondary cleavage is not simulated.".into()]};
+        audit_sources(s, &report)?;
+        report_size(&report, l.max_report_bytes)?;
+        Ok(report)
+    }
+}
 pub fn simulate(s: &Substrates, steps: &[Transfer], l: &Limits) -> Result<Report, Error> {
     let n = preflight(s, steps, l)?;
-    let batch_revision = batch_revision(s, steps, l)?;
-    let mut g = Graph::new(s, n)?;
-    let mut evidence = vec![];
-    let mut released = vec![];
-    for (step, t) in steps.iter().enumerate() {
-        let donor_call = Call {
-            strand: t.donor,
-            index: s.strands[t.donor].sequence.len() - 1,
-        };
-        let acceptor_call = Call {
-            strand: t.acceptor,
-            index: 0,
-        };
-        let d = g.flat(donor_call);
-        let a = g.flat(acceptor_call);
-        let (outcome, reason, removed_pairs, added_pairs, released_activation, displacement) =
-            match eligibility(s, &g, t) {
-                Ok((remove, add)) => {
-                    // Classify the old tail's 5′ continuation before changing any pair.
-                    let displacement = displacement(&g, &remove);
-                    let rp = remove.iter().map(|&(x, y)| g.pair(x, y)).collect();
-                    let ap = add.iter().map(|&(x, y)| g.pair(x, y)).collect();
-                    for (x, y) in remove {
-                        g.pairs[x] = None;
-                        g.pairs[y] = None;
-                        g.displaced[y] = Some(step);
-                    }
-                    for (x, y) in add {
-                        g.pairs[x] = Some(y);
-                        g.pairs[y] = Some(x)
-                    }
-                    g.next[d] = Some(a);
-                    g.prev[a] = Some(d);
-                    let id = activation(&s.strands[t.donor].three_prime)
-                        .expect("eligible activation")
-                        .to_owned();
-                    released.push(id.clone());
-                    (
-                        Outcome::Applied,
-                        "one phosphotyrosyl→5′OH transfer applied; no other bond/repair inferred",
-                        rp,
-                        ap,
-                        Some(id),
-                        displacement,
-                    )
-                }
-                Err((outcome, reason)) => (outcome, reason, vec![], vec![], None, None),
-            };
-        evidence.push(TransferEvidence {
-            step,
-            transfer: t.clone(),
-            outcome,
-            reason: reason.into(),
-            donor_call,
-            acceptor_call,
-            removed_pairs,
-            added_pairs,
-            released_activation,
-            displacement,
-        });
+    let mut state = ExecutionState::new(s, n)?;
+    state.apply(s, steps);
+    state.finish(s, steps, l, n)
+}
+/// A read-only checkpoint over an exact whole-source scope. No graph is input.
+#[derive(Debug, Clone)]
+pub struct Checkpoint {
+    pub after_transfers: usize,
+    pub strand_start: usize,
+    pub strand_end: usize,
+    pub activation_unmap: BTreeMap<String, String>,
+    pub transfer_map: Vec<usize>,
+}
+/// Fresh native execution plus documentary source-scope snapshots.
+pub struct Executed {
+    report: Report,
+    checkpoints: Vec<ProductGraph>,
+    work_cells: usize,
+}
+impl Executed {
+    pub fn reserve_work(&mut self, cells: usize, peak_bytes: usize) -> Result<(), Error> {
+        self.work_cells = add(self.work_cells, cells)?;
+        bounded(
+            self.work_cells,
+            self.report.limits.max_work_cells,
+            Budget::WorkCells,
+        )?;
+        bounded(
+            peak_bytes,
+            self.report.limits.max_work_bytes,
+            Budget::WorkBytes,
+        )
     }
-    let product = output(s, &g, released)?;
+    pub fn report(&self) -> &Report {
+        &self.report
+    }
+    pub fn checkpoints(&self) -> &[ProductGraph] {
+        &self.checkpoints
+    }
+    pub fn into_report(self) -> Report {
+        self.report
+    }
+}
+fn scoped_product(
+    s: &Substrates,
+    g: &Graph,
+    released: &[String],
+    c: &Checkpoint,
+) -> Result<ProductGraph, Error> {
+    let mut p = output(s, g, released.to_vec())?;
+    let inside = |i: usize| c.strand_start <= i && i < c.strand_end;
+    let mut indices = BTreeMap::new();
+    let mut chains = vec![];
+    let unmap_three = |t: &mut ThreePrime| {
+        if let ThreePrime::Phosphotyrosyl { activation_id, .. } = t {
+            if let Some(old) = c.activation_unmap.get(activation_id) {
+                *activation_id = old.clone();
+            }
+        }
+    };
+    for (i, mut chain) in p.chains.drain(..).enumerate() {
+        let count = chain
+            .sources
+            .iter()
+            .filter(|m| inside(m.source_strand))
+            .count();
+        if count == 0 {
+            continue;
+        }
+        if count != chain.sources.len() {
+            return Err(bad("checkpoint cuts an actual covalent chain"));
+        }
+        for m in &mut chain.sources {
+            m.source_strand -= c.strand_start;
+        }
+        if let ChainEnds::Linear { three_prime, .. } = &mut chain.ends {
+            unmap_three(three_prime)
+        }
+        indices.insert(i, chains.len());
+        chains.push(chain);
+    }
+    let mut pairing = vec![];
+    for mut span in p.source_pairing {
+        let a = inside(span.strand_a);
+        let b = inside(span.strand_b);
+        if a != b {
+            return Err(bad("checkpoint discards an actual base-pair partner"));
+        }
+        if a {
+            span.strand_a -= c.strand_start;
+            span.strand_b -= c.strand_start;
+            pairing.push(span)
+        }
+    }
+    let mut nicks = vec![];
+    for mut nick in p.nicks {
+        let a = inside(nick.three.strand);
+        let b = inside(nick.five.strand);
+        if a != b {
+            return Err(bad("checkpoint cuts an actual nick pairing scope"));
+        }
+        if a {
+            nick.three.strand -= c.strand_start;
+            nick.five.strand -= c.strand_start;
+            unmap_three(&mut nick.three_prime);
+            nicks.push(nick)
+        }
+    }
+    let mut unpaired = vec![];
+    for mut u in p.unpaired {
+        if let Some(i) = indices.get(&u.chain) {
+            u.chain = *i;
+            for step in &mut u.displaced_by {
+                *step = c
+                    .transfer_map
+                    .iter()
+                    .position(|x| x == step)
+                    .ok_or_else(|| bad("checkpoint displacement has no retained native owner"))?;
+            }
+            unpaired.push(u)
+        }
+    }
+    let mut components = vec![];
+    for mut component in p.components {
+        let count = component
+            .chains
+            .iter()
+            .filter(|i| indices.contains_key(i))
+            .count();
+        if count == 0 {
+            continue;
+        }
+        if count != component.chains.len() {
+            return Err(bad(
+                "checkpoint discards another connected source component",
+            ));
+        }
+        for i in &mut component.chains {
+            *i = indices[&*i]
+        }
+        components.push(component)
+    }
+    let released_activations = p
+        .released_activations
+        .into_iter()
+        .filter_map(|id| c.activation_unmap.get(&id).cloned())
+        .collect();
+    Ok(ProductGraph {
+        chains,
+        source_pairing: pairing,
+        nicks,
+        unpaired,
+        components,
+        released_activations,
+    })
+}
+/// Checkpoints observe only a fresh private execution; supplied reports cannot
+/// initialize it. Scope extraction retains all calls/components within its native owner.
+fn execute_prefix(
+    s: &Substrates,
+    steps: &[Transfer],
+    l: &Limits,
+    checkpoints: &[Checkpoint],
+) -> Result<(ExecutionState, Vec<ProductGraph>, usize), Error> {
+    let n = preflight(s, steps, l)?;
+    if checkpoints.len() > 128 {
+        return Err(bad("checkpoint count bound"));
+    }
     bounded(
-        product.source_pairing.len(),
-        l.max_pair_spans,
-        Budget::PairSpans,
+        mul(mul(n, 64)?, checkpoints.len().saturating_add(1))?,
+        l.max_work_cells,
+        Budget::WorkCells,
     )?;
-    let report=Report{engine:ENGINE.into(),model:PRIMARY_MODEL.into(),batch_revision,limits:l.clone(),source_revisions:s.strands.iter().map(hash).collect::<Result<_,_>>()?,all_requested_transfers_applied:evidence.iter().all(|e|e.outcome==Outcome::Applied),unsupported_or_unknown:evidence.iter().any(|e|matches!(e.outcome,Outcome::Unsupported|Outcome::Unknown)),fully_specified_dna:g.fully_concrete(s),steps:evidence,product,source_bases:n,work_complete:true,assumptions:vec!["Source strands, pairing and terminal activation are explicitly declared chemical hypotheses; supplier names/reference sequences cannot establish activation.".into(),"Only specified elementary transfers are considered; no kinetic mixture completeness, efficacy, host repair, ligase, polymerase or proprietary kit parity is established.".into(),"All source nucleotides, displaced calls, unreacted chains, existing nicks and retained activation are preserved. Unmodeled chemical modifications remain outside this terminal/backbone model.".into(),"Exact TA and CACC invasion are supported geometry classes; excluded mismatches are unsupported, not proved unable to react.".into(),"CACC invasion classifies a duplex-anchored3′flap, a completely displaced4ntchain, or displacement with unpaired5′continuation. Only anchored duplex continuation matches the standard directional diagram; extended graph branches imply no kit efficiency.".into(),"Unknown/unsupported steps retain their incoming state. Later transfers describe that explicit retained-state branch, not an experimental distribution. Released enzyme recycling/secondary cleavage is not simulated.".into()]};
-    audit_sources(s, &report)?;
-    report_size(&report, l.max_report_bytes)?;
-    Ok(report)
+    bounded(
+        mul(n, add(256, mul(checkpoints.len(), 96)?)?)?,
+        l.max_work_bytes,
+        Budget::WorkBytes,
+    )?;
+    for c in checkpoints {
+        if c.after_transfers > steps.len()
+            || c.strand_start >= c.strand_end
+            || c.strand_end > s.strands.len()
+            || c.transfer_map.len() > l.max_steps
+            || c.transfer_map.iter().any(|i| *i >= c.after_transfers)
+            || c.activation_unmap.len() > l.max_strands
+            || c.activation_unmap
+                .iter()
+                .any(|(a, b)| !text(a, 256) || !text(b, 256))
+        {
+            return Err(bad("checkpoint source/transcript scope bound"));
+        }
+    }
+    let mut state = ExecutionState::new(s, n)?;
+    let mut out = vec![None; checkpoints.len()];
+    for at in 0..=steps.len() {
+        for (i, c) in checkpoints.iter().enumerate() {
+            if c.after_transfers == at {
+                out[i] = Some(scoped_product(s, &state.graph, &state.released, c)?);
+            }
+        }
+        if at < steps.len() {
+            state.apply(s, &steps[at..at + 1]);
+        }
+    }
+    let checkpoints = out
+        .into_iter()
+        .map(|p| p.ok_or_else(|| bad("checkpoint was not observed")))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((state, checkpoints, n))
+}
+pub fn simulate_with_checkpoints(
+    s: &Substrates,
+    steps: &[Transfer],
+    l: &Limits,
+    checkpoints: &[Checkpoint],
+) -> Result<Executed, Error> {
+    let (state, checkpoints, n) = execute_prefix(s, steps, l, checkpoints)?;
+    let report = state.finish(s, steps, l, n)?;
+    report_size(&(&report, &checkpoints), l.max_report_bytes)?;
+    let work_cells = add(
+        mul(mul(n, 64)?, checkpoints.len() + 1)?,
+        mul(steps.len(), 128)?,
+    )?;
+    Ok(Executed {
+        report,
+        checkpoints,
+        work_cells,
+    })
 }
 fn report_size<T: Serialize>(v: &T, max: usize) -> Result<(), Error> {
     struct Count {
@@ -1159,6 +1412,9 @@ pub fn replay(s: &Substrates, steps: &[Transfer], l: &Limits, r: &Report) -> Res
 pub struct OrientationCandidates {
     pub engine: String,
     pub candidates: Vec<Report>,
+    pub checkpoints: Vec<ProductGraph>,
+    pub pending_transfers: Vec<Vec<Transfer>>,
+    pub satisfied_prefix_steps: Vec<Vec<usize>>,
     pub orientation_search_complete: bool,
     pub biochemical_mixture_exhaustive: bool,
 }
@@ -1166,13 +1422,17 @@ pub struct OrientationCandidates {
 /// paths remain outside this enumeration, even if only one candidate applies.
 pub fn orientations(
     s: &Substrates,
+    prefix: &[Transfer],
     vector: [usize; 2],
     insert: [usize; 2],
     directional: bool,
     l: &Limits,
+    checkpoints: &[Checkpoint],
 ) -> Result<OrientationCandidates, Error> {
     let mut candidates = vec![];
-    let n = preflight(s, &[], l)?;
+    let (initial, checkpoints, n) = execute_prefix(s, prefix, l, checkpoints)?;
+    let mut pending_transfers = vec![];
+    let mut satisfied_prefix_steps = vec![];
     if vector
         .iter()
         .chain(insert.iter())
@@ -1185,9 +1445,17 @@ pub fn orientations(
     }
     bounded(mul(n, 2)?, l.max_output_bases, Budget::OutputBases)?;
     bounded(
-        mul(add(mul(n, 64)?, 128)?, 2)?,
+        add(
+            mul(mul(n, 64)?, checkpoints.len() + 3)?,
+            mul(add(prefix.len(), 4)?, 128)?,
+        )?,
         l.max_work_cells,
         Budget::WorkCells,
+    )?;
+    bounded(
+        mul(n, add(512, mul(checkpoints.len(), 96)?)?)?,
+        l.max_work_bytes,
+        Budget::WorkBytes,
     )?;
     for flip in [false, true] {
         let accept = if flip { [insert[1], insert[0]] } else { insert };
@@ -1211,11 +1479,39 @@ pub fn orientations(
                 },
             },
         ];
-        candidates.push(simulate(s, &steps, l)?);
+        let mut pending = vec![];
+        let mut satisfied = vec![];
+        for t in steps {
+            let donor = initial.graph.offsets[t.donor] + s.strands[t.donor].sequence.len() - 1;
+            let acceptor = initial.graph.offsets[t.acceptor];
+            let prior = initial
+                .evidence
+                .iter()
+                .find(|e| e.transfer == t && e.outcome == Outcome::Applied);
+            if initial.graph.next[donor] == Some(acceptor)
+                && initial.graph.prev[acceptor] == Some(donor)
+            {
+                let e = prior
+                    .ok_or_else(|| bad("existing bond lacks an exact elementary transfer owner"))?;
+                satisfied.push(e.step);
+            } else {
+                pending.push(t);
+            }
+        }
+        let all = prefix.iter().chain(&pending).cloned().collect::<Vec<_>>();
+        preflight(s, &all, l)?;
+        let mut state = initial.clone();
+        state.apply(s, &pending);
+        candidates.push(state.finish(s, &all, l, n)?);
+        pending_transfers.push(pending);
+        satisfied_prefix_steps.push(satisfied);
     }
     let report = OrientationCandidates {
         engine: ENGINE.into(),
         candidates,
+        checkpoints,
+        pending_transfers,
+        satisfied_prefix_steps,
         orientation_search_complete: true,
         biochemical_mixture_exhaustive: false,
     };

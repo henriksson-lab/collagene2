@@ -176,14 +176,14 @@ fn new_binary_selectors_bind_sources_and_reject_old_prefixes() {
     };
     let wire = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&wire[42..]).unwrap();
-    assert_eq!(tag, 119);
+    assert_eq!(tag, 117);
     let mut old = wire.clone();
     old[4..6].copy_from_slice(&51u16.to_le_bytes());
     assert!(matches!(
         protocol::process_request(&old),
         Err(collagene_core::Error::Unsupported(_))
     ));
-    let body = postcard::to_allocvec(&(request.id, request.revision.as_str(), 119u32)).unwrap();
+    let body = postcard::to_allocvec(&(request.id, request.revision.as_str(), 117u32)).unwrap();
     let mut prefix = wire[..42].to_vec();
     prefix[4..6].copy_from_slice(&51u16.to_le_bytes());
     prefix[6..10].copy_from_slice(&(body.len() as u32).to_le_bytes());
@@ -194,7 +194,7 @@ fn new_binary_selectors_bind_sources_and_reject_old_prefixes() {
     ));
     let response = protocol::process_request(&wire).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 111);
+    assert_eq!(tag, 109);
     let decoded = protocol::decode_response(&response).unwrap();
     let AnalysisResult::ReviewedComparison(report) = decoded.result else {
         panic!("wrong result")

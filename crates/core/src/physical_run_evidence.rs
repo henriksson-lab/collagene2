@@ -255,12 +255,11 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
         let Operation::TopoActions { sources, request } = &r.plan.steps[index] else {
             return Err(bad("historical processing declaration changed"));
         };
-        if assembly_recipe::hash(request)? != assembly_recipe::hash(&report.request)?
-            || sources.len() != report.sources.len()
-        {
+        if assembly_recipe::hash(request)? != assembly_recipe::hash(&report.request)? {
             return Err(bad("processed declaration changed"));
         }
-        for (binding, identity) in sources.iter().zip(&report.sources) {
+        let mut external = vec![];
+        for binding in sources {
             let revision = match &binding.source {
                 Source::Input(id) => r
                     .plan
@@ -277,9 +276,16 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                     .ok_or_else(|| bad("missing exact upstream product event"))?,
                 Source::Step(_) => return Err(bad("cyclic or forward upstream product")),
             };
-            if binding.role != identity.role || revision != identity.revision {
-                return Err(bad("original or upstream source role/revision changed"));
-            }
+            external.push(crate::topo::SourceIdentity {
+                role: binding.role.clone(),
+                revision,
+            });
+        }
+        let actual = crate::topo::expanded_source_identities(&external, &request.preparation)?;
+        if assembly_recipe::hash(&actual)? != assembly_recipe::hash(&report.sources)? {
+            return Err(bad(
+                "original, upstream or closed graph source identity changed",
+            ));
         }
         // Historical snapshots must remain inspectable after engine/model changes.
         // Binding and bounded documentary shape are checked here, not current
@@ -292,7 +298,7 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 .any(|v| v.len() != 64 || !v.bytes().all(|b| b.is_ascii_hexdigit()))
             || report.bridge_notes.len() > 64
             || report.bridge_notes.iter().any(|n| n.len() > 4096)
-            || report.preparation.substrates.strands.len() > 32
+            || report.preparation.substrates.strands.len() > 64
             || report.preparation.maps.len() > 4096
         {
             return Err(bad("historical graph documentary shape changed"));

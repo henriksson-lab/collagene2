@@ -1,14 +1,15 @@
-//! Exact saved-material replay as a template for new TOPO insert PCR.
-//! Documentary bounds/bindings never reconstruct or return physical authority.
+//! Fresh native TOPO sources: original declarations, saved ordinary PCR templates,
+//! and exact retained elementary graph origins. No serialized graph supplies state.
 use crate::{
     Error, Molecule,
-    run_material::MaterialOrigin,
+    run_material::{self, MaterialOrigin},
     topo, topo_actions, topo_worker,
     verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
 };
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "topo-saved-template-1";
+pub const ENGINE_VERSION: &str = "topo-native-sources-1";
 macro_rules! dto {($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
+dto! {pub struct BoundTemplate{pub role:String,pub origin:MaterialOrigin}}
 dto! {pub enum Task {
  Orientations{request:topo::Request,vector:[usize;2],insert:[usize;2],directional:bool},
  Project{request:topo::Request,selection:topo::Selection},
@@ -16,9 +17,12 @@ dto! {pub enum Task {
  InspectActions{request:topo_actions::ActionsRequest},
  ProcessActions{request:topo_actions::Request},
 }}
-dto! {pub enum Reply {Orientations(topo::OrientationInspection),Projected(topo::AnnotatedProduct),Checked(topo::AnnotatedAssessment),ActionsInspected(topo_actions::Inspection),ActionsProcessed(topo_actions::Report)}}
+dto! {pub enum Reply {Orientations(topo::OrientationInspection),Projected(topo::Product),Checked(topo::TargetAssessment),ActionsInspected(topo_actions::Inspection),ActionsProcessed(topo_actions::Report)}}
 fn bad(s: &str) -> Error {
-    Error::Unsupported(format!("TOPO saved template: {s}"))
+    Error::Unsupported(format!("TOPO native sources: {s}"))
+}
+fn hash(v: &impl Serialize) -> Result<String, Error> {
+    crate::assembly_recipe::hash(v)
 }
 impl Task {
     pub fn preparation(&self) -> &topo::Request {
@@ -31,42 +35,38 @@ impl Task {
         }
     }
 }
-/// Borrowed bounds before cloning rich source models. This is declaration
-/// validation, not a grant of source chemistry; inspect always replays the capsule.
 pub fn source_inputs(
     sources: &[TopoSource],
     molecules: &[&Molecule],
     request: &topo::Request,
-    template_role: &str,
-    origin: Option<&MaterialOrigin>,
+    template: Option<&BoundTemplate>,
 ) -> Result<Vec<topo::Input>, Error> {
-    if sources.is_empty() || sources.len() > 32 || sources.len() != molecules.len() {
+    if sources.len() > 32 || sources.len() != molecules.len() {
         return Err(Error::TooLarge);
     }
     crate::model::bounds::model_preflight(molecules)?;
-    let mut sum = 0usize;
-    for (s, m) in sources.iter().zip(molecules) {
+    for s in sources {
         if s.role.is_empty()
             || s.role.len() > 256
-            || !matches!(&s.source,Source::Input(id) if !id.is_empty()&&id.len()<=128)
+            || !matches!(&s.source,Source::Input(id)if !id.is_empty()&&id.len()<=128)
         {
-            return Err(bad("capture requires bounded original input roles"));
-        }
-        sum = sum
-            .checked_add(m.sequence.len())
-            .filter(|n| *n <= 100_000)
-            .ok_or(Error::TooLarge)?;
-    }
-    if let Some(origin) = origin {
-        origin.validate_documentary()?;
-        let index = sources
-            .iter()
-            .position(|s| s.role == template_role)
-            .ok_or_else(|| bad("missing selected template role"))?;
-        if molecules[index].revision() != origin.event().revision {
-            return Err(bad("selected saved event/revision changed"));
+            return Err(bad("bounded original input role required"));
         }
     }
+    let roots = template
+        .into_iter()
+        .map(|t| match &t.origin {
+            MaterialOrigin::Run(c) => run_material::NativeOriginRef::Run(c),
+            MaterialOrigin::Derived(c) => run_material::NativeOriginRef::Derived(c),
+        })
+        .chain(request.recipe.materials.iter().filter_map(|m| {
+            if let topo::MaterialRecipe::SavedGraph { origin, .. } = m {
+                Some(run_material::NativeOriginRef::TopoGraph(origin))
+            } else {
+                None
+            }
+        }));
+    run_material::native_origins_preflight(roots)?;
     let inputs = sources
         .iter()
         .zip(molecules)
@@ -75,8 +75,16 @@ pub fn source_inputs(
             molecule: (*m).clone(),
         })
         .collect::<Vec<_>>();
-    if origin.is_some() {
-        topo::declared_template_preflight(&inputs, request, template_role)?
+    if let Some(t) = template {
+        topo::declared_template_preflight(&inputs, request, &t.role)?;
+        if inputs
+            .iter()
+            .find(|i| i.role == t.role)
+            .map(|i| i.molecule.revision())
+            != Some(t.origin.event().revision.clone())
+        {
+            return Err(bad("saved template exact revision differs"));
+        }
     } else {
         topo::source_preflight(&inputs, request)?
     }
@@ -84,73 +92,80 @@ pub fn source_inputs(
 }
 pub fn preflight(
     inputs: &[topo::Input],
-    template_role: &str,
-    origin: &MaterialOrigin,
+    template: Option<&BoundTemplate>,
     task: &Task,
 ) -> Result<(), Error> {
-    topo::declared_template_preflight(inputs, task.preparation(), template_role)?;
-    origin.validate_documentary()?;
-    let source = inputs
-        .iter()
-        .find(|i| i.role == template_role)
-        .ok_or_else(|| bad("missing selected template"))?;
-    if source.molecule.revision() != origin.event().revision {
-        return Err(bad("selected saved template revision changed"));
+    let roots = template
+        .into_iter()
+        .map(|t| match &t.origin {
+            MaterialOrigin::Run(c) => run_material::NativeOriginRef::Run(c),
+            MaterialOrigin::Derived(c) => run_material::NativeOriginRef::Derived(c),
+        })
+        .chain(task.preparation().recipe.materials.iter().filter_map(|m| {
+            if let topo::MaterialRecipe::SavedGraph { origin, .. } = m {
+                Some(run_material::NativeOriginRef::TopoGraph(origin))
+            } else {
+                None
+            }
+        }));
+    run_material::native_origins_preflight(roots)?;
+    if let Some(t) = template {
+        topo::declared_template_preflight(inputs, task.preparation(), &t.role)?;
+        if inputs
+            .iter()
+            .find(|i| i.role == t.role)
+            .map(|i| i.molecule.revision())
+            != Some(t.origin.event().revision.clone())
+        {
+            return Err(bad("saved template source changed"));
+        }
+    } else {
+        topo::source_preflight(inputs, task.preparation())?
     }
     if let Task::Check { target, .. } = task {
         topo_worker::target_preflight(target)?;
     }
-    // Bounded serializer protects literal option trees before any hashing/replay.
-    crate::assembly_recipe::hash(&(origin, task))?;
+    hash(&(inputs, template, task))?;
     Ok(())
-}
-fn hash(v: &impl Serialize) -> Result<String, Error> {
-    crate::assembly_recipe::hash(v)
 }
 pub fn revision(
     inputs: &[topo::Input],
-    role: &str,
-    origin: &MaterialOrigin,
+    template: Option<&BoundTemplate>,
     task: &Task,
 ) -> Result<String, Error> {
-    preflight(inputs, role, origin, task)?;
-    hash(&(ENGINE_VERSION, topo::identities(inputs), role, origin, task))
+    preflight(inputs, template, task)?;
+    hash(&(ENGINE_VERSION, topo::identities(inputs), template, task))
 }
-/// Original report binding, for readonly validation only. The outer worker
-/// revision additionally binds the entire retained native origin and task.
+pub fn preparation_revision(
+    inputs: &[topo::Input],
+    template: Option<&BoundTemplate>,
+    request: &topo::Request,
+) -> Result<String, Error> {
+    if let Some(t) = template {
+        topo::declared_template_preflight(inputs, request, &t.role)?;
+    } else {
+        topo::source_preflight(inputs, request)?;
+    }
+    topo::documentary_batch_revision(inputs, request)
+}
 pub fn documentary_revision(
     inputs: &[topo::Input],
-    role: &str,
-    origin: &MaterialOrigin,
+    template: Option<&BoundTemplate>,
     task: &Task,
 ) -> Result<String, Error> {
-    preflight(inputs, role, origin, task)?;
-    let sources = topo::identities(inputs);
+    preflight(inputs, template, task)?;
     let prep = task.preparation();
-    let batch = hash(&(
-        topo::ENGINE_VERSION,
-        topo::physical::ENGINE,
-        topo::physical::PRIMARY_MODEL,
-        topo::physical::projection::ENGINE,
-        &sources,
-        prep,
-    ))?;
-    let product = |selection: &topo::Selection| -> Result<String, Error> {
-        if selection.batch_revision != batch || selection.component >= 64 {
-            return Err(bad("selection belongs to another preparation"));
+    let batch = topo::documentary_batch_revision(inputs, prep)?;
+    let sources = topo::documentary_sources(inputs, prep)?;
+    let product = |s: &topo::Selection| -> Result<String, Error> {
+        if s.batch_revision != batch || s.component >= 64 {
+            return Err(bad("selected native preparation differs"));
         }
         hash(&(
             topo::ENGINE_VERSION,
             "selected-physical-component",
             &batch,
-            selection,
-        ))
-    };
-    let annotated = |selection: &topo::Selection| -> Result<String, Error> {
-        hash(&(
-            topo::ANNOTATION_ENGINE_VERSION,
-            "annotated-product",
-            product(selection)?,
+            s,
         ))
     };
     match task {
@@ -162,22 +177,22 @@ pub fn documentary_revision(
         } => hash(&(
             topo::ENGINE_VERSION,
             "two-declared-orientations",
-            &sources,
+            topo::identities(inputs),
             prep,
             vector,
             insert,
             directional,
         )),
-        Task::Project { selection, .. } => annotated(selection),
+        Task::Project { selection, .. } => product(selection),
         Task::Check {
             selection,
             target,
             policy,
             ..
         } => hash(&(
-            topo::ANNOTATION_ENGINE_VERSION,
-            "annotated-target",
-            annotated(selection)?,
+            topo::ENGINE_VERSION,
+            "independent-target",
+            product(selection)?,
             target.revision(),
             policy,
         )),
@@ -200,84 +215,173 @@ pub fn documentary_revision(
 }
 pub fn inspect(
     inputs: &[topo::Input],
-    role: &str,
-    origin: &MaterialOrigin,
+    template: Option<&BoundTemplate>,
     task: &Task,
 ) -> Result<Inspection, Error> {
-    preflight(inputs, role, origin, task)?;
-    let source = &inputs
-        .iter()
-        .find(|i| i.role == role)
-        .ok_or_else(|| bad("missing selected template"))?
-        .molecule;
-    let fresh = origin.replay(source)?;
-    let reply =
-        topo::inspect_reconstructed_task(inputs, &[(role.to_string(), fresh.tracked())], task)?;
-    reply.validate_binding(
-        inputs,
-        role,
-        origin,
-        task,
-        &revision(inputs, role, origin, task)?,
-    )?;
-    Ok(Inspection {
-        context_revision: revision(inputs, role, origin, task)?,
-        origin_incomplete: fresh.incomplete(),
-        origin_findings_total: fresh.findings_total(),
-        origin_findings_truncated: fresh.findings_truncated(),
-        origin_findings: fresh.findings().to_vec(),
+    preflight(inputs, template, task)?;
+    let fresh = template
+        .map(|t| {
+            let m = &inputs
+                .iter()
+                .find(|i| i.role == t.role)
+                .ok_or_else(|| bad("saved template missing"))?
+                .molecule;
+            t.origin.replay(m)
+        })
+        .transpose()?;
+    let tracked = template
+        .zip(fresh.as_ref())
+        .map(|(t, f)| vec![(t.role.clone(), f.tracked())])
+        .unwrap_or_default();
+    let reply = topo::inspect_reconstructed_task(inputs, &tracked, task)?;
+    let mut findings = vec![];
+    let mut incomplete = false;
+    let mut omitted_source_findings = 0usize;
+    let mut source_findings_truncated = false;
+    if let Some(f) = &fresh {
+        incomplete |= f.incomplete();
+        findings.extend(f.findings().iter().cloned());
+        omitted_source_findings = f
+            .findings_total()
+            .checked_sub(f.findings().len())
+            .ok_or_else(|| bad("native source findings count is inconsistent"))?;
+        source_findings_truncated = f.findings_truncated() || omitted_source_findings > 0;
+    }
+    for m in &task.preparation().recipe.materials {
+        if let topo::MaterialRecipe::SavedGraph { origin, .. } = m {
+            let r = origin.validate_shallow()?;
+            incomplete |= r.incomplete;
+            findings.extend(r.state.findings);
+        }
+    }
+    let evidence = match &reply {
+        Reply::Orientations(r) => &r.preparation,
+        Reply::Projected(r) => &r.preparation,
+        Reply::Checked(r) => &r.product.preparation,
+        Reply::ActionsInspected(r) => &r.preparation,
+        Reply::ActionsProcessed(r) => &r.preparation,
+    };
+    for origin in &evidence.graph_origins {
+        if origin.incomplete {
+            incomplete = true;
+            findings.push(format!("Saved native graph {} retains incomplete source history, attested against the same fresh scoped execution. Target/policy agreement does not upgrade that source.",origin.selection.record_hash));
+        }
+    }
+    let total = findings
+        .len()
+        .checked_add(omitted_source_findings)
+        .ok_or(Error::TooLarge)?;
+    let mut truncated = source_findings_truncated || total > 128;
+    let findings = findings
+        .into_iter()
+        .take(128)
+        .map(|s| {
+            if s.chars().count() > 2048 {
+                truncated = true;
+            }
+            s.chars().take(2048).collect()
+        })
+        .collect();
+    let out = Inspection {
+        context_revision: revision(inputs, template, task)?,
+        origin_incomplete: incomplete,
+        origin_findings: findings,
+        origin_findings_total: total,
+        origin_findings_truncated: truncated,
         reply,
-    })
+    };
+    out.validate_for(inputs, template, task, &out.context_revision)?;
+    Ok(out)
 }
 impl Reply {
     pub fn validate_binding(
         &self,
         inputs: &[topo::Input],
-        role: &str,
-        origin: &MaterialOrigin,
+        template: Option<&BoundTemplate>,
         task: &Task,
         expected: &str,
     ) -> Result<(), Error> {
-        if revision(inputs, role, origin, task)? != expected {
-            return Err(bad("saved source/task binding changed"));
+        if revision(inputs, template, task)? != expected {
+            return Err(bad("native source/task receipt changed"));
         }
-        let inner = documentary_revision(inputs, role, origin, task)?;
+        let inner = documentary_revision(inputs, template, task)?;
         match (self, task) {
             (Self::Orientations(r), Task::Orientations { .. }) => {
                 topo_worker::validate_orientations(r, &inner)
             }
             (Self::Projected(r), Task::Project { .. }) => {
-                topo_worker::validate_annotated_projection(r, &inner)
+                topo_worker::validate_projection(r, &inner)
             }
-            (Self::Checked(r), Task::Check { .. }) => {
-                topo_worker::validate_annotated_target(r, &inner)
-            }
+            (Self::Checked(r), Task::Check { .. }) => topo_worker::validate_target(r, &inner),
             (Self::ActionsInspected(r), Task::InspectActions { .. }) => r.validate_binding(&inner),
             (Self::ActionsProcessed(r), Task::ProcessActions { .. }) => r.validate_binding(&inner),
-            _ => Err(bad("reply kind differs from requested inspection")),
+            _ => Err(bad("reply kind differs")),
         }
     }
 }
-/// Compile only declarations; ordinary verification reconstructs the entire origin
-/// and new PCR again. No graph, report, metadata or saved sequence grants material.
 pub fn compile(
     inputs: &[topo::Input],
     target: &Molecule,
-    role: &str,
-    origin: &MaterialOrigin,
-    request: &topo_actions::Request,
+    template: Option<&BoundTemplate>,
+    task: &Task,
 ) -> Result<DesignPlan, Error> {
-    preflight(
-        inputs,
-        role,
-        origin,
-        &Task::ProcessActions {
+    preflight(inputs, template, task)?;
+    topo_worker::target_preflight(target)?;
+    let mut steps = vec![];
+    if let Some(t) = template {
+        steps.push(match &t.origin {
+            MaterialOrigin::Run(origin) => Operation::ReconstructRunProduct {
+                template: Source::Input(t.role.clone()),
+                origin: origin.clone(),
+            },
+            MaterialOrigin::Derived(origin) => Operation::ReconstructMaterial {
+                template: Source::Input(t.role.clone()),
+                origin: origin.clone(),
+            },
+        });
+    }
+    let sources = inputs
+        .iter()
+        .map(|i| TopoSource {
+            role: i.role.clone(),
+            source: if template.is_some_and(|t| t.role == i.role) {
+                Source::Step(0)
+            } else {
+                Source::Input(i.role.clone())
+            },
+        })
+        .collect();
+    steps.push(match task {
+        Task::Check {
+            request,
+            selection,
+            target: checked,
+            policy,
+        } => {
+            if checked != target {
+                return Err(bad(
+                    "checked independent target differs from requested plan target",
+                ));
+            }
+            Operation::CheckedTopo {
+                sources,
+                request: request.clone(),
+                selection: selection.clone(),
+                policy: policy.clone(),
+            }
+        }
+        Task::ProcessActions { request } => Operation::TopoActions {
+            sources,
             request: request.clone(),
         },
-    )?;
-    topo_worker::target_preflight(target)?;
+        _ => {
+            return Err(bad(
+                "only checked target or native processed product can compile a candidate",
+            ));
+        }
+    });
     let plan = DesignPlan {
-        name: "TOPO PCR from saved native material".into(),
+        name: "TOPO from declared native sources".into(),
         target_revision: target.revision(),
         inputs: inputs
             .iter()
@@ -287,37 +391,11 @@ pub fn compile(
                 molecule: i.molecule.clone(),
             })
             .collect(),
-        steps: vec![
-            match origin {
-                MaterialOrigin::Run(origin) => Operation::ReconstructRunProduct {
-                    template: Source::Input(role.into()),
-                    origin: origin.clone(),
-                },
-                MaterialOrigin::Derived(origin) => Operation::ReconstructMaterial {
-                    template: Source::Input(role.into()),
-                    origin: origin.clone(),
-                },
-            },
-            Operation::TopoActions {
-                sources: inputs
-                    .iter()
-                    .map(|i| TopoSource {
-                        role: i.role.clone(),
-                        source: if i.role == role {
-                            Source::Step(0)
-                        } else {
-                            Source::Input(i.role.clone())
-                        },
-                    })
-                    .collect(),
-                request: request.clone(),
-            },
-        ],
+        steps,
     };
-    crate::run_material::plan_preflight(&plan)?;
+    run_material::plan_preflight(&plan)?;
     Ok(plan)
 }
-
 dto! {pub struct Inspection{pub context_revision:String,pub origin_incomplete:bool,pub origin_findings:Vec<String>,pub origin_findings_total:usize,pub origin_findings_truncated:bool,pub reply:Reply}}
 impl Inspection {
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
@@ -346,8 +424,8 @@ impl Inspection {
         }
         match &self.reply {
             Reply::Orientations(r) => topo_worker::validate_orientations(r, &r.batch_revision),
-            Reply::Projected(r) => topo_worker::validate_annotated_projection(r, &r.batch_revision),
-            Reply::Checked(r) => topo_worker::validate_annotated_target(r, &r.batch_revision),
+            Reply::Projected(r) => topo_worker::validate_projection(r, &r.batch_revision),
+            Reply::Checked(r) => topo_worker::validate_target(r, &r.batch_revision),
             Reply::ActionsInspected(r) => r.validate_binding(&r.context_revision),
             Reply::ActionsProcessed(r) => r.validate_binding(&r.context_revision),
         }
@@ -355,40 +433,12 @@ impl Inspection {
     pub fn validate_for(
         &self,
         inputs: &[topo::Input],
-        role: &str,
-        origin: &MaterialOrigin,
+        template: Option<&BoundTemplate>,
         task: &Task,
         expected: &str,
     ) -> Result<(), Error> {
         self.validate_binding(expected)?;
         self.reply
-            .validate_binding(inputs, role, origin, task, expected)
+            .validate_binding(inputs, template, task, expected)
     }
-}
-/// Documentary preparation identity. Does not execute preparation or replay.
-pub fn preparation_revision(
-    inputs: &[topo::Input],
-    role: &str,
-    origin: &MaterialOrigin,
-    request: &topo::Request,
-) -> Result<String, Error> {
-    preflight(
-        inputs,
-        role,
-        origin,
-        &Task::Orientations {
-            request: request.clone(),
-            vector: [0, 1],
-            insert: [2, 3],
-            directional: false,
-        },
-    )?;
-    hash(&(
-        topo::ENGINE_VERSION,
-        topo::physical::ENGINE,
-        topo::physical::PRIMARY_MODEL,
-        topo::physical::projection::ENGINE,
-        topo::identities(inputs),
-        request,
-    ))
 }

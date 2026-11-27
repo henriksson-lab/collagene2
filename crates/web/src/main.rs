@@ -226,6 +226,10 @@ mod sequence_view;
 mod source_identity;
 #[cfg(target_arch = "wasm32")]
 mod topo_actions_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod topo_graph_model;
+#[cfg(target_arch = "wasm32")]
+mod topo_graph_view;
 #[cfg(target_arch = "wasm32")]
 mod topo_nick_view;
 #[cfg(any(target_arch = "wasm32", test))]

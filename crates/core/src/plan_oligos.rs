@@ -214,13 +214,27 @@ fn topo_preflight(
     index: usize,
     ids: &BTreeSet<&str>,
 ) -> Result<(), Error> {
-    if sources.is_empty()
+    if (sources.is_empty()
+        && !request
+            .recipe
+            .materials
+            .iter()
+            .any(|m| matches!(m, crate::topo::MaterialRecipe::SavedGraph { .. })))
         || sources.len() > 32
         || request.recipe.schema_version != 1
         || request.recipe.materials.len() > 16
     {
         return Err(Error::TooLarge);
     }
+    crate::run_material::native_origins_preflight(request.recipe.materials.iter().filter_map(
+        |m| {
+            if let crate::topo::MaterialRecipe::SavedGraph { origin, .. } = m {
+                Some(crate::run_material::NativeOriginRef::TopoGraph(origin))
+            } else {
+                None
+            }
+        },
+    ))?;
     let mut roles = BTreeSet::new();
     for source in sources {
         if source.role.is_empty() || source.role.len() > 256 || !roles.insert(source.role.as_str())
@@ -243,6 +257,7 @@ fn topo_preflight(
                 primer_guard(forward)?;
                 primer_guard(reverse)?;
             }
+            crate::topo::MaterialRecipe::SavedGraph { .. } => {}
             crate::topo::MaterialRecipe::Prepared { strands, .. } => {
                 strand_count = strand_count
                     .checked_add(strands.len())
@@ -719,6 +734,21 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                                     ),
                                 );
                             }
+                        }
+                        crate::topo::MaterialRecipe::SavedGraph {
+                            material_id,
+                            origin,
+                        } => {
+                            warning(
+                                &mut builder.warnings,
+                                format!(
+                                    "Step {} reuses saved TOPO graph {} (record {}, state {}). Its historical PCR primers and prepared strands are provenance, not new supplier orders. Only PCR explicitly requested by the current operation is ordered.",
+                                    index + 1,
+                                    material_id,
+                                    origin.selection.record_hash,
+                                    origin.selection.state_revision
+                                ),
+                            );
                         }
                         crate::topo::MaterialRecipe::Prepared { strands, .. } => {
                             warning(

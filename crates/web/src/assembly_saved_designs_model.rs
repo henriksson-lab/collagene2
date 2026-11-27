@@ -868,8 +868,12 @@ mod tests {
         }
         draft.slots[0].captured = Some(capture);
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
-        draft.methods.rows[0].run_origin =
-            Some(crate::run_origin_model::PinnedOrigin::new(capsule).unwrap());
+        draft.methods.rows[0].run_origin = Some(
+            crate::run_origin_model::PinnedOrigin::from_material(
+                collagene_core::run_material::MaterialOrigin::Run(capsule),
+            )
+            .unwrap(),
+        );
         draft.sync_rows();
         draft.validate().unwrap();
         assert_eq!(draft.version, assembly_draft_model::CURRENT_VERSION);

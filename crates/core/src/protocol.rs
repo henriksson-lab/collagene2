@@ -6,15 +6,15 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 104;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
+pub const WORKER_SCHEMA_VERSION: u16 = 105;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 27;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
-    19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155, 158, 168,
-    169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181, 182, 183, 184, 185, 186, 187, 188,
-    189, 98, 109, 161, 163,
+    19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 126, 128, 129, 132,
+    133, 145, 146, 147, 148, 149, 153, 156, 159, 161, 166, 167, 168, 169, 170, 171, 172, 173, 174,
+    175, 176, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -578,18 +578,6 @@ pub enum AnalysisJob {
         target: Molecule,
         policy: crate::topo::AcceptancePolicy,
     },
-    ProjectAnnotatedTopo {
-        inputs: Vec<crate::topo::Input>,
-        request: crate::topo::Request,
-        selection: crate::topo::Selection,
-    },
-    CheckAnnotatedTopoTarget {
-        inputs: Vec<crate::topo::Input>,
-        request: crate::topo::Request,
-        selection: crate::topo::Selection,
-        target: Molecule,
-        policy: crate::topo::AcceptancePolicy,
-    },
     PrepareVariants {
         bytes: Vec<u8>,
         format: crate::variants_session::FileFormat,
@@ -968,8 +956,8 @@ pub enum AnalysisJob {
     },
     InspectTopoRun {
         inputs: Vec<crate::topo::Input>,
-        template_role: String,
-        origin: crate::run_material::MaterialOrigin,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        template: Option<crate::topo_run_preparation::BoundTemplate>,
         task: crate::topo_run_preparation::Task,
     },
     InspectMaterialOrigin {
@@ -1064,6 +1052,17 @@ pub enum AnalysisJob {
     ListProtocolQuantities {
         workspace: crate::workspace::Workspace,
     },
+    ListTopoGraphs {
+        workspace: crate::workspace::Workspace,
+    },
+    CaptureTopoGraph {
+        workspace: crate::workspace::Workspace,
+        request: crate::topo_graph_history::CaptureRequest,
+    },
+    InspectTopoGraph {
+        workspace: crate::workspace::Workspace,
+        selection: crate::topo_graph_history::Selection,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1151,8 +1150,6 @@ pub enum AnalysisResult {
     TopoOrientations(crate::topo::OrientationInspection),
     TopoProjection(crate::topo::Product),
     TopoTarget(crate::topo::TargetAssessment),
-    AnnotatedTopoProjection(crate::topo::AnnotatedProduct),
-    AnnotatedTopoTarget(crate::topo::AnnotatedAssessment),
     VariantsPrepared(crate::variants_session::Prepared),
     VariantPage(crate::variants_session::Page),
     VariantReferenceChecked(crate::variants_session::Checked),
@@ -1256,6 +1253,9 @@ pub enum AnalysisResult {
     ProtocolQuantitiesOpened(crate::protocol_quantities::Opened),
     ProtocolQuantitiesExported(crate::protocol_quantities::Exported),
     ProtocolQuantitiesListed(crate::protocol_quantities::Listed),
+    TopoGraphsListed(crate::topo_graph_history::Listed),
+    TopoGraphCaptured(crate::topo_graph_history::PreparedCapture),
+    TopoGraphInspected(crate::topo_graph_history::Inspection),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1318,6 +1318,18 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         AnalysisJob::PreviewProtocolQuantities { workspace, request }
         | AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
             crate::protocol_quantities::preview_revision(workspace, request)?;
+        }
+        AnalysisJob::ListTopoGraphs { workspace } => {
+            crate::topo_graph_history::list_revision(workspace)?;
+        }
+        AnalysisJob::CaptureTopoGraph { workspace, request } => {
+            crate::topo_graph_history::preflight(workspace, request)?;
+        }
+        AnalysisJob::InspectTopoGraph {
+            workspace,
+            selection,
+        } => {
+            crate::topo_graph_history::inspect_revision(workspace, selection)?;
         }
         AnalysisJob::ListProtocolQuantities { workspace } => {
             crate::protocol_quantities::list_revision(workspace)?;
@@ -1414,11 +1426,10 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
 
         AnalysisJob::InspectTopoRun {
             inputs,
-            template_role,
-            origin,
+            template,
             task,
         } => {
-            crate::topo_run_preparation::preflight(inputs, template_role, origin, task)?;
+            crate::topo_run_preparation::preflight(inputs, template.as_ref(), task)?;
         }
         AnalysisJob::PreviewAnnealingRecipe {
             inputs,
@@ -1708,6 +1719,17 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
     let maximum = if matches!(
         r.job,
         AnalysisJob::SaveWorkspace { .. }
+            | AnalysisJob::SimulateTopo { .. }
+            | AnalysisJob::InspectTopoOrientations { .. }
+            | AnalysisJob::ProjectTopoProduct { .. }
+            | AnalysisJob::CheckTopoTarget { .. }
+            | AnalysisJob::SealTopoNicks { .. }
+            | AnalysisJob::ProjectProcessedTopo { .. }
+            | AnalysisJob::ProcessTopoActions { .. }
+            | AnalysisJob::InspectTopoActions { .. }
+            | AnalysisJob::ListTopoGraphs { .. }
+            | AnalysisJob::CaptureTopoGraph { .. }
+            | AnalysisJob::InspectTopoGraph { .. }
             | AnalysisJob::BuildAssemblyIntent { .. }
             | AnalysisJob::BuildEditedAssemblyIntent { .. }
             | AnalysisJob::BuildSubstitutedAssemblyIntent { .. }
@@ -1765,13 +1787,16 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         b"CGR\0",
         bytes,
         &[
-            20, 21, 40, 41, 62, 65, 94, 97, 100, 122, 126, 127, 159, 160, 161, 162, 163, 164, 165,
-            166, 167, 168, 170, 171, 173, 176,
+            20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163,
+            164, 165, 166, 168, 169, 171, 174, 179,
         ],
     )?;
 
     let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
     match &response.result {
+        AnalysisResult::TopoGraphsListed(r) => r.validate_binding(&response.revision)?,
+        AnalysisResult::TopoGraphCaptured(r) => r.validate_binding(&response.revision)?,
+        AnalysisResult::TopoGraphInspected(r) => r.validate_binding(&response.revision)?,
         AnalysisResult::ProtocolQuantitiesListed(report) => {
             report.validate_binding(&response.revision)?;
         }
@@ -2120,12 +2145,6 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             if report.revision != response.revision {
                 return Err(Error::Format("variant response context changed".into()));
             }
-        }
-        AnalysisResult::AnnotatedTopoProjection(report) => {
-            crate::topo_worker::validate_annotated_projection(report, &response.revision)?
-        }
-        AnalysisResult::AnnotatedTopoTarget(report) => {
-            crate::topo_worker::validate_annotated_target(report, &response.revision)?
         }
         AnalysisResult::TopoSimulation(report) => {
             crate::topo_worker::validate_simulation(report, &response.revision)?
@@ -3022,6 +3041,31 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
+        AnalysisJob::ListTopoGraphs { workspace } => {
+            if crate::topo_graph_history::list_revision(workspace)? != r.revision {
+                return Err(Error::Format("TOPO graph listing workspace changed".into()));
+            }
+            None
+        }
+        AnalysisJob::CaptureTopoGraph { workspace, request } => {
+            if crate::topo_graph_history::revision(workspace, request)? != r.revision {
+                return Err(Error::Format(
+                    "TOPO graph capture source/request changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectTopoGraph {
+            workspace,
+            selection,
+        } => {
+            if crate::topo_graph_history::inspect_revision(workspace, selection)? != r.revision {
+                return Err(Error::Format(
+                    "TOPO graph selection/workspace changed".into(),
+                ));
+            }
+            None
+        }
         AnalysisJob::ListProtocolQuantities { workspace } => {
             if crate::protocol_quantities::list_revision(workspace)? != r.revision {
                 return Err(Error::Format(
@@ -3228,12 +3272,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
         AnalysisJob::InspectTopoRun {
             inputs,
-            template_role,
-            origin,
+            template,
             task,
         } => {
-            if crate::topo_run_preparation::revision(inputs, template_role, origin, task)?
-                != r.revision
+            if crate::topo_run_preparation::revision(inputs, template.as_ref(), task)? != r.revision
             {
                 return Err(Error::Format(
                     "Saved TOPO source, origin or inspection context changed".into(),
@@ -3623,37 +3665,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             return Err(Error::Unsupported(
                 "variant operations require a persistent worker session".into(),
             ));
-        }
-        AnalysisJob::ProjectAnnotatedTopo {
-            inputs,
-            request,
-            selection,
-        } => {
-            if crate::topo_worker::annotated_projection_revision(inputs, request, selection)?
-                != r.revision
-            {
-                return Err(Error::Format(
-                    "annotated TOPO projection context changed".into(),
-                ));
-            }
-            None
-        }
-        AnalysisJob::CheckAnnotatedTopoTarget {
-            inputs,
-            request,
-            selection,
-            target,
-            policy,
-        } => {
-            if crate::topo_worker::annotated_target_revision(
-                inputs, request, selection, target, policy,
-            )? != r.revision
-            {
-                return Err(Error::Format(
-                    "annotated TOPO target/policy context changed".into(),
-                ));
-            }
-            None
         }
         AnalysisJob::SimulateTopo { inputs, request } => {
             if crate::topo_worker::simulation_revision(inputs, request)? != r.revision {
@@ -4225,10 +4236,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
 
         AnalysisJob::InspectTopoRun {
             inputs,
-            template_role,
-            origin,
+            template,
             task,
-        } => crate::topo_run_preparation::inspect(&inputs, &template_role, &origin, &task)
+        } => crate::topo_run_preparation::inspect(&inputs, template.as_ref(), &task)
             .map(AnalysisResult::TopoRunInspection),
         AnalysisJob::ProcessTopoActions { inputs, request } => {
             crate::topo_actions::inspect(&inputs, &request).map(AnalysisResult::TopoActionsProduct)
@@ -4423,6 +4433,18 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::protocol_quantities::capture(&workspace, &request)
                 .map(AnalysisResult::ProtocolQuantitiesCaptured)
         }
+        AnalysisJob::ListTopoGraphs { workspace } => {
+            crate::topo_graph_history::list(&workspace).map(AnalysisResult::TopoGraphsListed)
+        }
+        AnalysisJob::CaptureTopoGraph { workspace, request } => {
+            crate::topo_graph_history::prepare_capture(&workspace, &request)
+                .map(AnalysisResult::TopoGraphCaptured)
+        }
+        AnalysisJob::InspectTopoGraph {
+            workspace,
+            selection,
+        } => crate::topo_graph_history::inspect(&workspace, &selection)
+            .map(AnalysisResult::TopoGraphInspected),
         AnalysisJob::ListProtocolQuantities { workspace } => {
             crate::protocol_quantities::list(&workspace)
                 .map(AnalysisResult::ProtocolQuantitiesListed)
@@ -4623,20 +4645,6 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         | AnalysisJob::DisposeVariants { .. } => Err(Error::Unsupported(
             "variant operations require a persistent worker session".into(),
         )),
-        AnalysisJob::ProjectAnnotatedTopo {
-            inputs,
-            request,
-            selection,
-        } => crate::topo::annotated_product(&inputs, &request, &selection)
-            .map(AnalysisResult::AnnotatedTopoProjection),
-        AnalysisJob::CheckAnnotatedTopoTarget {
-            inputs,
-            request,
-            selection,
-            target,
-            policy,
-        } => crate::topo::check_target_annotated(&inputs, &request, &selection, &target, &policy)
-            .map(AnalysisResult::AnnotatedTopoTarget),
         AnalysisJob::SimulateTopo { inputs, request } => {
             crate::topo::simulate(&inputs, &request).map(AnalysisResult::TopoSimulation)
         }
@@ -5144,6 +5152,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::SavedRunReviewPrepared(_)
             | AnalysisResult::ProtocolLayoutCaptured(_)
             | AnalysisResult::ProtocolQuantitiesCaptured(_)
+            | AnalysisResult::TopoGraphCaptured(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -5179,7 +5188,7 @@ impl AnalysisSession {
         // private worker state; all other jobs use ordinary stateless dispatch.
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 88..=93 | 128..=134) {
+        if !matches!(tag, 32 | 33 | 53..=66 | 77..=81 | 86..=91 | 126..=132) {
             return process_request(bytes);
         }
 

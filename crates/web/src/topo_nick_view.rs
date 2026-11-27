@@ -29,6 +29,7 @@ pub struct Frame {
     pub inspection_revision: String,
     pub inspection_generation: u32,
     pub orientation: usize,
+    pub graph: Option<collagene_core::topo_graph_history::Selection>,
 }
 /// Declaration-only handoff. Reports and bridged material are deliberately not
 /// accepted as plan inputs or as proof of target agreement.

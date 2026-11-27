@@ -54,13 +54,13 @@ fn type_iis_planning_roundtrips_and_rejects_pre_40_envelopes_and_stale_context()
     };
     let bytes = protocol::encode_request(&job).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 103);
+    assert_eq!(tag, 101);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&39u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let response = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&response[42..]).unwrap();
-    assert_eq!(tag, 95);
+    assert_eq!(tag, 93);
     let decoded = protocol::decode_response(&response).unwrap();
     let AnalysisResult::GoldenGatePrimersDesigned(report) = decoded.result else {
         panic!("expected source-derived proposal")

@@ -21,13 +21,13 @@ fn source_edit_roundtrip_has_literal_target_and_rejects_pre_41_envelopes() {
     let req = request();
     let bytes = protocol::encode_request(&req).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 104);
+    assert_eq!(tag, 102);
     let mut old = bytes.clone();
     old[4..6].copy_from_slice(&40u16.to_le_bytes());
     assert!(protocol::process_request(&old).is_err());
     let bytes = protocol::process_request(&bytes).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 96);
+    assert_eq!(tag, 94);
     let response = protocol::decode_response(&bytes).unwrap();
     let AnalysisResult::MutationIntent(report) = response.result else {
         panic!("expected declared reference")

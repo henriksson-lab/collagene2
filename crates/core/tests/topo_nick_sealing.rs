@@ -300,7 +300,7 @@ fn binary_worker_147_139_rejects_old_envelopes_and_stale_source_context() {
             .unwrap()
             .0
             .2,
-        147
+        145
     );
     let mut old = encoded.clone();
     old[4..6].copy_from_slice(&62u16.to_le_bytes());
@@ -311,7 +311,7 @@ fn binary_worker_147_139_rejects_old_envelopes_and_stale_source_context() {
             .unwrap()
             .0
             .2,
-        139
+        137
     );
     let mut old = response.clone();
     old[4..6].copy_from_slice(&62u16.to_le_bytes());

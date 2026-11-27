@@ -117,18 +117,20 @@ fn documentary_construction_does_not_replay_or_promote_reference_only_history() 
         step_index: 0,
         event: saved.receipt.construct,
     };
-    let origins = run_material::documentary_material_origins(
+    let origins = run_material::documentary_origins(
         &saved.workspace,
         &[MaterialSelection::Run(selection.clone())],
+        &[],
     )
-    .unwrap();
+    .unwrap()
+    .materials;
     assert_eq!(origins.len(), 1);
     let reference = &saved.workspace.revisions[&selection.event.revision];
     assert!(origins[0].replay(reference).is_err());
     assert!(run_material::capsule(&saved.workspace, &selection).is_err());
     let roots = vec![MaterialSelection::Run(selection); 33];
     assert!(matches!(
-        run_material::documentary_material_origins(&saved.workspace, &roots),
+        run_material::documentary_origins(&saved.workspace, &roots, &[]),
         Err(collagene_core::Error::TooLarge)
     ));
     assert!(matches!(origins[0], MaterialOrigin::Run(_)));
@@ -136,7 +138,7 @@ fn documentary_construction_does_not_replay_or_promote_reference_only_history() 
 #[test]
 fn all_four_workspace_intent_selectors_share_stateless_and_session_large_admission() {
     let mut payload = vec![0; collagene_core::formats::MAX_IMPORT_BYTES + 1];
-    for tag in [98u32, 109, 161, 163, 0] {
+    for tag in [96u32, 107, 159, 161, 0] {
         let prefix = postcard::to_allocvec(&(10402u32, "bounded-workspace", tag)).unwrap();
         payload[..64].fill(0);
         payload[..prefix.len()].copy_from_slice(&prefix);

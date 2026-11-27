@@ -74,9 +74,9 @@ fn compound_region_and_cds_binary_outputs_have_independent_expected_proteins() {
         let original = input.source.clone();
         let expected = if cds { "MKPGF" } else { "MKF*" };
         let request = job(input.clone(), false);
-        assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 122);
+        assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 120);
         let (wire, response) = roundtrip(&request);
-        assert_eq!(tag(&wire), 114);
+        assert_eq!(tag(&wire), 112);
         let AnalysisResult::TranslatedReference(report) = response.result else {
             panic!("missing translation report")
         };
@@ -87,9 +87,9 @@ fn compound_region_and_cds_binary_outputs_have_independent_expected_proteins() {
         assert_eq!(report.cds.is_some(), cds);
         let output = job(input.clone(), true);
         assert_ne!(output.revision, request.revision);
-        assert_eq!(tag(&protocol::encode_request(&output).unwrap()), 123);
+        assert_eq!(tag(&protocol::encode_request(&output).unwrap()), 121);
         let (wire, response) = roundtrip(&output);
-        assert_eq!(tag(&wire), 115);
+        assert_eq!(tag(&wire), 113);
         let AnalysisResult::TranslatedOutputs(outputs) = response.result else {
             panic!("missing translated output")
         };
@@ -157,7 +157,7 @@ fn stale_source_options_output_name_and_context_fail_before_computation() {
 }
 #[test]
 fn schema54_discriminators_reject_schema53_body_prefixes_and_full_envelopes() {
-    for (output, job_tag, result_tag) in [(false, 122, 114), (true, 123, 115)] {
+    for (output, job_tag, result_tag) in [(false, 120, 112), (true, 121, 113)] {
         let request = job(fixture(false), output);
         let request_wire = protocol::encode_request(&request).unwrap();
         let (reply_wire, _) = roundtrip(&request);
@@ -221,10 +221,10 @@ fn ordinary_32_mib_caps_apply_to_both_jobs_and_results() {
     oversized[4..6].copy_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     oversized[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
     for (magic, selector, response) in [
-        (b"CGQ\0", 122, false),
-        (b"CGQ\0", 123, false),
-        (b"CGR\0", 114, true),
-        (b"CGR\0", 115, true),
+        (b"CGQ\0", 120, false),
+        (b"CGQ\0", 121, false),
+        (b"CGR\0", 112, true),
+        (b"CGR\0", 113, true),
     ] {
         oversized[..4].copy_from_slice(magic);
         let body = postcard::to_allocvec(&(54u32, "context", selector as u32)).unwrap();

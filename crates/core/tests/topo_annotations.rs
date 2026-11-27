@@ -69,6 +69,9 @@ fn preparation(top: &str, bottom: &str, maps: Vec<t::PreparedMap>) -> t::Prepara
         maps,
         not_represented: vec![],
         assumptions: vec!["Literal prepared correspondence; not biochemical proof".into()],
+        retained_transfers: vec![],
+        layout: vec![],
+        graph_origins: vec![],
     }
 }
 fn view(top: &str, bottom: &str) -> v::DuplexView {

@@ -136,7 +136,14 @@ fn explicit_nick_policy_accepts_graph_without_creating_repaired_duplex_authority
             .physical
             .fully_specified_dna
     );
-    assert_eq!(accepted.annotation_reports.len(), 1);
+    assert!(
+        accepted.step_reports[0]
+            .topo
+            .as_ref()
+            .unwrap()
+            .annotations
+            .is_some()
+    );
     assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
         &accepted.products[0]
     ));
@@ -151,7 +158,14 @@ fn explicit_nick_policy_accepts_graph_without_creating_repaired_duplex_authority
     assert_eq!(rejected.status, Status::Invalid, "{:?}", rejected.findings);
     assert!(rejected.products.is_empty());
     assert_eq!(rejected.step_reports.len(), 1);
-    assert_eq!(rejected.annotation_reports.len(), 1);
+    assert!(
+        rejected.step_reports[0]
+            .topo
+            .as_ref()
+            .unwrap()
+            .annotations
+            .is_some()
+    );
     assert!(
         rejected
             .findings

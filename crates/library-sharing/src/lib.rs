@@ -136,6 +136,8 @@ struct Graph<'a> {
     kept_assets: BTreeSet<String>,
     pending_events: VecDeque<String>,
     pending_runs: VecDeque<String>,
+    kept_graphs: BTreeMap<String, String>,
+    pending_graphs: VecDeque<collagene_core::topo_graph_history::Selection>,
     edges: usize,
 }
 impl<'a> Graph<'a> {
@@ -154,6 +156,8 @@ impl<'a> Graph<'a> {
             kept_assets: BTreeSet::new(),
             pending_events: VecDeque::new(),
             pending_runs: VecDeque::new(),
+            kept_graphs: BTreeMap::new(),
+            pending_graphs: VecDeque::new(),
             edges: 0,
         };
         for (hash, a) in &source.attachments {
@@ -177,6 +181,9 @@ impl<'a> Graph<'a> {
             } else if a.kind == collagene_core::material_derivation::WORKSPACE_ATTACHMENT_KIND {
                 // Exact typed ownership is indexed in resolve. Merely having
                 // an unrelated derivation never publishes its sources/assets.
+            } else if a.kind == collagene_core::topo_graph_history::WORKSPACE_ATTACHMENT_KIND {
+                // Native archive validation owns this current graph contract.
+                // An unrelated graph record never publishes its source scope.
             } else if run_evidence(&a.kind) {
                 let owner: EvidenceOwner = serde_json::from_slice(&a.bytes)
                     .map_err(|_| Error::Unresolved("run evidence owner"))?;
@@ -237,12 +244,33 @@ impl<'a> Graph<'a> {
         }
         Ok(())
     }
+    fn topo_graph(
+        &mut self,
+        selection: &collagene_core::topo_graph_history::Selection,
+    ) -> Result<(), Error> {
+        self.edge()?;
+        if let Some(state) = self.kept_graphs.get(&selection.record_hash) {
+            if state != &selection.state_revision {
+                return Err(Error::Unresolved("graph selection state differs"));
+            }
+        } else {
+            self.kept_graphs.insert(
+                selection.record_hash.clone(),
+                selection.state_revision.clone(),
+            );
+            self.pending_graphs.push_back(selection.clone());
+        }
+        Ok(())
+    }
     fn resolve(&mut self) -> Result<(), Error> {
         let material = material_derivation_closure::Index::new(self.source)?;
         material.validate_existing_owners(&self.owners)?;
         let mut selected_run_choices =
             BTreeMap::<String, Vec<collagene_core::run_material::Selection>>::new();
-        while !self.pending_events.is_empty() || !self.pending_runs.is_empty() {
+        while !self.pending_events.is_empty()
+            || !self.pending_runs.is_empty()
+            || !self.pending_graphs.is_empty()
+        {
             while let Some(id) = self.pending_events.pop_front() {
                 let event = *self
                     .events
@@ -373,6 +401,29 @@ impl<'a> Graph<'a> {
                 // Following owner plans avoids independently interpreting opaque
                 // serialized candidate packages or inventing material state.
                 for op in &run.plan.steps {
+                    let preparation = match op {
+                        Operation::Topo { request, .. }
+                        | Operation::CheckedTopo { request, .. } => Some(request),
+                        Operation::ProcessedTopo { request, .. } => {
+                            Some(&request.treatment.preparation)
+                        }
+                        Operation::TopoActions { request, .. } => Some(&request.preparation),
+                        _ => None,
+                    };
+                    if let Some(preparation) = preparation {
+                        for material in &preparation.recipe.materials {
+                            if let collagene_core::topo::MaterialRecipe::SavedGraph {
+                                origin, ..
+                            } = material
+                            {
+                                collagene_core::topo_graph_history::validate_capsule_for_workspace(
+                                    self.source,
+                                    origin,
+                                )?;
+                                self.topo_graph(&origin.selection)?;
+                            }
+                        }
+                    }
                     if let Operation::ReconstructMaterial { origin, .. } = op {
                         material.follow_capsule(self, origin)?;
                     }
@@ -391,6 +442,23 @@ impl<'a> Graph<'a> {
                             })?;
                         }
                     }
+                }
+            }
+            while let Some(selection) = self.pending_graphs.pop_front() {
+                let record =
+                    collagene_core::topo_graph_history::load(self.source, &selection.record_hash)?;
+                if record.state_revision != selection.state_revision {
+                    return Err(Error::Unresolved("retained native graph state differs"));
+                }
+                self.kept_assets.insert(selection.record_hash.clone());
+                for binding in collagene_core::topo_graph_history::source_bindings(&record)? {
+                    self.binding(&binding)?;
+                }
+                for run in collagene_core::topo_graph_history::required_run_ids(&record)? {
+                    self.run(&run)?;
+                }
+                for graph in collagene_core::topo_graph_history::required_graph_records(&record)? {
+                    self.topo_graph(&graph)?;
                 }
             }
         }

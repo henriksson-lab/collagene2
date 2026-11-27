@@ -1,4 +1,4 @@
-//! Literal append-only transport checks; readonly annotation DTOs are not replay authority.
+//! Current canonical transport; documentary annotations are not replay authority.
 use collagene_core::{
     Error, Feature, Location, Molecule, Topology,
     protocol::{self, AnalysisJob as J, AnalysisResult as R, Request},
@@ -100,22 +100,22 @@ fn run(revision: String, job: J, job_tag: u32, result_tag: u32) -> R {
     response.result
 }
 #[test]
-fn annotated_jobs_append_without_relabeling_physical_reports_or_restoring_authority() {
+fn canonical_jobs_preserve_annotation_correspondence_without_restoring_authority() {
     let (inputs, request, selection) = fixture();
-    let revision = w::annotated_projection_revision(&inputs, &request, &selection).unwrap();
+    let revision = w::projection_revision(&inputs, &request, &selection).unwrap();
     assert_eq!(
         revision,
-        t::annotated_product_revision(&inputs, &request, &selection).unwrap()
+        t::product_revision(&inputs, &request, &selection).unwrap()
     );
-    let R::AnnotatedTopoProjection(product) = run(
+    let R::TopoProjection(product) = run(
         revision.clone(),
-        J::ProjectAnnotatedTopo {
+        J::ProjectTopoProduct {
             inputs: inputs.clone(),
             request: request.clone(),
             selection: selection.clone(),
         },
-        86,
-        78,
+        84,
+        76,
     ) else {
         panic!("expected annotated projection")
     };
@@ -123,15 +123,6 @@ fn annotated_jobs_append_without_relabeling_physical_reports_or_restoring_author
     assert_eq!(reference.sequence.as_str(), "ACGT");
     assert_eq!(reference.features.len(), 1);
     assert_eq!(reference.features[0].label(), "actual top annotation");
-    assert!(
-        product
-            .physical
-            .reference
-            .as_ref()
-            .unwrap()
-            .features
-            .is_empty()
-    );
     assert_eq!(
         product.annotations.as_ref().unwrap().sources[0].projected,
         1
@@ -145,22 +136,21 @@ fn annotated_jobs_append_without_relabeling_physical_reports_or_restoring_author
     );
     let mut forged = product.clone();
     forged.reference.as_mut().unwrap().features.clear();
-    assert!(w::validate_annotated_projection(&forged, &revision).is_err());
+    assert!(w::validate_projection(&forged, &revision).is_err());
     let target = Molecule::dna("independently supplied target", "ACGT", Topology::Linear).unwrap();
     let policy = t::AcceptancePolicy::default();
-    let revision =
-        w::annotated_target_revision(&inputs, &request, &selection, &target, &policy).unwrap();
-    let R::AnnotatedTopoTarget(assessment) = run(
+    let revision = w::target_revision(&inputs, &request, &selection, &target, &policy).unwrap();
+    let R::TopoTarget(assessment) = run(
         revision,
-        J::CheckAnnotatedTopoTarget {
+        J::CheckTopoTarget {
             inputs,
             request,
             selection,
             target,
             policy,
         },
-        87,
-        79,
+        85,
+        77,
     ) else {
         panic!("expected annotated target")
     };

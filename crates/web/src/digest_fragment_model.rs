@@ -114,7 +114,7 @@ mod tests {
         .unwrap();
         let binding = output.receipt.construct.clone();
         let molecule = output.workspace.head(&binding.document_id).unwrap().clone();
-        let pin = PinnedOrigin::new(
+        let pin = PinnedOrigin::from_material(collagene_core::run_material::MaterialOrigin::Run(
             run_material::capsule(
                 &output.workspace,
                 &run_material::Selection {
@@ -124,7 +124,7 @@ mod tests {
                 },
             )
             .unwrap(),
-        )
+        ))
         .unwrap();
         let info = SourceInfo {
             binding,

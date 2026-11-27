@@ -77,9 +77,9 @@ fn tag(bytes: &[u8]) -> u32 {
 fn pinned_worker_replays_nonstarter_geometry_in_current_reports() {
     let req = request(true);
     let wire = protocol::encode_request(&req).unwrap();
-    assert_eq!(tag(&wire), 124);
+    assert_eq!(tag(&wire), 122);
     let output = protocol::process_request(&wire).unwrap();
-    assert_eq!(tag(&output), 116);
+    assert_eq!(tag(&output), 114);
     let response = protocol::decode_response(&output).unwrap();
     assert_eq!((response.id, response.revision), (req.id, req.revision));
     let AnalysisResult::PinnedGel(report) = response.result else {

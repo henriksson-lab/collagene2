@@ -231,10 +231,10 @@ fn fresh_rows_are_inspectable_privately_and_only_a_complete_session_can_publish(
     let request = begin(&frame, &hash, false);
     let fingerprint = run_lineage::workspace_fingerprint(&frame).unwrap();
     let mut session = AnalysisSession::default();
-    assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 131);
+    assert_eq!(tag(&protocol::encode_request(&request).unwrap()), 129);
     assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_err());
     let (wire, response) = ask(&mut session, &request);
-    assert_eq!(tag(&wire), 123);
+    assert_eq!(tag(&wire), 121);
     let AnalysisResult::CombinatorialReleaseStarted(progress) = response.result else {
         panic!("missing release start")
     };
@@ -257,7 +257,7 @@ fn fresh_rows_are_inspectable_privately_and_only_a_complete_session_can_publish(
         (1, "AACCCCAA", "Second published construct"),
     ] {
         let (wire, response) = ask(&mut session, &advance(&request.revision, index));
-        assert_eq!(tag(&wire), 124);
+        assert_eq!(tag(&wire), 122);
         let AnalysisResult::CombinatorialReleaseAdvanced(progress) = response.result else {
             panic!("missing release row")
         };
@@ -265,7 +265,7 @@ fn fresh_rows_are_inspectable_privately_and_only_a_complete_session_can_publish(
         assert_eq!(progress.next_index, index + 1);
         assert_eq!(progress.finished, index == 1);
         let (wire, response) = ask(&mut session, &inspect(&request.revision, index));
-        assert_eq!(tag(&wire), 125);
+        assert_eq!(tag(&wire), 123);
         let AnalysisResult::CombinatorialReleaseInspected(inspection) = response.result else {
             panic!("missing private models")
         };
@@ -279,7 +279,7 @@ fn fresh_rows_are_inspectable_privately_and_only_a_complete_session_can_publish(
         );
     }
     let (wire, response) = ask(&mut session, &finish(&frame, &request.revision));
-    assert_eq!(tag(&wire), 126);
+    assert_eq!(tag(&wire), 124);
     let AnalysisResult::CombinatorialReleaseFinished(commit) = response.result else {
         panic!("missing commit")
     };
@@ -432,11 +432,11 @@ fn schema57_full_and_selector_only_prefixes_cannot_decode_new_release_payloads()
         .into_iter()
         .zip(responses)
         .zip([
-            (131u32, 123u32),
+            (129u32, 121u32),
+            (130, 122),
+            (131, 123),
             (132, 124),
             (133, 125),
-            (134, 126),
-            (135, 127),
         ])
         .map(|((request, response), (job, result))| (request, response, job, result))
     {
@@ -488,7 +488,7 @@ fn released_manifest_exports_through_the_worker_and_checks_archive_integrity() {
         },
     };
     let (wire, response) = ask(&mut AnalysisSession::default(), &request);
-    assert_eq!(tag(&wire), 127);
+    assert_eq!(tag(&wire), 125);
     let AnalysisResult::CombinatorialOutputsArchive(archive) = &response.result else {
         panic!("missing portable bundle")
     };

@@ -907,10 +907,12 @@ pub(crate) fn documentary_capsule_parts(
     Ok((hash, record))
 }
 pub fn capsule(w: &Workspace, product: &EventBinding) -> Result<Capsule, Error> {
-    let mut roots = run_material::documentary_material_origins(
+    let mut roots = run_material::documentary_origins(
         w,
         &[run_material::MaterialSelection::Derived(product.clone())],
-    )?;
+        &[],
+    )?
+    .materials;
     let run_material::MaterialOrigin::Derived(result) = roots.remove(0) else {
         return Err(bad("material capsule kind differs"));
     };
@@ -1098,6 +1100,7 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
     // Collect callback results separately so only one closure mutably borrows the map.
     let mut runs = Vec::new();
     let mut derived = Vec::new();
+    let mut graphs = Vec::new();
     crate::run_material_capsule::derived_ancestry_walk(
         record,
         |origin, _| {
@@ -1118,8 +1121,12 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
             }
             Ok(())
         },
+        |graph, _| {
+            graphs.extend(graph.request.bindings.iter().map(|b| b.event.clone()));
+            Ok(())
+        },
     )?;
-    for e in runs.iter().chain(&derived) {
+    for e in runs.iter().chain(&derived).chain(&graphs) {
         add(e)
     }
     Ok(values.into_values().collect())
@@ -1132,6 +1139,7 @@ pub fn required_run_ids(record: &Record) -> Result<Vec<String>, Error> {
             ids.insert(origin.selection.run_id.clone());
             Ok(())
         },
+        |_, _| Ok(()),
         |_, _| Ok(()),
     )?;
     Ok(ids.into_iter().collect())
@@ -1147,8 +1155,33 @@ pub fn required_derivation_products(record: &Record) -> Result<Vec<EventBinding>
             }
             Ok(())
         },
+        |_, _| Ok(()),
     )?;
     Ok(ids.into_values().collect())
+}
+/// Exact saved TOPO graph dependencies retained by this material ancestry.
+pub fn required_graph_records(
+    record: &Record,
+) -> Result<Vec<crate::topo_graph_history::Selection>, Error> {
+    let mut records = BTreeMap::new();
+    crate::run_material_capsule::derived_ancestry_walk(
+        record,
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+        |graph, _| {
+            let bytes = crate::topo_graph_history::save_record(graph)?;
+            let hash = blake3::hash(&bytes).to_hex().to_string();
+            records.insert(
+                hash.clone(),
+                crate::topo_graph_history::Selection {
+                    record_hash: hash,
+                    state_revision: graph.state_revision.clone(),
+                },
+            );
+            Ok(())
+        },
+    )?;
+    Ok(records.into_values().collect())
 }
 /// Source-bound reference previews only; this helper creates no native product.
 pub fn pcr_preview_revision(

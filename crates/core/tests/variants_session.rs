@@ -123,7 +123,7 @@ fn append_only_tags_and_legacy_version_cannot_prepare_or_restore_private_state()
     };
     let mut frame = protocol::encode_request(&request).unwrap();
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&frame[42..]).unwrap();
-    assert_eq!(tag, 88);
+    assert_eq!(tag, 86);
     frame[4..6].copy_from_slice(&28u16.to_le_bytes());
     assert!(AnalysisSession::default().process_request(&frame).is_err());
     assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_err());

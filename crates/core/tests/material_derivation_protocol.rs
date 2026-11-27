@@ -78,8 +78,8 @@ fn installed() -> (Workspace, EventBinding) {
             request,
         },
         revision.clone(),
-        176,
-        166,
+        174,
+        164,
     );
     let AnalysisResult::MaterialDerivationInstalled(value) = reply.result else {
         unreachable!()
@@ -126,8 +126,8 @@ fn current_install_and_digest_jobs_bind_actual_material() {
             options,
         },
         context.clone(),
-        177,
-        167,
+        175,
+        165,
     );
     let AnalysisResult::MaterialDigestInspection(report) = response.result else {
         unreachable!()
@@ -158,8 +158,8 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 27);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 26);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 24);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 27);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 25);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],
@@ -176,7 +176,7 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         "{:?}",
         report.findings
     );
-    assert!(report.engine_version.ends_with("/science-27"));
+    assert!(report.engine_version.ends_with("/science-28"));
     assert_eq!(tag(&report.physical_processing_reports[0].evidence), 6);
 }
 #[test]

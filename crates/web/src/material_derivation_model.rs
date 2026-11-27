@@ -137,7 +137,6 @@ pub struct PcrChoice {
     selected_index: usize,
     preview: Arc<PcrDocument>,
     preview_revision: String,
-    preview_context: String,
 }
 impl PcrChoice {
     pub fn capture(
@@ -152,7 +151,6 @@ impl PcrChoice {
         }
         preview.molecule.validate().map_err(|e| e.to_string())?;
         let preview_revision = preview.molecule.revision();
-        let preview_context = hash(&(&forward, &reverse, selected_index, preview.as_ref()))?;
         Ok(Self {
             source,
             forward,
@@ -160,25 +158,7 @@ impl PcrChoice {
             selected_index,
             preview,
             preview_revision,
-            preview_context,
         })
-    }
-    pub fn validate_current(
-        &self,
-        event: &EventBinding,
-        epoch: u64,
-        source: &Molecule,
-        origin: Option<&MaterialOrigin>,
-        forward: &Primer,
-        reverse: &Primer,
-        selected_index: usize,
-        preview: &PcrDocument,
-    ) -> Result<(), String> {
-        self.source.validate_current(event, epoch, source, origin)?;
-        if hash(&(forward, reverse, selected_index, preview))? != self.preview_context {
-            return Err("PCR oligos, selected geometry, or preview changed; recompute before opening reusable material.".into());
-        }
-        Ok(())
     }
 
     pub fn request(
@@ -215,7 +195,6 @@ pub struct MismatchChoice {
     reverse: Primer,
     options: collagene_core::mutagenesis::PcrOptions,
     selection: native::MismatchPcrSelection,
-    preview_context: String,
 }
 impl MismatchChoice {
     pub fn from_preview(
@@ -269,37 +248,9 @@ impl MismatchChoice {
                 expected_preview_revision: document.revision(),
                 geometry,
             },
-            preview_context: context,
         })
     }
-    pub fn validate_current(
-        &self,
-        event: &EventBinding,
-        epoch: u64,
-        molecule: &Molecule,
-        origin: Option<&MaterialOrigin>,
-        forward: &Primer,
-        reverse: &Primer,
-        options: &collagene_core::mutagenesis::PcrOptions,
-    ) -> Result<(), String> {
-        self.source
-            .validate_current(event, epoch, molecule, origin)?;
-        if native::mismatch_pcr_preview_revision(
-            molecule,
-            &self.source.native_origin(),
-            forward,
-            reverse,
-            options,
-        )
-        .map_err(|e| e.to_string())?
-            != self.preview_context
-        {
-            return Err(
-                "Mismatch-PCR primers or policy changed; review the current preview again.".into(),
-            );
-        }
-        Ok(())
-    }
+
     pub fn request(
         &self,
         workspace: &Workspace,
@@ -328,7 +279,6 @@ impl MismatchChoice {
 pub struct RepairChoice {
     source: SourcePin,
     method: collagene_core::chemistry::EndRepairMethod,
-    preview_context: String,
 }
 impl RepairChoice {
     pub fn from_preview(
@@ -346,33 +296,9 @@ impl RepairChoice {
         if preview.source_revision != molecule.revision() {
             return Err("End-repair preview names another source revision.".into());
         }
-        Ok(Self {
-            source,
-            method,
-            preview_context: context,
-        })
+        Ok(Self { source, method })
     }
-    pub fn validate_current(
-        &self,
-        event: &EventBinding,
-        epoch: u64,
-        molecule: &Molecule,
-        origin: Option<&MaterialOrigin>,
-        method: collagene_core::chemistry::EndRepairMethod,
-    ) -> Result<(), String> {
-        self.source
-            .validate_current(event, epoch, molecule, origin)?;
-        if native::repair_preview_revision(molecule, &self.source.native_origin(), method)
-            .map_err(|e| e.to_string())?
-            != self.preview_context
-        {
-            return Err(
-                "The selected end-repair method changed; review the current chemistry again."
-                    .into(),
-            );
-        }
-        Ok(())
-    }
+
     pub fn request(&self, workspace: &Workspace, name: &str) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
         let request = native::Request {
@@ -438,50 +364,42 @@ mod tests {
         )
     }
     #[test]
-    fn pcr_choice_binds_event_epoch_full_oligos_geometry_and_preview_not_equal_dna() {
-        let (workspace, source, event, forward, reverse, preview, choice) = pcr();
+    fn pcr_source_pins_and_native_geometry_refuse_stale_or_equal_dna_aliases() {
+        let (workspace, source, event, _, _, _, choice) = pcr();
         choice
-            .validate_current(&event, 7, &source, None, &forward, &reverse, 0, &preview)
+            .source
+            .validate_current(&event, 7, &source, None)
             .unwrap();
         let mut alias = event.clone();
         alias.document_id = "different-equal-DNA-document".into();
         assert!(
             choice
-                .validate_current(&alias, 7, &source, None, &forward, &reverse, 0, &preview)
+                .source
+                .validate_current(&alias, 7, &source, None)
                 .is_err()
         );
         assert!(
             choice
-                .validate_current(&event, 8, &source, None, &forward, &reverse, 0, &preview)
-                .is_err()
-        );
-        let tailed = Primer::new("Forward", "AGTCCG", "AAA").unwrap();
-        assert!(
-            choice
-                .validate_current(&event, 7, &source, None, &tailed, &reverse, 0, &preview)
-                .is_err()
-        );
-        assert!(
-            choice
-                .validate_current(&event, 7, &source, None, &forward, &reverse, 1, &preview)
-                .is_err()
-        );
-        let mut changed = preview.as_ref().clone();
-        changed.geometry.forward_start += 1;
-        assert!(
-            choice
-                .validate_current(&event, 7, &source, None, &forward, &reverse, 0, &changed)
-                .is_err()
-        );
-        let mut changed = preview.as_ref().clone();
-        changed.molecule.name = "another preview".into();
-        assert!(
-            choice
-                .validate_current(&event, 7, &source, None, &forward, &reverse, 0, &changed)
+                .source
+                .validate_current(&event, 8, &source, None)
                 .is_err()
         );
         let pending = choice.request(&workspace, "Reusable PCR", false).unwrap();
-        assert!(matches!(pending.derivation, Derivation::ExactPcr { .. }));
+        let mut changed = pending.clone();
+        if let Derivation::ExactPcr { forward, .. } = &mut changed.derivation {
+            *forward = Primer::new("Forward", "AGTCCG", "AAA").unwrap();
+        }
+        assert!(native::prepare_install(&workspace, &changed).is_err());
+        let mut changed = pending.clone();
+        if let Derivation::ExactPcr { selection, .. } = &mut changed.derivation {
+            selection.selected_index = 1;
+        }
+        assert!(native::prepare_install(&workspace, &changed).is_err());
+        let mut changed = pending;
+        if let Derivation::ExactPcr { selection, .. } = &mut changed.derivation {
+            selection.geometry.forward_start += 1;
+        }
+        assert!(native::prepare_install(&workspace, &changed).is_err());
     }
     #[test]
     fn received_native_pcr_archive_is_validated_but_no_commit_or_reference_promotion_occurs() {
@@ -773,32 +691,23 @@ mod mismatch_repair_tests {
             "AATCCGATGCTAGACT"
         );
         assert_eq!(serde_json::to_vec(&frame).unwrap(), before);
-        assert!(
-            choice
-                .validate_current(&event, 12, &source, None, &forward, &reverse, &options)
-                .is_err()
-        );
+        assert!(pin.validate_current(&event, 12, &source, None).is_err());
         let mut changed = event.clone();
         changed.event_id = "equal-DNA-new-event".into();
-        assert!(
-            choice
-                .validate_current(&changed, 11, &source, None, &forward, &reverse, &options)
-                .is_err()
-        );
+        assert!(pin.validate_current(&changed, 11, &source, None).is_err());
         let mut changed_options = options.clone();
         changed_options.binding.min_three_prime_exact = 1;
         assert!(
-            choice
-                .validate_current(
-                    &event,
-                    11,
-                    &source,
-                    None,
-                    &forward,
-                    &reverse,
-                    &changed_options
-                )
-                .is_err()
+            MismatchChoice::from_preview(
+                pin.clone(),
+                &source,
+                forward.clone(),
+                reverse.clone(),
+                changed_options,
+                &preview,
+                0
+            )
+            .is_err()
         );
         assert!(
             MismatchChoice::from_preview(pin, &source, forward, reverse, options, &preview, 1)
@@ -872,22 +781,7 @@ mod mismatch_repair_tests {
             "AAAGAATT"
         );
         assert_eq!(serde_json::to_vec(&cut.workspace).unwrap(), before);
-        assert!(
-            choice
-                .validate_current(&event, 4, &molecule, None, method)
-                .is_err()
-        );
-        assert!(
-            choice
-                .validate_current(
-                    &event,
-                    4,
-                    &molecule,
-                    Some(origin.as_ref()),
-                    EndRepairMethod::RemoveThreePrimeOverhangs
-                )
-                .is_err()
-        );
+        assert!(pin.validate_current(&event, 4, &molecule, None).is_err());
         assert!(
             RepairChoice::from_preview(
                 pin,

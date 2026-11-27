@@ -11,7 +11,12 @@ dto! {pub struct PreparedVectorDeclaration{
     pub declaration_id:String,pub assumption:String,pub strands:Vec<topo::PreparedStrand>,pub pairing:Vec<physical::PairSpan>,
 }}
 dto! {pub struct ExactPcrDeclaration{pub material_id:String,pub template_role:String,pub forward:Primer,pub reverse:Primer,pub tail:Option<TailingBase>}}
-dto! {pub struct PreparationRequest{pub mode:PreparationMode,pub vector:PreparedVectorDeclaration,pub insert:ExactPcrDeclaration,
+dto! {pub enum PreparationSource{
+ Original{vector:PreparedVectorDeclaration,insert:ExactPcrDeclaration},
+ SavedVector{material_id:String,origin:crate::topo_graph_history::Capsule,vector_strands:[usize;2],insert:ExactPcrDeclaration},
+ ResumeGraph{material_id:String,origin:crate::topo_graph_history::Capsule,vector_strands:[usize;2],insert_strands:[usize;2]},
+}}
+dto! {pub struct PreparationRequest{pub mode:PreparationMode,pub source:PreparationSource,
 pub engine_limits:physical::Limits,pub projection_options:projection::Options}}
 dto! {pub struct CompiledPreparation{pub request:topo::Request,pub vector_strands:[usize;2],pub insert_strands:[usize;2],pub directional:bool,pub assumptions:Vec<String>}}
 fn bad(message: &str) -> Error {
@@ -47,8 +52,107 @@ fn length(strand: &topo::PreparedStrand) -> Result<usize, Error> {
 /// Pure declaration conversion. Original models are not copied or inferred here;
 /// call source_preflight/compile_preparation before native orientation inspection.
 pub fn compile(request: &PreparationRequest) -> Result<CompiledPreparation, Error> {
-    let vector = &request.vector;
-    let insert = &request.insert;
+    match &request.source {
+        PreparationSource::Original { vector, insert } => compile_original(request, vector, insert),
+        PreparationSource::SavedVector {
+            material_id,
+            origin,
+            vector_strands,
+            insert,
+        } => {
+            let record = origin.validate_shallow()?;
+            let n = origin.strand_count()?;
+            if n != 2 || record.state.chains != 2 || !record.state.released_activations.is_empty() {
+                return Err(bad(
+                    "saved initial vector must contain exactly two untransferred original strands; resume reacted graphs explicitly",
+                ));
+            }
+            compiled_saved(
+                request,
+                material_id,
+                origin,
+                *vector_strands,
+                [n, n + 1],
+                Some(insert),
+            )
+        }
+        PreparationSource::ResumeGraph {
+            material_id,
+            origin,
+            vector_strands,
+            insert_strands,
+        } => compiled_saved(
+            request,
+            material_id,
+            origin,
+            *vector_strands,
+            *insert_strands,
+            None,
+        ),
+    }
+}
+fn compiled_saved(
+    request: &PreparationRequest,
+    material_id: &str,
+    origin: &crate::topo_graph_history::Capsule,
+    vector: [usize; 2],
+    insert: [usize; 2],
+    new_insert: Option<&ExactPcrDeclaration>,
+) -> Result<CompiledPreparation, Error> {
+    if !text(material_id, 256) {
+        return Err(bad("bounded graph material identity required"));
+    }
+    let record = origin.validate_shallow()?;
+    let n = origin.strand_count()?;
+    let count = n + 2 * usize::from(new_insert.is_some());
+    if vector.iter().chain(&insert).any(|i| *i >= count)
+        || vector
+            .iter()
+            .chain(&insert)
+            .copied()
+            .collect::<BTreeSet<_>>()
+            .len()
+            != 4
+    {
+        return Err(bad(
+            "four distinct exact native vector/insert source strands required",
+        ));
+    }
+    let mut materials = vec![topo::MaterialRecipe::SavedGraph {
+        material_id: material_id.into(),
+        origin: origin.clone(),
+    }];
+    if let Some(i) = new_insert {
+        materials.push(topo::MaterialRecipe::ExactPcr {
+            material_id: i.material_id.clone(),
+            template_role: i.template_role.clone(),
+            forward: i.forward.clone(),
+            reverse: i.reverse.clone(),
+            tail: i.tail,
+        });
+    }
+    let compiled = CompiledPreparation {
+        request: topo::Request {
+            recipe: topo::GenerationRecipe {
+                schema_version: 1,
+                materials,
+            },
+            transfers: vec![],
+            engine_limits: request.engine_limits.clone(),
+            projection_options: request.projection_options.clone(),
+        },
+        vector_strands: vector,
+        insert_strands: insert,
+        directional: request.mode == PreparationMode::DirectionalCacc,
+        assumptions: record.state.assumptions,
+    };
+    Ok(compiled)
+}
+fn compile_original(
+    request: &PreparationRequest,
+    vector: &PreparedVectorDeclaration,
+    insert: &ExactPcrDeclaration,
+) -> Result<CompiledPreparation, Error> {
     if !text(&vector.declaration_id, 256)
         || !text(&vector.assumption, 4096)
         || vector.strands.len() != 2

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 191;
+pub const CURRENT_TOOL_COUNT: usize = 192;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -82,34 +82,42 @@ pub struct TopoSourceRef {
 #[serde(deny_unknown_fields)]
 pub struct TopoSimulateQuery {
     pub sources: Vec<TopoSourceRef>,
-    pub request: collagene_core::topo::Request,
+    pub request: topo_graph_tools::Preparation,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TopoOrientationQuery {
     pub sources: Vec<TopoSourceRef>,
-    pub request: collagene_core::topo::Request,
+    pub request: topo_graph_tools::Preparation,
     /// Exact prepared-strand indexes; not source-document indexes or a kit guess.
     pub vector: [usize; 2],
     pub insert: [usize; 2],
     pub directional: bool,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TopoProjectQuery {
     pub sources: Vec<TopoSourceRef>,
-    pub request: collagene_core::topo::Request,
+    pub request: topo_graph_tools::Preparation,
     pub selection: collagene_core::topo::Selection,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TopoTargetQuery {
     pub sources: Vec<TopoSourceRef>,
-    pub request: collagene_core::topo::Request,
+    pub request: topo_graph_tools::Preparation,
     pub selection: collagene_core::topo::Selection,
     pub target: DocumentRef,
     /// Every allowance is explicit; the target never chooses a component/seed.
     pub policy: collagene_core::topo::AcceptancePolicy,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 /// Saved template context is attested against an exact session-owned archive;
 /// the task can never supply an alleged reconstructed duplex.
@@ -117,30 +125,30 @@ pub struct TopoTargetQuery {
 #[serde(deny_unknown_fields)]
 pub enum SavedTopoTask {
     Orientations {
-        request: collagene_core::topo::Request,
+        request: topo_graph_tools::Preparation,
         vector: [usize; 2],
         insert: [usize; 2],
         directional: bool,
     },
     Project {
-        request: collagene_core::topo::Request,
+        request: topo_graph_tools::Preparation,
         selection: collagene_core::topo::Selection,
     },
     Check {
-        request: collagene_core::topo::Request,
+        request: topo_graph_tools::Preparation,
         selection: collagene_core::topo::Selection,
         target: DocumentRef,
         policy: collagene_core::topo::AcceptancePolicy,
     },
     InspectActions {
-        request: collagene_core::topo_actions::ActionsRequest,
+        request: topo_graph_tools::Actions,
     },
     ProcessActions {
-        request: collagene_core::topo_actions::Request,
+        request: topo_graph_tools::ActionProduct,
     },
 }
 impl SavedTopoTask {
-    fn preparation(&self) -> &collagene_core::topo::Request {
+    fn preparation(&self) -> &topo_graph_tools::Preparation {
         match self {
             Self::Orientations { request, .. }
             | Self::Project { request, .. }
@@ -152,40 +160,52 @@ impl SavedTopoTask {
     fn native(
         &self,
         target: Option<Molecule>,
+        preparation: collagene_core::topo::Request,
     ) -> Result<collagene_core::topo_run_preparation::Task, ErrorData> {
         use collagene_core::topo_run_preparation::Task;
         Ok(match self {
             Self::Orientations {
-                request,
+                request: _,
                 vector,
                 insert,
                 directional,
             } => Task::Orientations {
-                request: request.clone(),
+                request: preparation,
                 vector: *vector,
                 insert: *insert,
                 directional: *directional,
             },
-            Self::Project { request, selection } => Task::Project {
-                request: request.clone(),
+            Self::Project {
+                request: _,
+                selection,
+            } => Task::Project {
+                request: preparation,
                 selection: selection.clone(),
             },
             Self::Check {
-                request,
+                request: _,
                 selection,
                 policy,
                 ..
             } => Task::Check {
-                request: request.clone(),
+                request: preparation,
                 selection: selection.clone(),
                 target: target.ok_or_else(|| bad("Independent target reference is required"))?,
                 policy: policy.clone(),
             },
             Self::InspectActions { request } => Task::InspectActions {
-                request: request.clone(),
+                request: collagene_core::topo_actions::ActionsRequest {
+                    preparation,
+                    processing: request.processing.clone(),
+                },
             },
             Self::ProcessActions { request } => Task::ProcessActions {
-                request: request.clone(),
+                request: collagene_core::topo_actions::Request {
+                    preparation,
+                    processing: request.processing.clone(),
+                    selection: request.selection.clone(),
+                    options: request.options.clone(),
+                },
             },
         })
     }
@@ -194,13 +214,14 @@ impl SavedTopoTask {
 #[serde(deny_unknown_fields)]
 pub struct SavedTopoInspectionQuery {
     pub inputs: Vec<BoundInput>,
-    pub template_role: String,
-    pub origin: collagene_core::run_material::MaterialSelection,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub template: Option<topo_graph_tools::BoundTemplate>,
     pub origin_workspace: WorkspaceRef,
     pub task: SavedTopoTask,
 }
 #[derive(Serialize)]
 struct TopoEvidence<'a, T: Serialize> {
+    origin_workspace: &'a Option<WorkspaceRef>,
     source_bindings: &'a [TopoSourceRef],
     request: &'a collagene_core::topo::Request,
     target_requirement: Option<&'a DocumentRef>,
@@ -1337,8 +1358,9 @@ impl AssemblyIntentRequest {
                 .iter()
                 .map(|b| b.selection.clone())
                 .collect::<Vec<_>>();
-            collagene_core::run_material::documentary_material_origins(workspace, &selections)
+            collagene_core::run_material::documentary_origins(workspace, &selections, &[])
                 .map_err(bad)?
+                .materials
         };
         Ok(collagene_core::assembly_intent::Request {
             name: self.name.clone(),
@@ -2145,15 +2167,13 @@ impl CollageneServer {
         request: &collagene_core::topo::Request,
         target: Option<&DocumentRef>,
     ) -> Result<(Vec<collagene_core::topo::Input>, Option<Molecule>), ErrorData> {
-        if sources.is_empty()
-            || sources.len() > 32
-            || request.recipe.schema_version != 1
+        if sources.len() > 32
             || request.recipe.materials.is_empty()
             || request.recipe.materials.len() > 16
             || request.transfers.len() > 16
         {
             return Err(bad(
-                "TOPO requires1..32 explicit sources and bounded version1 recipe/materials/transfers",
+                "TOPO requires bounded explicit sources and current native recipe/materials/transfers",
             ));
         }
         let mut roles = BTreeSet::new();
@@ -3777,9 +3797,11 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
-            let report=collagene_core::topo::simulate(&inputs,&args.request).map_err(bad)?;
-            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&report,
+            let (native,_)=server.hydrate_topo(&args.request,args.origin_workspace.as_ref(),&[])?;
+
+            let(inputs,_)=server.topo_sources(&args.sources,&native,None)?;
+            let report=collagene_core::topo::simulate(&inputs,&native).map_err(bad)?;
+            let evidence=TopoEvidence{origin_workspace:&args.origin_workspace,source_bindings:&args.sources,request:&native,target_requirement:None,report:&report,
                 binding_scope:"Exact immutable MCP document roles/revisions; native event parents require the typed plan/run workflow."};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-simulation.json")?;
             output(json!({"sources":args.sources,"engine_version":report.engine_version,"batch_revision":report.batch_revision,
@@ -3797,12 +3819,14 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
-            let report=collagene_core::topo::inspect_orientations(&inputs,&args.request,args.vector,args.insert,args.directional).map_err(bad)?;
+            let (native,_)=server.hydrate_topo(&args.request,args.origin_workspace.as_ref(),&[])?;
+
+            let(inputs,_)=server.topo_sources(&args.sources,&native,None)?;
+            let report=collagene_core::topo::inspect_orientations(&inputs,&native,args.vector,args.insert,args.directional).map_err(bad)?;
             let candidates=report.reference.candidates.iter().zip(&report.candidate_requests).enumerate().map(|(index,(physical,request))|{
                 Ok::<_,ErrorData>(json!({"index":index,"batch_revision":collagene_core::topo::batch_revision(&inputs,request).map_err(bad)?,"transfers":request.transfers,"physical":topo_summary(physical)}))
             }).collect::<Result<Vec<_>,_>>()?;
-            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&report,
+            let evidence=TopoEvidence{origin_workspace:&args.origin_workspace,source_bindings:&args.sources,request:&native,target_requirement:None,report:&report,
                 binding_scope:"Exact immutable MCP roles/revisions; complete candidate requests are retained, never target-selected."};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-orientations.json")?;
             output(json!({"sources":args.sources,"engine_version":report.engine_version,"batch_revision":report.batch_revision,
@@ -3820,14 +3844,16 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let(inputs,_)=server.topo_sources(&args.sources,&args.request,None)?;
-            let product=collagene_core::topo::annotated_product(&inputs,&args.request,&args.selection).map_err(bad)?;
-            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:None,report:&product,
+            let (native,_)=server.hydrate_topo(&args.request,args.origin_workspace.as_ref(),&[])?;
+
+            let(inputs,_)=server.topo_sources(&args.sources,&native,None)?;
+            let product=collagene_core::topo::product(&inputs,&native,&args.selection).map_err(bad)?;
+            let evidence=TopoEvidence{origin_workspace:&args.origin_workspace,source_bindings:&args.sources,request:&native,target_requirement:None,report:&product,
                 binding_scope:"Source-backed physical reconstruction; sequence view is not standalone chemistry authority."};
             let (artifact,document)=server.candidate_document_artifact_bounded(&evidence,product.reference.clone(),"topo-projection.json",collagene_core::topo::MAX_REPORT_BYTES)?;
             output(json!({"sources":args.sources,"selection":args.selection,"engine_version":product.engine_version,
-                "batch_revision":product.batch_revision,"projection":topo_projection_summary(&product.physical),
-                "physical":topo_summary(&product.physical.projection.physical),"annotations":topo_annotation_summary(product.annotations.as_ref()),"document":document,"artifact_id":artifact,
+                "batch_revision":product.batch_revision,"projection":topo_projection_summary(&product),
+                "physical":topo_summary(&product.projection.physical),"annotations":topo_annotation_summary(product.annotations.as_ref()),"document":document,"artifact_id":artifact,
                 "authority":"Explicit component/seed only; no target-guided path selection, nick repair or standalone physical authority from the projected reference."}))
         }).await
     }
@@ -3840,16 +3866,18 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let(inputs,target)=server.topo_sources(&args.sources,&args.request,Some(&args.target))?;
+            let (native,_)=server.hydrate_topo(&args.request,args.origin_workspace.as_ref(),&[])?;
+
+            let(inputs,target)=server.topo_sources(&args.sources,&native,Some(&args.target))?;
             let target=target.ok_or_else(||bad("explicit independent TOPO target required"))?;
-            let report=collagene_core::topo::check_target_annotated(&inputs,&args.request,&args.selection,&target,&args.policy).map_err(bad)?;
-            let evidence=TopoEvidence{source_bindings:&args.sources,request:&args.request,target_requirement:Some(&args.target),report:&report,
+            let report=collagene_core::topo::check_target(&inputs,&native,&args.selection,&target,&args.policy).map_err(bad)?;
+            let evidence=TopoEvidence{origin_workspace:&args.origin_workspace,source_bindings:&args.sources,request:&native,target_requirement:Some(&args.target),report:&report,
                 binding_scope:"Independent target is a noncausal requirement, not an ancestry parent or source of generated DNA."};
             let artifact=server.text_artifact(bounded_json_limit(&evidence,collagene_core::topo::MAX_REPORT_BYTES)?,"application/json","topo-target-check.json")?;
             output(json!({"sources":args.sources,"target":args.target,"selection":args.selection,"policy":args.policy,
                 "engine_version":report.engine_version,"batch_revision":report.batch_revision,"target_revision":report.target_revision,
-                "outcome":report.outcome,"projection":topo_projection_summary(&report.product.physical),
-                "physical":topo_summary(&report.product.physical.projection.physical),"artifact_id":artifact,"annotations":topo_annotation_summary(report.product.annotations.as_ref()),
+                "outcome":report.outcome,"projection":topo_projection_summary(&report.product),
+                "physical":topo_summary(&report.product.projection.physical),"artifact_id":artifact,"annotations":topo_annotation_summary(report.product.annotations.as_ref()),
                 "authority":"Conditional comparison under declared physical graph and explicit allowances, not a repaired molecule or experimental verification."}))
         }).await
     }
@@ -7064,70 +7092,52 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         &self,
         Parameters(args): Parameters<SavedTopoInspectionQuery>,
     ) -> Result<CallToolResult, ErrorData> {
-        if args.inputs.is_empty()
-            || args.inputs.len() > 32
-            || args.template_role.is_empty()
-            || args.template_role.len() > 256
-        {
-            return Err(bad(
-                "Saved TOPO inspection requires 1–32 bounded original roles and an explicit template role",
-            ));
+        if args.inputs.len() > 32 {
+            return Err(bad("bounded explicit TOPO input roles required"));
         }
-        args.origin.validate().map_err(bad)?;
-        // Bound literal option trees before cloning them into the native task.
         bounded_json_limit(&args.task, 2 * 1024 * 1024)?;
+        if args
+            .template
+            .as_ref()
+            .is_some_and(|t| t.role.trim().is_empty() || t.role.len() > 256)
+        {
+            return Err(bad("bounded saved PCR-template role required"));
+        }
+        if args.template.is_none() && args.task.preparation().selections()?.is_empty() {
+            return Err(bad("choose an explicit saved graph or PCR-template origin"));
+        }
         let server = self.clone();
         self.compute(move||{
-            let origin_workspace=server.restore_workspace(&args.origin_workspace)?;
-            let origin=server.resolve_material_origin(&origin_workspace,args.origin.event(),&args.origin)?;
-            // The resolver above attests exact document/event/revision ownership.
-            let saved_template=origin_workspace.revisions.get(&origin.event().revision).ok_or_else(||bad("Attested TOPO template revision is absent."))?;
-            let (inputs,target)={
-                let store=server.store.lock().unwrap();
-                let mut ids=BTreeSet::new();
-                let mut refs=Vec::with_capacity(args.inputs.len());
-                let mut sources=Vec::with_capacity(args.inputs.len());
-                for input in &args.inputs {
-                    if input.id.trim().is_empty() || input.id.len()>128 || !ids.insert(input.id.as_str()) { return Err(bad("Invalid or duplicate original TOPO source role")); }
-                    refs.push(store.document(&input.document)?);
-                    sources.push(verification::TopoSource{role:input.id.clone(),source:verification::Source::Input(input.id.clone())});
-                }
-                let target=if let SavedTopoTask::Check{target,..}=&args.task {
-                    let molecule=store.document(target)?;
-                    collagene_core::topo_worker::target_preflight(molecule).map_err(bad)?;
-                    Some(molecule.clone())
-                }else{None};
-                let inputs=collagene_core::topo_run_preparation::source_inputs(&sources,&refs,args.task.preparation(),&args.template_role,Some(&origin)).map_err(bad)?;
+            let selected=args.template.iter().map(|t|t.selection.clone()).collect::<Vec<_>>();
+            let (preparation,mut materials)=server.hydrate_topo(args.task.preparation(),Some(&args.origin_workspace),&selected)?;
+            let template=if let Some(t)=&args.template {
+                if t.role.trim().is_empty()||t.role.len()>256||materials.len()!=1{return Err(bad("one exact saved PCR-template role required"));}
+                Some(collagene_core::topo_run_preparation::BoundTemplate{role:t.role.clone(),origin:materials.remove(0)})
+            }else{None};
+            let (inputs,target)={let store=server.store.lock().unwrap();let mut ids=BTreeSet::new();let mut refs=vec![];let mut sources=vec![];
+                for b in &args.inputs {if b.id.trim().is_empty()||b.id.len()>128||!ids.insert(b.id.as_str()){return Err(bad("invalid or duplicate saved TOPO role"));}refs.push(store.document(&b.document)?);sources.push(verification::TopoSource{role:b.id.clone(),source:verification::Source::Input(b.id.clone())});}
+                let target=if let SavedTopoTask::Check{target,..}=&args.task {let m=store.document(target)?;collagene_core::topo_worker::target_preflight(m).map_err(bad)?;Some(m.clone())}else{None};
+                let inputs=collagene_core::topo_run_preparation::source_inputs(&sources,&refs,&preparation,template.as_ref()).map_err(bad)?;
                 (inputs,target)
             };
-            let template=inputs.iter().find(|input| input.role==args.template_role).ok_or_else(||bad("Selected saved template role is unavailable"))?;
-            if &template.molecule!=saved_template {
-                return Err(bad("Selected saved TOPO origin differs from its exact retained template snapshot."));
-            }
-            let task=args.task.native(target)?;
-            collagene_core::topo_run_preparation::preflight(&inputs,&args.template_role,&origin,&task).map_err(bad)?;
-            let context=collagene_core::topo_run_preparation::revision(&inputs,&args.template_role,&origin,&task).map_err(bad)?;
-            let report=collagene_core::topo_run_preparation::inspect(&inputs,&args.template_role,&origin,&task).map_err(bad)?;
-            report.validate_for(&inputs,&args.template_role,&origin,&task,&context).map_err(bad)?;
-            use collagene_core::topo_run_preparation::Reply;
-            let summary=match &report.reply {
-                Reply::Orientations(_)=>json!({"kind":"Orientations"}),
-                Reply::Projected(r)=>json!({"kind":"Projected","reference_length":r.reference.as_ref().map(|m|m.sequence.len())}),
-                Reply::Checked(r)=>json!({"kind":"Checked","target_revision":r.target_revision,"outcome":r.outcome}),
-                Reply::ActionsInspected(_)=>json!({"kind":"ActionsInspected"}),
-                Reply::ActionsProcessed(_)=>json!({"kind":"ActionsProcessed"}),
-            };
-            #[derive(Serialize)]
-            struct Evidence<'a>{inputs:&'a[BoundInput],template_role:&'a str,origin:&'a collagene_core::run_material::MaterialSelection,origin_workspace:&'a WorkspaceRef,task:&'a SavedTopoTask,inspection:&'a collagene_core::topo_run_preparation::Inspection}
-            let evidence=Evidence{inputs:&args.inputs,template_role:&args.template_role,origin:&args.origin,origin_workspace:&args.origin_workspace,task:&args.task,inspection:&report};
-            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","saved-template-topo-inspection.json")?;
-            output(json!({"state":"saved-template-inspection","verified":false,"candidate_saved":false,"document_saved":false,
-                "context_revision":context,"engine_version":collagene_core::topo_run_preparation::ENGINE_VERSION,"template_role":args.template_role,
-                "origin_revision":origin.event().revision,"origin_event":origin.event(),"origin_selection":args.origin,
-                "origin_incomplete":report.origin_incomplete,"origin_findings":report.origin_findings,
-                "origin_findings_total":report.origin_findings_total,"origin_findings_truncated":report.origin_findings_truncated,"summary":summary,"artifact_id":artifact,
-                "authority":"Exact retained native origin attestation and fresh origin/PCR/TOPO replay under explicit declarations. Origin incompleteness and bounded original findings remain explicit; a local graph or target comparison cannot clear them. Only Check reports comparison with the independently selected immutable session target; no summary grants global verification, reusable material, isolation, kit success or mixture uniqueness. No candidate or projected document was saved; serialized metadata cannot restore private physical state."}))
+            let task=args.task.native(target,preparation)?;
+            let context=collagene_core::topo_run_preparation::revision(&inputs,template.as_ref(),&task).map_err(bad)?;
+            let report=collagene_core::topo_run_preparation::inspect(&inputs,template.as_ref(),&task).map_err(bad)?;
+            report.validate_for(&inputs,template.as_ref(),&task,&context).map_err(bad)?;
+            #[derive(Serialize)]struct Evidence<'a>{inputs:&'a[BoundInput],template:&'a Option<topo_graph_tools::BoundTemplate>,origin_workspace:&'a WorkspaceRef,task:&'a SavedTopoTask,inspection:&'a collagene_core::topo_run_preparation::Inspection}
+            let evidence=Evidence{inputs:&args.inputs,template:&args.template,origin_workspace:&args.origin_workspace,task:&args.task,inspection:&report};
+            let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","saved-topo-inspection.json")?;
+            output(json!({"context_revision":context,"engine_version":collagene_core::topo_run_preparation::ENGINE_VERSION,"template":args.template,"origin_workspace":args.origin_workspace,"origin_incomplete":report.origin_incomplete,"origin_findings":report.origin_findings,"origin_findings_total":report.origin_findings_total,"origin_findings_truncated":report.origin_findings_truncated,"artifact_id":artifact,"verified":false,"authority":"Exact retained native graph and optional PCR-template origins freshly reconstructed; whole graph/prefix/byproducts retained. No duplicate insert synthesis, imported report authority, isolation or experimental success."}))
         }).await
+    }
+    #[tool(
+        description = "List, freshly inspect, or explicitly capture a whole native elementary TOPO graph in a pinned workspace. Source/event/record selections are small and session-attested; no supplied graph report or metadata becomes material. Capture returns a NEW immutable archive/receipt without changing heads or live application state. Retains partial-transfer history, activations, nicks, byproducts and inherited limitations. Processing-modified graph reuse is unsupported; no inventory, activation manufacture, isolation or experiment claim."
+    )]
+    async fn topo_graph(
+        &self,
+        Parameters(args): Parameters<topo_graph_tools::Query>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.topo_graph_dispatch(args).await
     }
     #[tool(
         description = "Compile explicit source-backed TA or directional CACC TOPO preparation declarations into the shared native recipe. Preserves actual ordered primers, vector strand geometry, terminal states and activation assumptions. Does not simulate activation or repair, add a tail silently, select transfers or invent a closed clone. Reuse inspect_topo_orientations and existing projection/target checks with the returned fields."
@@ -8258,7 +8268,6 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         let artifact = if processed_step_count > 0
             || reference_step_count > 0
             || !report.step_reports.is_empty()
-            || !report.annotation_reports.is_empty()
         {
             Some(self.text_artifact(
                 bounded_json_limit(&report, 32 * 1024 * 1024)?,
@@ -8491,3 +8500,4 @@ pub async fn serve_stdio(
 mod sequence_exchange_tools;
 
 mod quantity_tools;
+mod topo_graph_tools;

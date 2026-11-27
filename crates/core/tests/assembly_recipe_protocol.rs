@@ -64,7 +64,7 @@ fn schema_thirty_one_keeps_original_roles_target_and_exact_junction_evidence() {
     let expected = assembly_recipe::preview_revision(&inputs, &target, &recipe).unwrap();
     let bytes = request(inputs.clone(), target.clone(), recipe.clone());
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
-    assert_eq!(tag, 94);
+    assert_eq!(tag, 92);
     let output = protocol::process_request(&bytes).unwrap();
     let response = protocol::decode_response(&output).unwrap();
     assert_eq!(response.revision, expected);

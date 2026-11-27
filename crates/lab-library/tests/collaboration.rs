@@ -1,7 +1,10 @@
 use collagene_lab_library::{collaboration::*, *};
 use std::{
     path::PathBuf,
-    sync::{Arc, Barrier},
+    sync::{
+        Arc, Barrier,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 fn payload(text: &str) -> Payload {
     Payload {
@@ -298,13 +301,15 @@ fn input_bounds_are_bytes_and_author_claims_are_not_taken_from_comment_text() {
 struct Temp(PathBuf);
 impl Temp {
     fn new() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
         let p = std::env::temp_dir().join(format!(
-            "collagene-discussion-{}-{}",
+            "collagene-discussion-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
-                .as_nanos()
+                .as_nanos(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
         ));
         let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]

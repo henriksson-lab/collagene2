@@ -1858,3 +1858,13 @@ rechecked after parser/selector corrections. The final crate WASM check also
 passes. Native three-platform and WASM CI now include this crate. Worker, GUI,
 workspace and MCP integration remain to be implemented; this core does not
 complete F34 or establish graphical acceptance. [Profile](STRUCTURE_IMPORT.md).
+
+### macOS collaboration fixture isolation
+
+The published catalog fix passed Linux scientific CI and the web job. macOS
+reached the discussion backup fixture but failed creating its temporary directory:
+two concurrent tests received the same timestamp-derived name. The helper now
+includes an atomic process-local counter, as the other native disk fixtures do.
+No production behavior, recovery assertion or scientific passing criterion is
+relaxed. Both affected disk-backed fixture groups pass locally; cross-platform CI
+must confirm the correction on macOS.

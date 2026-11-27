@@ -2019,15 +2019,17 @@ mod run_origin_tests {
     }
 
     #[test]
-    fn derived_digest_roundtrip_retains_actual_preparation_and_refuses_run_only_routes() {
+    fn derived_digest_roundtrip_retains_actual_preparation_and_rejects_superseded_encoding() {
         let (original, mut workspace) = saved_pcr_workspace();
-        let run = original.methods.rows[0]
+        let collagene_core::run_material::MaterialOrigin::Run(run) = original.methods.rows[0]
             .run_origin
             .as_ref()
             .unwrap()
-            .as_run()
-            .unwrap()
-            .clone();
+            .as_ref()
+        else {
+            panic!("Fixture requires actual saved run material");
+        };
+        let run = run.clone();
         let source = run.selection.event.clone();
         workspace.active_document = source.document_id.clone();
         let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
@@ -2102,7 +2104,6 @@ mod run_origin_tests {
         ));
         let material = collagene_core::run_material::MaterialOrigin::Derived(capsule);
         let pin = crate::run_origin_model::PinnedOrigin::from_material(material).unwrap();
-        assert!(pin.as_run().is_err());
         let molecule = installed.workspace.revisions[&event.revision].clone();
         assert_eq!(molecule.sequence.as_str(), "ACGACCCC");
         let mut draft = original;

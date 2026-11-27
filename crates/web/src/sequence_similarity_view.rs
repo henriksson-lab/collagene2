@@ -324,7 +324,7 @@ pub fn SimilaritySearchPanel(
             <p class="helper">{move||options.get().err().unwrap_or_default()}</p>
             <p role="status" aria-live="polite">{move||status.get()}</p>
             {move||report.get().map(|review|{
-                let result=review.report.clone();let count=result.hits.len();let pins=review.capture.subjects.clone();let captured_epoch=review.capture.epoch;
+                let result=review.report.clone();let pins=review.capture.subjects.clone();let captured_epoch=review.capture.epoch;
                 view!{
                     <ol class="similarity-hits">{result.hits.into_iter().skip(page.get()*20).take(20).map(|hit|{
                         let pin=pins.iter().find(|p|p.binding.document_id==hit.subject_key).expect("validated result subject").binding.clone();

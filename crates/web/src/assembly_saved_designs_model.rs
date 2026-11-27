@@ -883,16 +883,17 @@ mod tests {
         let (saved, entry) = save(&committed.workspace, "Prepared source design", &draft).unwrap();
         let restored = load(&saved, &entry.id).unwrap();
         assert!(restored == draft);
+        let collagene_core::run_material::MaterialOrigin::Run(restored_origin) =
+            restored.methods.rows[0]
+                .run_origin
+                .as_ref()
+                .unwrap()
+                .as_ref()
+        else {
+            panic!("Saved run material changed origin type");
+        };
         assert_eq!(
-            serde_json::to_value(
-                restored.methods.rows[0]
-                    .run_origin
-                    .as_ref()
-                    .unwrap()
-                    .as_run()
-                    .unwrap()
-            )
-            .unwrap(),
+            serde_json::to_value(restored_origin).unwrap(),
             exact_capsule
         );
         let (_, rows) = crate::cloning_preparations::prepared_rows(&restored.methods, 1).unwrap();

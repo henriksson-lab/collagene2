@@ -1,7 +1,7 @@
 //! Cheap editable references to bounded documentary recipes, never live material.
 use collagene_core::{
     run_lineage::EventBinding,
-    run_material::{Capsule, MaterialOrigin, MaterialSelection},
+    run_material::{MaterialOrigin, MaterialSelection},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
@@ -61,13 +61,6 @@ impl PinnedOrigin {
         self.material
             .validate_documentary()
             .map_err(|e| e.to_string())
-    }
-    /// Advanced run-only workflows must refuse derived digest material explicitly.
-    pub(crate) fn as_run(&self) -> Result<&Capsule, String> {
-        match self.as_ref() {
-            MaterialOrigin::Run(origin) => Ok(origin),
-            MaterialOrigin::Derived(_) => Err("This workflow does not yet support target-free derived products. Use ordinary PCR or an assembly preparation to retain their actual material origin.".into()),
-        }
     }
     pub(crate) fn label(&self) -> String {
         match self.as_ref() {

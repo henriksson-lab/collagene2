@@ -50,9 +50,9 @@ fn current_removal_and_metadata_commands_reject_noncurrent_headers() {
     for c in commands {
         let q = request(c);
         let bytes = wire::encode_request(&q).unwrap();
-        assert_eq!(&bytes[4..6], &3u16.to_le_bytes());
+        assert_eq!(&bytes[4..6], &wire::SCHEMA_VERSION.to_le_bytes());
         assert_eq!(wire::decode_request(&bytes).unwrap(), q);
-        for old in [1u16, 2] {
+        for old in [1u16, 2, 3] {
             let mut bad = bytes.clone();
             bad[4..6].copy_from_slice(&old.to_le_bytes());
             assert!(wire::decode_request(&bad).is_err());
@@ -80,7 +80,7 @@ fn removal_reply_is_exactly_request_bound_and_unknown_receipt_versions_or_counts
     let r = response(&q, wire::Success::RemoteRemovalPrepared { review });
     let bytes = wire::encode_response_for_frame(&r, &wire::encode_request(&q).unwrap()).unwrap();
     wire::decode_response_for(&bytes, &q).unwrap();
-    for old in [1u16, 2] {
+    for old in [1u16, 2, 3] {
         let mut b = bytes.clone();
         b[4..6].copy_from_slice(&old.to_le_bytes());
         assert!(wire::decode_response(&b).is_err());

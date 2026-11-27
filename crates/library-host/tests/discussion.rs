@@ -24,7 +24,7 @@ fn call(
         request,
     };
     let frame = api::encode_request(&request).unwrap();
-    assert!(frame.starts_with(b"CDQ\0\x01\x00"));
+    assert!(frame.starts_with(b"CDQ\0\x02\x00"));
     assert!(wire::decode_request(&frame).is_err());
     let decoded = api::decode_request(&frame).unwrap();
     let response = collagene_library_host::discussion::dispatch(db, m, &decoded).unwrap();
@@ -61,6 +61,7 @@ fn sdk_roundtrip_uses_authenticated_author_and_exact_revision_with_typed_conflic
     let request = api::Request::Append {
         target: target.clone(),
         expected_generation: 0,
+        expected_actor: wire::Text::new("scientist-a").unwrap(),
         action: api::Action::OpenThread {
             body: wire::Text::new("<b>Plain comment</b>").unwrap(),
         },
@@ -81,6 +82,23 @@ fn sdk_roundtrip_uses_authenticated_author_and_exact_revision_with_typed_conflic
         api::Outcome::Failure(api::Failure {
             code: wire::ErrorCode::Forbidden,
             actual_generation: None
+        })
+    ));
+    let other_person = member(&db, &access, "scientist-b", native::Role::Contributor);
+    let wrong_identity = api::Request::Append {
+        target: target.clone(),
+        expected_generation: 1,
+        expected_actor: wire::Text::new("scientist-a").unwrap(),
+        action: api::Action::Review {
+            decision: api::ReviewDecision::Approved,
+            body: wire::Text::new("").unwrap(),
+        },
+    };
+    assert!(matches!(
+        call(&mut db, &other_person, wrong_identity).outcome,
+        api::Outcome::Failure(api::Failure {
+            code: wire::ErrorCode::Forbidden,
+            ..
         })
     ));
     let page = call(
@@ -142,6 +160,7 @@ fn bounded_frames_and_response_binding_refuse_changed_author_target_action_and_p
         request: api::Request::Append {
             target: target.clone(),
             expected_generation: 0,
+            expected_actor: member.author.id.clone(),
             action: action.clone(),
         },
     };
@@ -182,10 +201,10 @@ fn bounded_frames_and_response_binding_refuse_changed_author_target_action_and_p
     }
     assert!(changed.validate_for(&request, &lab).is_err());
     let mut bytes = api::encode_request(&request).unwrap();
-    bytes[4] = 2;
+    bytes[4] = 1;
     assert!(matches!(
         api::decode_request(&bytes),
-        Err(wire::Error::Version(2))
+        Err(wire::Error::Version(1))
     ));
     assert!(api::decode_request(&vec![0; api::MAX_REQUEST_BYTES + 1]).is_err());
     assert!(

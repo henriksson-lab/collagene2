@@ -161,6 +161,10 @@ pub fn RemoteLibraryPane(
         checkout.set(false);
         review.set(None);
     });
+    Effect::new(move |_| {
+        let _ = selected.get();
+        history.set(None);
+    });
     on_cleanup(move || {
         life.with_value(|v| v.set(v.get().wrapping_add(1)));
         if let Some(input) = key.get() {
@@ -170,6 +174,15 @@ pub fn RemoteLibraryPane(
     let send = Callback::new(move |action: Action| {
         if !native || busy.get_untracked() || locked.get_untracked() {
             return;
+        }
+        if matches!(
+            &action.command,
+            wire::Command::SetCredential { .. }
+                | wire::Command::DeleteCredential { .. }
+                | wire::Command::ClearSession { .. }
+                | wire::Command::ConfirmRemoteRemoval { .. }
+        ) {
+            history.set(None);
         }
         let client = client.get_value();
         let life = life.get_value();
@@ -556,8 +569,14 @@ pub fn RemoteLibraryPane(
                 </details>
                 <Show when=move||history.with(Option::is_some)><details open><summary>"Remote revision history"</summary>
                     <p>{move||history.get().map(|h|h.document.name.into_string()).unwrap_or_default()}</p>
-                    <ul>{move||history.get().map(|h|h.rows.into_iter().map(|r|view!{<li>{format!("Revision {} · {} · {} bytes",r.number,r.id.as_str(),r.archive_size)}</li>}).collect_view())}</ul>
-                    <p class="helper">"History is read-only. Cloning the plasmid action fetches its current remote head."</p>
+                    <ul>{move||history.get().and_then(|h|selected.get().map(|remote|(h,remote))).map(|(h,remote)|h.rows.into_iter().map(|r|{
+                        let target=base::discussion::Target{document:h.document.id.clone(),revision:r.id.clone()};
+                        let connection=crate::library_discussion_client::Client::Remote{client:client.get_value(),remote:remote.clone()};
+                        view!{<li>{format!("Revision {} · {} · {} bytes",r.number,r.id.as_str(),r.archive_size)}
+                            <crate::library_discussion_view::LibraryDiscussion target=target client=connection/>
+                        </li>}
+                    }).collect_view())}</ul>
+                    <p class="helper">"Sequence history is immutable. Comments and human review apply to each exact remote revision; cloning fetches its current head."</p>
                     <button class="text-tool" disabled=move||busy.get()||locked.get()||history.with(|h|h.as_ref().is_none_or(|h|h.offset==0)) on:click=move|_|if let Some(mut h)=history.get_untracked(){h.offset=h.offset.saturating_sub(100);read_history.run(h);}>"Previous"</button>
                     <button class="text-tool" disabled=move||busy.get()||locked.get()||history.with(|h|h.as_ref().is_none_or(|h|h.next.is_none())) on:click=move|_|if let Some(mut h)=history.get_untracked(){if let Some(offset)=h.next{h.offset=offset;read_history.run(h);}}>"Next"</button>
                 </details></Show>

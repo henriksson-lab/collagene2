@@ -3,6 +3,7 @@ use super::*;
 pub enum Channel {
     Library,
     Sync,
+    Discussion,
 }
 #[derive(Debug, thiserror::Error)]
 pub enum TransportError {

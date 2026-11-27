@@ -443,6 +443,35 @@ impl<A: SyncAdapter> SyncHost<A> {
                     remote: remote.clone(),
                 }
             }
+            C::Discussion {
+                remote,
+                request: operation,
+            } => {
+                let config = self.remote(remote)?;
+                let request = library::discussion::RequestEnvelope {
+                    request_id: request.request_id,
+                    request: operation.clone(),
+                };
+                let bytes = library::discussion::encode_request(&request)
+                    .map_err(|_| Fault::invalid("Invalid revision discussion request."))?;
+                // Every remote discussion action is explicit. It is never queued,
+                // replayed or attached to a local scientific document.
+                accepted(gate)?;
+                let bytes = self
+                    .adapter
+                    .exchange(&config, repository::Channel::Discussion, &bytes)
+                    .map_err(|_| Fault::unavailable())?;
+                let reply = library::discussion::decode_response(&bytes)
+                    .map_err(|_| Fault::unavailable())?;
+                reply
+                    .validate_for(&request, &config.lab)
+                    .map_err(|_| Fault::unavailable())?;
+                *context = Some(wire::RemoteContext {
+                    remote: projection::remote(&config)?,
+                    lab: reply.context.clone(),
+                });
+                S::Discussion(reply)
+            }
             C::Browse { remote, .. }
             | C::Search { remote, .. }
             | C::ListRevisions { remote, .. } => {

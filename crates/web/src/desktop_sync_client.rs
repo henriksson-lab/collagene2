@@ -37,8 +37,14 @@ impl Client {
             .map_err(|_| "Cannot allocate native database operation.".to_owned())?;
         let bytes = wire::encode_request(&request)
             .map_err(|_| "Invalid native database request.".to_owned())?;
+        let discussion = matches!(&request.command, wire::Command::Discussion { .. });
         let bytes = (self.rpc)(bytes).await.map_err(|_| {
-            "Database operation interrupted. Review its durable job before retrying.".to_owned()
+            if discussion {
+                "Remote discussion interrupted. Reload its history before choosing to resubmit."
+                    .to_owned()
+            } else {
+                "Database operation interrupted. Review its durable job before retrying.".to_owned()
+            }
         })?;
         let response = wire::decode_response_for(&bytes, &request)
             .map_err(|_| "Native database response failed its request checks.".to_owned())?;

@@ -6,7 +6,7 @@ use library::{Digest, DocumentId, FolderId, LabId, Rows, Text};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const SCHEMA_VERSION: u16 = 3;
+pub const SCHEMA_VERSION: u16 = 4;
 mod publication;
 mod removal;
 pub use publication::*;
@@ -14,7 +14,7 @@ pub use removal::*;
 pub const HEADER_BYTES: usize = 42;
 /// Limits include the complete frame header.
 pub const MAX_REQUEST_BYTES: usize = 64 << 10;
-pub const MAX_RESPONSE_BYTES: usize = 1 << 20;
+pub const MAX_RESPONSE_BYTES: usize = 3 << 20;
 pub const MAX_SECRET_BYTES: usize = 2048;
 pub const MAX_PAGE_ROWS: usize = 200;
 const REQUEST_MAGIC: &[u8; 4] = b"DSQ\0";
@@ -174,6 +174,7 @@ dto! {pub enum Command {
     ConfirmRemoteRemoval{remote:RemoteId,review:ReviewId},
     DiscardRemoteRemovalReview{review:ReviewId},
     CheckRemoteRemovalOutcome{remote:RemoteId},
+    Discussion{remote:RemoteId,request:library::discussion::Request},
 }}
 dto! {pub struct RequestEnvelope {pub request_id:u64,pub operation_id:OperationId,pub command:Command}}
 dto! {pub enum LocalTarget {Document(DocumentId),Folder(FolderId),DeletedFolder(FolderId)}}
@@ -224,6 +225,7 @@ dto! {pub enum Success {
     Pulled{local:library::Document},TreeStarted(TreeStatus),TreeUpdated(TreeStatus),TreeJobs(TreePage),
     Bookmarks(BookmarkPage),
     MetadataPrepared(MetadataReview),PushChoices(PushChoices),PushPrepared(PushPublicationReview),PushReviewDiscarded{review:ReviewId},DeletedFolderPublications(DeletedFolderPage),
+    Discussion(library::discussion::ResponseEnvelope),
     RemoteRemovalPrepared{review:RemoteRemovalReview},RemoteRemoved(RemovalReceipt),RemoteRemovalReviewDiscarded{review:ReviewId},RemoteRemovalOutcome{remote:RemoteId,receipt:Option<RemovalReceipt>},
 }}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -326,6 +328,7 @@ impl Command {
             | Self::Browse { remote, .. }
             | Self::Search { remote, .. }
             | Self::ListRevisions { remote, .. }
+            | Self::Discussion { remote, .. }
             | Self::CloneDocument { remote, .. }
             | Self::QueuePush { remote, .. }
             | Self::PrepareRemoteRemoval { remote }
@@ -372,6 +375,7 @@ impl RequestEnvelope {
             read.validate()?;
         }
         match &self.command {
+            Command::Discussion { request, .. } => request.validate()?,
             Command::ListDeletedFolderPublications {
                 page,
                 expected_checkpoint,
@@ -575,6 +579,7 @@ impl ResponseEnvelope {
                 }
                 Success::Browsed(p) | Success::Searched(p) => p.validate()?,
                 Success::Revisions(p) => library::Success::Revisions(p.clone()).validate()?,
+                Success::Discussion(reply) => reply.validate()?,
                 Success::Bookmarks(p) => {
                     for item in p.items.iter() {
                         if let Bookmark::NativeBranch {
@@ -618,6 +623,26 @@ impl ResponseEnvelope {
             if &c.remote.id != expected {
                 return Err(Error::Mismatch);
             }
+        }
+        if let Command::Discussion { remote, request } = &r.command {
+            return match &self.outcome {
+                Outcome::Success(Success::Discussion(reply)) => {
+                    let context = self.context.as_ref().ok_or(Error::Mismatch)?;
+                    if &context.remote.id != remote || context.lab != reply.context {
+                        return Err(Error::Mismatch);
+                    }
+                    reply.validate_for(
+                        &library::discussion::RequestEnvelope {
+                            request_id: r.request_id,
+                            request: request.clone(),
+                        },
+                        &context.remote.expected_lab,
+                    )?;
+                    Ok(())
+                }
+                Outcome::Failure(Failure::Error { .. }) => Ok(()),
+                _ => Err(Error::Mismatch),
+            };
         }
         if let Some(read) = r.command.read_request() {
             let outcome = match &self.outcome {

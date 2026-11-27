@@ -144,7 +144,7 @@ Pending and tree pages contain at most 200 items, with an explicit next offset.
 The host projects only summaries: no full tree node graph, archive frame, native
 vault account or credential appears in them. Corrupt typed outbox identities fail
 rather than panicking or being silently skipped. Requests are bounded to64 KiB;
-complete replies to1 MiB, including framing. Unavailable operations never cause
+complete replies to3 MiB, including framing. Unavailable operations never cause
 unbounded metadata or a partial success presented as complete.
 
 ## Native fixtures and remaining integration
@@ -170,3 +170,15 @@ route DSQ frames through its existing trusted `collagene_rpc` boundary and prese
 accepted-operation outcomes. Frontend controls/presentation and OS credential
 interaction policy belong to those adapters, not to a path or permission claim
 inside a frame.
+
+
+## Remote revision discussion
+
+The native service dispatches the current bounded `Discussion` command against
+one saved, fully pinned remote using its existing native credential provider.
+It checks window admission before transport, exact nested request correlation,
+remote/lab context, actor and revision/generation bindings. No local plasmid,
+scientific history, durable outbox or credential record is changed by discussion.
+Transport interruption is not automatically retried. The shared browser/Tauri
+review controls handle an uncertain result by requiring refresh and review.
+See [discussion workflow](LAB_COLLABORATION.md).

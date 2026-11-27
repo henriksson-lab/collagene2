@@ -1787,3 +1787,17 @@ acceptance and controlled service cutover remain open. SQLite schema 2 rejects
 older schemas, and `serve` now requires `--members-file`; existing running storage
 and services remain untouched. Offline/remote plasmid synchronization does not
 silently transfer discussion or actor identity. See [lab collaboration](LAB_COLLABORATION.md).
+
+
+### Desktop chosen-remote human review
+
+The Tauri remote revision history now reuses the browser discussion/review controls
+through native credentials and the exact saved remote/lab binding. Appends pin the
+loaded actor ID, so a changed authenticated person cannot silently author the
+previous person's review. Discussion remains explicit online work, independent of
+local plasmids and their durable push queue. Discussion schema 2 and desktop sync
+IPC schema 4 reject previous internal versions directly. All 25 focused native/model
+cases pass, including identity and scope refusal, uncertain replies, full-page
+bounds and native cancellation. The integrated WASM check also passes;
+exact-source cross-platform CI remains open. No running service/database or application HTTP/browser check
+was used for this batch. [Controls and scope](LAB_COLLABORATION.md).

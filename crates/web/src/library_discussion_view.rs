@@ -1,7 +1,4 @@
-use crate::{
-    library_client::{self, LibraryClient},
-    library_discussion_model::Review,
-};
+use crate::{library_discussion_client::Client, library_discussion_model::Review};
 use collagene_library_protocol::{self as wire, discussion as api};
 use leptos::prelude::*;
 use std::{cell::Cell, rc::Rc};
@@ -11,9 +8,9 @@ enum Command {
     Append(api::Action),
 }
 #[component]
-pub fn LibraryDiscussion(target: api::Target) -> impl IntoView {
+pub fn LibraryDiscussion(target: api::Target, client: Client) -> impl IntoView {
     let target = StoredValue::new(target);
-    let session = StoredValue::new_local(library_client::browser_session());
+    let session = StoredValue::new_local(client);
     let epoch = session.with_value(|s| s.publication_epoch());
     let alive = StoredValue::new_local(Rc::new(Cell::new(true)));
     on_cleanup(move || alive.with_value(|a| a.set(false)));
@@ -31,7 +28,7 @@ pub fn LibraryDiscussion(target: api::Target) -> impl IntoView {
             status.set("The member session changed. Reopen revision history.".into());
             return;
         }
-        let Some(context) = client.context() else {
+        let Some(lab) = client.lab_id() else {
             status.set("Connect to the lab library first.".into());
             return;
         };
@@ -75,7 +72,7 @@ pub fn LibraryDiscussion(target: api::Target) -> impl IntoView {
             let mut acknowledged = false;
             let result: Result<Review, String> = async {
                 let mut operation = operation;
-                let mut response = client.discussion(operation.clone()).await?;
+                let mut response = client.request(operation.clone()).await?;
                 if !alive.with_value(|a| a.get()) || client.publication_epoch() != epoch {
                     return Err("Discussion session changed.".into());
                 }
@@ -93,7 +90,7 @@ pub fn LibraryDiscussion(target: api::Target) -> impl IntoView {
                         limit: 200,
                         expected_generation: None,
                     };
-                    response = client.discussion(operation.clone()).await?;
+                    response = client.request(operation.clone()).await?;
                     if let api::Outcome::Failure(f) = &response.outcome {
                         return Err(failure(f));
                     }
@@ -108,7 +105,7 @@ pub fn LibraryDiscussion(target: api::Target) -> impl IntoView {
                         request: operation,
                     },
                     &response,
-                    &context.lab_id,
+                    &lab,
                 )
             }
             .await;
@@ -212,7 +209,7 @@ fn failure(f: &api::Failure) -> String {
             "Discussion changed (generation {}). Refresh and review before resubmitting.",
             f.actual_generation.unwrap_or(0)
         ),
-        wire::ErrorCode::Forbidden => "Your member role does not permit this action.".into(),
+        wire::ErrorCode::Forbidden => "Your member identity or role does not permit this action. Refresh the review before posting.".into(),
         wire::ErrorCode::NotFound => {
             "This exact revision or thread is unavailable in this lab.".into()
         }

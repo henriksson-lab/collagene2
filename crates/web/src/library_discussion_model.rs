@@ -66,6 +66,7 @@ impl Review {
         Ok(api::Request::Append {
             target: self.target.clone(),
             expected_generation: self.generation,
+            expected_actor: self.member.author.id.clone(),
             action,
         })
     }

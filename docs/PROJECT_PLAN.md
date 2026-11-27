@@ -4030,12 +4030,16 @@ serve configuration is removed directly. Current SQLite schema 2 rejects the
 superseded schema; no migrations or compatibility readers were introduced. Live
 services and databases were not accessed or changed.
 
-Web discussion is an expandable section under each saved server-library revision.
+Browser and Tauri remote discussion use the same expandable review controls under
+each exact saved server revision.
 Complete current paging is required before posting or presenting current review
 summaries; failed/unacknowledged writes keep drafts and require explicit refresh.
 An acknowledged save followed by refresh failure is reported distinctly. Login
 changes and closed views discard pending results. Discussion is not silently
-copied with offline documents or chosen-remote plasmid sync.
+copied with offline documents or chosen-remote plasmid sync. Tauri sends explicit
+online actions through native credentials and a fixed discussion transport channel.
+Both the outer desktop operation/remote context and the nested lab/actor/revision
+request are checked. No comment job enters the local plasmid outbox.
 
 Native storage/backup validation covers 29 cases. The native binary SDK and
 credential/permission boundary cover 18 cases; both focused web-model cases and
@@ -4045,3 +4049,25 @@ acceptance, controlled service cutover and any remaining concurrent editing
 requirements remain open, along with the full plan's other delivery gates.
 [Discussion contract and controls](LAB_COLLABORATION.md) ·
 [Operator configuration](SERVER_LIBRARY.md).
+
+
+### Remote review identity and desktop delivery
+
+Appends now include the exact actor ID loaded during review as a consistency
+precondition. Current server authentication remains the only authority; a changed
+actor refuses the write before adding an event. Browser and Tauri remote controls
+share the same model/view, with separate explicit transports. Native credentials,
+configured remote/lab bindings and window admission stay outside human text and
+scientific archives. Changing credentials or remotes disposes previous revision
+views. Offline documents require no connection; discussion writes are never queued
+or automatically retried.
+
+Discussion schema 2 and desktop sync IPC schema 4 reject previous internal versions
+directly. The 3 MiB IPC response cap carries a full 200-event discussion page and
+remote context; the service retains its 16 KiB request and 2 MiB response bounds.
+Current-schema tests cover a page larger than 1 MiB, identity changes, lost replies
+without duplicate comments, wrong-lab refusal, native cancellation before transport
+and unchanged local scientific history/outbox. All 25 focused native/model cases
+pass and the integrated WASM check passes. Exact-source cross-platform CI remains
+a delivery gate. Application HTTP and browser acceptance remain deferred under the current
+instruction. [Workflow and protocol scope](LAB_COLLABORATION.md).

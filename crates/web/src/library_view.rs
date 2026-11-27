@@ -724,7 +724,7 @@ pub fn LibraryPane(
                             let document=listing.document.clone();
                             let target=wire::discussion::Target{document:document.id.clone(),revision:revision.id.clone()};
                             view!{<li><button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|send.run(Command::Open(document.clone(),Some(revision.id.clone())))>{format!("Revision {} · {} bytes",revision.number,revision.archive_size)}</button>
-                                {(!local).then(||view!{<crate::library_discussion_view::LibraryDiscussion target=target/>})}
+                                {(!local).then(||view!{<crate::library_discussion_view::LibraryDiscussion target=target client=crate::library_discussion_client::Client::browser()/>})}
                             </li>}
                         }).collect_view()}</ul>
                         <div class="library-pages">

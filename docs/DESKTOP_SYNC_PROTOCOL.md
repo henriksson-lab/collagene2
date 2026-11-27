@@ -8,7 +8,7 @@ service must implement those operations over the trusted window's repository.
 
 The 42-byte header contains magic `DSQ\0` or `DSR\0`, little-endian schema u16,
 postcard payload length u32 and a BLAKE3 payload checksum. Request frames are at
-most 64 KiB and response frames at most 1 MiB, **including the header**. Checksums
+most 64 KiB and response frames at most 3 MiB, **including the header**. Checksums
 detect corruption; they are not authentication. Decoding rejects trailing bytes,
 unknown versions, invalid identifiers and oversized declared collections before
 their allocation. Serialization uses a capped buffer. All listed pages have at
@@ -117,7 +117,7 @@ and mount/progress semantics. Native adapter and real repository integration tes
 belong to the service crate. Adding this wire crate alone does not enable remote
 management in the current desktop or public web preview.
 
-## Reviewed native remote removal (schema 3)
+## Reviewed native remote removal
 
 Append-only PrepareRemoteRemoval, ConfirmRemoteRemoval, DiscardRemoteRemovalReview
 and CheckRemoteRemovalOutcome commands require frame version 3, as do their new
@@ -139,3 +139,34 @@ CAS guarded. A conflict reports key-forgotten/configuration-retained; an uncerta
 I/O outcome is checked against its durable receipt before declaring doubt.
 No remote server delete is performed. CheckOutcome is read-only and binds the
 full old remote configuration to its native local-context receipt.
+
+
+## Remote human discussion
+
+Current desktop sync IPC schema **4** adds
+`Discussion { remote, request: library::discussion::Request }` and a checked
+`Success::Discussion` response. Earlier IPC schemas are rejected without a
+migration or fallback decoder. Discussion uses its own current schema 2 on the
+native HTTP transport; molecular document and reliable-sync frames retain their
+separate current versions.
+
+Requests contain only bounded human text, exact remote document/revision pins,
+page/generation controls and an expected authenticated actor pin for appends.
+No role claim, bearer, scientific archive, native path or arbitrary URL is carried.
+The native host resolves the saved remote and uses its separately managed
+credential. Response checks bind the outer desktop operation ID, request ID,
+complete remote context and expected lab, then the exact nested discussion request,
+trusted member, revision, action and generation/page sequence.
+
+The 3 MiB response frame cap admits a maximum 200-event discussion page with
+8 KiB text bodies and remote context. Discussion requests retain the ordinary
+64 KiB IPC frame cap and the tighter 16 KiB service request bound. The dedicated
+HTTP route is fixed by the `Discussion` transport channel; no endpoint is inferred
+from incoming bytes. Invalid channel/version/framing is refused before requesting
+a credential.
+
+Discussion is explicit online work, not a durable plasmid push. There is no
+outbox entry, replay, clone/pull side effect or scientific history attachment.
+After a lost reply, refresh the exact discussion; the unchanged expected generation
+refuses a duplicate compare-and-append. A changed actor similarly refuses rather
+than impersonating the previously reviewed author.

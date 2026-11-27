@@ -264,10 +264,14 @@ and successful writes under the same correct explicit lab pin.
 
 `POST /api/library/discussion` accepts only
 `application/vnd.collagene.discussion+postcard`, with checked `CDQ`/`CDR` frames.
-Requests are at most 16 KiB and responses at most 2 MiB. The expected-lab header
+Discussion schema 2 rejects prior internal versions directly. Requests are at
+most 16 KiB and responses at most 2 MiB. The expected-lab header
 is required on every request, including identity lookup. The endpoint supports
 `Identify`, revision-bound `List` and compare-and-append `Append`. Authenticated
-author/role appear only in the server reply; no request can supply them.
+author/role come only from the trusted member registry. Appends include an
+`expected_actor` consistency pin from the loaded review. It never grants identity
+or permission: if current authentication resolves to another actor, the host
+refuses the write before adding an event. Roles are always resolved afresh.
 
 Responses retain request correlation, trusted lab/member context and typed
 permission, missing-target, bound and generation-conflict failures. Appends bind

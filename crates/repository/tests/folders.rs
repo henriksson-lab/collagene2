@@ -95,6 +95,7 @@ impl RemoteTransport for Remote {
         bytes: &[u8],
     ) -> Result<Vec<u8>, TransportError> {
         match channel {
+            Channel::Discussion => panic!("This fixture does not exercise discussion transport"),
             Channel::Sync => {
                 let request =
                     sync::decode_request(bytes).map_err(|_| TransportError::Unavailable)?;

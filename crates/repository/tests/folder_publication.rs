@@ -68,6 +68,7 @@ impl RemoteTransport for Remote {
         b: &[u8],
     ) -> Result<Vec<u8>, TransportError> {
         match c {
+            Channel::Discussion => panic!("This fixture does not exercise discussion transport"),
             Channel::Library => {
                 collagene_library_host::dispatch_frame(&mut self.db, &self.access, b, None)
                     .map_err(|_| TransportError::Unavailable)

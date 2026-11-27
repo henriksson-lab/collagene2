@@ -1,5 +1,6 @@
 //! Bounded human collaboration messages; no client-supplied author or role.
 use super::*;
+pub const SCHEMA_VERSION: u16 = 2;
 pub const ENDPOINT: &str = "/api/library/discussion";
 pub const MEDIA_TYPE: &str = "application/vnd.collagene.discussion+postcard";
 pub const MAX_REQUEST_BYTES: usize = 16 * 1024;
@@ -80,7 +81,7 @@ impl Event {
 dto! {pub enum Request {
     Identify,
     List{target:Target,offset:u32,limit:u16,expected_generation:Option<u64>},
-    Append{target:Target,expected_generation:u64,action:Action}
+    Append{target:Target,expected_generation:u64,expected_actor:Text<128>,action:Action}
 }}
 impl Request {
     pub fn validate(&self) -> Result<(), Error> {
@@ -104,11 +105,19 @@ impl Request {
             }
             Self::Append {
                 expected_generation,
+                expected_actor,
                 action,
                 ..
             } => {
                 if *expected_generation >= MAX_EVENTS {
                     return Err(Error::Invalid("discussion generation"));
+                }
+                if expected_actor.is_empty()
+                    || !expected_actor
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"-_.:@".contains(&b))
+                {
+                    return Err(Error::Invalid("expected discussion actor"));
                 }
                 action.validate()
             }
@@ -202,6 +211,7 @@ impl ResponseEnvelope {
                 Request::Append {
                     target,
                     expected_generation,
+                    expected_actor,
                     action,
                 },
                 Outcome::Success(Success::Appended { target: t, event }),
@@ -209,6 +219,7 @@ impl ResponseEnvelope {
                 target == t
                     && event.sequence == expected_generation + 1
                     && event.action == *action
+                    && event.author.id == *expected_actor
                     && event.author == self.member.author
                     && event.role == self.member.role
                     && self.member.role != Role::Reader
@@ -243,7 +254,7 @@ impl ResponseEnvelope {
 }
 pub fn encode_request(v: &RequestEnvelope) -> Result<Vec<u8>, Error> {
     v.validate()?;
-    let b = super::encode(REQUEST_MAGIC, v)?;
+    let b = super::encode(REQUEST_MAGIC, SCHEMA_VERSION, v)?;
     if b.len() > MAX_REQUEST_BYTES {
         return Err(Error::TooLarge);
     }
@@ -253,13 +264,13 @@ pub fn decode_request(b: &[u8]) -> Result<RequestEnvelope, Error> {
     if b.len() > MAX_REQUEST_BYTES {
         return Err(Error::TooLarge);
     }
-    let v: RequestEnvelope = super::decode(REQUEST_MAGIC, b)?;
+    let v: RequestEnvelope = super::decode(REQUEST_MAGIC, SCHEMA_VERSION, b)?;
     v.validate()?;
     Ok(v)
 }
 pub fn encode_response(v: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
     v.validate()?;
-    let b = super::encode(RESPONSE_MAGIC, v)?;
+    let b = super::encode(RESPONSE_MAGIC, SCHEMA_VERSION, v)?;
     if b.len() > MAX_RESPONSE_BYTES {
         return Err(Error::TooLarge);
     }
@@ -269,7 +280,7 @@ pub fn decode_response(b: &[u8]) -> Result<ResponseEnvelope, Error> {
     if b.len() > MAX_RESPONSE_BYTES {
         return Err(Error::TooLarge);
     }
-    let v: ResponseEnvelope = super::decode(RESPONSE_MAGIC, b)?;
+    let v: ResponseEnvelope = super::decode(RESPONSE_MAGIC, SCHEMA_VERSION, b)?;
     v.validate()?;
     Ok(v)
 }

@@ -720,7 +720,7 @@ impl postcard::ser_flavors::Flavor for BoundedPayload {
         Ok(self.0)
     }
 }
-fn encode<T: Serialize>(magic: &[u8; 4], value: &T) -> Result<Vec<u8>, Error> {
+fn encode<T: Serialize>(magic: &[u8; 4], version: u16, value: &T) -> Result<Vec<u8>, Error> {
     let payload =
         postcard::serialize_with_flavor(value, BoundedPayload(Vec::new())).map_err(|e| {
             if matches!(e, postcard::Error::SerializeBufferFull) {
@@ -731,18 +731,22 @@ fn encode<T: Serialize>(magic: &[u8; 4], value: &T) -> Result<Vec<u8>, Error> {
         })?;
     let mut bytes = Vec::with_capacity(HEADER_BYTES + payload.len());
     bytes.extend_from_slice(magic);
-    bytes.extend_from_slice(&SCHEMA_VERSION.to_le_bytes());
+    bytes.extend_from_slice(&version.to_le_bytes());
     bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
     bytes.extend_from_slice(blake3::hash(&payload).as_bytes());
     bytes.extend_from_slice(&payload);
     Ok(bytes)
 }
-fn decode<T: for<'de> Deserialize<'de>>(magic: &[u8; 4], bytes: &[u8]) -> Result<T, Error> {
+fn decode<T: for<'de> Deserialize<'de>>(
+    magic: &[u8; 4],
+    expected_version: u16,
+    bytes: &[u8],
+) -> Result<T, Error> {
     if bytes.len() < HEADER_BYTES || &bytes[..4] != magic {
         return Err(Error::Malformed);
     }
     let version = u16::from_le_bytes([bytes[4], bytes[5]]);
-    if version != SCHEMA_VERSION {
+    if version != expected_version {
         return Err(Error::Version(version));
     }
     let size = u32::from_le_bytes(bytes[6..10].try_into().map_err(|_| Error::Malformed)?) as usize;
@@ -764,19 +768,19 @@ fn decode<T: for<'de> Deserialize<'de>>(magic: &[u8; 4], bytes: &[u8]) -> Result
 }
 pub fn encode_request(request: &RequestEnvelope) -> Result<Vec<u8>, Error> {
     request.validate()?;
-    encode(REQUEST_MAGIC, request)
+    encode(REQUEST_MAGIC, SCHEMA_VERSION, request)
 }
 pub fn decode_request(bytes: &[u8]) -> Result<RequestEnvelope, Error> {
-    let value: RequestEnvelope = decode(REQUEST_MAGIC, bytes)?;
+    let value: RequestEnvelope = decode(REQUEST_MAGIC, SCHEMA_VERSION, bytes)?;
     value.validate()?;
     Ok(value)
 }
 pub fn encode_response(response: &ResponseEnvelope) -> Result<Vec<u8>, Error> {
     response.validate()?;
-    encode(RESPONSE_MAGIC, response)
+    encode(RESPONSE_MAGIC, SCHEMA_VERSION, response)
 }
 pub fn decode_response(bytes: &[u8]) -> Result<ResponseEnvelope, Error> {
-    let value: ResponseEnvelope = decode(RESPONSE_MAGIC, bytes)?;
+    let value: ResponseEnvelope = decode(RESPONSE_MAGIC, SCHEMA_VERSION, bytes)?;
     value.validate()?;
     Ok(value)
 }

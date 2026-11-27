@@ -34,18 +34,23 @@ pub fn dispatch(
         api::Request::Append {
             target: t,
             expected_generation,
+            expected_actor,
             action,
         } => {
             let action: native::Action = convert(action)?;
-            db.append_discussion(member, &target(t), *expected_generation, action)
-                .and_then(|e| {
-                    convert(&e)
-                        .map(|event| api::Success::Appended {
-                            target: t.clone(),
-                            event,
-                        })
-                        .map_err(|_| store::Error::Corrupt("discussion conversion").into())
-                })
+            if expected_actor.as_str() != member.author().id.as_str() {
+                Err(native::DiscussionError::Forbidden)
+            } else {
+                db.append_discussion(member, &target(t), *expected_generation, action)
+                    .and_then(|e| {
+                        convert(&e)
+                            .map(|event| api::Success::Appended {
+                                target: t.clone(),
+                                event,
+                            })
+                            .map_err(|_| store::Error::Corrupt("discussion conversion").into())
+                    })
+            }
         }
     };
     let outcome = match result {

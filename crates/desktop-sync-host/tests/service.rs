@@ -84,6 +84,9 @@ struct Server {
     lose_apply: bool,
     wrong_reply: bool,
     wrong_lab_reply: bool,
+    discussion_actor: String,
+    discussion_role: store::collaboration::Role,
+    lose_discussion: bool,
 }
 impl Server {
     fn new() -> Self {
@@ -97,6 +100,9 @@ impl Server {
             lose_apply: false,
             wrong_reply: false,
             wrong_lab_reply: false,
+            discussion_actor: "scientist-a".into(),
+            discussion_role: store::collaboration::Role::Contributor,
+            lose_discussion: false,
         }
     }
 }
@@ -157,6 +163,41 @@ impl RemoteTransport for Adapter {
             .bearer(r)
             .map_err(|_| TransportError::Unavailable)?;
         match c {
+            Channel::Discussion => {
+                use store::collaboration::{ActorId, Author};
+                let request = library::discussion::decode_request(bytes)
+                    .map_err(|_| TransportError::Unavailable)?;
+                let applying = request.request.is_write();
+                let author = Author::new(
+                    ActorId::parse(&self.server.discussion_actor).unwrap(),
+                    &self.server.discussion_actor,
+                )
+                .unwrap();
+                let member = self
+                    .server
+                    .db
+                    .trusted_member_access(&self.server.access, author, self.server.discussion_role)
+                    .unwrap();
+                let mut reply = collagene_library_host::discussion::dispatch(
+                    &mut self.server.db,
+                    &member,
+                    &request,
+                )
+                .map_err(|_| TransportError::Unavailable)?;
+                if applying && self.server.lose_discussion {
+                    self.server.lose_discussion = false;
+                    return Err(TransportError::Unavailable);
+                }
+                if self.server.wrong_reply {
+                    reply.request_id += 1;
+                }
+                if self.server.wrong_lab_reply {
+                    reply.context.lab_id =
+                        library::LabId::new("lab-ffffffffffffffffffffffffffffffff").unwrap();
+                }
+                library::discussion::encode_response(&reply)
+                    .map_err(|_| TransportError::Unavailable)
+            }
             Channel::Library => {
                 let req =
                     library::decode_request(bytes).map_err(|_| TransportError::Unavailable)?;
@@ -1197,4 +1238,156 @@ fn tree_jobs_keep_mount_placement_and_queue_only_selected_metadata_updates() {
     };
     assert_eq!(page.items.len(), 1);
     assert!(page.next_offset.is_none());
+}
+
+#[test]
+fn remote_discussion_roundtrip_keeps_local_science_and_outbox_independent() {
+    use library::discussion as api;
+    let (_disk, mut service, local) = setup();
+    let remote = add(&mut service);
+    token(&mut service, &remote);
+    let w = base();
+    let payload = repository::private_workspace(&w, &selection(&w, "document-1")).unwrap();
+    let server = &mut service.adapter_mut().server;
+    let document = server
+        .db
+        .create_document(&server.access, None, "Remote plasmid", &payload)
+        .unwrap();
+    let target = api::Target {
+        document: library::DocumentId::new(document.id.as_str()).unwrap(),
+        revision: library::RevisionId::new(document.head.id.as_str()).unwrap(),
+    };
+    let read = api::Request::List {
+        target: target.clone(),
+        offset: 0,
+        limit: 200,
+        expected_generation: None,
+    };
+    let wire::Success::Discussion(reply) = success(call(
+        &mut service,
+        3,
+        wire::Command::Discussion {
+            remote: remote.id.clone(),
+            request: read.clone(),
+        },
+    )) else {
+        panic!("discussion")
+    };
+    assert_eq!(reply.member.author.id.as_str(), "scientist-a");
+    let append = api::Request::Append {
+        target: target.clone(),
+        expected_generation: 0,
+        expected_actor: reply.member.author.id,
+        action: api::Action::OpenThread {
+            body: library::Text::new("Review this exact remote junction").unwrap(),
+        },
+    };
+    service.adapter_mut().server.lose_discussion = true;
+    assert!(matches!(
+        call(
+            &mut service,
+            4,
+            wire::Command::Discussion {
+                remote: remote.id.clone(),
+                request: append.clone()
+            }
+        )
+        .outcome,
+        wire::Outcome::Failure(_)
+    ));
+    let wire::Success::Discussion(reply) = success(call(
+        &mut service,
+        5,
+        wire::Command::Discussion {
+            remote: remote.id.clone(),
+            request: append,
+        },
+    )) else {
+        panic!("conflict")
+    };
+    assert!(matches!(
+        reply.outcome,
+        api::Outcome::Failure(api::Failure {
+            code: library::ErrorCode::Conflict,
+            actual_generation: Some(1)
+        })
+    ));
+    let wire::Success::Discussion(reply) = success(call(
+        &mut service,
+        6,
+        wire::Command::Discussion {
+            remote: remote.id.clone(),
+            request: read.clone(),
+        },
+    )) else {
+        panic!("read")
+    };
+    assert!(
+        matches!(reply.outcome,api::Outcome::Success(api::Success::Listed(p)) if p.generation==1&&p.events.len()==1)
+    );
+    service.adapter_mut().server.discussion_actor = "scientist-b".into();
+    let append = api::Request::Append {
+        target,
+        expected_generation: 1,
+        expected_actor: library::Text::new("scientist-a").unwrap(),
+        action: api::Action::Review {
+            decision: api::ReviewDecision::Approved,
+            body: library::Text::new("").unwrap(),
+        },
+    };
+    let wire::Success::Discussion(reply) = success(call(
+        &mut service,
+        7,
+        wire::Command::Discussion {
+            remote: remote.id.clone(),
+            request: append,
+        },
+    )) else {
+        panic!("identity")
+    };
+    assert!(matches!(
+        reply.outcome,
+        api::Outcome::Failure(api::Failure {
+            code: library::ErrorCode::Forbidden,
+            ..
+        })
+    ));
+    assert_eq!(service.repository().document(&local.id).unwrap(), local);
+    assert!(service.repository().pending_ids().is_empty());
+    assert_eq!(service.adapter_mut().server.applies, 0);
+    // Scope/correlation failures do not become trusted review data.
+    service.adapter_mut().server.wrong_lab_reply = true;
+    assert!(matches!(
+        call(
+            &mut service,
+            8,
+            wire::Command::Discussion {
+                remote: remote.id,
+                request: read
+            }
+        )
+        .outcome,
+        wire::Outcome::Failure(_)
+    ));
+}
+#[test]
+fn cancelled_remote_discussion_never_reaches_the_transport() {
+    let (_disk, mut service, _) = setup();
+    let remote = add(&mut service);
+    token(&mut service, &remote);
+    let before = service.adapter_mut().calls;
+    let request = command(
+        3,
+        wire::Command::Discussion {
+            remote: remote.id,
+            request: library::discussion::Request::Identify,
+        },
+    );
+    let bytes = wire::encode_request(&request).unwrap();
+    let reply = service.dispatch_raw(&bytes, &mut || false).unwrap();
+    assert!(matches!(
+        wire::decode_response_for(&reply, &request).unwrap().outcome,
+        wire::Outcome::Failure(_)
+    ));
+    assert_eq!(service.adapter_mut().calls, before);
 }

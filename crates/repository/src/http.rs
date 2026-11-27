@@ -234,12 +234,14 @@ fn media(channel: Channel) -> &'static str {
     match channel {
         Channel::Library => library::MEDIA_TYPE,
         Channel::Sync => sync::MEDIA_TYPE,
+        Channel::Discussion => library::discussion::MEDIA_TYPE,
     }
 }
 fn response_limit(channel: Channel) -> usize {
     match channel {
         Channel::Library => library::MAX_MESSAGE_BYTES + library::HEADER_BYTES,
         Channel::Sync => sync::MAX_RESPONSE_BYTES + sync::HEADER_BYTES,
+        Channel::Discussion => library::discussion::MAX_RESPONSE_BYTES,
     }
 }
 fn destination(
@@ -265,6 +267,7 @@ fn destination(
     url.set_path(match channel {
         Channel::Library => "/api/library",
         Channel::Sync => sync::ENDPOINT,
+        Channel::Discussion => library::discussion::ENDPOINT,
     });
     Ok(url)
 }
@@ -276,6 +279,11 @@ fn request_frame(
     bytes: &[u8],
     expected_lab: &library::LabId,
 ) -> Result<(), HttpError> {
+    if channel == Channel::Discussion {
+        return library::discussion::decode_request(bytes)
+            .map(|_| ())
+            .map_err(|_| HttpError::RequestFrame);
+    }
     if channel == Channel::Sync {
         let prefix = sync::request_prefix(bytes).map_err(|_| HttpError::RequestFrame)?;
         return if prefix.expected_lab == expected_lab.as_str() {
@@ -441,6 +449,13 @@ mod tests {
     }
     fn frame(channel: Channel) -> Vec<u8> {
         match channel {
+            Channel::Discussion => {
+                library::discussion::encode_request(&library::discussion::RequestEnvelope {
+                    request_id: 19,
+                    request: library::discussion::Request::Identify,
+                })
+                .unwrap()
+            }
             Channel::Library => library::encode_request(&library::RequestEnvelope {
                 request_id: 17,
                 request: library::Request::Browse {
@@ -543,7 +558,7 @@ mod tests {
         credentials
             .insert(&origin, BearerToken::new(token).unwrap())
             .unwrap();
-        for channel in [Channel::Library, Channel::Sync] {
+        for channel in [Channel::Library, Channel::Sync, Channel::Discussion] {
             let bytes = frame(channel);
             let called = Cell::new(0);
             let reply = exchange_with(
@@ -562,10 +577,10 @@ mod tests {
                     );
                     assert_eq!(
                         request.url().path(),
-                        if channel == Channel::Library {
-                            "/api/library"
-                        } else {
-                            sync::ENDPOINT
+                        match channel {
+                            Channel::Library => "/api/library",
+                            Channel::Sync => sync::ENDPOINT,
+                            Channel::Discussion => library::discussion::ENDPOINT,
                         }
                     );
                     assert_eq!(request.headers()[header::CONTENT_TYPE], media(channel));
@@ -623,7 +638,15 @@ mod tests {
         future[4] = 99;
         let mut trailing = good.clone();
         trailing.push(0);
+        let mut old_discussion = frame(Channel::Discussion);
+        old_discussion[4..6].copy_from_slice(&1u16.to_le_bytes());
         for (channel, bytes) in [
+            (Channel::Discussion, good.clone()),
+            (Channel::Discussion, old_discussion),
+            (
+                Channel::Discussion,
+                vec![0; library::discussion::MAX_REQUEST_BYTES + 1],
+            ),
             (Channel::Sync, good.clone()),
             (Channel::Library, corrupt),
             (Channel::Library, future),

@@ -27,7 +27,9 @@ role. Display names and text embedded in a comment cannot grant permission.
 
 The host must check current membership for every request and issue a fresh
 capability. The server now requires individual member credentials, resolved through a trusted
-operator registry; it accepts no client author/role claim. Reader credentials also
+operator registry; it accepts no client author/role authority. Every append pins
+the actor ID seen during review; a changed authenticated actor refuses the write
+rather than silently authoring it as another person. Reader credentials also
 refuse ordinary document writes and reliable sync mutations. Role restrictions
 in the storage module govern discussion; separate native operator APIs retain
 their trusted administrative capability. [Server configuration](SERVER_LIBRARY.md).
@@ -105,7 +107,24 @@ the draft clears and the first page refreshes. Failure of that refresh is report
 as a successful save with unavailable refresh, not a failed write. Changing the
 member session or closing the revision view discards pending display updates.
 
-Discussion is currently a server-library feature. Offline desktop document storage
-and chosen-remote plasmid synchronization remain separate; no discussion or actor
-identity is silently copied to another database. Desktop remote discussion access
-and any deliberate offline comment queue are not implemented by this batch.
+In Tauri, choose a saved remote database, open **Remote revision history**, then
+expand the same **Comments and human review** controls on an exact remote revision.
+Requests use the native credential vault and the complete configured remote/lab
+binding; browser code receives neither the remote bearer nor a filesystem path.
+Changing remotes or replacing/forgetting a credential closes prior revision views.
+The identity precondition also refuses a different person after another window or
+operator changes a credential.
+
+Offline documents and chosen-remote plasmid synchronization remain independent.
+Loading/posting discussion requires an explicit online action. No discussion or
+actor identity is silently copied to another database or attached to local
+scientific history. There is no offline comment queue or automatic write retry.
+Lost acknowledgments require refreshing the exact remote discussion before choosing
+to resubmit. These are service discussion records, not reagent/ELN/stock records.
+
+The discussion wire schema is **2**, and desktop sync IPC schema is **4**. Older
+internal versions are rejected directly without fallback decoding. Ordinary
+library document and reliable-mutation message formats remain their independent
+current schemas. Native discussion paging permits 2 MiB responses; desktop IPC
+permits 3 MiB frames to carry a full bounded discussion page plus trusted remote
+context. The sequence/workspace archive limits are unchanged.

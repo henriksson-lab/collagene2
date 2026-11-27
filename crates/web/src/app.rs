@@ -5809,36 +5809,65 @@ pub fn App() -> impl IntoView {
         Ok(info)
     });
     let saved_rna = Memo::new(move |_| {
-        workspace_snapshot(&documents.get(),active.get_untracked(),candidate.get_untracked().as_ref(),
-            &stored_candidates.get_untracked(),&attachments.get(),&workspace_name.get_untracked())
-            .and_then(|w|collagene_core::rna_history::list(&w).map_err(|e|e.to_string()))
+        workspace_snapshot(
+            &documents.get(),
+            active.get_untracked(),
+            candidate.get_untracked().as_ref(),
+            &stored_candidates.get_untracked(),
+            &attachments.get(),
+            &workspace_name.get_untracked(),
+        )
+        .and_then(|w| collagene_core::rna_history::list(&w).map_err(|e| e.to_string()))
     });
-    let resolve_rna = Callback::new(move |binding:EventBinding| -> Result<Molecule,String> {
-        if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
+    let resolve_rna = Callback::new(move |binding: EventBinding| -> Result<Molecule, String> {
+        if workspace_restoring.get_untracked() {
+            return Err("Wait for the workspace update to finish.".into());
+        }
         documents.with_untracked(|docs| {
-            let d=docs.iter().find(|d|d.id==binding.document_id).ok_or("The pinned RNA document is unavailable.")?;
-            let m=d.revision_molecule_ref(&binding.event_id).map_err(|e|e.to_string())?;
-            if collagene_core::rna_chemistry::source_revision(m).map_err(|e|e.to_string())?!=binding.revision {
+            let d = docs
+                .iter()
+                .find(|d| d.id == binding.document_id)
+                .ok_or("The pinned RNA document is unavailable.")?;
+            let m = d
+                .revision_molecule_ref(&binding.event_id)
+                .map_err(|e| e.to_string())?;
+            if collagene_core::rna_chemistry::source_revision(m).map_err(|e| e.to_string())?
+                != binding.revision
+            {
                 return Err("The pinned RNA source revision differs.".into());
             }
             Ok(m.clone())
         })
     });
-    let save_rna = Callback::new(move |(epoch,record):(u64,collagene_core::rna_history::Record)| -> Result<(),String> {
-        if workspace_restoring.get_untracked()||workspace_epoch.get_untracked()!=epoch {
-            return Err("The workspace changed; calculate RNA chemistry again.".into());
+    let save_rna = Callback::new(
+        move |(epoch, record): (u64, collagene_core::rna_history::Record)| -> Result<(), String> {
+            if workspace_restoring.get_untracked() || workspace_epoch.get_untracked() != epoch {
+                return Err("The workspace changed; calculate RNA chemistry again.".into());
+            }
+            let (next, _) =
+                collagene_core::rna_history::capture(&contig_snapshot.run(())?, &record)
+                    .map_err(|e| e.to_string())?;
+            attachments.set(next.attachments);
+            Ok(())
+        },
+    );
+    let load_rna = Callback::new(
+        move |hash: String| -> Result<collagene_core::rna_history::Record, String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            collagene_core::rna_history::load(&contig_snapshot.run(())?, &hash)
+                .map_err(|e| e.to_string())
+        },
+    );
+    let delete_rna = Callback::new(move |hash: String| -> Result<(), String> {
+        if workspace_restoring.get_untracked() {
+            return Err("Wait for the workspace update to finish.".into());
         }
-        let (next,_)=collagene_core::rna_history::capture(&contig_snapshot.run(())?,&record).map_err(|e|e.to_string())?;
-        attachments.set(next.attachments);Ok(())
-    });
-    let load_rna = Callback::new(move |hash:String| -> Result<collagene_core::rna_history::Record,String> {
-        if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
-        collagene_core::rna_history::load(&contig_snapshot.run(())?,&hash).map_err(|e|e.to_string())
-    });
-    let delete_rna = Callback::new(move |hash:String| -> Result<(),String> {
-        if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
-        let next=collagene_core::rna_history::delete(&contig_snapshot.run(())?,&hash).map_err(|e|e.to_string())?;
-        attachments.set(next.attachments);Ok(())
+        let next = collagene_core::rna_history::delete(&contig_snapshot.run(())?, &hash)
+            .map_err(|e| e.to_string())?;
+        attachments.set(next.attachments);
+        Ok(())
     });
     let saved_comparisons = Memo::new(move |_| {
         let frame = workspace_snapshot(

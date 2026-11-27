@@ -1,7 +1,3 @@
-#[cfg(any(target_arch = "wasm32", test))]
-mod rna_model;
-#[cfg(target_arch = "wasm32")]
-mod rna_view;
 #[cfg(target_arch = "wasm32")]
 mod alignment_view;
 #[cfg(target_arch = "wasm32")]
@@ -212,6 +208,10 @@ mod restriction_label_groups;
 mod restriction_map;
 #[cfg(target_arch = "wasm32")]
 mod restriction_view;
+#[cfg(any(target_arch = "wasm32", test))]
+mod rna_model;
+#[cfg(target_arch = "wasm32")]
+mod rna_view;
 #[cfg(target_arch = "wasm32")]
 mod run_capture;
 #[cfg(any(target_arch = "wasm32", test))]

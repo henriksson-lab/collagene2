@@ -4271,3 +4271,28 @@ fixtures (four cases including RNA owner regressions) and the focused portable
 WASM check pass. This resolves the
 identified unlinked-structure publication gap without claiming a coordinate link
 or completing F34 and the existing whole-product acceptance gates.
+
+### F34 source-bound sequence liability screening
+
+The independent MIT `collagene-protein-liabilities` Rust/WASM crate adds a versioned
+literal motif screen with exact counts, bounded hit retention, possible/certain
+ambiguity matches and optional exact-source provided-CDR context. Primary scientific
+definitions resolve the deamidation motif discrepancy. Results cannot establish
+measured PTMs, risk probabilities, chemical identity, antibody numbering or cloning
+material. Supplied CDRs are documentary intervals, not certified scheme mappings.
+
+Six native fixture groups and optional-schema WASM checks pass, including an
+independent concrete-expansion oracle over all 258 short ambiguous words. CI covers
+the crate on native Windows/macOS/Linux and WASM. Worker/UI/MCP integration and
+validated automatic variable-domain numbering/CDR derivation remain required;
+this does not complete F34 or shrink the whole-product delivery goal.
+[Screening contract and sources](PROTEIN_LIABILITIES.md).
+
+The public 8082 preview is refreshed to CI frontend artifact `d2904e5`, including
+RNA workspace controls and its pinned worker 116. The GitHub artifact digest,
+bounded static assets/integrity references and detached socket owner were verified;
+no browser/application HTTP checks were run. This is a development preview,
+not current-source graphical or installed-platform acceptance. The unlinked-
+coordinate publication change and standalone liability core follow that frontend
+source checkpoint. Repository formatting is corrected for the RNA callbacks and
+module order; the full format check passes without another semantic compile.

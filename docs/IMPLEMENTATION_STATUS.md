@@ -2006,3 +2006,30 @@ event ownership of RNA declarations; unknown attachment contracts still refuse.
 Four focused native cases and the portable sharing-crate WASM check pass. No
 browser/application HTTP checks were run. This resolves the identified unlinked-
 structure publication gap; antibody analysis and whole-product acceptance remain.
+
+### Protein sequence liability core
+
+The new MIT `collagene-protein-liabilities` crate scans an exact explicit protein
+source under a fixed literature-defined motif profile. It distinguishes certain
+and possible ambiguity matches, keeps exact counts after a retained-hit cap, and
+preserves raw coordinates across stop symbols. Optional provided CDR intervals
+are exact-source documentary context; invalid, overlapping, repeated or stop-
+crossing intervals refuse. They do not establish antibody numbering or complete
+CDR coverage. Reports are freshly reconstructible and grant no chemical/material
+or experimental authority. No third-party code, sequences or trained models ship.
+
+All six authored native fixture groups and the optional-schema WASM check pass.
+The independent oracle expands all 258 short words over a six-symbol ambiguous
+alphabet and compares concrete match unions/intersections. Native three-platform
+and WASM CI include the crate. Worker/UI/MCP integration and validated automatic
+antibody domain/numbering/CDR work remain, with the existing full delivery gates.
+[Profile and interpretation](PROTEIN_LIABILITIES.md).
+
+The public 8082 preview now serves the successful `d2904e5` CI frontend artifact
+(RNA controls/saved declarations, worker 116). Its 14 static assets total
+143,520,598 bytes. The GitHub archive digest, local asset references/integrities and
+detached listener owner were checked without browser or application HTTP requests.
+The native-only publication change and standalone liability core are later source
+work; this preview is not acceptance evidence for those or the full product.
+The previously unformatted RNA callbacks and module order are corrected, and the
+repository format check passes. No extra scientific compile was run for formatting.

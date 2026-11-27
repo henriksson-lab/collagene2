@@ -1030,6 +1030,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-protein-liabilities"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-model",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "collagene-protocol-units"
 version = "0.1.0"
 dependencies = [

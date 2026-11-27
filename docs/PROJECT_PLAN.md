@@ -3152,12 +3152,11 @@ path and enumerates bounded alternative products without probabilities. Complete
 delivery requires structured verifier/history evidence and HTML/PDF extraction;
 the kernel alone does not close that requirement.
 
-Remaining concrete cloning gaps include standalone mismatch-PCR material reuse;
+Remaining concrete cloning gaps include
 internal Type IIS domestication beyond circular inverse PCR; methylation-aware
 Golden Gate cleavage/recutting; internal edits across combinatorial library rows;
 generic saved-material mutagenesis/TOPO inputs and prepared TOPO vectors;
-actual-strand-aware reverse sticky-fragment intent; direct saved-material end
-repair; saved-run editing/rehydration; and typed plate/well assignments.
+actual-strand-aware reverse sticky-fragment intent; saved-run editing/rehydration; and typed plate/well assignments.
 Per-row keep/add TA/GC preparation, read-only fresh saved-run review and direct
 saved-run protocol exports are implemented. Gateway products remain reference-only until actual
 strand crossover/composition is implemented. Map SVG controls are implemented. Wider format corpus checks, GUI
@@ -3222,3 +3221,39 @@ core/MCP/web/host/sharing test caller checks, formatting and integrated web/work
 WASM compilation. No browser or application HTTP checks were performed. The full
 project goal and its remaining cloning, GUI and installation acceptance gaps stay
 active.
+
+
+### Source-bound mismatch PCR and direct repair — 27 November 2026
+
+The current implementation extends the single target-free material derivation
+with explicit mismatch-PCR and end-repair operations. Actual ordered primers,
+mismatch policy, source-event ancestry, physical strands, modifications and
+inherited incomplete findings remain part of native replay. MCP exposes both
+previews through the existing material tool, and the web app adds collapsed
+reviews inside Mutagenesis and End repair. Worker96 adds two compound preview
+jobs; candidate25, plan23 and science26 remain unchanged. Unsupported nicked or
+staggered mismatch-PCR templates refuse explicitly; no automatic repair is
+inserted. Multiple products grant no isolated-stock claim. Focused native, archive, protocol, MCP and UI-model verification passes421
+distinct cases, including334 native UI-model cases. All affected native test
+callers compile. The web and worker WASM check passes after correcting two Leptos event-handler
+ownership errors. Formatting and diff checks pass. Browser acceptance remains
+deferred.
+
+Native workspace restoration now requires the exact retained head and navigation
+events. It rejects incomplete internal histories rather than synthesizing
+replacement events. External sequence imports still create their own explicit
+new import root. This is a current-format invariant, without development-format
+migration or a compatibility decoder.
+
+
+The next connected cloning step is generic saved-material TOPO insert-template
+reuse. Replace the existing run-only `topo_run_preparation` source with the
+current `MaterialOrigin` and small `MaterialSelection` handles in web/MCP. Replay
+Run or Derived ancestry into the existing private tracked-template PCR kernel;
+compile the corresponding existing reconstruction operation before the unchanged
+TOPO preparation. Update the existing worker job and its consumers together,
+without an alias or second route. This requires the next worker schema, but no
+new plan operation or persisted TOPO draft shape. Keep independent target checks,
+intact paired-template restrictions and literal ordered primers. Actual prepared
+TOPO-vector strand chemistry and activation reuse remain separate work; accepting
+a Derived insert template does not implement those capabilities.

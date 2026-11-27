@@ -6,14 +6,14 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 95;
+pub const WORKER_SCHEMA_VERSION: u16 = 96;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 25;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155, 158, 168,
-    169, 170, 171, 172, 173, 174, 175, 176, 177, 178,
+    169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1007,6 +1007,18 @@ pub enum AnalysisJob {
     RenderMapSvg {
         request: crate::svg_export::Request,
     },
+    InspectMaterialMismatchPcr {
+        source: Molecule,
+        origin: crate::material_derivation::SourceOrigin,
+        forward: crate::analysis::Primer,
+        reverse: crate::analysis::Primer,
+        options: crate::mutagenesis::PcrOptions,
+    },
+    InspectMaterialRepair {
+        source: Molecule,
+        origin: crate::material_derivation::SourceOrigin,
+        method: crate::chemistry::EndRepairMethod,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1189,6 +1201,8 @@ pub enum AnalysisResult {
     MaterialDigestInspection(crate::material_derivation::DigestPreview),
     SavedRunReviewPrepared(crate::run_review::PreparedReview),
     MapSvgExported(crate::svg_export::Rendered),
+    MaterialMismatchPcrPreview(crate::material_derivation::MismatchPreview),
+    MaterialRepairPreview(crate::material_derivation::RepairPreview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1261,6 +1275,24 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         }
         AnalysisJob::ExportScfTrace { trace, options } => {
             crate::scf_export::revision(trace, options)?;
+        }
+        AnalysisJob::InspectMaterialMismatchPcr {
+            source,
+            origin,
+            forward,
+            reverse,
+            options,
+        } => {
+            crate::material_derivation::mismatch_pcr_preview_revision(
+                source, origin, forward, reverse, options,
+            )?;
+        }
+        AnalysisJob::InspectMaterialRepair {
+            source,
+            origin,
+            method,
+        } => {
+            crate::material_derivation::repair_preview_revision(source, origin, *method)?;
         }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::preflight(workspace, request)?;
@@ -1561,6 +1593,8 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::ReviewSequenceExport { .. }
             | AnalysisJob::PrepareSequenceExport { .. }
             | AnalysisJob::ExportScfTrace { .. }
+            | AnalysisJob::InspectMaterialMismatchPcr { .. }
+            | AnalysisJob::InspectMaterialRepair { .. }
             | AnalysisJob::InstallMaterialDerivation { .. }
             | AnalysisJob::InspectMaterialDigest { .. }
             | AnalysisJob::PrepareSavedRunReview { .. }
@@ -1579,7 +1613,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         bytes,
         &[
             20, 21, 40, 41, 62, 65, 94, 97, 100, 122, 126, 127, 159, 160, 161, 162, 163, 164, 165,
-            166, 167, 168,
+            166, 167, 168, 170, 171,
         ],
     )?;
 
@@ -1592,6 +1626,12 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
             report.validate_binding(&report.source_revision)?;
         }
         AnalysisResult::MaterialOriginInspection(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::MaterialMismatchPcrPreview(report) => {
+            report.validate_binding(&response.revision)?;
+        }
+        AnalysisResult::MaterialRepairPreview(report) => {
             report.validate_binding(&response.revision)?;
         }
         AnalysisResult::MaterialDerivationInstalled(report) => {
@@ -2491,6 +2531,37 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Map export capture context is invalid".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectMaterialMismatchPcr {
+            source,
+            origin,
+            forward,
+            reverse,
+            options,
+        } => {
+            if crate::material_derivation::mismatch_pcr_preview_revision(
+                source, origin, forward, reverse, options,
+            )? != r.revision
+            {
+                return Err(Error::Format(
+                    "Material mismatch-PCR source/origin/primers/policy changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::InspectMaterialRepair {
+            source,
+            origin,
+            method,
+        } => {
+            if crate::material_derivation::repair_preview_revision(source, origin, *method)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Material repair source/origin/policy changed".into(),
                 ));
             }
             None
@@ -3826,6 +3897,22 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::RenderMapSvg { request } => {
             crate::svg_export::render(&request).map(AnalysisResult::MapSvgExported)
         }
+        AnalysisJob::InspectMaterialMismatchPcr {
+            source,
+            origin,
+            forward,
+            reverse,
+            options,
+        } => crate::material_derivation::preview_mismatch_pcr(
+            &source, &origin, &forward, &reverse, &options,
+        )
+        .map(AnalysisResult::MaterialMismatchPcrPreview),
+        AnalysisJob::InspectMaterialRepair {
+            source,
+            origin,
+            method,
+        } => crate::material_derivation::preview_repair(&source, &origin, method)
+            .map(AnalysisResult::MaterialRepairPreview),
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             crate::material_derivation::install(&workspace, &request)
                 .map(AnalysisResult::MaterialDerivationInstalled)
@@ -4709,6 +4796,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::SequenceExportAssessment(_)
             | AnalysisResult::SequenceExportPrepared(_)
             | AnalysisResult::ScfTraceExported(_)
+            | AnalysisResult::MaterialMismatchPcrPreview(_)
+            | AnalysisResult::MaterialRepairPreview(_)
             | AnalysisResult::MaterialDerivationInstalled(_)
             | AnalysisResult::MaterialDigestInspection(_)
             | AnalysisResult::SavedRunReviewPrepared(_)

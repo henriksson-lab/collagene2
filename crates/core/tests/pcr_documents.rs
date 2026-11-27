@@ -99,31 +99,6 @@ fn physical_or_declared_single_strand_templates_are_not_flattened() {
 }
 
 #[test]
-fn previous_version_three_biology_job_remains_readable() {
-    let source = Molecule::dna("old worker", "ATGAAATAA", Topology::Linear).unwrap();
-    let request = Request {
-        id: 30,
-        revision: source.revision(),
-        job: AnalysisJob::Translate {
-            molecule: source,
-            options: Default::default(),
-        },
-    };
-    let mut bytes = protocol::encode_request(&request).unwrap();
-    bytes[4..6].copy_from_slice(&3u16.to_le_bytes());
-    let reply = protocol::process_request(&bytes).unwrap();
-    assert_eq!(
-        &reply[4..6],
-        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
-    );
-    let AnalysisResult::Translation(report) = protocol::decode_response(&reply).unwrap().result
-    else {
-        panic!("wrong response")
-    };
-    assert_eq!(report.protein, "MK*");
-}
-
-#[test]
 fn candidate_schema_one_cannot_claim_new_physical_operations() {
     use collagene_core::{
         transfer::{self, Candidate},

@@ -47,7 +47,7 @@ pub fn resolve(value: &Option<Vec<Role>>, count: usize) -> Result<Vec<Role>, Str
 mod tests {
     use super::*;
     #[test]
-    fn legacy_order_is_explicit_and_named_roles_follow_their_sources() {
+    fn ordinary_positional_roles_are_explicit_and_named_roles_follow_their_sources() {
         let old = resolve(&None, 2).unwrap();
         assert_eq!(
             old[0],

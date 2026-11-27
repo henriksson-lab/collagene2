@@ -733,7 +733,7 @@ pub(crate) fn project_mutagenesis_preview(
         findings,
     })
 }
-fn project_mutant_pcr(
+pub(crate) fn project_mutant_pcr(
     source: &Molecule,
     geometry: &crate::mutagenesis::MutantPcrProduct,
     product: &mut Molecule,
@@ -1821,7 +1821,7 @@ fn carry_unmapped_evidence(source: &Molecule, product: &mut Molecule) {
         }
     }
 }
-fn repaired_document(
+pub(crate) fn repaired_document(
     source: &Molecule,
     report: &chemistry::EndRepairReport,
     name: String,

@@ -995,6 +995,15 @@ pub enum MaterialDerivationOperation {
         reverse: Primer,
         selection: MaterialPcrChoice,
     },
+    MismatchPcr {
+        forward: Primer,
+        reverse: Primer,
+        options: collagene_core::mutagenesis::PcrOptions,
+        selection: MaterialPcrChoice,
+    },
+    EndRepair {
+        method: collagene_core::chemistry::EndRepairMethod,
+    },
     CatalogDigest {
         selection: collagene_core::catalog_digest::CatalogSelection,
         options: collagene_core::restriction_inspection::InspectionOptions,
@@ -1018,6 +1027,18 @@ pub enum MaterialDerivationTask {
         origin: MaterialDerivationOrigin,
         forward: Primer,
         reverse: Primer,
+    },
+    PreviewMismatchPcr {
+        source: collagene_core::run_lineage::EventBinding,
+        origin: MaterialDerivationOrigin,
+        forward: Primer,
+        reverse: Primer,
+        options: collagene_core::mutagenesis::PcrOptions,
+    },
+    PreviewRepair {
+        source: collagene_core::run_lineage::EventBinding,
+        origin: MaterialDerivationOrigin,
+        method: collagene_core::chemistry::EndRepairMethod,
     },
     PreviewDigest {
         source: collagene_core::run_lineage::EventBinding,
@@ -6042,7 +6063,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Preview or install target-free native exact PCR/catalog digestion from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Digest/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
+        description = "Preview or install target-free native exact PCR, intentional-mismatch PCR, catalog digestion or saved-material end repair from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
     )]
     async fn material_derivation(
         &self,
@@ -6051,6 +6072,8 @@ impl CollageneServer {
         let server = self.clone();
         self.compute(move||{
             use collagene_core::material_derivation as native;
+            #[derive(Serialize)]
+            struct MaterialPreviewEvidence<'a,T:Serialize,P:Serialize>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,parameters:P,preview:&'a T}
             let mut workspace=server.restore_workspace(&args.workspace)?;
             match args.task {
                 MaterialDerivationTask::PreviewPcr{source,origin,forward,reverse}=>{
@@ -6064,6 +6087,27 @@ impl CollageneServer {
                     let artifact=server.text_artifact(text,"application/json","material-pcr-preview.json")?;
                     let rows=documents.iter().take(100).enumerate().map(|(index,d)|json!({"index":index,"preview_revision":d.molecule.revision(),"length":d.molecule.sequence.len(),"reusable":documents.len()==1 && d.molecule.sequence.as_str().bytes().all(|b|b"ACGT".contains(&b)) && forward.ordered_sequence().bytes().chain(reverse.ordered_sequence().bytes()).all(|b|b"ACGT".contains(&b)),"forward_start":d.geometry.forward_start,"reverse_start":d.geometry.reverse_start,"crosses_origin":d.geometry.crosses_origin,"forward_primer":d.geometry.forward_primer,"reverse_primer":d.geometry.reverse_primer})).collect::<Vec<_>>();
                     output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"count":documents.len(),"previews":rows,"previews_truncated":documents.len()>100,"artifact_id":artifact,"authority":"Reference PCR previews only. Use the explicit preview index and revision for Install; the server recomputes full geometry internally. Full geometry remains optional artifact evidence. Multiple products do not establish isolation or reusable material."}))
+                },
+                MaterialDerivationTask::PreviewMismatchPcr{source,origin,forward,reverse,options}=>{
+                    let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
+                    let molecule=server.material_derivation_source(&workspace,&source,&origin)?;
+                    let context=native::mismatch_pcr_preview_revision(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
+                    let preview=native::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
+                    preview.validate_binding(&context).map_err(bad)?;
+                    let artifact=server.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:json!({"forward":forward,"reverse":reverse,"options":options}),preview:&preview},32*1024*1024)?,"application/json","material-mismatch-pcr-preview.json")?;
+                    let report=&preview.preview.report;
+                    let reusable=preview.reusable();
+                    let rows=preview.preview.documents.iter().zip(&report.products).take(100).enumerate().map(|(index,(document,geometry))|json!({"index":index,"preview_revision":document.revision(),"length":document.sequence.len(),"certain":geometry.certain,"overlapping_domains":geometry.overlapping_domains,"forward_start":geometry.forward_start,"reverse_start":geometry.reverse_start,"crosses_origin":geometry.crosses_origin,"forward_primer":geometry.forward_primer_index,"reverse_primer":geometry.reverse_primer_index,"substitution_count":geometry.substitutions.len(),"reusable":reusable&&index==0})).collect::<Vec<_>>();
+                    output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"count":preview.preview.documents.len(),"reusable":reusable,"previews":rows,"previews_truncated":preview.preview.documents.len()>100,"search_complete":report.search_complete,"enumeration_complete":report.enumeration_complete,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Source-bound mismatch-PCR reference preview with full literal ordered primers and explicit mismatch/3-prime/search policy. Install freshly recomputes the selected geometry and independently refuses unsupported or competing physical products; this preview grants no material or isolation."}))
+                },
+                MaterialDerivationTask::PreviewRepair{source,origin,method}=>{
+                    let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
+                    let molecule=server.material_derivation_source(&workspace,&source,&origin)?;
+                    let context=native::repair_preview_revision(&molecule,&origin,method).map_err(bad)?;
+                    let preview=native::preview_repair(&molecule,&origin,method).map_err(bad)?;
+                    preview.validate_binding(&context).map_err(bad)?;
+                    let artifact=server.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:json!({"method":method}),preview:&preview},32*1024*1024)?,"application/json","material-end-repair-preview.json")?;
+                    output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"method":method,"length":preview.molecule.sequence.len(),"preview_revision":preview.molecule.revision(),"source_duplex":preview.source_duplex,"source_modifications":preview.source_modifications,"repair":preview.repair,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Fresh saved-material strand repair under the explicit method; actual synthesized/removed bases and inherited findings remain evidence. No independent target, isolated stock, experimental success or saved product is asserted by this preview."}))
                 },
                 MaterialDerivationTask::PreviewDigest{source,origin,selection,options}=>{
                     let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
@@ -6087,6 +6131,15 @@ impl CollageneServer {
                             if chosen.molecule.revision()!=selection.expected_preview_revision {return Err(bad("The explicitly selected PCR preview changed; preview again."));}
                             native::Derivation::ExactPcr{forward,reverse,selection:native::PcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry:chosen.geometry}}
                         },
+                        MaterialDerivationOperation::MismatchPcr{forward,reverse,options,selection}=>{
+                            if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit mismatch-PCR preview index/revision."));}
+                            let preview=native::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
+                            let chosen=preview.preview.documents.get(selection.selected_index).ok_or_else(||bad("The explicitly selected mismatch-PCR preview no longer exists."))?;
+                            if chosen.revision()!=selection.expected_preview_revision{return Err(bad("The explicitly selected mismatch-PCR preview changed; preview again."));}
+                            let geometry=preview.preview.report.products.get(selection.selected_index).cloned().ok_or_else(||bad("The selected mismatch-PCR geometry is unavailable."))?;
+                            native::Derivation::MismatchPcr{forward,reverse,options,selection:native::MismatchPcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry}}
+                        },
+                        MaterialDerivationOperation::EndRepair{method}=>native::Derivation::EndRepair{method},
                         MaterialDerivationOperation::CatalogDigest{selection,options,fragment_index}=>native::Derivation::CatalogDigest{selection,options,fragment_index},
                     };
                     let request=native::Request{source:request.source,origin,derivation,name:request.name,save_primers:request.save_primers};
@@ -6111,7 +6164,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Discover or explicitly replay a saved run product, saved digest fragment or generic target-free material derivation origin for an exact event in an immutable native workspace. No origin is automatically selected. Returns bounded origin choices, findings and complete immutable inspection JSON including any selected closed documentary origin. Every later material preparation must freshly replay again; imported summaries and equal DNA are not material authority. Creates no documents, candidates, targets or stock."
+        description = "Discover or explicitly replay a saved run product or generic target-free material derivation origin for an exact event in an immutable native workspace. No origin is automatically selected. Returns bounded origin choices, findings and complete immutable inspection JSON including any selected closed documentary origin. Every later material preparation must freshly replay again; imported summaries and equal DNA are not material authority. Creates no documents, candidates, targets or stock."
     )]
     async fn inspect_material_origin(
         &self,

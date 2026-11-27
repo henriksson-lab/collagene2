@@ -121,7 +121,20 @@ fn manual_fixture() -> Vec<u8> {
     ] {
         blobs.insert(hash(bytes), bytes.to_vec());
     }
-    let manifest=serde_json::to_vec(&json!({"format":"collagene-workspace","version":1,"molecule_schema":1,"plan_schema":1,"name":"Manual fixture","active_document":"manual-doc","documents":[{"id":"manual-doc","head":revision,"undo":[],"redo":[],"head_event":null,"undo_events":[],"redo_events":[]}],"history":[],"revisions":{revision:hash(&record)},"candidates":[],"unresolved_candidate_targets":[],"attachments":{},"blobs":blobs.iter().map(|(h,b)|(h.clone(),json!({"length":b.len()}))).collect::<BTreeMap<_,_>>()})).unwrap();
+    // Independently specify a current native history root and its content ID.
+    let mut event_digest = blake3::Hasher::new();
+    event_digest.update(b"collagene-history-event-v1\0");
+    event_digest.update(
+        &serde_json::to_vec(&(
+            "manual-doc",
+            &revision,
+            Vec::<String>::new(),
+            "Imported manual fixture",
+        ))
+        .unwrap(),
+    );
+    let event_id = format!("event-{}", event_digest.finalize().to_hex());
+    let manifest=serde_json::to_vec(&json!({"format":"collagene-workspace","version":1,"molecule_schema":1,"plan_schema":PLAN_SCHEMA_VERSION,"name":"Manual fixture","active_document":"manual-doc","documents":[{"id":"manual-doc","head":revision,"undo":[],"redo":[],"head_event":event_id,"undo_events":[],"redo_events":[]}],"history":[{"id":event_id,"document_id":"manual-doc","revision":revision,"parents":[],"operation":"Imported manual fixture"}],"revisions":{revision:hash(&record)},"candidates":[],"unresolved_candidate_targets":[],"attachments":{},"blobs":blobs.iter().map(|(h,b)|(h.clone(),json!({"length":b.len()}))).collect::<BTreeMap<_,_>>()})).unwrap();
     let mut entries = vec![("manifest.json".into(), manifest)];
     entries.extend(blobs.into_iter().map(|(h, b)| (format!("blobs/{h}"), b)));
     stored(&entries)
@@ -140,7 +153,11 @@ fn independent_stored_zip_and_manifest_fixture_recovers_exact_molecule() {
         workspace.head("manual-doc").unwrap().topology,
         Topology::Circular
     );
-    assert!(workspace.history.is_empty());
+    assert_eq!(workspace.history.len(), 1);
+    assert_eq!(
+        workspace.documents[0].head_event.as_deref(),
+        Some(workspace.history[0].id.as_str())
+    );
     assert_eq!(
         load_workspace(&save_workspace(&workspace).unwrap())
             .unwrap()
@@ -150,6 +167,23 @@ fn independent_stored_zip_and_manifest_fixture_recovers_exact_molecule() {
         workspace.head("manual-doc").unwrap().revision()
     );
 }
+#[test]
+fn current_native_archive_requires_explicit_exact_navigation_events() {
+    let bytes = manual_fixture();
+    let missing = mutate_manifest(&bytes, |m| m["documents"][0]["head_event"] = Value::Null);
+    assert!(load_workspace(&missing).is_err());
+    for stack in ["undo", "redo"] {
+        let missing = mutate_manifest(&bytes, |m| {
+            let revision = m["documents"][0]["head"].clone();
+            m["documents"][0][stack] = json!([revision]);
+        });
+        assert!(
+            load_workspace(&missing).is_err(),
+            "Revision-only {stack} stack was accepted"
+        );
+    }
+}
+
 #[test]
 fn branch_events_repeated_content_exact_navigation_and_opaque_evidence_survive() {
     let mut root = Molecule::dna("Original", "AAAACCCCGGGG", Topology::Circular).unwrap();
@@ -289,6 +323,7 @@ fn large_original_attachments_are_stored_once_across_revision_history() {
         Workspace::from_documents("Evidence dedup", vec![source.clone()], 0).unwrap();
     let mut parent = workspace.history[0].id.clone();
     for i in 1..8 {
+        let old_event = parent.clone();
         let mut next = source.clone();
         next.name = format!("r{i}");
         let event =
@@ -296,6 +331,7 @@ fn large_original_attachments_are_stored_once_across_revision_history() {
         parent = event.id.clone();
         let old_head = workspace.documents[0].head.clone();
         workspace.documents[0].undo.push(old_head);
+        workspace.documents[0].undo_events.push(old_event);
         workspace.documents[0].head = next.revision();
         workspace.revisions.insert(next.revision(), next);
         workspace.history.push(event);
@@ -305,6 +341,14 @@ fn large_original_attachments_are_stored_once_across_revision_history() {
     assert!(bytes.len() < 600_000, "archive has {} bytes", bytes.len());
     let restored = load_workspace(&bytes).unwrap();
     assert_eq!(restored.revisions.len(), 8);
+    assert_eq!(restored.documents[0].undo_events.len(), 7);
+    let mut navigation = collagene_core::history::DocumentHistory::restore_all(&restored)
+        .unwrap()
+        .remove(0);
+    for _ in 0..7 {
+        navigation.undo().unwrap();
+    }
+    assert_eq!(navigation.molecule.name, "r0");
     assert!(
         restored
             .revisions
@@ -546,17 +590,7 @@ fn listed_but_unreachable_blobs_and_silently_ignored_feature_fields_are_rejected
 }
 
 #[test]
-fn new_chemical_operations_require_explicit_workspace_plan_schema_two() {
-    let old = save_workspace(&simple()).unwrap();
-    let supported_old = mutate_manifest(&old, |manifest| manifest["plan_schema"] = json!(1));
-    assert!(load_workspace(&supported_old).is_ok());
-    let future = mutate_manifest(&old, |manifest| {
-        manifest["plan_schema"] = json!(collagene_core::workspace::PLAN_SCHEMA_VERSION + 1)
-    });
-    assert!(matches!(
-        load_workspace(&future),
-        Err(Error::Unsupported(_))
-    ));
+fn repair_candidate_roundtrips_with_only_the_current_workspace_plan_schema() {
     let mut workspace = simple();
     let source = workspace.head(&workspace.active_document).unwrap().clone();
     workspace.candidates.push(Candidate::new(DesignPlan {
@@ -573,20 +607,23 @@ fn new_chemical_operations_require_explicit_workspace_plan_schema_two() {
         }],
     }));
     let current = save_workspace(&workspace).unwrap();
-    assert!(load_workspace(&current).is_ok());
-    let mislabeled = mutate_manifest(&current, |manifest| manifest["plan_schema"] = json!(1));
-    assert!(matches!(
-        load_workspace(&mislabeled),
-        Err(Error::Unsupported(_))
-    ));
+    let restored = load_workspace(&current).unwrap();
+    assert_eq!(
+        serde_json::to_value(&restored.candidates).unwrap(),
+        serde_json::to_value(&workspace.candidates).unwrap()
+    );
+    for unsupported in [PLAN_SCHEMA_VERSION - 1, PLAN_SCHEMA_VERSION + 1] {
+        let mislabeled = mutate_manifest(&current, |manifest| {
+            manifest["plan_schema"] = json!(unsupported)
+        });
+        assert!(matches!(
+            load_workspace(&mislabeled),
+            Err(Error::Unsupported(_))
+        ));
+    }
 }
 #[test]
-fn tailing_and_profiled_overlaps_require_plan_schema_three() {
-    let old = save_workspace(&simple()).unwrap();
-    for version in [1, 2] {
-        let b = mutate_manifest(&old, |m| m["plan_schema"] = json!(version));
-        assert!(load_workspace(&b).is_ok());
-    }
+fn tailing_candidate_preserves_current_schema_and_literal_operation() {
     let mut w = simple();
     let source = w.head(&w.active_document).unwrap().clone();
     w.candidates.push(Candidate::new(DesignPlan {
@@ -603,13 +640,12 @@ fn tailing_and_profiled_overlaps_require_plan_schema_three() {
         }],
     }));
     let b = save_workspace(&w).unwrap();
-    let _ = mutate_manifest(&b, |m| {
-        assert_eq!(
-            m["plan_schema"],
-            json!(collagene_core::workspace::PLAN_SCHEMA_VERSION)
-        )
-    });
-    for version in [1, 2] {
+    let restored = load_workspace(&b).unwrap();
+    assert_eq!(
+        serde_json::to_value(&restored.candidates).unwrap(),
+        serde_json::to_value(&w.candidates).unwrap()
+    );
+    for version in [PLAN_SCHEMA_VERSION - 1, PLAN_SCHEMA_VERSION + 1] {
         let changed = mutate_manifest(&b, |m| m["plan_schema"] = json!(version));
         assert!(matches!(
             load_workspace(&changed),

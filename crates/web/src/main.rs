@@ -400,6 +400,8 @@ mod library_view;
 #[cfg(any(target_arch = "wasm32", test))]
 mod material_derivation_model;
 #[cfg(target_arch = "wasm32")]
+mod reusable_material_view;
+#[cfg(target_arch = "wasm32")]
 mod sequence_compat_export;
 #[cfg(target_arch = "wasm32")]
 mod sequence_compat_import;

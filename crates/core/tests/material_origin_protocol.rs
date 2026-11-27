@@ -188,7 +188,7 @@ fn checked_roundtrip(
 }
 #[test]
 fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
-    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 95);
+    assert_eq!(protocol::WORKER_SCHEMA_VERSION, 96);
     let (w, cap, pin) = digest_fixture();
     let before = serde_json::to_value(&w).unwrap();
     let selection = Some(MaterialSelection::Derived(pin.clone()));

@@ -379,8 +379,8 @@ impl DocumentHistory {
         Ok(())
     }
     /// Preserve all events, including non-head branches and cross-document parents.
-    /// Legacy stacks without event references acquire explicit recovery roots rather
-    /// than guessed edit ancestry. Original recorded events remain retained.
+    /// Every navigation position must name an existing exact event. Restoration
+    /// never synthesizes events or infers ancestry from molecular content.
     pub fn restore_all(workspace: &Workspace) -> Result<Vec<Self>, Error> {
         workspace.validate()?;
         let shared = workspace
@@ -390,7 +390,7 @@ impl DocumentHistory {
             .collect::<Result<BTreeMap<_, _>, Error>>()?;
         let mut output = Vec::new();
         for doc in &workspace.documents {
-            let mut nodes = workspace
+            let nodes = workspace
                 .history
                 .iter()
                 .filter(|e| e.document_id == doc.id)
@@ -403,45 +403,13 @@ impl DocumentHistory {
                     }
                 })
                 .collect::<Vec<_>>();
-            let mut recovered = |revision: &str| -> Result<String, Error> {
-                let event = RevisionEvent::new(
-                    doc.id.clone(),
-                    revision.to_owned(),
-                    vec![],
-                    "Recovered navigation snapshot; original event was not recorded",
-                )?;
-                let id = event.id.clone();
-                if !nodes.iter().any(|n| n.event.id == id) {
-                    let (molecule, bytes) = &shared[revision];
-                    nodes.push(Node {
-                        event: Arc::new(event),
-                        molecule: molecule.clone(),
-                        bytes: *bytes,
-                    });
-                }
-                Ok(id)
-            };
-            let head = if let Some(head) = &doc.head_event {
-                head.clone()
-            } else {
-                recovered(&doc.head)?
-            };
-            let undo = if !doc.undo_events.is_empty() {
-                doc.undo_events.clone()
-            } else {
-                doc.undo
-                    .iter()
-                    .map(|r| recovered(r))
-                    .collect::<Result<_, _>>()?
-            };
-            let redo = if !doc.redo_events.is_empty() {
-                doc.redo_events.clone()
-            } else {
-                doc.redo
-                    .iter()
-                    .map(|r| recovered(r))
-                    .collect::<Result<_, _>>()?
-            };
+            let head = doc
+                .head_event
+                .as_ref()
+                .ok_or_else(|| Error::Format("document history head event is missing".into()))?
+                .clone();
+            let undo = doc.undo_events.clone();
+            let redo = doc.redo_events.clone();
             output.push(Self {
                 id: doc.id.clone(),
                 molecule: shared[&doc.head].0.as_ref().clone(),

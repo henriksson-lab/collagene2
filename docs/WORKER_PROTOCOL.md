@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **95**,
+same deterministic scientific engines. Current schemas are worker **96**,
 candidate **25** and native workspace plan **23**; the verifier is **science-26**.
 Only current internal encodings are accepted. Superseded development formats have
 no fallback decoder, migration or capability ladder.
@@ -17,7 +17,7 @@ validate their captured source/event/workspace state before accepting a response
 
 The decoder checks namespace, current version, exact length, checksum and complete
 payload consumption. Ordinary messages have a **32 MiB** cap; only explicitly
-listed workspace-bearing jobs/replies may use **128 MiB**. A borrowed prefix probe
+listed compound jobs/replies may use **128 MiB**. A borrowed prefix probe
 checks the tag and bounded revision before admitting a large body. The current request selector list is shared by stateless and session admission;
 reply admission has its own current selector list. These bounds are authoritative;
 adding a job does not grant it the larger budget automatically.
@@ -228,6 +228,8 @@ superseded development schemas. Change the current schema when changing layouts.
 | 177 | `InspectMaterialDigest` |
 | 178 | `PrepareSavedRunReview` |
 | 179 | `RenderMapSvg` |
+| 180 | `InspectMaterialMismatchPcr` |
+| 181 | `InspectMaterialRepair` |
 
 ## Current result tags
 
@@ -403,6 +405,8 @@ superseded development schemas. Change the current schema when changing layouts.
 | 167 | `MaterialDigestInspection` |
 | 168 | `SavedRunReviewPrepared` |
 | 169 | `MapSvgExported` |
+| 170 | `MaterialMismatchPcrPreview` |
+| 171 | `MaterialRepairPreview` |
 
 ## Related contracts
 
@@ -413,3 +417,8 @@ superseded development schemas. Change the current schema when changing layouts.
 
 Compiler and scientific-fixture evidence is tracked in the implementation status.
 Browser acceptance remains deferred until the requested code is complete.
+
+Mismatch-PCR and repair previews (jobs180/181, results170/171) use the explicit
+128 MiB compound lane because their source origins may close native ancestry.
+They bind exact source/origin and operation settings; native replay establishes
+material at installation. Map SVG (job179/result169) retains the ordinary limit.

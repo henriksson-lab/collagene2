@@ -302,22 +302,21 @@ impl Workspace {
                 }
                 Ok(())
             };
-            if let Some(id) = &document.head_event {
-                check(id, &document.head)?;
-            }
+            let head = document.head_event.as_ref().ok_or_else(|| {
+                bad("document navigation requires an explicit history head event")
+            })?;
+            check(head, &document.head)?;
             for (stack, revisions) in [
                 (&document.undo_events, &document.undo),
                 (&document.redo_events, &document.redo),
             ] {
-                if !stack.is_empty() {
-                    if stack.len() != revisions.len() {
-                        return Err(bad(
-                            "document navigation event/revision stack lengths disagree",
-                        ));
-                    }
-                    for (id, revision) in stack.iter().zip(revisions) {
-                        check(id, revision)?;
-                    }
+                if stack.len() != revisions.len() {
+                    return Err(bad(
+                        "document navigation event/revision stack lengths disagree",
+                    ));
+                }
+                for (id, revision) in stack.iter().zip(revisions) {
+                    check(id, revision)?;
                 }
             }
         }

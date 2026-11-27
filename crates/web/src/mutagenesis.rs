@@ -98,6 +98,8 @@ pub fn MutagenesisPanel(
     get_query: Callback<usize, Option<Molecule>>,
     on_candidate: Callback<CandidateOpen>,
     on_outputs: Callback<OutputOpen, Result<(), String>>,
+    get_workspace: Callback<(), Result<collagene_core::workspace::Workspace, String>>,
+    on_material: Callback<crate::digest_product::MaterialOpenRequest, Result<(), String>>,
     pair_draft: RwSignal<crate::primer_pair_model::PairDraft>,
     pair_selection: Callback<(), Result<crate::primer_pair_model::SelectionSeed, String>>,
     anchor_available: Callback<EventBinding, bool>,
@@ -723,6 +725,47 @@ pub fn MutagenesisPanel(
             epoch: bound.epoch,
         });
     });
+    let reusable_settings = Callback::new(
+        move |()| -> Result<crate::reusable_material_view::Settings, String> {
+            let applied = applied_pair
+                .get_untracked()
+                .ok_or("Apply the actual ordered primer pair first.")?;
+            if applied.draft != pair_draft.get_untracked()
+                || source_binding.get_untracked().as_ref() != Some(&applied.source)
+                || applied.epoch != epoch.get_untracked()
+                || applied.target != target_binding.get_untracked()
+            {
+                return Err(
+                    "The primer draft or source context changed; apply the primer pair again."
+                        .into(),
+                );
+            }
+            Ok(crate::reusable_material_view::Settings::Mismatch {
+                forward: applied.primers.0,
+                reverse: applied.primers.1,
+                options: PcrOptions {
+                    binding: BindingOptions {
+                        max_mismatches: number(mismatches.get_untracked(), "Allowed mismatches")?,
+                        min_three_prime_exact: number(exact.get_untracked(), "Exact 3′ bases")?,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            })
+        },
+    );
+    let reusable_settings_revision = Memo::new(move |_| {
+        serde_json::to_string(&(
+            pair_draft.get(),
+            applied_pair.get().map(|p| p.primers),
+            mismatches.get(),
+            exact.get(),
+            source_binding.get(),
+            target_binding.get(),
+            epoch.get(),
+        ))
+        .unwrap_or_default()
+    });
     view! {
         <style>".mutation-panel .mutation-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.mutation-panel pre{white-space:pre-wrap;overflow-wrap:anywhere;font:11px/1.6 monospace;background:#f3f6f3;padding:9px;max-height:250px;overflow:auto}.mutation-panel .mutation-product{padding:10px 0;border-bottom:1px solid #e2e9e2;font-size:12px;line-height:1.6}.mutation-panel .mutation-status{font-size:12px;line-height:1.6;overflow-wrap:anywhere}.mutation-panel ul{padding-left:18px}.mutation-panel details{margin:10px 0}"</style>
         <div class="inspector-content mutation-panel"><h2>"Mutagenesis"</h2><label>"Source template"<select aria-label="Mutagenesis template" prop:value=move||template_index.get().to_string() on:change=move|e|template_index.set(event_target_value(&e).parse().unwrap_or(0))>{move||query_options.get().into_iter().map(|(i,name)|view!{<option value=i.to_string()>{name}</option>}).collect_view()}</select></label><p class="mutation-status" role="status">{move||status.get()}</p>
@@ -749,6 +792,7 @@ pub fn MutagenesisPanel(
         <crate::primer_pair_editor::PrimerPairEditor draft=pair_draft selection=pair_selection anchor_available=anchor_available resolve_source primer_sources=primer_sources list_primers=list_primers resolve_primer=resolve_primer epoch=epoch on_apply=apply_pair apply_label="Apply pair to mismatch PCR".to_string()/>
         <p class="helper" role="status">{move || applied_pair.get().map(|pair| format!("Applied: {} / {}. Draft edits require Apply again.",pair.primers.0.name,pair.primers.1.name)).unwrap_or_else(|| "No applied primer pair. Edit or reuse primers, then Apply before simulation.".into())}</p>
         <div class="mutation-grid"><label>"Allowed disjoint mismatches"<input aria-label="Mutagenesis allowed mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Required exact 3′ bases"<input aria-label="Mutagenesis exact 3prime bases" type="number" min="0" prop:value=move||exact.get() on:input=move|e|exact.set(event_target_value(&e))/></label></div><button class="button primary full" disabled=move||busy.get()||intent_busy.get()||source.get().is_none()||applied_pair.get().is_none() on:click=simulate>"Simulate mismatch PCR"</button>
+        <crate::reusable_material_view::ReusableMaterialView source source_info=Memo::new(move|_|source_info.run(template_index.get())) settings=reusable_settings settings_revision=reusable_settings_revision repair=false epoch get_workspace on_open=on_material/>
         {move||pcr.get().map(|bound|{
             let review=bound.review.clone();
             let guard=Callback::new(move|()|current_pcr.run(bound.clone()));

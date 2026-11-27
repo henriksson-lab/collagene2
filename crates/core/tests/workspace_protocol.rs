@@ -118,7 +118,7 @@ fn workspace_stale_bindings_corruption_and_malformed_data_do_not_become_loaded_s
     assert!(protocol::process_request(&bytes).is_err());
 }
 #[test]
-fn new_workspace_jobs_results_and_trace_jobs_cannot_claim_old_schemas() {
+fn current_workspace_and_search_frames_reject_unsupported_headers_and_invalid_workspace_data() {
     let workspace = workspace();
     let request = Request {
         id: 5,
@@ -127,7 +127,10 @@ fn new_workspace_jobs_results_and_trace_jobs_cannot_claim_old_schemas() {
             workspace: workspace.clone(),
         },
     };
-    for version in 1u16..=5 {
+    for version in [
+        protocol::WORKER_SCHEMA_VERSION - 1,
+        protocol::WORKER_SCHEMA_VERSION + 1,
+    ] {
         let mut bytes = protocol::encode_request(&request).unwrap();
         bytes[4..6].copy_from_slice(&version.to_le_bytes());
         assert!(matches!(
@@ -140,7 +143,10 @@ fn new_workspace_jobs_results_and_trace_jobs_cannot_claim_old_schemas() {
         revision: source().revision(),
         result: AnalysisResult::WorkspaceLoaded(workspace.clone()),
     };
-    for version in 1u16..=5 {
+    for version in [
+        protocol::WORKER_SCHEMA_VERSION - 1,
+        protocol::WORKER_SCHEMA_VERSION + 1,
+    ] {
         assert!(
             protocol::decode_response(&envelope(
                 version,
@@ -159,13 +165,13 @@ fn new_workspace_jobs_results_and_trace_jobs_cannot_claim_old_schemas() {
     };
     assert!(
         protocol::decode_response(&envelope(
-            6,
+            protocol::WORKER_SCHEMA_VERSION,
             b"CGR\0",
             &postcard::to_allocvec(&response).unwrap()
         ))
         .is_err()
     );
-    // An original variant remains readable when honestly tagged as the prior schema.
+    // Ordinary current jobs use the same single current envelope as workspace jobs.
     let request = Request {
         id: 7,
         revision: source().revision(),
@@ -174,10 +180,10 @@ fn new_workspace_jobs_results_and_trace_jobs_cannot_claim_old_schemas() {
             query: "CG".into(),
         },
     };
-    let mut bytes = protocol::encode_request(&request).unwrap();
-    bytes[4..6].copy_from_slice(&5u16.to_le_bytes());
-    let response = protocol::decode_response(&protocol::process_request(&bytes).unwrap()).unwrap();
-    assert!(matches!(response.result, AnalysisResult::Search(_)));
+    assert!(matches!(
+        execute(&request).result,
+        AnalysisResult::Search(_)
+    ));
 }
 #[test]
 fn large_workspace_roundtrip_has_its_own_cap_without_enlarging_document_or_scientific_jobs() {

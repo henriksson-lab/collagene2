@@ -3230,6 +3230,34 @@ pub fn App() -> impl IntoView {
                 })
             })
     });
+    let open_material_derivation = Callback::new(
+        move |request: crate::digest_product::MaterialOpenRequest| -> Result<(), String> {
+            if workspace_restoring.get_untracked()
+                || workspace_epoch.get_untracked() != request.epoch
+            {
+                return Err("The material source workspace changed; review again.".into());
+            }
+            request.guard.run(())?;
+            let original = request.guard;
+            let bound_epoch = request.epoch;
+            let guarded = Callback::new(move |()| -> Result<(), String> {
+                if workspace_restoring.get_untracked()
+                    || workspace_epoch.get_untracked() != bound_epoch
+                    || modal.get_untracked() != "material_product"
+                {
+                    return Err("The material installation context changed.".into());
+                }
+                original.run(())
+            });
+            pending_material.set(Some(crate::digest_product::MaterialOpenRequest {
+                guard: guarded,
+                ..request
+            }));
+            modal_error.set(String::new());
+            modal.set("material_product");
+            Ok(())
+        },
+    );
     let create_pcr_outputs = Callback::new(move |choice: crate::pcr_outputs::Choice| {
         if pcr_output_busy.get_untracked() || !pcr_review_current.run(choice.review.clone()) {
             message.set("The PCR draft or template changed; compute and review again.".into());
@@ -6448,7 +6476,7 @@ pub fn App() -> impl IntoView {
                                             let preferred=(value.plan_revision.clone(),workspace_epoch.get_untracked(),target,bindings);
                                             candidate_events.set(None);candidate.set(Some(value));candidate_events.set(Some(preferred));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);last_plan_events.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Method candidate opened with exact source-event bindings for independent target verification. No experimental success or mixture uniqueness is established.".into());
                                         }) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
-                                            <Show when=move||panel.get()=="ends"><crate::end_repair::EndRepairPanel molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,doc)|(i,doc.molecule.name.clone())).collect())) get_query=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(|doc|doc.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{if workspace_restoring.get_untracked(){return;}candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|generation|*generation=generation.wrapping_add(1));panel.set("plan");message.set("Physical candidate opened for review. Verify it against the independently selected active target; alternatives and chemistry remain explicit.".into());}) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
+                                            <Show when=move||panel.get()=="ends"><crate::end_repair::EndRepairPanel epoch=workspace_epoch get_workspace=library_snapshot on_material=open_material_derivation source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) molecule=molecule query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,doc)|(i,doc.molecule.name.clone())).collect())) get_query=Callback::new(move|index:usize|documents.with(|docs|docs.get(index).map(|doc|doc.molecule.clone()))) on_candidate=Callback::new(move|value:transfer::Candidate|{if workspace_restoring.get_untracked(){return;}candidate_events.set(None);candidate.set(Some(value));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);plan_generation.update(|generation|*generation=generation.wrapping_add(1));panel.set("plan");message.set("Physical candidate opened for review. Verify it against the independently selected active target; alternatives and chemistry remain explicit.".into());}) on_products=Callback::new(move|products:Vec<Molecule>|add_documents(documents,active,workspace_restoring,products))/></Show>
                                             <Show when=move||panel.get()=="domestication"><crate::domestication_view::DomesticationView source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) molecule selected_feature epoch=workspace_epoch on_open=open_domestication on_navigate=Callback::new(move|(start,end):(usize,usize)|->Result<(),String>{
                                                 let n=molecule.with_untracked(|m|m.sequence.len());
                                                 if workspace_restoring.get_untracked()||start>=n||end<=start||end-start>n{return Err("The selected source range is no longer available.".into());}
@@ -6456,7 +6484,7 @@ pub fn App() -> impl IntoView {
                                                 batch(||{selected_feature.set(None);selection.set(if spans.len()==1{spans.first().copied()}else{None});search_regions.set(Some((molecule.with_untracked(Molecule::revision),spans)));});
                                                 Ok(())
                                             })/></Show>
-                                            <Show when=move||panel.get()=="mutagenesis"><crate::mutagenesis::MutagenesisPanel resolve_source=resolve_retained_source on_overlay=Some(publish_pcr_overlay) on_navigate=Some(navigate_pcr_overlay) molecule=molecule mutation_selection mutation_seed on_intent=open_mutation_intent pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) target_binding=primer_context query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|opened:crate::mutagenesis::CandidateOpen|{
+                                            <Show when=move||panel.get()=="mutagenesis"><crate::mutagenesis::MutagenesisPanel get_workspace=library_snapshot on_material=open_material_derivation resolve_source=resolve_retained_source on_overlay=Some(publish_pcr_overlay) on_navigate=Some(navigate_pcr_overlay) molecule=molecule mutation_selection mutation_seed on_intent=open_mutation_intent pair_draft pair_selection anchor_available=primer_anchor_available primer_sources list_primers=list_saved_primers resolve_primer=resolve_saved_primer epoch=workspace_epoch source_info=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(recombination_source_info))) target_binding=primer_context query_options=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().map(|(i,d)|(i,d.molecule.name.clone())).collect())) get_query=Callback::new(move|i:usize|documents.with(|docs|docs.get(i).map(|d|d.molecule.clone()))) on_candidate=Callback::new(move|opened:crate::mutagenesis::CandidateOpen|{
                                                 let result=(||->Result<_,String>{
                                                     if workspace_restoring.get_untracked() || opened.epoch!=workspace_epoch.get_untracked(){return Err("The mutation workspace changed; review the current design again.".into());}
                                                     let frame=documents.with_untracked(|docs|workspace_snapshot(docs,active.get_untracked(),candidate.get_untracked().as_ref(),&stored_candidates.get_untracked(),&attachments.get_untracked(),&workspace_name.get_untracked()))?;

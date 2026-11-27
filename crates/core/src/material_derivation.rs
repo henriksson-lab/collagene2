@@ -1,4 +1,4 @@
-//! Target-free native PCR/catalog-digest derivations. Opaque, bounded recipe
+//! Target-free native PCR, catalog-digest and direct end-repair derivations. Opaque, bounded recipe
 //! packages break typed recursion; only fresh native execution yields material.
 use crate::{
     Alphabet, Error, Molecule,
@@ -32,7 +32,8 @@ const CONTEXT_KEY: &str = "source:material_derivation:context";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub enum SourceOrigin{OriginalReference,Saved(MaterialOrigin)}}
 dto! {pub struct PcrSelection{pub selected_index:usize,pub expected_preview_revision:String,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub geometry:analysis::PcrProduct}}
-dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize}}}
+dto! {pub struct MismatchPcrSelection{pub selected_index:usize,pub expected_preview_revision:String,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub geometry:crate::mutagenesis::MutantPcrProduct}}
+dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:MismatchPcrSelection},EndRepair{method:chemistry::EndRepairMethod}}}
 dto! {pub struct Request{pub source:EventBinding,pub origin:SourceOrigin,pub derivation:Derivation,pub name:String,pub save_primers:bool}}
 dto! {pub struct Record{pub schema_version:u32,pub engine_version:String,pub scientific_engine:String,pub source_workspace_fingerprint:String,pub context_revision:String,pub request:Request,pub product:EventBinding,pub product_state_revision:String,pub incomplete:bool}}
 mod record_bytes {
@@ -234,6 +235,40 @@ impl Request {
                     return Err(bad("invalid source-bound PCR selection"));
                 }
             }
+            Derivation::MismatchPcr {
+                forward,
+                reverse,
+                options,
+                selection,
+            } => {
+                crate::assembly_recipe::mismatch_pcr_shape(forward, reverse, options)?;
+                if selection.selected_index >= 10000
+                    || !hex(&selection.expected_preview_revision)
+                    || selection.geometry.sequence.is_empty()
+                    || selection.geometry.sequence.len() > crate::model::MAX_SEQUENCE_LEN
+                    || selection.geometry.sequence.alphabet() != Alphabet::Dna
+                    || selection
+                        .geometry
+                        .sequence
+                        .as_str()
+                        .bytes()
+                        .any(|b| !b"ACGT".contains(&b))
+                    || selection.geometry.substitutions.len() > 400
+                    || selection.geometry.forward_binding.mismatches.len() > 200
+                    || selection.geometry.reverse_binding.mismatches.len() > 200
+                {
+                    return Err(bad(
+                        "invalid source-bound intentional-mismatch PCR selection",
+                    ));
+                }
+            }
+            Derivation::EndRepair { .. } => {
+                if self.save_primers {
+                    return Err(bad(
+                        "End repair creates no new primer order; historical primers remain source ancestry.",
+                    ));
+                }
+            }
             Derivation::CatalogDigest {
                 selection,
                 options,
@@ -359,7 +394,7 @@ fn limitations(
     (values, count, truncated)
 }
 /// Only native, freshly executed sources may reach this adapter. Root's generic
-/// material resolver can call it for Derived and use the existing run/digest cases.
+/// material resolver preserves both saved Run and Derived ancestry.
 pub(crate) fn fresh_source(
     source: &Molecule,
     origin: &SourceOrigin,
@@ -386,6 +421,23 @@ fn request_source(source: &Molecule, request: &Request) -> Result<(), Error> {
     request.validate_shallow()?;
     if source.revision() != request.source.revision {
         return Err(bad("source snapshot differs from exact request event"));
+    }
+    if let Derivation::MismatchPcr {
+        forward,
+        reverse,
+        options,
+        ..
+    } = &request.derivation
+    {
+        if crate::assembly_recipe::mismatch_pcr_work(
+            source.sequence.len(),
+            forward,
+            reverse,
+            options,
+        )? > 200_000_000
+        {
+            return Err(Error::TooLarge);
+        }
     }
     if let SourceOrigin::OriginalReference = &request.origin {
         original_source(source)?;
@@ -467,6 +519,64 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
             let mut findings = Vec::new();
             verification::project_pcr_annotations(source, geometry, &mut reference, &mut findings)?;
             findings.push("Unique exact PCR produces newly synthesized unmodified blunt duplex strands with 5′OH/3′OH in the existing ideal-PCR model. Primer chemistry, yields, cleanup, amplification efficiency and experimental isolation are not measured.".into());
+            (reference, tracked, findings)
+        }
+        Derivation::MismatchPcr {
+            forward,
+            reverse,
+            options,
+            selection,
+        } => {
+            let preview = mismatch_from_fresh(
+                source,
+                &request.origin,
+                &inherited,
+                forward,
+                reverse,
+                options,
+            )?;
+            if preview.preview.report.products.len() != 1 || selection.selected_index != 0 {
+                return Err(bad(
+                    "Reusable intentional-mismatch PCR requires exactly one reported native geometry; competing products remain previews, not inferred isolation.",
+                ));
+            }
+            let geometry = &preview.preview.report.products[0];
+            if !geometry.certain || geometry.overlapping_domains {
+                return Err(bad(
+                    "Ambiguous/overlapping mismatch PCR geometry remains diagnostic, not established amplified material.",
+                ));
+            }
+            if preview.preview.documents[0].revision() != selection.expected_preview_revision
+                || crate::assembly_recipe::hash(geometry)?
+                    != crate::assembly_recipe::hash(&selection.geometry)?
+            {
+                return Err(bad("selected mismatch-PCR preview/geometry changed"));
+            }
+            inherited.incomplete |= !preview.preview.report.enumeration_complete;
+            let tracked = TrackedDuplex::exact_pcr(&geometry.sequence)?;
+            let mut reference = tracked.duplex.molecule(&request.name)?;
+            let mut findings = preview.preview.report.warnings.clone();
+            verification::project_mutant_pcr(source, geometry, &mut reference, &mut findings)?;
+            findings.push(format!("Intentional-mismatch PCR retains {} primer-encoded substitutions, both complete ordered oligos and the declared 3′/mismatch/search policy. The selected native geometry supplies newly synthesized unmodified blunt strands with 5′OH/3′OH; amplification efficiency, isolation and target success are not established.",geometry.substitutions.len()));
+            if !preview.preview.report.enumeration_complete {
+                findings.push("Alternative mismatch-PCR search is incomplete. The selected singleton path remains conditional material and its limitations are not upgraded.".into());
+            }
+            (reference, tracked, findings)
+        }
+        Derivation::EndRepair { method } => {
+            let repair = chemistry::repair_ends(&inherited.tracked.duplex, *method)?;
+            let tracked = inherited.tracked.repair(*method)?;
+            if tracked.duplex != repair.duplex {
+                return Err(bad("native repair geometry and tracked mappings differ"));
+            }
+            let mut findings = repair.warnings.clone();
+            let reference = verification::repaired_document(
+                source,
+                &repair,
+                request.name.clone(),
+                &mut findings,
+            )?;
+            findings.push("Direct end repair uses actual source strands and template-supported fill/removal only. Surviving positional modifications, original 5′ groups and internal nicks remain; no phosphorylation, nick sealing, supplier-vector chemistry or target success is inferred.".into());
             (reference, tracked, findings)
         }
         Derivation::CatalogDigest {
@@ -564,6 +674,8 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
     let prefix = match request.derivation {
         Derivation::ExactPcr { .. } => "pcr",
         Derivation::CatalogDigest { .. } => "material-digest",
+        Derivation::MismatchPcr { .. } => "mismatch-pcr",
+        Derivation::EndRepair { .. } => "material-repair",
     };
     let prefix = format!("{prefix}-{}", &fresh.reference.revision()[..24]);
     let mut id = prefix.clone();
@@ -599,9 +711,12 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
     let record_hash = blake3::hash(&bytes).to_hex().to_string();
     let mut next = w.clone();
     let primer_attachment = if request.save_primers {
-        let Derivation::ExactPcr {
+        let (Derivation::ExactPcr {
             forward, reverse, ..
-        } = &request.derivation
+        }
+        | Derivation::MismatchPcr {
+            forward, reverse, ..
+        }) = &request.derivation
         else {
             return Err(bad("Only newly performed PCR has newly declared primers."));
         };
@@ -907,11 +1022,14 @@ impl Receipt {
             ));
         }
         if let Some(hash) = &self.primer_attachment {
-            let Derivation::ExactPcr {
+            let (Derivation::ExactPcr {
                 forward, reverse, ..
-            } = &record.request.derivation
+            }
+            | Derivation::MismatchPcr {
+                forward, reverse, ..
+            }) = &record.request.derivation
             else {
-                return Err(bad("A digest receipt cannot attach new primers."));
+                return Err(bad("A non-PCR receipt cannot attach new primers."));
             };
             let expected = encoded(
                 &crate::pcr_outputs::primer_table(forward, reverse)?,
@@ -946,6 +1064,9 @@ pub fn primer_table(record: &Record) -> Result<Option<crate::oligo_formats::Olig
     record.validate_documentary()?;
     match &record.request.derivation {
         Derivation::ExactPcr {
+            forward, reverse, ..
+        }
+        | Derivation::MismatchPcr {
             forward, reverse, ..
         } => crate::pcr_outputs::primer_table(forward, reverse).map(Some),
         _ => Ok(None),
@@ -1230,6 +1351,337 @@ impl DigestPreview {
             }
         }
         encoded(self, MAX_RECORD_BYTES)?;
+        Ok(())
+    }
+}
+
+// Native source-bound previews share the same origin replay and mutation kernels
+// as installation. They are documentary objects, never deserialized material.
+dto! {pub struct MismatchPreview{pub engine_version:String,pub context_revision:String,pub source_revision:String,
+#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub preview:verification::MutagenesisPreview,
+pub source_duplex:chemistry::DuplexSummary,pub source_modifications:ModificationSummary,
+pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool}}
+dto! {pub struct RepairPreview{pub engine_version:String,pub context_revision:String,pub source_revision:String,pub molecule:Molecule,
+#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub repair:chemistry::EndRepairReport,
+pub source_duplex:chemistry::DuplexSummary,pub source_modifications:ModificationSummary,
+pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool}}
+fn source_origin_preflight(source: &Molecule, origin: &SourceOrigin) -> Result<(), Error> {
+    crate::model::bounds::model_preflight(&[source])?;
+    source.validate()?;
+    match origin {
+        SourceOrigin::OriginalReference => {
+            original_source(source)?;
+        }
+        SourceOrigin::Saved(origin) => {
+            origin.validate_documentary()?;
+            if origin.event().revision != source.revision() {
+                return Err(bad("preview source differs from exact saved material"));
+            }
+        }
+    }
+    Ok(())
+}
+pub fn mismatch_pcr_preview_revision(
+    source: &Molecule,
+    origin: &SourceOrigin,
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+) -> Result<String, Error> {
+    crate::assembly_recipe::mismatch_pcr_shape(forward, reverse, options)?;
+    source_origin_preflight(source, origin)?;
+    if crate::assembly_recipe::mismatch_pcr_work(source.sequence.len(), forward, reverse, options)?
+        > 200_000_000
+    {
+        return Err(Error::TooLarge);
+    }
+    crate::assembly_recipe::hash(&(
+        ENGINE_VERSION,
+        "mismatch-pcr-preview",
+        verification::ENGINE_VERSION,
+        source,
+        origin,
+        forward,
+        reverse,
+        options,
+    ))
+}
+fn mismatch_from_fresh(
+    source: &Molecule,
+    origin: &SourceOrigin,
+    fresh: &FreshMaterial,
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+) -> Result<MismatchPreview, Error> {
+    let context_revision =
+        mismatch_pcr_preview_revision(source, origin, forward, reverse, options)?;
+    let report = crate::mutagenesis::simulate_pcr_reconstructed(
+        source,
+        &fresh.tracked.duplex,
+        forward,
+        reverse,
+        options,
+    )?;
+    let mut preview =
+        verification::project_mutagenesis_preview(source, forward, reverse, options, report)?;
+    for document in &mut preview.documents {
+        document.metadata.insert("duplex_model".into(),"Intentional-mismatch PCR reference preview only; replay the exact native derivation to establish reusable material.".into());
+        document.metadata.insert(
+            "source:material_derivation:preview_context".into(),
+            context_revision.clone(),
+        );
+    }
+    let local = preview
+        .findings
+        .iter()
+        .chain(&preview.report.warnings)
+        .cloned()
+        .collect::<Vec<_>>();
+    let total = fresh
+        .findings_total
+        .checked_add(local.len())
+        .ok_or(Error::TooLarge)?;
+    let (findings, findings_total, findings_truncated) = limitations(
+        local
+            .into_iter()
+            .chain(fresh.findings.iter().cloned())
+            .collect(),
+        total,
+        fresh.findings_truncated,
+    );
+    let result = MismatchPreview {
+        engine_version: ENGINE_VERSION.into(),
+        context_revision,
+        source_revision: source.revision(),
+        source_duplex: fresh.tracked.duplex.summary()?,
+        source_modifications: modified_duplex::summary(&fresh.tracked)?,
+        incomplete: fresh.incomplete || !preview.report.enumeration_complete,
+        preview,
+        findings,
+        findings_total,
+        findings_truncated,
+    };
+    result.validate_binding(&result.context_revision)?;
+    Ok(result)
+}
+pub fn preview_mismatch_pcr(
+    source: &Molecule,
+    origin: &SourceOrigin,
+    forward: &Primer,
+    reverse: &Primer,
+    options: &crate::mutagenesis::PcrOptions,
+) -> Result<MismatchPreview, Error> {
+    mismatch_pcr_preview_revision(source, origin, forward, reverse, options)?;
+    let fresh = fresh_source(source, origin)?;
+    mismatch_from_fresh(source, origin, &fresh, forward, reverse, options)
+}
+pub fn repair_preview_revision(
+    source: &Molecule,
+    origin: &SourceOrigin,
+    method: chemistry::EndRepairMethod,
+) -> Result<String, Error> {
+    source_origin_preflight(source, origin)?;
+    crate::assembly_recipe::hash(&(
+        ENGINE_VERSION,
+        "end-repair-preview",
+        verification::ENGINE_VERSION,
+        source,
+        origin,
+        method,
+    ))
+}
+pub fn preview_repair(
+    source: &Molecule,
+    origin: &SourceOrigin,
+    method: chemistry::EndRepairMethod,
+) -> Result<RepairPreview, Error> {
+    let context_revision = repair_preview_revision(source, origin, method)?;
+    let fresh = fresh_source(source, origin)?;
+    let repair = chemistry::repair_ends(&fresh.tracked.duplex, method)?;
+    let mut local = repair.warnings.clone();
+    let mut molecule = verification::repaired_document(
+        source,
+        &repair,
+        format!("{}_end_repair", source.name),
+        &mut local,
+    )?;
+    molecule.metadata.insert(
+        "source:material_derivation:preview_context".into(),
+        context_revision.clone(),
+    );
+    local.push("Reference preview of explicit template-supported end repair. It restores no material authority, infers no phosphorylation or nick sealing, and checks no intended target.".into());
+    let total = fresh
+        .findings_total
+        .checked_add(local.len())
+        .ok_or(Error::TooLarge)?;
+    let (findings, findings_total, findings_truncated) = limitations(
+        local
+            .into_iter()
+            .chain(fresh.findings.iter().cloned())
+            .collect(),
+        total,
+        fresh.findings_truncated,
+    );
+    let result = RepairPreview {
+        engine_version: ENGINE_VERSION.into(),
+        context_revision,
+        source_revision: source.revision(),
+        source_duplex: fresh.tracked.duplex.summary()?,
+        source_modifications: modified_duplex::summary(&fresh.tracked)?,
+        molecule,
+        repair,
+        incomplete: fresh.incomplete,
+        findings,
+        findings_total,
+        findings_truncated,
+    };
+    result.validate_binding(&result.context_revision)?;
+    Ok(result)
+}
+fn preview_receipt_shape(
+    engine: &str,
+    context: &str,
+    expected: &str,
+    source: &str,
+    findings: &[String],
+    total: usize,
+    truncated: bool,
+) -> Result<(), Error> {
+    if engine != ENGINE_VERSION
+        || context != expected
+        || !hex(expected)
+        || !hex(source)
+        || findings.len() != total.min(128)
+        || total > crate::run_lineage::MAX_RUN_BYTES
+        || findings.iter().any(|s| s.chars().count() > 2048)
+        || (total > findings.len() && !truncated)
+    {
+        return Err(bad("processing preview binding/excerpt differs"));
+    }
+    Ok(())
+}
+fn preview_source_shape(
+    duplex: &chemistry::DuplexSummary,
+    modifications: &ModificationSummary,
+) -> Result<(), Error> {
+    summary_shape(modifications)?;
+    if duplex.top_length != modifications.top_length
+        || duplex.bottom_length != modifications.bottom_length
+        || duplex.model.len() > 256
+        || duplex.nicks.len() > 10000
+        || duplex.bottom_start.unsigned_abs() > crate::model::MAX_SEQUENCE_LEN as u64
+        || duplex.ends.as_ref().is_some_and(|(a, b)| {
+            a.overhang.len() > crate::model::MAX_SEQUENCE_LEN
+                || b.overhang.len() > crate::model::MAX_SEQUENCE_LEN
+        })
+    {
+        return Err(bad(
+            "processing preview source geometry/modifications differ",
+        ));
+    }
+    Ok(())
+}
+impl MismatchPreview {
+    /// Exact same eligibility as installation. Incomplete enumeration stays conditional;
+    /// two reported geometries never establish a selected isolated product.
+    pub fn reusable(&self) -> bool {
+        self.validate_binding(&self.context_revision).is_ok()
+            && self.preview.report.products.len() == 1
+            && self.preview.documents.len() == 1
+            && self.preview.report.products[0].certain
+            && !self.preview.report.products[0].overlapping_domains
+    }
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        preview_receipt_shape(
+            &self.engine_version,
+            &self.context_revision,
+            expected,
+            &self.source_revision,
+            &self.findings,
+            self.findings_total,
+            self.findings_truncated,
+        )?;
+        preview_source_shape(&self.source_duplex, &self.source_modifications)?;
+        let report = &self.preview.report;
+        if self.source_duplex.bottom_start != 0
+            || self.source_duplex.top_length != self.source_duplex.bottom_length
+            || !self.source_duplex.nicks.is_empty()
+        {
+            return Err(bad(
+                "mismatch preview requires actual fully paired intact source geometry",
+            ));
+        }
+        for binding in &report.bindings {
+            if binding.source_revision != self.source_revision
+                || crate::assembly_recipe::hash(&binding.options)?
+                    != crate::assembly_recipe::hash(&report.options.binding)?
+            {
+                return Err(bad(
+                    "mismatch preview binding report differs from declared policy/source",
+                ));
+            }
+        }
+        if report.source_revision != self.source_revision
+            || report.products.len() != self.preview.documents.len()
+            || report.products.len() > 10000
+            || report.pair_checks > report.options.max_pair_checks
+            || (!report.enumeration_complete && !self.incomplete)
+        {
+            return Err(bad("mismatch preview report correspondence differs"));
+        }
+        for (document, geometry) in self.preview.documents.iter().zip(&report.products) {
+            crate::model::bounds::model_preflight(&[document])?;
+            document.validate()?;
+            if document.sequence != geometry.sequence
+                || document.topology != crate::Topology::Linear
+                || document
+                    .metadata
+                    .get("source:material_derivation:preview_context")
+                    .map(String::as_str)
+                    != Some(expected)
+            {
+                return Err(bad(
+                    "mismatch preview geometry/document correspondence differs",
+                ));
+            }
+        }
+        encoded(self, 32 * 1024 * 1024)?;
+        Ok(())
+    }
+}
+impl RepairPreview {
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        preview_receipt_shape(
+            &self.engine_version,
+            &self.context_revision,
+            expected,
+            &self.source_revision,
+            &self.findings,
+            self.findings_total,
+            self.findings_truncated,
+        )?;
+        preview_source_shape(&self.source_duplex, &self.source_modifications)?;
+        self.repair.source.validate()?;
+        self.repair.duplex.validate()?;
+        self.molecule.validate()?;
+        if self.repair.source.summary()?.top_length != self.source_duplex.top_length
+            || crate::assembly_recipe::hash(&self.repair.source.summary()?)?
+                != crate::assembly_recipe::hash(&self.source_duplex)?
+            || self.molecule.sequence != self.repair.duplex.top
+            || self.molecule.topology != self.repair.duplex.topology
+            || self
+                .molecule
+                .metadata
+                .get("source:material_derivation:preview_context")
+                .map(String::as_str)
+                != Some(expected)
+        {
+            return Err(bad(
+                "repair preview native geometry/reference correspondence differs",
+            ));
+        }
+        encoded(self, 32 * 1024 * 1024)?;
         Ok(())
     }
 }

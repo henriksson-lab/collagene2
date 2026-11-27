@@ -107,13 +107,31 @@ fn fixture() -> Workspace {
     )
     .unwrap()
 }
+// Descriptions may discuss geometry; only schema properties admit caller payloads.
+fn schema_has_property(value: &serde_json::Value, name: &str) -> bool {
+    match value {
+        serde_json::Value::Object(fields) => {
+            fields
+                .get("properties")
+                .and_then(serde_json::Value::as_object)
+                .is_some_and(|properties| properties.contains_key(name))
+                || fields
+                    .values()
+                    .any(|child| schema_has_property(child, name))
+        }
+        serde_json::Value::Array(items) => {
+            items.iter().any(|child| schema_has_property(child, name))
+        }
+        _ => false,
+    }
+}
 #[tokio::test]
 async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_immutable_sources() {
     let (c, server) = setup().await;
     let tools = c.list_tools(Default::default()).await.unwrap().tools;
     assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     assert!(tools.iter().any(|t| t.name == "material_derivation"));
-    let schema = serde_json::to_string(
+    let schema = serde_json::to_value(
         &tools
             .iter()
             .find(|t| t.name == "material_derivation")
@@ -122,12 +140,12 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     )
     .unwrap();
     assert!(
-        !schema.contains("record_bytes"),
+        !schema_has_property(&schema, "record_bytes"),
         "Closed capsules are not MCP arguments"
     );
-    assert!(!schema.contains("expected_product_revision"));
+    assert!(!schema_has_property(&schema, "expected_product_revision"));
     assert!(
-        !schema.contains("geometry"),
+        !schema_has_property(&schema, "geometry"),
         "Amplicon geometry is resolved in-process"
     );
     let original = fixture();
@@ -302,6 +320,200 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     let exported = call(&c, "export_workspace_archive", input.clone()).await;
     let kept = native_archive(&c, &exported["artifact_id"]).await;
     assert_eq!(workspace::save_workspace(&kept).unwrap(), input_bytes);
+    c.cancel().await.unwrap();
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_context() {
+    use collagene_core::{chemistry::EndRepairMethod, mutagenesis::PcrOptions};
+    let (c, server) = setup().await;
+    let original = fixture();
+    let bytes = workspace::save_workspace(&original).unwrap();
+    let imported = call(
+        &c,
+        "import_workspace_archive",
+        json!({"data_base64":STANDARD.encode(&bytes)}),
+    )
+    .await;
+    let input = reference(&imported);
+    let pin = event(&original, 0);
+    let forward = Primer::new("Mismatch F", "AGTTCGAT", "CC").unwrap();
+    let reverse = Primer::new("Exact R", "TGACGATC", "GG").unwrap();
+    let mut options = PcrOptions::default();
+    options.binding.min_three_prime_exact = 4;
+    let args = json!({"workspace":input,"task":{"PreviewMismatchPcr":{"source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse,"options":options}}});
+    let preview = call(&c, "material_derivation", args.clone()).await;
+    assert_eq!(preview["count"], 1);
+    assert_eq!(preview["reusable"], true);
+    assert_eq!(preview["previews"][0]["substitution_count"], 1);
+    let full = json_artifact(&c, &preview["artifact_id"]).await;
+    assert_eq!(full["workspace"], input);
+    assert_eq!(full["source"], json!(pin));
+    let native_preview: native::MismatchPreview =
+        serde_json::from_value(full["preview"].clone()).unwrap();
+    native_preview
+        .validate_binding(preview["context_revision"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        native_preview.preview.documents[0].sequence.as_str(),
+        "CCAGTTCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCACC"
+    );
+    let request = InstallRequest {
+        source: pin.clone(),
+        origin: Origin::OriginalReference,
+        derivation: Derivation::MismatchPcr {
+            forward: forward.clone(),
+            reverse: reverse.clone(),
+            options: options.clone(),
+            selection: MaterialPcrChoice {
+                selected_index: 0,
+                expected_preview_revision: preview["previews"][0]["preview_revision"]
+                    .as_str()
+                    .unwrap()
+                    .into(),
+            },
+        },
+        name: "Reusable tailed substitution".into(),
+        save_primers: true,
+    };
+    let mut changed = request.clone();
+    let Derivation::MismatchPcr { options, .. } = &mut changed.derivation else {
+        unreachable!()
+    };
+    options.binding.min_three_prime_exact = 5;
+    reject(
+        &c,
+        json!({"workspace":input,"task":{"Install":{"request":changed}}}),
+    )
+    .await;
+    let mut injected = serde_json::to_value(&request).unwrap();
+    injected["derivation"]["MismatchPcr"]["selection"]["geometry"] = json!({"sequence":STOCK});
+    reject(
+        &c,
+        json!({"workspace":input,"task":{"Install":{"request":injected}}}),
+    )
+    .await;
+    let mut wrong = args;
+    wrong["task"]["PreviewMismatchPcr"]["source"]["event_id"] = json!(event(&original, 1).event_id);
+    reject(&c, wrong).await;
+    let installed = call(
+        &c,
+        "material_derivation",
+        json!({"workspace":input,"task":{"Install":{"request":request}}}),
+    )
+    .await;
+    let receipt: native::Receipt = serde_json::from_value(installed["receipt"].clone()).unwrap();
+    assert!(receipt.primer_attachment.is_some());
+    let w = native_archive(&c, &installed["native_artifact_id"]).await;
+    receipt.validate_archive(&w).unwrap();
+    assert!(
+        collagene_core::run_lineage::list_runs(&w)
+            .unwrap()
+            .is_empty()
+    );
+    let capsule = native::capsule(&w, &receipt.product).unwrap();
+    let record = native::load_record(&capsule.record_bytes).unwrap();
+    let orders = native::primer_table(&record).unwrap().unwrap();
+    assert_eq!(
+        orders.records[0]
+            .primer
+            .as_ref()
+            .unwrap()
+            .ordered_sequence(),
+        "CCAGTTCGAT"
+    );
+    assert_eq!(
+        orders.records[1]
+            .primer
+            .as_ref()
+            .unwrap()
+            .ordered_sequence(),
+        "GGTGACGATC"
+    );
+    let native::Derivation::MismatchPcr {
+        options, selection, ..
+    } = record.request.derivation
+    else {
+        panic!("full mismatch recipe")
+    };
+    assert_eq!(options.binding.min_three_prime_exact, 4);
+    assert_eq!(selection.geometry.substitutions.len(), 1);
+    let catalog = catalog_digest::builtin_catalog().unwrap();
+    let eco = catalog
+        .edition()
+        .enzymes
+        .iter()
+        .find(|e| e.name == "EcoRI")
+        .unwrap();
+    let request = InstallRequest {
+        source: receipt.product.clone(),
+        origin: Origin::Saved(run_material::MaterialSelection::Derived(receipt.product)),
+        derivation: Derivation::CatalogDigest {
+            selection: catalog_digest::select(&catalog, &[eco.id.clone()]).unwrap(),
+            options: Default::default(),
+            fragment_index: 1,
+        },
+        name: "Cut mismatch-PCR product".into(),
+        save_primers: false,
+    };
+    let cut = call(
+        &c,
+        "material_derivation",
+        json!({"workspace":reference(&installed),"task":{"Install":{"request":request}}}),
+    )
+    .await;
+    let receipt: native::Receipt = serde_json::from_value(cut["receipt"].clone()).unwrap();
+    let origin = Origin::Saved(run_material::MaterialSelection::Derived(
+        receipt.product.clone(),
+    ));
+    let preview=call(&c,"material_derivation",json!({"workspace":reference(&cut),"task":{"PreviewRepair":{"source":receipt.product,"origin":origin,"method":EndRepairMethod::FillFivePrimeOverhangs}}})).await;
+    assert_eq!(preview["repair"]["source"]["bottom_start"], 4);
+    assert_eq!(preview["repair"]["duplex"]["bottom_start"], 0);
+    assert_eq!(preview["repair"]["bottom_added_3prime"], "AATT");
+    let full = json_artifact(&c, &preview["artifact_id"]).await;
+    assert_eq!(full["source"], json!(receipt.product));
+    let full: native::RepairPreview = serde_json::from_value(full["preview"].clone()).unwrap();
+    full.validate_binding(preview["context_revision"].as_str().unwrap())
+        .unwrap();
+    reject(&c,json!({"workspace":reference(&cut),"task":{"PreviewRepair":{"source":receipt.product,"origin":"OriginalReference","method":"Blunt"}}})).await;
+    let request = InstallRequest {
+        source: receipt.product,
+        origin,
+        derivation: Derivation::EndRepair {
+            method: EndRepairMethod::FillFivePrimeOverhangs,
+        },
+        name: "Repaired reusable source".into(),
+        save_primers: false,
+    };
+    let mut wrong = request.clone();
+    wrong.save_primers = true;
+    reject(
+        &c,
+        json!({"workspace":reference(&cut),"task":{"Install":{"request":wrong}}}),
+    )
+    .await;
+    let repaired = call(
+        &c,
+        "material_derivation",
+        json!({"workspace":reference(&cut),"task":{"Install":{"request":request}}}),
+    )
+    .await;
+    let receipt: native::Receipt = serde_json::from_value(repaired["receipt"].clone()).unwrap();
+    let w = native_archive(&c, &repaired["native_artifact_id"]).await;
+    receipt.validate_archive(&w).unwrap();
+    assert!(receipt.primer_attachment.is_none());
+    let fresh = native::reconstruct(&w, &receipt.product).unwrap();
+    assert_eq!(
+        fresh.reference().sequence.as_str(),
+        "AATTCCGTAGGACTTCAGACCTGTAGATCGTCACC"
+    );
+    assert_eq!(fresh.tracked().duplex.bottom_start, 0);
+    let kept = call(&c, "export_workspace_archive", input).await;
+    assert_eq!(
+        workspace::save_workspace(&native_archive(&c, &kept["artifact_id"]).await).unwrap(),
+        bytes
+    );
     c.cancel().await.unwrap();
     server.await.unwrap();
 }

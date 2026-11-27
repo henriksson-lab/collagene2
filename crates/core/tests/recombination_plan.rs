@@ -3,7 +3,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     chemistry::EndTreatment,
-    protocol::{self, AnalysisJob, AnalysisResult, Request as WireRequest},
+    protocol::{self, AnalysisJob, Request as WireRequest},
     recombination::{self, ProfileSnapshot, Request, Selection, reference},
     run_lineage::{self, EventBinding, InputEventBinding},
     transfer::{self, Candidate},
@@ -233,58 +233,6 @@ fn pinned_custom_profile_replays_without_installed_catalog_lookup() {
         verification::verify(&decoded.plan, &target).status,
         Status::Incomplete
     );
-}
-#[test]
-fn append_only_literals_and_legacy_envelopes_preserve_old_operations_but_reject_new() {
-    // Captured literal old enum/field layout, not regenerated expected bytes.
-    let digest = Operation::Digest {
-        template: Source::Input("s".into()),
-        enzymes: vec!["EcoRI".into()],
-        fragment_index: 0,
-    };
-    assert_eq!(
-        postcard::to_allocvec(&digest).unwrap(),
-        vec![2, 0, 1, b's', 1, 5, b'E', b'c', b'o', b'R', b'I', 0]
-    );
-    let (target, plan) = fixture(false);
-    let c = Candidate::new(plan.clone());
-    let bytes = transfer::save_candidate(&c).unwrap();
-    assert_eq!(
-        &bytes[4..6],
-        &collagene_core::protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
-    );
-    for v in 1..7 {
-        assert!(transfer::load_candidate(&wire(b"CGP\0", v, &c)).is_err());
-    }
-    let q = WireRequest {
-        id: 2,
-        revision: target.revision(),
-        job: AnalysisJob::Verify {
-            plan: plan.clone(),
-            target: target.clone(),
-        },
-    };
-    for v in 1..22 {
-        assert!(
-            protocol::process_request(&wire(b"CGQ\0", v, &q)).is_err(),
-            "old worker {v}"
-        );
-    }
-    let response = protocol::process_request(&protocol::encode_request(&q).unwrap()).unwrap();
-    assert_eq!(
-        &response[4..6],
-        &collagene_core::protocol::WORKER_SCHEMA_VERSION.to_le_bytes()
-    );
-    assert!(matches!(
-        protocol::decode_response(&response).unwrap().result,
-        AnalysisResult::Verification(_)
-    ));
-    let mut old = c;
-    old.plan.steps = vec![digest];
-    old.plan_revision = verification::plan_revision(&old.plan);
-    for v in 2..7 {
-        transfer::load_candidate(&wire(b"CGP\0", v, &old)).unwrap();
-    }
 }
 #[test]
 fn native_capture_is_explicitly_incomplete_has_exact_two_parents_and_replays() {

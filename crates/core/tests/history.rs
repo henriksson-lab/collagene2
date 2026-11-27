@@ -111,31 +111,47 @@ fn invalid_commits_are_atomic_and_external_unrecorded_changes_are_detected() {
     assert!(d.commit(m("next"), "edit").is_err());
 }
 #[test]
-fn legacy_revision_only_stacks_gain_explicit_recovery_roots_without_guessed_ancestry() {
-    let mut w = Workspace::from_documents("legacy", vec![m("current")], 0).unwrap();
-    for name in ["before", "redo"] {
-        let mol = m(name);
-        w.revisions.insert(mol.revision(), mol);
+fn native_navigation_rejects_missing_event_ids_instead_of_inventing_recovery_roots() {
+    let mut document = DocumentHistory::new("exact", m("root")).unwrap();
+    document.commit(m("middle"), "first edit").unwrap();
+    document.commit(m("last"), "second edit").unwrap();
+    document.undo().unwrap();
+    let current = archive(&[document]);
+    assert_eq!(current.documents[0].undo_events.len(), 1);
+    assert_eq!(current.documents[0].redo_events.len(), 1);
+    for missing in ["head", "undo", "redo"] {
+        let mut incomplete = current.clone();
+        match missing {
+            "head" => incomplete.documents[0].head_event = None,
+            "undo" => incomplete.documents[0].undo_events.clear(),
+            "redo" => incomplete.documents[0].redo_events.clear(),
+            _ => unreachable!(),
+        };
+        assert!(
+            incomplete.validate().is_err(),
+            "Missing {missing} event identity was accepted"
+        );
+        assert!(DocumentHistory::restore_all(&incomplete).is_err());
+        assert!(workspace::save_workspace(&incomplete).is_err());
     }
-    w.documents[0].head_event = None;
-    w.history.clear();
-    w.documents[0].undo = vec![m("before").revision()];
-    w.documents[0].redo = vec![m("redo").revision()];
-    w.validate().unwrap();
-    let mut d = DocumentHistory::restore_all(&w).unwrap().remove(0);
-    assert!(
-        d.summaries().iter().all(
-            |e| e.operation.contains("original event was not recorded") && e.parents.is_empty()
-        )
+    let mut no_history = current.clone();
+    no_history.history.clear();
+    assert!(DocumentHistory::restore_all(&no_history).is_err());
+    let fresh = archive(&[DocumentHistory::new("imported", m("External import")).unwrap()]);
+    let restored = DocumentHistory::restore_all(&fresh).unwrap();
+    assert_eq!(
+        restored[0].head_event(),
+        fresh.documents[0].head_event.as_deref().unwrap()
     );
-    d.redo().unwrap();
-    assert_eq!(d.molecule.name, "redo");
-    d.undo().unwrap();
-    assert_eq!(d.molecule.name, "current");
-    d.undo().unwrap();
-    assert_eq!(d.molecule.name, "before");
-    archive(&[d]).validate().unwrap();
+    assert_eq!(restored[0].event_count(), 1);
+    assert!(!restored[0].can_undo());
+    assert!(!restored[0].can_redo());
+    assert_eq!(
+        serde_json::to_value(&archive(&restored).history).unwrap(),
+        serde_json::to_value(&fresh.history).unwrap()
+    );
 }
+
 #[test]
 fn shared_revisions_and_cross_document_parents_survive_restore_and_new_edits() {
     let mut w = Workspace::from_documents("shared", vec![m("same"), m("same")], 0).unwrap();

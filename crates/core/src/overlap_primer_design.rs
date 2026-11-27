@@ -369,6 +369,7 @@ pub fn design(inputs: &[PlanInput], target: &Molecule, request: &Request) -> Res
             preparation: Preparation::ExactPcr {
                 forward: pair.forward.primer.clone(),
                 reverse: pair.reverse.primer.clone(),
+                template_strand: crate::chemistry::Strand::Top,
             },
             reverse: f.reverse,
         });
@@ -470,7 +471,13 @@ impl Report {
             {
                 return Err(bad("returned original/interval/pair mapping changed"));
             }
-            let Preparation::ExactPcr { forward, reverse } = &row.preparation else {
+            let Preparation::ExactPcr {
+                forward,
+                reverse,
+                template_strand: crate::chemistry::Strand::Top,
+                ..
+            } = &row.preparation
+            else {
                 return Err(bad(
                     "overlap planning must return actual exact-PCR preparations",
                 ));

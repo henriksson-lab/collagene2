@@ -25,6 +25,7 @@ fn pcr(role: &str, id: &str, f: &str, r: &str, treatment: Option<EndTreatment>) 
             preparation: Preparation::ExactPcr {
                 forward: Primer::new("actual forward", f, "").unwrap(),
                 reverse: Primer::new("actual reverse", r, "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             reverse: false,
         },

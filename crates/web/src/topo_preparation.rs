@@ -693,15 +693,21 @@ mod generic_material_tests {
         };
         let forward = Primer::new("F", "CACCA", "").unwrap();
         let reverse = Primer::new("R", "CGTCA", "").unwrap();
-        let preview = verification::simulate_pcr_documents(&parent, &forward, &reverse)
-            .unwrap()
-            .remove(0);
+        let preview = verification::simulate_pcr_documents(
+            &parent,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap()
+        .remove(0);
         let installed = derivation::prepare_install(
             &workspace,
             &derivation::Request {
                 source: event,
                 origin: derivation::SourceOrigin::OriginalReference,
                 derivation: derivation::Derivation::ExactPcr {
+                    template_strand: collagene_core::chemistry::Strand::Top,
                     forward,
                     reverse,
                     selection: derivation::PcrSelection {

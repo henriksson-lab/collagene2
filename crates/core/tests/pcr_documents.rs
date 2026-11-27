@@ -23,7 +23,8 @@ fn fixture() -> (Molecule, Primer, Primer) {
 #[test]
 fn standalone_preview_keeps_tail_coordinates_and_immutable_source_binding() {
     let (source, f, r) = fixture();
-    let products = simulate_pcr_documents(&source, &f, &r).unwrap();
+    let products =
+        simulate_pcr_documents(&source, &f, &r, collagene_core::chemistry::Strand::Top).unwrap();
     assert_eq!(products.len(), 1);
     let product = &products[0].molecule;
     assert_eq!(product.sequence.as_str(), "CGTACGACCCCGGGGTAACGTC");
@@ -60,6 +61,7 @@ fn worker_returns_projected_document_instead_of_flattening_sequence() {
             molecule: source.clone(),
             forward: f,
             reverse: r,
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
     };
     let reply = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
@@ -85,7 +87,7 @@ fn physical_or_declared_single_strand_templates_are_not_flattened() {
         .metadata
         .insert("genbank.molecule_type".into(), "ss-DNA".into());
     assert!(matches!(
-        simulate_pcr_documents(&source, &f, &r),
+        simulate_pcr_documents(&source, &f, &r, collagene_core::chemistry::Strand::Top),
         Err(Error::Unsupported(_))
     ));
     source.metadata.remove("genbank.molecule_type");
@@ -93,7 +95,7 @@ fn physical_or_declared_single_strand_templates_are_not_flattened() {
         .metadata
         .insert("duplex_model".into(), "untrusted attachment".into());
     assert!(matches!(
-        simulate_pcr_documents(&source, &f, &r),
+        simulate_pcr_documents(&source, &f, &r, collagene_core::chemistry::Strand::Top),
         Err(Error::Unsupported(_))
     ));
 }

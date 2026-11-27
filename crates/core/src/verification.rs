@@ -47,6 +47,7 @@ pub enum Operation {
         template: Source,
         forward: Primer,
         reverse: Primer,
+        template_strand: chemistry::Strand,
     },
     /// An explicit ordered candidate, not an exhaustive assembly search.
     Overlap {
@@ -471,7 +472,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-28");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-29");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -486,118 +487,38 @@ pub fn simulate_pcr_documents(
     source: &Molecule,
     forward: &Primer,
     reverse: &Primer,
+    template_strand: chemistry::Strand,
 ) -> Result<Vec<PcrDocument>, Error> {
-    source.validate()?;
-    if chemistry::has_unmapped_physical_evidence(source) {
-        return Err(Error::Unsupported("PCR of imported physical-intermediate evidence requires reconstruction of its originating graph".into()));
+    if template_strand != chemistry::Strand::Top {
+        return Err(Error::Unsupported("Original reference PCR uses explicit Top; Bottom requires freshly reconstructed native source strands".into()));
     }
-    build_pcr_documents(source, forward, reverse)
+    build_pcr_documents(
+        crate::pcr_source::Template::reference(source)?,
+        forward,
+        reverse,
+    )
 }
-
-/// Only fresh native run reconstruction may bypass the imported-marker guard.
+/// Only actual fresh native state supplies a selected Bottom template frame.
 pub(crate) fn simulate_pcr_documents_from_fresh(
     source: &Molecule,
     forward: &Primer,
     reverse: &Primer,
-    tracked: &modified_duplex::TrackedDuplex,
+    tracked: &TrackedDuplex,
+    template_strand: chemistry::Strand,
 ) -> Result<Vec<PcrDocument>, Error> {
-    source.validate()?;
-    tracked.validate()?;
-    pcr_material_preflight(source, tracked, forward, reverse)?;
-    let mut documents = build_pcr_documents(source, forward, reverse)?;
-    if tracked.duplex.bottom_start != 0 || tracked.duplex.bottom.len() != tracked.duplex.top.len() {
-        for document in &mut documents {
-            document.findings.push("PCR uses the actual intact top strand as a first-cycle template. Its initially staggered complement is not silently filled or repaired; both-strand coverage was checked for additional geometries outside the supported top reference.".into());
-        }
-    }
-    Ok(documents)
+    build_pcr_documents(
+        crate::pcr_source::Template::fresh(source, tracked, template_strand)?,
+        forward,
+        reverse,
+    )
 }
-/// Exact PCR may seed from an intact covalent top strand even when its initial
-/// complement is staggered. Search the known strand union first: extra geometries
-/// outside the top reference are explicit unsupported work, never false absence.
-pub(crate) fn pcr_material_preflight(
-    source: &Molecule,
-    tracked: &modified_duplex::TrackedDuplex,
-    forward: &Primer,
-    reverse: &Primer,
-) -> Result<(), Error> {
-    source.validate()?;
-    tracked.validate()?;
-    let duplex = &tracked.duplex;
-    if duplex.top != source.sequence
-        || duplex.topology != source.topology
-        || !duplex.nicks.is_empty()
-    {
-        return Err(Error::Unsupported("PCR requires reference-matching intact covalent template strands; nick propagation is not modeled".into()));
-    }
-    if duplex.bottom_start == 0 && duplex.bottom.len() == duplex.top.len() {
-        return Ok(());
-    }
-    if duplex.topology != Topology::Linear {
-        return Err(Error::Unsupported(
-            "Staggered circular PCR templates require an explicit supported linearization".into(),
-        ));
-    }
-    let bottom_end = duplex
-        .bottom_start
-        .checked_add(i64::try_from(duplex.bottom.len()).map_err(|_| Error::TooLarge)?)
-        .ok_or(Error::TooLarge)?;
-    let start = 0i64.min(duplex.bottom_start);
-    let end = (duplex.top.len() as i64).max(bottom_end);
-    let length = usize::try_from(end.checked_sub(start).ok_or(Error::TooLarge)?)
-        .map_err(|_| Error::TooLarge)?;
-    if length > crate::model::MAX_SEQUENCE_LEN {
-        return Err(Error::TooLarge);
-    }
-    let bottom_plus = duplex.bottom.reverse_complement()?;
-    let mut bases = Vec::with_capacity(length);
-    for i in 0..length {
-        let coordinate = start.checked_add(i as i64).ok_or(Error::TooLarge)?;
-        let base = if coordinate >= 0 && (coordinate as usize) < duplex.top.len() {
-            duplex.top.as_str().as_bytes()[coordinate as usize]
-        } else {
-            let p = coordinate
-                .checked_sub(duplex.bottom_start)
-                .and_then(|n| usize::try_from(n).ok())
-                .filter(|p| *p < bottom_plus.len())
-                .ok_or_else(|| {
-                    Error::Unsupported("PCR strand coverage contains an unmodeled gap".into())
-                })?;
-            bottom_plus.as_str().as_bytes()[p]
-        };
-        bases.push(base);
-    }
-    let projection = Molecule::dna(
-        "Actual PCR strand-coverage projection",
-        std::str::from_utf8(&bases)
-            .map_err(|_| Error::Format("PCR strand coverage is not ASCII".into()))?,
-        Topology::Linear,
-    )?;
-    let offset = usize::try_from(start.checked_neg().ok_or(Error::TooLarge)?)
-        .map_err(|_| Error::TooLarge)?;
-    for geometry in analysis::simulate_pcr_geometry(&projection, forward, reverse)? {
-        let begin = geometry.product.forward_start;
-        let stop = begin
-            .checked_add(geometry.template_length)
-            .ok_or(Error::TooLarge)?;
-        if begin < offset
-            || stop
-                > offset
-                    .checked_add(duplex.top.len())
-                    .ok_or(Error::TooLarge)?
-        {
-            return Err(Error::Unsupported("Actual staggered strands admit a PCR geometry outside the top-reference-contained profile. Inspect the strand extensions; no complete absence, unique product, or silent repair is asserted".into()));
-        }
-    }
-    Ok(())
-}
-
 fn build_pcr_documents(
-    source: &Molecule,
+    frame: crate::pcr_source::Template<'_>,
     forward: &Primer,
     reverse: &Primer,
 ) -> Result<Vec<PcrDocument>, Error> {
-    let geometries = analysis::simulate_pcr_geometry(source, forward, reverse)?;
+    let source = frame.reference;
+    let geometries = frame.geometries(forward, reverse)?;
     let mut total = 0usize;
     let mut documents = Vec::new();
     for (index, geometry) in geometries.into_iter().enumerate() {
@@ -606,11 +527,20 @@ fn build_pcr_documents(
             geometry.product.sequence.as_str(),
             Topology::Linear,
         )?;
-        let mut findings = Vec::new();
-        project_pcr_annotations(source, &geometry, &mut molecule, &mut findings)?;
+        let mut findings = vec![format!(
+            "PCR coordinates use the actual {:?} source frame; complementary-strand coverage was checked without filling, repairing or cropping the template.",
+            frame.strand
+        )];
+        project_pcr_frame_annotations(frame, &geometry, &mut molecule, &mut findings)?;
         molecule
             .metadata
             .insert("pcr:template_revision".into(), source.revision());
+        molecule
+            .metadata
+            .insert("pcr:source_frame".into(), frame.context_revision()?);
+        molecule
+            .metadata
+            .insert("pcr:template_strand".into(), format!("{:?}", frame.strand));
         molecule.metadata.insert(
             "pcr:primers".into(),
             serde_json::to_string(&(forward, reverse)).map_err(|e| Error::Format(e.to_string()))?,
@@ -641,6 +571,11 @@ pub(crate) fn project_pcr_annotations(
     product: &mut Molecule,
     findings: &mut Vec<String>,
 ) -> Result<(), Error> {
+    if geometry.product.template_strand != chemistry::Strand::Top {
+        return Err(Error::Format(
+            "Bottom PCR annotation projection requires the exact native frame".into(),
+        ));
+    }
     let map = region_map(
         source.sequence.len(),
         geometry.product.forward_start,
@@ -648,6 +583,19 @@ pub(crate) fn project_pcr_annotations(
         geometry.forward_tail_length,
     )?;
     project_into(source, &map, product, findings)
+}
+
+pub(crate) fn project_pcr_frame_annotations(
+    frame: crate::pcr_source::Template<'_>,
+    geometry: &analysis::PcrGeometryProduct,
+    product: &mut Molecule,
+    findings: &mut Vec<String>,
+) -> Result<(), Error> {
+    let map = frame.annotation_map(geometry)?;
+    if frame.strand == chemistry::Strand::Bottom {
+        findings.push("Bottom-frame PCR maps original top annotations only where real source calls correspond; bottom-only extensions have no fabricated top coordinates.".into());
+    }
+    project_into(frame.reference, &map, product, findings)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2000,6 +1948,7 @@ pub enum TailSubstrate {
     ExactPcr {
         forward: Primer,
         reverse: Primer,
+        template_strand: chemistry::Strand,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2115,7 +2064,14 @@ pub fn simulate_tailing(
                 (molecule, fragment.duplex.clone())
             }
         }
-        TailSubstrate::ExactPcr { forward, reverse } => {
+        TailSubstrate::ExactPcr {
+            forward,
+            reverse,
+            template_strand,
+        } => {
+            if *template_strand != chemistry::Strand::Top {
+                return Err(Error::Unsupported("Original tail-preview PCR uses explicit Top; saved Bottom needs native recipe replay".into()));
+            }
             if chemistry::has_unmapped_physical_evidence(source) {
                 return Err(Error::Unsupported("PCR tailing source has imported physical evidence; reconstruct its originating graph".into()));
             }
@@ -3321,25 +3277,17 @@ fn reconstruct(
                 template,
                 forward,
                 reverse,
+                template_strand,
             } => {
                 let substrate = resolve(template)?;
-                match template {
-                    Source::Input(_) => {
-                        if chemistry::has_unmapped_physical_evidence(substrate) {
-                            return Err(Error::Unsupported("PCR of imported physical-intermediate evidence requires reconstruction of its originating graph".into()));
-                        }
-                    }
-                    Source::Step(i) => {
-                        let duplex = physical.get(*i).and_then(Option::as_ref).ok_or_else(|| {
-                            Error::Unsupported("PCR requires an established physical template from the originating step; a reference-only assembly cannot be materialized by PCR".into())
-                        })?;
-                        pcr_material_preflight(substrate, duplex, forward, reverse)?;
-                        if duplex.bottom_start != 0 || duplex.bottom.len() != duplex.top.len() {
-                            findings.push(format!("Step {} exact PCR seeds from an actual intact top strand; initially staggered complementary ends remain on the template and are not silently repaired. Known strand extensions were checked for unsupported additional geometries.",index+1));
-                        }
-                    }
-                }
-                let matches = analysis::simulate_pcr_geometry(substrate, forward, reverse)?;
+                let frame=match template {
+                    Source::Input(_)=>{
+                        if *template_strand!=chemistry::Strand::Top{return Err(Error::Unsupported("Bottom PCR requires a freshly reconstructed native source step".into()));}
+                        crate::pcr_source::Template::reference(substrate)?
+                    },
+                    Source::Step(i)=>crate::pcr_source::Template::fresh(substrate,physical.get(*i).and_then(Option::as_ref).ok_or_else(||Error::Unsupported("PCR requires actual physical source state; reference-only evidence is not a template".into()))?,*template_strand)?,
+                };
+                let matches = frame.geometries(forward, reverse)?;
                 if matches.is_empty() {
                     return Err(Error::Format(format!("step {}: no PCR product", index + 1)));
                 }
@@ -3353,7 +3301,7 @@ fn reconstruct(
                 let geometry = &matches[0];
                 let duplex = Duplex::exact_pcr(&geometry.product.sequence)?;
                 let mut product = duplex.molecule(format!("PCR {}", index + 1))?;
-                project_pcr_annotations(substrate, geometry, &mut product, findings)?;
+                project_pcr_frame_annotations(frame, geometry, &mut product, findings)?;
                 next_physical = Some(TrackedDuplex::exact_pcr(&duplex.top)?);
                 product
             }
@@ -4402,7 +4350,7 @@ pub(crate) fn export_protocol_html_checked(checked: &CheckedProtocol<'_>) -> Str
             Operation::GoldenGate{templates,options,candidate_index}=>body.push_str(&format!("<li>Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are not specified by the molecular model.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::SelectedGoldenGate{templates,options,candidate_index,directed_sequence_key,physical_sequence_key}=>body.push_str(&format!("<li>Key-bound Golden Gate with {:?}, inputs {}. Explicit zero-based candidate {} under policy <code>{}</code>. Cleavage, orientation, cohesive ends and recognition-site removal are checked. Finite one-copy fragment search does not establish exhaustive mixture uniqueness; conditions and quantities are not specified by the molecular model. Fresh enumeration must match directed key <code>{}</code> and physical key <code>{}</code>.</li>",options.enzyme,templates.iter().map(source).collect::<Vec<_>>().join(", "),candidate_index,e(&serde_json::to_string(options).unwrap_or_default()),e(directed_sequence_key),e(physical_sequence_key))),
             Operation::MultiSiteRecombineReference{sources,request,selection}=>body.push_str(&format!("<li>Declared multi-site {:?} reference exchange using sources {}. Profile <code>{}</code>; specificity order {:?}; select candidate {}, component {} from bound batch <code>{}</code>. Retain all reciprocal components. This is a reference design, not established chemical material, experimental selection or kit success.</li>",request.reaction.reaction,e(&sources.iter().map(|s|format!("{}: {}",s.role,source(&s.source))).collect::<Vec<_>>().join(", ")),e(&request.reaction.profile.id),request.reaction.specificities,selection.candidate_id,selection.component_id,e(&selection.batch_revision))),
-            Operation::Pcr { template, forward, reverse } => body.push_str(&format!("<li>PCR of {} with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. The molecular model does not specify reaction conditions or quantities.</li>",source(template),e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
+            Operation::Pcr { template, forward, reverse, template_strand } => body.push_str(&format!("<li>PCR of {} in {:?} strand coordinates with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. The molecular model does not specify reaction conditions or quantities.</li>",source(template),template_strand,e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),
             Operation::CheckedDigest{template,selection,options,fragment_index}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Analysis limits: {} comparisons, {} sites, {} fragments, {} report bytes. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(", ")),e(&modified_duplex::profile_revision()),fragment_index,options.max_comparisons,options.max_sites,options.max_fragments,options.max_report_bytes)),

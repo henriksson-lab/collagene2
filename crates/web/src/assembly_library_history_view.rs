@@ -258,7 +258,8 @@ fn HistoryDetails(
                 <article><h4>{impact.name.clone()}</h4><p>{format!("Construct {} · removed {} · added {}",impact.construct_id,impact.construct_removed,impact.construct_added)}</p>
                     <p>{format!("Primer review bins: {}",if impact.primer_review_bins.is_empty(){"none".into()}else{impact.primer_review_bins.join(", ")})}</p>
                     <p>{format!("Removed preparation bins: {}",if impact.removed_preparation_bins.is_empty(){"none".into()}else{impact.removed_preparation_bins.join(", ")})}</p>
-                    <p>{format!("Junction declarations retained {} · prior declarations retained in recovery {} · new junctions (one-based): {}",impact.retained_junctions,impact.recovered_junctions,if impact.new_junctions.is_empty(){"none".into()}else{impact.new_junctions.iter().map(|index|(index+1).to_string()).collect::<Vec<_>>().join(", ")})}</p>
+                    <p>{format!("Internal changes retained {} · previous changes kept in recovery {}",impact.retained_internal_edits,impact.recovered_internal_edits)}</p>
+<p>{format!("Junction declarations retained {} · prior declarations retained in recovery {} · new junctions (one-based): {}",impact.retained_junctions,impact.recovered_junctions,if impact.new_junctions.is_empty(){"none".into()}else{impact.new_junctions.iter().map(|index|(index+1).to_string()).collect::<Vec<_>>().join(", ")})}</p>
                     <p>{format!("Raw overlap profile changed {} · role order changed {} · prior candidate intent removed/replaced {}",impact.overlap_text_changed,impact.role_order_changed,impact.candidate_cleared)}</p>
                 </article>
             }).collect_view())}

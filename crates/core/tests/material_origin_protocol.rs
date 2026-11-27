@@ -45,6 +45,7 @@ fn digest_fixture() -> (Workspace, native::Capsule, EventBinding) {
             template: Source::Input("stock".into()),
             forward: Primer::new("Original F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("Original R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let saved = cloning_outputs::finalize(
@@ -124,6 +125,7 @@ fn prepared_plan(
                 template: Source::Step(0),
                 forward: Primer::new("New F", "CCGTAGGA", "").unwrap(),
                 reverse: Primer::new("New R", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ],
     };
@@ -238,13 +240,21 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
     let origin = MaterialOrigin::Derived(cap);
     let forward = Primer::new("Native-material F", "CCGTAGGA", "").unwrap();
     let reverse = Primer::new("Native-material R", "TGACGATC", "").unwrap();
-    let revision = material_pcr::revision(&source, &origin, &forward, &reverse).unwrap();
+    let revision = material_pcr::revision(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     let previews = checked_roundtrip(
         AnalysisJob::MaterialPcrDocuments {
             molecule: source.clone(),
             origin: origin.clone(),
             forward: forward.clone(),
             reverse: reverse.clone(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         revision,
         169,
@@ -271,6 +281,7 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
             save_product: true,
             save_primers: true,
         },
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let revision = material_pcr::outputs_revision(&origin, &request).unwrap();
     let outputs = checked_roundtrip(

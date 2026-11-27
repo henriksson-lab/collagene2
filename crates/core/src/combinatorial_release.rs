@@ -359,7 +359,8 @@ impl ReleaseSession {
                 .working
                 .as_mut()
                 .ok_or_else(|| bad("private release state is unavailable"))?;
-            let charge = design::work_charge(design, construct, working)?;
+            let resolved = design::resolve_validated(design, construct, working)?;
+            let charge = resolved.declared_work();
             self.work_used = self
                 .work_used
                 .checked_add(charge)
@@ -367,7 +368,8 @@ impl ReleaseSession {
                 .ok_or_else(|| bad("aggregate release work limit reached; no outputs published"))?;
             // Compile + native finalization. Do NOT call evaluate here: finalization
             // freshly verifies once and records exact operation products itself.
-            let compiled = design::compile(design, construct, working)?;
+            let plan = design::compile_resolved(&resolved)?;
+            let compiled = design::Compiled { resolved, plan };
             let target = target_event(working, &compiled.resolved)?;
             if target.revision != compiled.plan.target_revision {
                 return Err(bad("independent target binding changed during release"));
@@ -663,10 +665,15 @@ impl Inspection {
 }
 impl Manifest {
     /// Reconstruct the current literal independent target and declared recipe,
-    /// without executing chemistry. Fresh export/release reuse must use this
+    /// reusing fresh native source views without executing the new requested
+    /// preparations. Returns their actual declared costs from that same context.
+    /// Fresh export/release reuse must use this
     /// before verification: verifying a forged plan against a forged target alone
     /// would otherwise turn an imported self-target into apparent agreement.
-    pub fn validate_current_declarations(&self, workspace: &Workspace) -> Result<(), Error> {
+    pub fn validate_current_declarations(
+        &self,
+        workspace: &Workspace,
+    ) -> Result<std::collections::BTreeMap<String, usize>, Error> {
         self.validate(workspace)?;
         let batch = batch::load(workspace, &self.batch_hash)?;
         let source_design = batch
@@ -674,6 +681,7 @@ impl Manifest {
             .design
             .as_ref()
             .ok_or_else(|| bad("missing source design"))?;
+        let mut costs = std::collections::BTreeMap::new();
         for row in &self.rows {
             let declared = selected(&batch, &row.construct_id)?;
             let resolved = design::resolve_validated(source_design, declared, workspace)?;
@@ -691,6 +699,7 @@ impl Manifest {
                     ));
                 }
             }
+            costs.insert(row.construct_id.clone(), resolved.declared_work());
             let plan = design::compile_resolved(&resolved)?;
             let asset = workspace
                 .attachments
@@ -703,7 +712,7 @@ impl Manifest {
                 ));
             }
         }
-        Ok(())
+        Ok(costs)
     }
     /// Read-only linkage validation. Imported manifests never restore a live
     /// ReleaseSession or grant product/experimental authority.

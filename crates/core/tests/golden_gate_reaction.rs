@@ -59,6 +59,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
                         forward: Primer::new("manual forward", "ATGAGTTA", "ATGCGGTCTCA").unwrap(),
                         reverse: Primer::new("manual reverse", "TTCCAAGG", "ATGCGGTCTCATCAT")
                             .unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                     treatment: None,
                 },

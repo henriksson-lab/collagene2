@@ -720,7 +720,13 @@ mod tests {
     fn exact_selected_geometry_maps_both_domains_and_excludes_tails_from_source() {
         let (m, b) = fixture("ACGACCCCGGGGTAAC", Topology::Linear);
         let (f, r) = (p("same name", "ACGA", "CGT"), p("same name", "GTTA", "GAC"));
-        let products = verification::simulate_pcr_documents(&m, &f, &r).unwrap();
+        let products = verification::simulate_pcr_documents(
+            &m,
+            &f,
+            &r,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap();
         let selected = products
             .iter()
             .find(|g| g.geometry.forward_start == 0 && g.geometry.reverse_start == 12)
@@ -756,7 +762,13 @@ mod tests {
     fn same_oligos_keep_all_four_compatible_roles_and_origin_spans() {
         let (m, b) = fixture("CCCTCGTACGA", Topology::Circular);
         let (f, r) = (p("first", "ACGA", "GG"), p("second", "ACGA", "GG"));
-        let products = verification::simulate_pcr_documents(&m, &f, &r).unwrap();
+        let products = verification::simulate_pcr_documents(
+            &m,
+            &f,
+            &r,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap();
         let selected = products
             .iter()
             .find(|g| g.geometry.forward_start == 7 && g.geometry.reverse_start == 3)

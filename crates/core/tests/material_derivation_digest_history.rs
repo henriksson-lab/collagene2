@@ -113,6 +113,7 @@ fn pcr() -> (Workspace, d::Request) {
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Native original PCR", vec![source, target], 1).unwrap();
@@ -230,11 +231,13 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
                 template: Source::Input("left".into()),
                 forward: Primer::new("LF", "AGTC", "").unwrap(),
                 reverse: Primer::new("LR", "TAGC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("right".into()),
                 forward: Primer::new("RF", "GCTA", "").unwrap(),
                 reverse: Primer::new("RR", "GACT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::HomologyAssembly {
                 fragments: vec![

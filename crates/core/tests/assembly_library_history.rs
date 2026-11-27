@@ -48,6 +48,8 @@ fn impact() -> Impact {
         name: "Literal row".into(),
         primer_review_bins: vec!["bin-2".into()],
         removed_preparation_bins: vec!["bin-3".into()],
+        retained_internal_edits: 3,
+        recovered_internal_edits: 4,
         retained_junctions: 1,
         recovered_junctions: 2,
         new_junctions: vec![0],
@@ -104,6 +106,9 @@ fn exact_unsaved_before_bytes_survive_atomic_replacement_and_native_archive() {
     let saved = history::load(&commit.workspace, &commit.record_hash).unwrap();
     assert_eq!(saved.before_draft, before);
     assert!(saved.impacts[0].candidate_cleared);
+    assert_eq!(saved.schema_version, history::SCHEMA_VERSION);
+    assert_eq!(saved.impacts[0].retained_internal_edits, 3);
+    assert_eq!(saved.impacts[0].recovered_internal_edits, 4);
     assert_eq!(saved.impacts[0].removed_preparation_bins, vec!["bin-3"]);
     assert_eq!(
         history::list(&commit.workspace).unwrap()[0].allocation_highwater,
@@ -480,4 +485,25 @@ fn competing_current_or_unsupported_draft_kinds_cannot_be_ignored() {
         assert!(history::allocation_highwater(&w, "literal-library").is_err());
         assert_eq!(serde_json::to_vec(&w).unwrap(), before);
     }
+}
+
+#[test]
+fn current_history_rejects_superseded_schema_and_out_of_bounds_internal_impact_counts() {
+    let w = fixture();
+    let record = history::create(
+        &w,
+        draft(8, "before"),
+        &draft(9, "after"),
+        &proposal(),
+        vec![binding(&w, 0)],
+        vec![impact()],
+    )
+    .unwrap();
+    let mut invalid = record.clone();
+    invalid.schema_version = history::SCHEMA_VERSION - 1;
+    assert!(history::load_record(&postcard::to_allocvec(&invalid).unwrap()).is_err());
+    let mut invalid = record;
+    invalid.impacts[0].retained_internal_edits = 512;
+    invalid.impacts[0].recovered_internal_edits = 1;
+    assert!(history::encode_record(&invalid).is_err());
 }

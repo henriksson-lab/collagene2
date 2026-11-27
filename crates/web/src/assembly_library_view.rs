@@ -344,7 +344,8 @@ fn LibraryImpacts(proposal: Arc<Proposal>) -> impl IntoView {
     let pages = count.div_ceil(20).max(1);
     view!{<section>{move||proposal.with_value(|proposal|proposal.impacts().iter().skip(page.get().min(pages-1)*20).take(20).map(|row|view!{<article><h4>{format!("{} · {}{}{}",row.name,row.construct_id,if row.construct_removed{" · removed construct"}else{""},if row.construct_added{" · restored construct"}else{""})}</h4>
         <p>{format!("Primer neighbor review: {} · removed preparation bins: {}",row.primer_review_bins.iter().map(|id|bin_label(proposal,id)).collect::<Vec<_>>().join(", "),row.removed_preparation_bins.iter().map(|id|bin_label(proposal,id)).collect::<Vec<_>>().join(", "))}</p>
-        <p>{format!("Retained literal junctions {} · previous junction declarations kept in recovery {} · new junctions (one-based) {:?}",row.retained_junctions,row.recovered_junctions,row.new_junctions.iter().map(|index|index+1).collect::<Vec<_>>())}</p>
+        <p>{format!("Internal changes retained {} · previous changes kept in recovery {}",row.retained_internal_edits,row.recovered_internal_edits)}</p>
+<p>{format!("Retained literal junctions {} · previous junction declarations kept in recovery {} · new junctions (one-based) {:?}",row.retained_junctions,row.recovered_junctions,row.new_junctions.iter().map(|index|index+1).collect::<Vec<_>>())}</p>
         <p>{format!("Overlap text changed {} · source-role order changed {} · previous candidate declaration cleared {}",row.overlap_text_changed,row.role_order_changed,row.candidate_cleared)}</p>
     </article>}).collect_view())}<p>{move||format!("Impact page {} of {pages} · {count} construct records",page.get().min(pages-1)+1)}</p>
     <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|value|*value=value.saturating_sub(1))>"Previous impacts"</button>

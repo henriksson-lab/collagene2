@@ -701,7 +701,7 @@ mod tests {
         frame.attachments.insert(
             blake3::hash(&bytes).to_hex().to_string(),
             WorkspaceAttachment {
-                kind: "assembly-draft-v16".into(),
+                kind: crate::assembly_draft_model::ATTACHMENT_KIND.into(),
                 name: "Active draft".into(),
                 media_type: "application/json".into(),
                 bytes,
@@ -818,6 +818,7 @@ mod tests {
                 molecule: source,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("original".into()),
                 forward: Primer::new("Original forward", "ACGACCCC", "").unwrap(),
                 reverse: Primer::new("Original reverse", "GTTACCCC", "").unwrap(),
@@ -874,6 +875,7 @@ mod tests {
             )
             .unwrap(),
         );
+        draft.slots[0].material_origin = draft.methods.rows[0].run_origin.clone();
         draft.sync_rows();
         draft.validate().unwrap();
         assert_eq!(draft.version, assembly_draft_model::CURRENT_VERSION);
@@ -1063,7 +1065,7 @@ mod tests {
         let active_hash = damaged
             .attachments
             .iter()
-            .find(|(_, asset)| asset.kind == "assembly-draft-v16")
+            .find(|(_, asset)| asset.kind == crate::assembly_draft_model::ATTACHMENT_KIND)
             .unwrap()
             .0;
         assert!(discard_malformed(&damaged, active_hash).is_err());

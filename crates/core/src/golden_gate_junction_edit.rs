@@ -123,6 +123,7 @@ fn retained_raw(row: &ligation_recipe::Fragment) -> Result<(), Error> {
             forward,
             reverse,
             selection,
+            template_strand: crate::chemistry::Strand::Top,
             ..
         } => {
             for p in [forward, reverse] {
@@ -148,7 +149,11 @@ pub(crate) fn retained_pin(
 ) -> Result<(), Error> {
     let selection = match &row.source.preparation {
         Preparation::CatalogDigest { selection, .. }
-        | Preparation::PcrCatalogDigest { selection, .. } => selection,
+        | Preparation::PcrCatalogDigest {
+            selection,
+            template_strand: crate::chemistry::Strand::Top,
+            ..
+        } => selection,
         _ => return Err(bad("retained digest is not catalog pinned")),
     };
     let enzymes = selection.resolved_enzymes(catalog)?;
@@ -649,6 +654,8 @@ impl Report {
                         selection,
                         fragment_index,
                         repair: None,
+                        template_strand: crate::chemistry::Strand::Top,
+                        ..
                     } = &row.source.preparation
                     else {
                         return Err(bad(

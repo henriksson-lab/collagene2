@@ -215,6 +215,7 @@ fn mismatch_preparation_reuses_a_fresh_saved_origin_and_preserves_the_replay_dep
             template: Source::Input("source".into()),
             forward: Primer::new("OriginF", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("OriginR", "TACAGGTC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Original inputs", vec![source, origin_target], 1).unwrap();
@@ -357,6 +358,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
                     preparation: Preparation::ExactPcr {
                         forward: Primer::new("IF", "GGG", "").unwrap(),
                         reverse: Primer::new("IR", "AAA", "").unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                 },
                 action: collagene_core::tailing_recipe::Action::AddTail {

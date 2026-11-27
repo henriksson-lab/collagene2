@@ -182,7 +182,7 @@ mod tests {
         let raw = crate::assembly_draft_model::encode_raw(&draft).unwrap();
         attachment(
             &mut frame,
-            "assembly-draft-v16",
+            crate::assembly_draft_model::ATTACHMENT_KIND,
             "Current working draft",
             &raw,
         );
@@ -233,7 +233,7 @@ mod tests {
         let key = current
             .attachments
             .iter()
-            .find(|(_, a)| a.kind == "assembly-draft-v16")
+            .find(|(_, a)| a.kind == crate::assembly_draft_model::ATTACHMENT_KIND)
             .unwrap()
             .0
             .clone();

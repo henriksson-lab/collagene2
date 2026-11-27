@@ -89,7 +89,7 @@ async fn actual_added_sites_unique_versus_ambiguous_and_stale_originals() {
         .id
         .clone();
     let selection = collagene_core::catalog_digest::select(&catalog, &[id]).unwrap();
-    let request = json!({"source_role":"original","forward":Primer::new("Added forward site","AAA","ATGCGAATTC").unwrap(),"reverse":Primer::new("Added reverse site","AAA","ATGCGAATTC").unwrap(),"selection":selection,"options":InspectionOptions::default()});
+    let request = json!({"template_strand":"Top","source_role":"original","forward":Primer::new("Added forward site","AAA","ATGCGAATTC").unwrap(),"reverse":Primer::new("Added reverse site","AAA","ATGCGAATTC").unwrap(),"selection":selection,"options":InspectionOptions::default()});
     let args = json!({"document":named(&imported,"unique"),"request":request,"fragment_start":0,"max_fragments":2});
     let result = call(&client, "inspect_pcr_digest", args.clone()).await;
     assert_eq!(result["pcr_geometry_count"], 1);

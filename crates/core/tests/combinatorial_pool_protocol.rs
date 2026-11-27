@@ -38,13 +38,17 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             event_id: doc.head_event.clone().unwrap(),
             revision: doc.head.clone(),
         },
-        start: 11,
-        end: 11 + A.len(),
-        reverse: false,
+        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+            start: 11,
+            end: 11 + A.len(),
+            reverse: false,
+        },
+        preparation_reverse: false,
         preparation: None,
         treatment: None,
     };
     let mut d = Design {
+        material_bindings: vec![],
         id: "pool-wire".into(),
         name: "one chosen whole-source product".into(),
         circular: true,
@@ -73,6 +77,8 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             choice_id: "vector-choice".into(),
         }],
         target: TargetDeclaration::OriginalRegions {
+            substitutions: vec![],
+            edits: vec![],
             junction_edits: vec![],
         },
         overrides: None,

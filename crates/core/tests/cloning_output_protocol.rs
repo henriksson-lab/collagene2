@@ -129,6 +129,7 @@ fn pcr() -> (DesignPlan, Molecule) {
             template: Source::Input("template".into()),
             forward: Primer::new("=F", "AACCGGTT", "CG").unwrap(),
             reverse: Primer::new("R", "TTCCAAGG", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     (plan, target)

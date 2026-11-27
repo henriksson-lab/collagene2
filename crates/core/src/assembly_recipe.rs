@@ -22,8 +22,8 @@ pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
 pub(crate) const MAX_STEPS_PER_ROW: usize = 7;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material_derivation::Capsule,preparation:RunPreparation}}}
-dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer},PcrCatalogDigest{forward:Primer,reverse:Primer,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::run_material::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material_derivation::Capsule,preparation:RunPreparation}}}
+dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::overlap_extension_pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::overlap_extension_pcr::Request,selection:crate::catalog_digest::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 pub(crate) fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
     d: D,
 ) -> Result<Option<T>, D::Error> {
@@ -216,17 +216,23 @@ impl RunPreparation {
                     options: options.clone(),
                 })
             }
-            Self::ExactPcr { forward, reverse } => {
+            Self::ExactPcr {
+                forward,
+                reverse,
+                template_strand,
+            } => {
                 primer(forward)?;
                 primer(reverse)?;
                 Ok(Preparation::ExactPcr {
                     forward: forward.clone(),
                     reverse: reverse.clone(),
+                    template_strand: *template_strand,
                 })
             }
             Self::PcrCatalogDigest {
                 forward,
                 reverse,
+                template_strand,
                 selection,
                 fragment_index,
                 repair,
@@ -240,6 +246,7 @@ impl RunPreparation {
                 Ok(Preparation::PcrCatalogDigest {
                     forward: forward.clone(),
                     reverse: reverse.clone(),
+                    template_strand: *template_strand,
                     selection: selection.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
@@ -948,214 +955,19 @@ fn preparation_preflight_inner(
                 "Imported physical evidence cannot become original generation authority.",
             ));
         }
-        let units = match preparation {
-            Preparation::OverlapExtensionPcrCatalogDigest {
-                request,
-                selection,
-                fragment_index,
-                repair,
-            } => {
-                overlap_extension_catalog_shape(request, selection, *fragment_index)?;
-                let (pcr_work, extra) = request.work(m.sequence.len())?;
-                let enzymes =
-                    selection.resolved_enzymes(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)?;
-                let width = enzymes.iter().try_fold(0usize, |sum, e| {
-                    sum.checked_add(e.recognition.len() * 2)
-                        .ok_or(Error::TooLarge)
-                })?;
-                let amplicon = m
-                    .sequence
-                    .len()
-                    .checked_mul(2)
-                    .and_then(|n| n.checked_add(request.left.forward.tail.len()))
-                    .and_then(|n| n.checked_add(request.left.reverse.tail.len()))
-                    .and_then(|n| n.checked_add(request.right.forward.tail.len()))
-                    .and_then(|n| n.checked_add(request.right.reverse.tail.len()))
-                    .and_then(|n| n.checked_sub(request.extension.overlap))
-                    .and_then(|n| n.checked_add(request.outer.forward.tail.len()))
-                    .and_then(|n| n.checked_add(request.outer.reverse.tail.len()))
-                    .ok_or(Error::TooLarge)?;
-                let digest_material = amplicon
-                    .checked_mul(1 + usize::from(repair.is_some()))
-                    .ok_or(Error::TooLarge)?;
-                role_bases = role_bases
-                    .checked_add(extra)
-                    .and_then(|n| n.checked_add(digest_material))
-                    .filter(|n| *n <= MAX_ROLE_BASES)
-                    .ok_or(Error::TooLarge)?;
-                amplicon
-                    .checked_mul(width)
-                    .and_then(|n| n.checked_add(pcr_work))
-                    .ok_or(Error::TooLarge)?
-            }
-            Preparation::OverlapExtensionPcr { request } => {
-                let (units, extra) = request.work(m.sequence.len())?;
-                role_bases = role_bases
-                    .checked_add(extra)
-                    .filter(|n| *n <= MAX_ROLE_BASES)
-                    .ok_or(Error::TooLarge)?;
-                units
-            }
-            Preparation::FromRun { .. } | Preparation::FromDerived { .. } => {
-                return Err(bad("nested material preparation is unsupported"));
-            }
-            Preparation::AnnealedOligos {
-                bottom_input_id,
-                options,
-                candidate_index,
-            } => {
-                anneal_shape(bottom_input_id, options, *candidate_index)?;
-                if bottom_input_id == &row.input_id {
-                    return Err(bad(
-                        "annealing requires two distinct original input identities",
-                    ));
-                }
-                let bottom = lookup
-                    .get(bottom_input_id.as_str())
-                    .copied()
-                    .ok_or_else(|| bad("unknown bottom oligo original input"))?;
-                anneal_sources(m, bottom)?;
-                role_bases = role_bases
-                    .checked_add(bottom.sequence.len())
-                    .filter(|n| *n <= MAX_ROLE_BASES)
-                    .ok_or(Error::TooLarge)?;
-                // Reserve the actual exhaustive offset upper bound, capped by the recorded search budget.
-                m.sequence
-                    .len()
-                    .checked_add(bottom.sequence.len())
-                    .and_then(|n| n.checked_mul(m.sequence.len().min(bottom.sequence.len())))
-                    .ok_or(Error::TooLarge)?
-                    .min(options.max_comparisons)
-            }
-            Preparation::DeclaredDuplex { .. } => {
-                verification::declared_source_termini_preflight(m)?;
-                0
-            }
-            Preparation::WholeLinear => {
-                if m.topology != Topology::Linear {
-                    return Err(bad(
-                        "WholeLinear cannot materialize a circular source; specify actual PCR or digest preparation",
-                    ));
-                }
-                0
-            }
-            Preparation::MismatchPcr {
-                forward,
-                reverse,
-                options,
-            } => {
-                mismatch_pcr_shape(forward, reverse, options)?;
-                mismatch_pcr_work(m.sequence.len(), forward, reverse, options)?
-            }
-            Preparation::ExactPcr { forward, reverse } => {
-                primer(forward)?;
-                primer(reverse)?;
-                m.sequence
-                    .len()
-                    .checked_mul(forward.annealing.len() + reverse.annealing.len())
-                    .and_then(|n| n.checked_mul(4))
-                    .ok_or(Error::TooLarge)?
-            }
-            Preparation::PcrCatalogDigest {
-                forward,
-                reverse,
-                selection,
-                fragment_index,
-                ..
-            }
-            | Preparation::MismatchPcrCatalogDigest {
-                forward,
-                reverse,
-                selection,
-                fragment_index,
-                ..
-            } => {
-                if let Preparation::MismatchPcrCatalogDigest { options, .. } = preparation {
-                    mismatch_pcr_catalog_shape(
-                        forward,
-                        reverse,
-                        options,
-                        selection,
-                        *fragment_index,
-                    )?;
-                } else {
-                    primer(forward)?;
-                    primer(reverse)?;
-                }
-                if *fragment_index > 100_000 {
-                    return Err(Error::TooLarge);
-                }
-                let enzymes =
-                    selection.resolved_enzymes(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)?;
-                let width = enzymes.iter().try_fold(0usize, |sum, e| {
-                    sum.checked_add(e.recognition.len() * 2)
-                        .ok_or(Error::TooLarge)
-                })?;
-                let amplicon = m
-                    .sequence
-                    .len()
-                    .checked_add(forward.tail.len())
-                    .and_then(|n| n.checked_add(reverse.tail.len()))
-                    .ok_or(Error::TooLarge)?;
-                role_bases = role_bases
-                    .checked_add(forward.tail.len())
-                    .and_then(|n| n.checked_add(reverse.tail.len()))
-                    .filter(|n| *n <= MAX_ROLE_BASES)
-                    .ok_or(Error::TooLarge)?;
-                let pcr = if let Preparation::MismatchPcrCatalogDigest { options, .. } = preparation
-                {
-                    mismatch_pcr_work(m.sequence.len(), forward, reverse, options)?
-                } else {
-                    m.sequence
-                        .len()
-                        .checked_mul(forward.annealing.len() + reverse.annealing.len())
-                        .and_then(|n| n.checked_mul(4))
-                        .ok_or(Error::TooLarge)?
-                };
-                amplicon
-                    .checked_mul(width)
-                    .and_then(|n| n.checked_add(pcr))
-                    .ok_or(Error::TooLarge)?
-            }
-            Preparation::CatalogDigest {
-                selection,
-                fragment_index,
-                ..
-            } => {
-                if *fragment_index > 100_000 {
-                    return Err(Error::TooLarge);
-                }
-                let enzymes =
-                    selection.resolved_enzymes(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)?;
-                let width = enzymes.iter().try_fold(0usize, |sum, e| {
-                    sum.checked_add(e.recognition.len() * 2)
-                        .ok_or(Error::TooLarge)
-                })?;
-                m.sequence.len().checked_mul(width).ok_or(Error::TooLarge)?
-            }
-            Preparation::Digest {
-                enzymes,
-                fragment_index,
-                ..
-            } => {
-                if enzymes.is_empty() || enzymes.len() > 32 || *fragment_index > 100_000 {
-                    return Err(Error::TooLarge);
-                }
-                let mut names = BTreeSet::new();
-                let mut width = 0usize;
-                for name in enzymes {
-                    token(name, 128)?;
-                    if !names.insert(name) {
-                        return Err(bad("duplicate digest enzyme"));
-                    }
-                    let enzyme=catalog.iter().find(|e|e.name.eq_ignore_ascii_case(name)).ok_or_else(||bad("digest enzyme is not supported by the existing typed Digest operation"))?;
-                    width = width
-                        .checked_add(enzyme.recognition.len() * 2)
-                        .ok_or(Error::TooLarge)?;
-                }
-                m.sequence.len().checked_mul(width).ok_or(Error::TooLarge)?
-            }
-        };
+        let (units, extra) = preparation_cost(
+            m,
+            preparation,
+            &row.input_id,
+            &lookup,
+            &catalog,
+            pinned_catalog.as_ref(),
+            None,
+        )?;
+        role_bases = role_bases
+            .checked_add(extra)
+            .filter(|n| *n <= MAX_ROLE_BASES)
+            .ok_or(Error::TooLarge)?;
         work = work
             .checked_add(units)
             .filter(|n| *n <= MAX_PREPARATION_WORK)
@@ -1163,6 +975,311 @@ fn preparation_preflight_inner(
     }
     hash(&(inputs, target, name, fragments))?;
     Ok(())
+}
+/// Existing native declared-preparation work, also used by aggregate batches.
+/// This performs no search or replay and copies no closed origin. The flat child
+/// conversion copies only the bounded current preparation declaration.
+pub(crate) fn preparation_work(
+    source: &Molecule,
+    preparation: &Preparation,
+) -> Result<usize, Error> {
+    let child;
+    let effective = match preparation {
+        Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
+            child = preparation.preparation()?;
+            &child
+        }
+        _ => preparation,
+    };
+    let catalog = crate::analysis::starter_enzymes();
+    let pinned = if preparation_catalog_selection(effective).is_some() {
+        Some(crate::catalog_digest::builtin_catalog()?)
+    } else {
+        None
+    };
+    preparation_cost(
+        source,
+        effective,
+        "",
+        &BTreeMap::new(),
+        &catalog,
+        pinned.as_ref(),
+        None,
+    )
+    .map(|(work, _)| work)
+}
+/// Actual already-resolved source accounting. No origin replay or model clone;
+/// callers which own a native context must not budget Bottom work as top length.
+pub(crate) fn preparation_work_from_frame(
+    source: crate::pcr_source::Template<'_>,
+    preparation: &Preparation,
+) -> Result<usize, Error> {
+    let child;
+    let effective = match preparation {
+        Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
+            child = preparation.preparation()?;
+            &child
+        }
+        _ => preparation,
+    };
+    let strand = match effective {
+        Preparation::ExactPcr {
+            template_strand, ..
+        }
+        | Preparation::PcrCatalogDigest {
+            template_strand, ..
+        } => *template_strand,
+        Preparation::OverlapExtensionPcr { request }
+        | Preparation::OverlapExtensionPcrCatalogDigest { request, .. } => {
+            let left = source.with_strand(request.left.template_strand)?;
+            let right = source.with_strand(request.right.template_strand)?;
+            if left.sequence.len() >= right.sequence.len() {
+                left.strand
+            } else {
+                right.strand
+            }
+        }
+        _ => crate::chemistry::Strand::Top,
+    };
+    let frame = source.with_strand(strand)?;
+    let catalog = crate::analysis::starter_enzymes();
+    let pinned = if preparation_catalog_selection(effective).is_some() {
+        Some(crate::catalog_digest::builtin_catalog()?)
+    } else {
+        None
+    };
+    preparation_cost(
+        source.reference,
+        effective,
+        "",
+        &BTreeMap::new(),
+        &catalog,
+        pinned.as_ref(),
+        Some(frame),
+    )
+    .map(|(units, _)| units)
+}
+fn preparation_cost(
+    m: &Molecule,
+    preparation: &Preparation,
+    input_id: &str,
+    lookup: &BTreeMap<&str, &Molecule>,
+    catalog: &[crate::analysis::Enzyme],
+    pinned_catalog: Option<&crate::catalog_digest::catalog::Catalog>,
+    frame: Option<crate::pcr_source::Template<'_>>,
+) -> Result<(usize, usize), Error> {
+    let source_bases = frame.map_or(m.sequence.len(), |v| v.sequence.len());
+    let comparison_bases = frame
+        .map(|v| v.comparison_bases())
+        .transpose()?
+        .unwrap_or(source_bases);
+    let mut extra_bases = 0usize;
+    let units = match preparation {
+        Preparation::OverlapExtensionPcrCatalogDigest {
+            request,
+            selection,
+            fragment_index,
+            repair,
+        } => {
+            overlap_extension_catalog_shape(request, selection, *fragment_index)?;
+            let (pcr_work, extra) = request.work(source_bases)?;
+            let pcr_work = pcr_work
+                .checked_mul(comparison_bases.div_ceil(source_bases))
+                .ok_or(Error::TooLarge)?;
+            let enzymes = selection.resolved_enzymes(pinned_catalog.ok_or(Error::TooLarge)?)?;
+            let width = enzymes.iter().try_fold(0usize, |sum, e| {
+                sum.checked_add(e.recognition.len() * 2)
+                    .ok_or(Error::TooLarge)
+            })?;
+            let amplicon = source_bases
+                .checked_mul(2)
+                .and_then(|n| n.checked_add(request.left.forward.tail.len()))
+                .and_then(|n| n.checked_add(request.left.reverse.tail.len()))
+                .and_then(|n| n.checked_add(request.right.forward.tail.len()))
+                .and_then(|n| n.checked_add(request.right.reverse.tail.len()))
+                .and_then(|n| n.checked_sub(request.extension.overlap))
+                .and_then(|n| n.checked_add(request.outer.forward.tail.len()))
+                .and_then(|n| n.checked_add(request.outer.reverse.tail.len()))
+                .ok_or(Error::TooLarge)?;
+            let digest_material = amplicon
+                .checked_mul(1 + usize::from(repair.is_some()))
+                .ok_or(Error::TooLarge)?;
+            extra_bases = extra_bases
+                .checked_add(extra)
+                .and_then(|n| n.checked_add(digest_material))
+                .filter(|n| *n <= MAX_ROLE_BASES)
+                .ok_or(Error::TooLarge)?;
+            amplicon
+                .checked_mul(width)
+                .and_then(|n| n.checked_add(pcr_work))
+                .ok_or(Error::TooLarge)?
+        }
+        Preparation::OverlapExtensionPcr { request } => {
+            let (units, extra) = request.work(source_bases)?;
+            let units = units
+                .checked_mul(comparison_bases.div_ceil(source_bases))
+                .ok_or(Error::TooLarge)?;
+            extra_bases = extra_bases
+                .checked_add(extra)
+                .filter(|n| *n <= MAX_ROLE_BASES)
+                .ok_or(Error::TooLarge)?;
+            units
+        }
+        Preparation::FromRun { .. } | Preparation::FromDerived { .. } => {
+            return Err(bad("nested material preparation is unsupported"));
+        }
+        Preparation::AnnealedOligos {
+            bottom_input_id,
+            options,
+            candidate_index,
+        } => {
+            anneal_shape(bottom_input_id, options, *candidate_index)?;
+            if bottom_input_id == input_id {
+                return Err(bad(
+                    "annealing requires two distinct original input identities",
+                ));
+            }
+            let bottom = lookup
+                .get(bottom_input_id.as_str())
+                .copied()
+                .ok_or_else(|| bad("unknown bottom oligo original input"))?;
+            anneal_sources(m, bottom)?;
+            extra_bases = extra_bases
+                .checked_add(bottom.sequence.len())
+                .filter(|n| *n <= MAX_ROLE_BASES)
+                .ok_or(Error::TooLarge)?;
+            // Reserve the actual exhaustive offset upper bound, capped by the recorded search budget.
+            m.sequence
+                .len()
+                .checked_add(bottom.sequence.len())
+                .and_then(|n| n.checked_mul(m.sequence.len().min(bottom.sequence.len())))
+                .ok_or(Error::TooLarge)?
+                .min(options.max_comparisons)
+        }
+        Preparation::DeclaredDuplex { .. } => {
+            verification::declared_source_termini_preflight(m)?;
+            0
+        }
+        Preparation::WholeLinear => {
+            if m.topology != Topology::Linear {
+                return Err(bad(
+                    "WholeLinear cannot materialize a circular source; specify actual PCR or digest preparation",
+                ));
+            }
+            0
+        }
+        Preparation::MismatchPcr {
+            forward,
+            reverse,
+            options,
+        } => {
+            mismatch_pcr_shape(forward, reverse, options)?;
+            mismatch_pcr_work(m.sequence.len(), forward, reverse, options)?
+        }
+        Preparation::ExactPcr {
+            forward, reverse, ..
+        } => {
+            primer(forward)?;
+            primer(reverse)?;
+            comparison_bases
+                .checked_mul(forward.annealing.len() + reverse.annealing.len())
+                .and_then(|n| n.checked_mul(4))
+                .ok_or(Error::TooLarge)?
+        }
+        Preparation::PcrCatalogDigest {
+            forward,
+            reverse,
+            selection,
+            fragment_index,
+            ..
+        }
+        | Preparation::MismatchPcrCatalogDigest {
+            forward,
+            reverse,
+            selection,
+            fragment_index,
+            ..
+        } => {
+            if let Preparation::MismatchPcrCatalogDigest { options, .. } = preparation {
+                mismatch_pcr_catalog_shape(forward, reverse, options, selection, *fragment_index)?;
+            } else {
+                primer(forward)?;
+                primer(reverse)?;
+            }
+            if *fragment_index > 100_000 {
+                return Err(Error::TooLarge);
+            }
+            let enzymes = selection.resolved_enzymes(pinned_catalog.ok_or(Error::TooLarge)?)?;
+            let width = enzymes.iter().try_fold(0usize, |sum, e| {
+                sum.checked_add(e.recognition.len() * 2)
+                    .ok_or(Error::TooLarge)
+            })?;
+            let amplicon = source_bases
+                .checked_add(forward.tail.len())
+                .and_then(|n| n.checked_add(reverse.tail.len()))
+                .ok_or(Error::TooLarge)?;
+            extra_bases = extra_bases
+                .checked_add(forward.tail.len())
+                .and_then(|n| n.checked_add(reverse.tail.len()))
+                .filter(|n| *n <= MAX_ROLE_BASES)
+                .ok_or(Error::TooLarge)?;
+            let pcr = if let Preparation::MismatchPcrCatalogDigest { options, .. } = preparation {
+                mismatch_pcr_work(m.sequence.len(), forward, reverse, options)?
+            } else {
+                comparison_bases
+                    .checked_mul(forward.annealing.len() + reverse.annealing.len())
+                    .and_then(|n| n.checked_mul(4))
+                    .ok_or(Error::TooLarge)?
+            };
+            amplicon
+                .checked_mul(width)
+                .and_then(|n| n.checked_add(pcr))
+                .ok_or(Error::TooLarge)?
+        }
+        Preparation::CatalogDigest {
+            selection,
+            fragment_index,
+            ..
+        } => {
+            if *fragment_index > 100_000 {
+                return Err(Error::TooLarge);
+            }
+            let enzymes = selection.resolved_enzymes(pinned_catalog.ok_or(Error::TooLarge)?)?;
+            let width = enzymes.iter().try_fold(0usize, |sum, e| {
+                sum.checked_add(e.recognition.len() * 2)
+                    .ok_or(Error::TooLarge)
+            })?;
+            m.sequence.len().checked_mul(width).ok_or(Error::TooLarge)?
+        }
+        Preparation::Digest {
+            enzymes,
+            fragment_index,
+            ..
+        } => {
+            if enzymes.is_empty() || enzymes.len() > 32 || *fragment_index > 100_000 {
+                return Err(Error::TooLarge);
+            }
+            let mut names = BTreeSet::new();
+            let mut width = 0usize;
+            for name in enzymes {
+                token(name, 128)?;
+                if !names.insert(name) {
+                    return Err(bad("duplicate digest enzyme"));
+                }
+                let enzyme = catalog
+                    .iter()
+                    .find(|e| e.name.eq_ignore_ascii_case(name))
+                    .ok_or_else(|| {
+                        bad("digest enzyme is not supported by the existing typed Digest operation")
+                    })?;
+                width = width
+                    .checked_add(enzyme.recognition.len() * 2)
+                    .ok_or(Error::TooLarge)?;
+            }
+            m.sequence.len().checked_mul(width).ok_or(Error::TooLarge)?
+        }
+    };
+    Ok((units, extra_bases))
 }
 pub fn preflight(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Result<(), Error> {
     if inputs.is_empty() || inputs.len() > MAX_ROWS {
@@ -1399,13 +1516,21 @@ pub(crate) fn preparation_steps(
                 reverse: reverse.clone(),
                 options: options.clone(),
             }),
-            Preparation::ExactPcr { forward, reverse }
+            Preparation::ExactPcr {
+                forward,
+                reverse,
+                template_strand,
+            }
             | Preparation::PcrCatalogDigest {
-                forward, reverse, ..
+                forward,
+                reverse,
+                template_strand,
+                ..
             } => Some(Operation::Pcr {
                 template: input.clone(),
                 forward: forward.clone(),
                 reverse: reverse.clone(),
+                template_strand: *template_strand,
             }),
         };
         let preparation_step = first_step.or_else(|| operation.as_ref().map(|_| steps.len()));

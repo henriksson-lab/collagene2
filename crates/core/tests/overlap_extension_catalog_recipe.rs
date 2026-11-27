@@ -31,6 +31,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("Forward", f, ft).unwrap(),
         reverse: Primer::new("Reverse", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn request() -> Request {
@@ -193,6 +194,7 @@ fn exact_saved_origin_precedes_all_seven_preparation_steps_without_retargeting()
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Origin", vec![stock, target], 1).unwrap();

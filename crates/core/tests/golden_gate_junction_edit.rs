@@ -46,6 +46,7 @@ fn fixture(enzyme: GoldenGateEnzyme) -> (Vec<PlanInput>, Request) {
                 .unwrap(),
                 fragment_index: 1,
                 repair: None,
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         },
         treatment: None,

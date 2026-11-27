@@ -41,9 +41,14 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     };
     let forward = Primer::new("F", "CACCA", "").unwrap();
     let reverse = Primer::new("R", "CGTCA", "").unwrap();
-    let preview = verification::simulate_pcr_documents(&source, &forward, &reverse)
-        .unwrap()
-        .remove(0);
+    let preview = verification::simulate_pcr_documents(
+        &source,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap()
+    .remove(0);
     let prepared = native::prepare_install(
         &w,
         &native::Request {
@@ -57,6 +62,7 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
                     expected_preview_revision: preview.molecule.revision(),
                     geometry: preview.geometry,
                 },
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             name: "Reusable PCR insert template".into(),
             save_primers: false,

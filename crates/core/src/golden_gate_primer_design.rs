@@ -463,6 +463,7 @@ pub(crate) fn design_row_with_flanks(
             selection: selection.clone(),
             fragment_index: index,
             repair: None,
+            template_strand: crate::chemistry::Strand::Top,
         },
     };
     let row = Row {
@@ -586,6 +587,8 @@ impl Report {
                 selection,
                 fragment_index,
                 repair: None,
+                template_strand: crate::chemistry::Strand::Top,
+                ..
             } = &spec.preparation
             else {
                 return Err(bad(

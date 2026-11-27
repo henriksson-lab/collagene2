@@ -31,6 +31,7 @@ fn primers(f: &str, r: &str) -> RunPreparation {
     RunPreparation::ExactPcr {
         forward: Primer::new("New forward", f, "").unwrap(),
         reverse: Primer::new("New reverse", r, "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 struct Fixture {
@@ -74,11 +75,13 @@ fn fixture(incomplete: bool) -> Fixture {
                     template: Source::Input("left".into()),
                     forward: Primer::new("Historical LF", "AGTC", "").unwrap(),
                     reverse: Primer::new("Historical LR", "TAGC", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 Operation::Pcr {
                     template: Source::Input("right".into()),
                     forward: Primer::new("Historical RF", "GCTA", "").unwrap(),
                     reverse: Primer::new("Historical RR", "GACT", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 Operation::HomologyAssembly {
                     fragments: vec![
@@ -124,6 +127,7 @@ fn fixture(incomplete: bool) -> Fixture {
                 template: Source::Input("stock".into()),
                 forward: Primer::new("Historical forward", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Historical reverse", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             }],
         };
         (
@@ -254,9 +258,13 @@ fn compile(f: &Fixture) -> (Vec<PlanInput>, Molecule, a::Recipe, a::Compiled) {
                 role: "vector-role".into(),
                 input_id: "vector".into(),
                 preparation: match primers("CACGTTCG", vector_reverse) {
-                    RunPreparation::ExactPcr { forward, reverse } => {
-                        Preparation::ExactPcr { forward, reverse }
-                    }
+                    RunPreparation::ExactPcr {
+                        forward, reverse, ..
+                    } => Preparation::ExactPcr {
+                        forward,
+                        reverse,
+                        template_strand: collagene_core::chemistry::Strand::Top,
+                    },
                     _ => unreachable!(),
                 },
                 reverse: false,

@@ -169,6 +169,7 @@ fn pcr_stage(
         .iter()
         .enumerate()
         .map(|(index, p)| GeometrySummary {
+            template_strand: p.geometry.template_strand,
             index,
             forward_start: p.geometry.forward_start,
             reverse_start: p.geometry.reverse_start,
@@ -272,9 +273,15 @@ pub fn inspect(
                 &pair.forward,
                 &pair.reverse,
                 &material.tracked,
+                pair.template_strand,
             )
         } else {
-            verification::simulate_pcr_documents(source, &pair.forward, &pair.reverse)
+            verification::simulate_pcr_documents(
+                source,
+                &pair.forward,
+                &pair.reverse,
+                pair.template_strand,
+            )
         }
     };
     let (left_stage, left) = pcr_stage(
@@ -320,6 +327,7 @@ pub fn inspect(
                         &outer.forward,
                         &outer.reverse,
                         &extended,
+                        outer.template_strand,
                     ),
                     &mut findings,
                 )?;

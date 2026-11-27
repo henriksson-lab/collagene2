@@ -93,7 +93,7 @@ async fn whole_reaction_tools_retain_vector_stuffer_amplicon_flanks_and_uncut_ca
     .await;
     let before = call(&c, "export_document", vector.clone()).await;
     let inputs = json!([{"id":"vector","document":vector},{"id":"insert","document":insert},{"id":"carry","document":carry}]);
-    let request = json!({"name":"declared tube","rows":[{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},"role":"vector","input_id":"vector","substrate":{"WholeSource":{"origin":null}}},{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},"role":"amplicon","input_id":"insert","substrate":{"Prepared":{"preparation":{"ExactPcr":{"forward":Primer::new("manualF","ATGAGTTA","ATGCGGTCTCA").unwrap(),"reverse":Primer::new("manualR","TTCCAAGG","ATGCGGTCTCATCAT").unwrap()}},"treatment":null}}},{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},"role":"uncut","input_id":"carry","substrate":{"WholeSource":{"origin":null}}}],"options":GoldenGateOptions{max_fragments:3,..Default::default()}});
+    let request = json!({"name":"declared tube","rows":[{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},"role":"vector","input_id":"vector","substrate":{"WholeSource":{"origin":null}}},{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},"role":"amplicon","input_id":"insert","substrate":{"Prepared":{"preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("manualF","ATGAGTTA","ATGCGGTCTCA").unwrap(),"reverse":Primer::new("manualR","TTCCAAGG","ATGCGGTCTCATCAT").unwrap()}},"treatment":null}}},{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},"role":"uncut","input_id":"carry","substrate":{"WholeSource":{"origin":null}}}],"options":GoldenGateOptions{max_fragments:3,..Default::default()}});
     let args = json!({"origin_workspaces":[],"inputs":inputs,"target":target,"request":request});
     let inspected = call(&c, "inspect_golden_gate_reaction", args.clone()).await;
     assert_eq!(inspected["state"], "advisory");
@@ -222,6 +222,7 @@ async fn saved_circular_whole_source_requires_exact_retained_workspace_and_canno
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(0),

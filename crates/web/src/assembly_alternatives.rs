@@ -38,6 +38,10 @@ pub struct Edits {
     pub methods: MethodsState,
     #[serde(deserialize_with = "deserialize_junction_edits")]
     pub junction_edits: Vec<assembly_junction_edit::Edit>,
+    #[serde(deserialize_with = "deserialize_substitutions")]
+    pub substitutions: Vec<collagene_core::assembly_substitution_intent::Substitution>,
+    #[serde(deserialize_with = "deserialize_internal_edits")]
+    pub edits: Vec<collagene_core::assembly_edit_intent::Edit>,
     pub active_slot: usize,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +111,17 @@ decoder!(
     deserialize_junction_edits,
     assembly_junction_edit::Edit,
     MAX_BINS
+);
+
+decoder!(
+    deserialize_substitutions,
+    collagene_core::assembly_substitution_intent::Substitution,
+    256
+);
+decoder!(
+    deserialize_internal_edits,
+    collagene_core::assembly_edit_intent::Edit,
+    256
 );
 
 fn token(text: &str, max: usize) -> bool {
@@ -195,7 +210,10 @@ pub fn identity(draft: &Draft) -> Option<(String, String, Vec<String>)> {
 }
 
 fn same_geometry(a: &Slot, b: &Slot) -> bool {
-    a.captured == b.captured && a.selector == b.selector && a.digest_geometry == b.digest_geometry
+    a.captured == b.captured
+        && a.selector == b.selector
+        && a.digest_geometry == b.digest_geometry
+        && a.material_origin == b.material_origin
 }
 /// Source choice authority is explicit; an unfinished working source edit may be
 /// persisted, but must not silently inherit the previously chosen source ID.
@@ -248,12 +266,6 @@ impl Library {
                 .filter(|n| *n <= MAX_CHOICES)
                 .ok_or("Assembly alternatives exceed 256 retained choices.")?;
             for choice in &bin.choices {
-                if matches!(
-                    &choice.slot.selector,
-                    collagene_core::assembly_intent::Selector::MaterialStrandRange { .. }
-                ) {
-                    return Err("Library alternatives currently require reference ranges; keep actual-strand contributions in an ordinary assembly".into());
-                }
                 if !entity_id(self, &choice.id, "choice") || !ids.insert(&choice.id) {
                     return Err("Invalid or duplicate assembly choice identity.".into());
                 }
@@ -272,6 +284,12 @@ impl Library {
                 self.bins.len(),
                 &row.edits.methods,
                 &row.edits.junction_edits,
+            )?;
+            assembly_workspace::validate_internal_declarations(
+                &row.edits.methods,
+                self.bins.len(),
+                &row.edits.substitutions,
+                &row.edits.edits,
             )?;
             for (index, (choice, input)) in selected
                 .into_iter()
@@ -295,6 +313,8 @@ fn edits(draft: &Draft) -> Edits {
         circular: draft.circular,
         methods: draft.methods.clone(),
         junction_edits: draft.junction_edits.clone(),
+        substitutions: draft.substitutions.clone(),
+        edits: draft.edits.clone(),
         active_slot: draft.active_slot,
     }
 }
@@ -329,7 +349,6 @@ fn save_inner(draft: &mut Draft) -> Result<(), String> {
     Ok(())
 }
 pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
-    assembly_workspace::require_reference_selectors(draft)?;
     if draft.alternatives.is_some() {
         return Err("This assembly already has alternative bins.".into());
     }
@@ -367,7 +386,23 @@ pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
             .collect(),
         edits: edits(&next),
     };
-    row.edits.methods.source_roles = Some(roles(&library, &row)?);
+    let old_roles = next.methods.role_ids(next.slots.len())?;
+    let new_roles = roles(&library, &row)?;
+    for (old, new) in old_roles.iter().zip(&new_roles) {
+        for edit in &mut row.edits.substitutions {
+            if edit.role == old.role {
+                edit.role = new.role.clone();
+            }
+        }
+        for edit in &mut row.edits.edits {
+            if edit.role == old.role {
+                edit.role = new.role.clone();
+            }
+        }
+    }
+    next.substitutions = row.edits.substitutions.clone();
+    next.edits = row.edits.edits.clone();
+    row.edits.methods.source_roles = Some(new_roles);
     library.rows.push(row);
     library.active_row = row_id;
     next.version = crate::assembly_draft_model::CURRENT_VERSION;
@@ -419,6 +454,8 @@ pub fn for_storage(draft: &Draft) -> Result<Draft, String> {
 pub fn capture_active_choice(draft: &Draft) -> Result<Draft, String> {
     let mut next = stage(draft)?;
     let index = next.active_slot;
+    // A new choice has a new role; old source literals must never move onto it.
+    next.clear_slot_substitutions(index)?;
     let choice = Choice {
         id: String::new(),
         slot: next.slots[index].clone(),
@@ -473,6 +510,8 @@ fn apply_row(draft: &mut Draft, id: &str) -> Result<(), String> {
     draft.circular = saved.circular;
     draft.methods = saved.methods;
     draft.junction_edits = saved.junction_edits;
+    draft.substitutions = saved.substitutions;
+    draft.edits = saved.edits;
     draft.active_slot = saved.active_slot;
     draft.slots = slots;
     draft
@@ -500,6 +539,8 @@ pub fn add_row(draft: &Draft, selection: Vec<String>) -> Result<Draft, String> {
             + 1
     );
     saved.junction_edits.clear();
+    saved.substitutions.clear();
+    saved.edits.clear();
     let library = next.alternatives.as_mut().expect("checked above");
     if library.rows.len() >= MAX_ROWS {
         return Err("The selected construct matrix is limited to 256 rows.".into());
@@ -718,6 +759,7 @@ mod tests {
         let captured = source("alternative", "CCGTAAGG");
         draft.active_slot = 1;
         draft.slots[1] = Slot {
+            material_origin: None,
             selector: collagene_core::assembly_intent::Selector::ReferenceRange {
                 start: 0,
                 end: captured.molecule.sequence.len(),
@@ -731,6 +773,108 @@ mod tests {
         draft.sync_rows();
     }
 
+    #[test]
+    fn row_local_substitutions_and_indels_survive_switch_restart_reorder_and_recovery() {
+        let first = enable(&ordinary(), "literal-rows").unwrap();
+        let first_id = first.alternatives.as_ref().unwrap().active_row.clone();
+        let choices = first.alternatives.as_ref().unwrap().rows[0].choices.clone();
+        let mut second = add_row(&first, choices).unwrap();
+        let second_id = second.alternatives.as_ref().unwrap().active_row.clone();
+        second = crate::assembly_edit_model::declare(&second, 0, "3", "5", "TAG", None).unwrap();
+        second = crate::assembly_substitution_model::declare(&second, 1, "1", "A", None).unwrap();
+        let target = |d: &Draft| {
+            let (inputs, base, _) = assembly_draft_model::inputs_request(d, None).unwrap();
+            collagene_core::assembly_edit_intent::build(
+                &inputs,
+                &assembly_draft_model::edit_request(d, base),
+                None,
+            )
+            .unwrap()
+            .target
+            .sequence
+            .as_str()
+            .to_owned()
+        };
+        assert_eq!(target(&second), "AATAGGGTTATGCAACC");
+        let first_again = open_row(&second, &first_id).unwrap();
+        assert!(first_again.edits.is_empty() && first_again.substitutions.is_empty());
+        assert_eq!(target(&first_again), "AACCGGTTTTGCAACC");
+        let restored =
+            assembly_draft_model::decode(&assembly_draft_model::encode(&first_again).unwrap())
+                .unwrap();
+        let second_again = open_row(&restored, &second_id).unwrap();
+        assert_eq!(target(&second_again), "AATAGGGTTATGCAACC");
+        let bins = second_again
+            .alternatives
+            .as_ref()
+            .unwrap()
+            .bins
+            .iter()
+            .rev()
+            .map(|b| b.id.clone())
+            .collect();
+        let reorder = crate::assembly_library_topology::propose(
+            &second_again,
+            crate::assembly_library_topology::Change::Reorder { bin_ids: bins },
+        )
+        .unwrap();
+        assert!(
+            reorder
+                .impacts()
+                .iter()
+                .all(|i| i.recovered_internal_edits == 0)
+        );
+        let reordered =
+            crate::assembly_library_topology::apply(&second_again, &reorder, reorder.revision())
+                .unwrap();
+        assert_eq!(target(&reordered.draft), "ATGCAACCAATAGGGTT");
+        let removed_id = reordered.draft.alternatives.as_ref().unwrap().bins[1]
+            .id
+            .clone();
+        let removal = crate::assembly_library_topology::propose(
+            &reordered.draft,
+            crate::assembly_library_topology::Change::Remove { bin_id: removed_id },
+        )
+        .unwrap();
+        assert_eq!(
+            removal
+                .impacts()
+                .iter()
+                .find(|r| r.construct_id == second_id)
+                .unwrap()
+                .recovered_internal_edits,
+            1
+        );
+        let applied =
+            crate::assembly_library_topology::apply(&reordered.draft, &removal, removal.revision())
+                .unwrap();
+        assert_eq!(applied.recovery.edits, second.edits);
+        assert!(applied.draft.edits.is_empty());
+        assert_eq!(applied.draft.substitutions.len(), 1);
+    }
+    #[test]
+    fn source_replacement_and_new_rows_never_rebind_internal_literals() {
+        let first = enable(&ordinary(), "new-source").unwrap();
+        let first = crate::assembly_edit_model::declare(&first, 1, "3", "5", "TAG", None).unwrap();
+        let choices = first.alternatives.as_ref().unwrap().rows[0].choices.clone();
+        let second = add_row(&first, choices).unwrap();
+        assert!(second.edits.is_empty() && second.substitutions.is_empty());
+        let first_id = first.alternatives.as_ref().unwrap().active_row.clone();
+        let mut working = open_row(&second, &first_id).unwrap();
+        replace_insert(&mut working);
+        assert!(crate::assembly_edit_model::declare(&working, 1, "1", "2", "A", None).is_err());
+        let replaced = capture_active_choice(&working).unwrap();
+        assert!(replaced.edits.is_empty());
+        let recovered =
+            open_row(&replaced, &second.alternatives.as_ref().unwrap().active_row).unwrap();
+        assert!(recovered.edits.is_empty());
+        let mut missing = serde_json::to_value(&replaced).unwrap();
+        missing["alternatives"]["rows"][0]["edits"]
+            .as_object_mut()
+            .unwrap()
+            .remove("edits");
+        assert!(assembly_draft_model::decode(&serde_json::to_vec(&missing).unwrap()).is_err());
+    }
     #[test]
     fn source_aliases_and_separate_constructs_receive_stable_distinct_recipe_identities() {
         let first = enable(&ordinary(), "test-library").unwrap();

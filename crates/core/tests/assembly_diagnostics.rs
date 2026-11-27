@@ -26,6 +26,7 @@ fn pcr(role: &str, id: &str, f: &str, r: &str) -> FragmentSpec {
         preparation: Preparation::ExactPcr {
             forward: Primer::new("literal F", f, "").unwrap(),
             reverse: Primer::new("literal R", r, "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         reverse: false,
     }

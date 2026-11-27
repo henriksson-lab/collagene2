@@ -36,6 +36,7 @@ fn current_encoding_roundtrips_scientific_and_documentary_receipts() {
             template: Source::Input("original".into()),
             forward: Primer::new("Forward", "ACGATTCG", "").unwrap(),
             reverse: Primer::new("Reverse", "TAGCAGTT", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let request = Request {

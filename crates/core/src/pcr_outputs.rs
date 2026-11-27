@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "pcr-outputs-1";
 macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Options {pub name:String,pub save_product:bool,pub save_primers:bool}}
-dto! {pub struct Request {pub source:Molecule,pub forward:Primer,pub reverse:Primer,pub selected_index:usize,pub expected_product_revision:String,pub options:Options}}
+dto! {pub struct Request {pub source:Molecule,pub forward:Primer,pub reverse:Primer,pub template_strand:crate::chemistry::Strand,pub selected_index:usize,pub expected_product_revision:String,pub options:Options}}
 dto! {pub struct Prepared {
     pub context_revision:String,
     pub selected_index:usize,
@@ -97,8 +97,12 @@ pub fn primer_table(forward: &Primer, reverse: &Primer) -> Result<OligoTable, Er
 /// never accepted as proof of a source/primer geometry. Run in an analysis worker.
 pub fn prepare(request: &Request) -> Result<Prepared, Error> {
     let context_revision = revision(request)?;
-    let previews =
-        verification::simulate_pcr_documents(&request.source, &request.forward, &request.reverse)?;
+    let previews = verification::simulate_pcr_documents(
+        &request.source,
+        &request.forward,
+        &request.reverse,
+        request.template_strand,
+    )?;
     prepare_from_previews(request, context_revision, previews)
 }
 /// Only native callers which just reconstructed source-bound previews may use

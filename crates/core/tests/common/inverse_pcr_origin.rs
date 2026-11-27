@@ -53,6 +53,7 @@ pub fn fixture(derived: bool) -> (Workspace, MaterialOrigin, EventBinding, Molec
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "TACAGGTC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(0),

@@ -52,6 +52,7 @@ fn pcr(template: Source, mismatches: bool, mutate: bool) -> Operation {
             template,
             forward,
             reverse,
+            template_strand: collagene_core::chemistry::Strand::Top,
         }
     }
 }

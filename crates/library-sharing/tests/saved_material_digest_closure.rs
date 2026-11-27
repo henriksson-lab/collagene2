@@ -52,6 +52,7 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let mut run = run_lineage::record_run(
@@ -292,6 +293,7 @@ fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication
                 template: Source::Step(0),
                 forward,
                 reverse,
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ],
     };

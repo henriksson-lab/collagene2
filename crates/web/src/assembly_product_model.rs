@@ -33,6 +33,7 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
             options.overlap
         ),
         Operation::Pcr {
+            template_strand: _,
             template,
             forward,
             reverse,

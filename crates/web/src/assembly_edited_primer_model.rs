@@ -92,7 +92,6 @@ pub(crate) fn context_draft(mut draft: Draft) -> Draft {
 }
 pub fn eligible(draft: &Draft) -> bool {
     draft.methods.mode == Mode::Overlap
-        && draft.alternatives.is_none()
         && (2..=12).contains(&draft.slots.len())
         && draft
             .slots
@@ -126,6 +125,7 @@ fn independent(
     intent: &IntendedReference,
     inputs: &[PlanInput],
     base: collagene_core::assembly_intent::Request,
+    workspace: Option<&Workspace>,
 ) -> Result<(String, String, assembly_edit_intent::Request), String> {
     let declared = assembly_draft_model::edit_request(draft, base);
     let (kind, context) = match intent {
@@ -138,15 +138,18 @@ fn independent(
                     "The frozen plain-region intent differs from this edited draft.".into(),
                 );
             }
-            let context =
-                collagene_core::assembly_intent::intent_revision(inputs, &declared.base.base, None)
-                    .map_err(|e| e.to_string())?;
-            let fresh = collagene_core::assembly_intent::build(inputs, &declared.base.base, None)
+            let context = collagene_core::assembly_intent::intent_revision(
+                inputs,
+                &declared.base.base,
+                workspace,
+            )
+            .map_err(|e| e.to_string())?;
+            report
+                .validate_binding(&context)
                 .map_err(|e| e.to_string())?;
-            if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
-                return Err(
-                    "The frozen region target differs from its original source declaration.".into(),
-                );
+            if receipt(&report.request, MAX_CONTEXT)? != receipt(&declared.base.base, MAX_CONTEXT)?
+            {
+                return Err("The frozen original source declaration changed".into());
             }
             ("regions", context)
         }
@@ -160,21 +163,18 @@ fn independent(
                 inputs,
                 &declared.base.base,
                 &declared.base.junction_edits,
-                None,
+                workspace,
             )
             .map_err(|e| e.to_string())?;
-            let fresh = collagene_core::assembly_junction_edit::build_intent(
-                inputs,
-                &declared.base.base,
-                &declared.base.junction_edits,
-                None,
-            )
-            .map_err(|e| e.to_string())?;
-            if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
-                return Err(
-                    "The frozen junction target differs from its original source declaration."
-                        .into(),
-                );
+            report
+                .validate_binding(&context)
+                .map_err(|e| e.to_string())?;
+            if receipt(&report.base_request, MAX_CONTEXT)?
+                != receipt(&declared.base.base, MAX_CONTEXT)?
+                || receipt(&report.edits, MAX_CONTEXT)?
+                    != receipt(&declared.base.junction_edits, MAX_CONTEXT)?
+            {
+                return Err("The frozen source or junction declaration changed".into());
             }
             ("junctions", context)
         }
@@ -188,25 +188,22 @@ fn independent(
             let context = collagene_core::assembly_substitution_intent::intent_revision(
                 inputs,
                 &declared.base,
-                None,
+                workspace,
             )
             .map_err(|e| e.to_string())?;
-            let fresh =
-                collagene_core::assembly_substitution_intent::build(inputs, &declared.base, None)
-                    .map_err(|e| e.to_string())?;
-            if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
-                return Err(
-                    "The frozen substitution target differs from its original source declaration."
-                        .into(),
-                );
+            report
+                .validate_sources(inputs, &context, workspace)
+                .map_err(|e| e.to_string())?;
+            if receipt(&report.request, MAX_CONTEXT)? != receipt(&declared.base, MAX_CONTEXT)? {
+                return Err("The frozen source or substitution declaration changed".into());
             }
             ("substitutions", context)
         }
         IntendedReference::Edits(report) => {
-            let context = assembly_edit_intent::intent_revision(inputs, &declared, None)
+            let context = assembly_edit_intent::intent_revision(inputs, &declared, workspace)
                 .map_err(|e| e.to_string())?;
             report
-                .validate_sources(inputs, &context, None)
+                .validate_sources(inputs, &context, workspace)
                 .map_err(|e| e.to_string())?;
             if receipt(&report.request, MAX_CONTEXT)? != receipt(&declared, MAX_CONTEXT)? {
                 return Err("The original internal-edit declaration changed.".into());
@@ -275,11 +272,11 @@ pub fn request(
     intent: &IntendedReference,
     current_sources: &[EventBinding],
     options: &Options,
+    workspace: Option<&Workspace>,
 ) -> Result<(Capture, Vec<PlanInput>, native::Request), String> {
-    assembly_draft_model::require_reference_selectors(draft)?;
     draft.validate()?;
     if !eligible(draft) {
-        return Err("Whole-assembly proposals require 2–12 ordinary overlap contributions with plain PCR/whole-source preparations. Active digest, declared-chemistry and paired-oligo routes must be kept or changed explicitly.".into());
+        return Err("Whole-assembly proposals require 2–12 overlap contributions with plain PCR/whole-source preparations. Active digest, declared-chemistry and paired-oligo routes must be kept or changed explicitly.".into());
     }
     if current_sources.len() != draft.slots.len() {
         return Err("The exact original-source event roster changed.".into());
@@ -297,44 +294,26 @@ pub fn request(
     {
         return Err("Whole-assembly tails are derived from declared junction inserts and edited source cores; global tail overrides must be empty.".into());
     }
-    let run_origins = draft
-        .methods
-        .rows
-        .iter()
-        .filter_map(|row| row.run_origin.as_ref())
-        .map(|origin| origin.as_run())
-        .collect::<Result<Vec<_>, _>>()?;
-    collagene_core::run_material::capsules_preflight(run_origins.into_iter())
-        .map_err(|e| e.to_string())?;
-    let (inputs, base, _) = assembly_draft_model::inputs_request(draft, None)?;
+    crate::assembly_alternatives::require_active_choice_match(draft)?;
+    if let Some(workspace) = workspace {
+        attest(draft, workspace)?;
+    }
+    let (inputs, base, _) = assembly_draft_model::inputs_request(draft, workspace)?;
     let (intent_kind, intent_context_revision, declared) =
-        independent(draft, intent, &inputs, base)?;
-    let roles = draft.methods.role_ids(draft.slots.len())?;
-    let origins = roles
-        .iter()
-        .zip(&draft.methods.rows)
-        .filter_map(|(role, row)| {
-            row.run_origin.as_ref().map(|origin| native::RoleOrigin {
-                role: role.role.clone(),
-                origin: origin
-                    .as_run()
-                    .expect("all origins were explicitly checked above")
-                    .clone(),
-            })
-        })
-        .collect();
+        independent(draft, intent, &inputs, base, workspace)?;
     let native = native::Request {
         intent: declared,
         overlap: options.overlap,
         options: options.preparation.clone(),
         profile_options: draft.methods.profile_options()?,
-        origins,
     };
-    native::preflight(&inputs, &native).map_err(|e| e.to_string())?;
-    tail_guard(
-        draft,
-        &native::expected_tails(&inputs, &native).map_err(|e| e.to_string())?,
-    )?;
+    native::preflight(&inputs, &native, workspace).map_err(|e| e.to_string())?;
+    if native.intent.base.base.material_bindings.is_empty() {
+        tail_guard(
+            draft,
+            &native::expected_tails(&inputs, &native, workspace).map_err(|e| e.to_string())?,
+        )?;
+    }
     let mut capture = Capture {
         context_revision: String::new(),
         sources: current_sources.to_vec(),
@@ -343,7 +322,8 @@ pub fn request(
         target_revision: intent.target().revision(),
         draft_revision: receipt(&context_draft(draft.clone()), MAX_CONTEXT)?,
         options_revision: receipt(options, MAX_REPORT)?,
-        design_revision: native::design_revision(&inputs, &native).map_err(|e| e.to_string())?,
+        design_revision: native::design_revision(&inputs, &native, workspace)
+            .map_err(|e| e.to_string())?,
     };
     capture.context_revision = receipt(&(ENGINE_VERSION, &capture), MAX_CONTEXT)?;
     Ok((capture, inputs, native))
@@ -354,9 +334,10 @@ pub fn from_design(
     current_sources: &[EventBinding],
     options: &Options,
     report: native::Report,
+    workspace: Option<&Workspace>,
 ) -> Result<Proposal, String> {
     let worker_receipt = receipt(&report, MAX_REPORT)?;
-    let (capture, inputs, request) = request(draft, intent, current_sources, options)?;
+    let (capture, inputs, request) = request(draft, intent, current_sources, options, workspace)?;
     report
         .validate_binding(&capture.design_revision)
         .map_err(|e| e.to_string())?;
@@ -376,17 +357,21 @@ pub fn from_design(
     // The native API normalizes all kinds to the general edit vocabulary. Keep
     // that receipt intact and validate it separately; metadata from the original
     // SNP/plain/junction target is never retagged as a native verification receipt.
-    let canonical_context = assembly_edit_intent::intent_revision(&inputs, &request.intent, None)
-        .map_err(|e| e.to_string())?;
+    let canonical_context =
+        assembly_edit_intent::intent_revision(&inputs, &request.intent, workspace)
+            .map_err(|e| e.to_string())?;
     report
         .intent
-        .validate_sources(&inputs, &canonical_context, None)
+        .validate_sources(&inputs, &canonical_context, workspace)
         .map_err(|e| e.to_string())?;
     if report.intent.target.sequence != intent.target().sequence
         || report.intent.target.topology != intent.target().topology
     {
         return Err("The proposed recipe differs from the frozen independent intended DNA.".into());
     }
+    report
+        .validate_sources(&inputs, &capture.design_revision, workspace)
+        .map_err(|e| e.to_string())?;
     tail_guard(draft, &report.tails)?;
     let checked = crate::assembly_product_model::Snapshot::new(
         report.preview.compiled.plan.clone(),
@@ -421,6 +406,7 @@ fn raw_primer(primer: &Primer) -> ExtensionPrimerInput {
 }
 fn raw_pair(pair: &collagene_core::overlap_extension_pcr::PrimerPair) -> ExtensionPrimerPairInput {
     ExtensionPrimerPairInput {
+        template_strand: pair.template_strand,
         forward: raw_primer(&pair.forward),
         reverse: raw_primer(&pair.reverse),
     }
@@ -432,6 +418,7 @@ impl Proposal {
         intent: &IntendedReference,
         current_sources: &[EventBinding],
         options: &Options,
+        workspace: Option<&Workspace>,
     ) -> Result<(), String> {
         if receipt(self.worker.as_ref(), MAX_REPORT)? != self.worker_receipt
             || receipt(
@@ -446,7 +433,7 @@ impl Proposal {
         {
             return Err("The retained whole-assembly primer proposal changed.".into());
         }
-        let (capture, _, request) = request(draft, intent, current_sources, options)?;
+        let (capture, _, request) = request(draft, intent, current_sources, options, workspace)?;
         if capture != self.capture
             || receipt(&self.worker.request, MAX_CONTEXT)? != receipt(&request, MAX_CONTEXT)?
         {
@@ -462,9 +449,10 @@ impl Proposal {
         intent: &IntendedReference,
         current_sources: &[EventBinding],
         options: &Options,
+        workspace: Option<&Workspace>,
     ) -> Result<Draft, String> {
         use collagene_core::assembly_recipe::{Preparation, RunPreparation};
-        self.validate_binding(draft, intent, current_sources, options)?;
+        self.validate_binding(draft, intent, current_sources, options, workspace)?;
         if self.verification.status == collagene_core::verification::Status::Invalid {
             return Err("The proposed full recipe is inconsistent with its declared reference. Review its findings before changing preparations.".into());
         }
@@ -474,10 +462,7 @@ impl Proposal {
         let roles = draft.methods.role_ids(draft.slots.len())?;
         let mut next = draft.clone();
         for (index, fragment) in self.recipe.fragments.iter().enumerate() {
-            if fragment.role != roles[index].role
-                || fragment.input_id != roles[index].input_id
-                || fragment.reverse != draft.methods.rows[index].reverse
-            {
+            if fragment.role != roles[index].role || fragment.input_id != roles[index].input_id {
                 return Err(
                     "The proposed row differs from its original source role or orientation.".into(),
                 );
@@ -491,10 +476,73 @@ impl Proposal {
                         .run_origin
                         .as_ref()
                         .ok_or("An unrequested saved origin appeared in the proposed recipe.")?;
-                    if receipt(origin, MAX_CONTEXT)? != receipt(saved.as_run()?, MAX_CONTEXT)? {
+                    if receipt(
+                        &collagene_core::run_material::MaterialOrigin::Run(origin.clone()),
+                        MAX_CONTEXT,
+                    )? != receipt(saved.as_ref(), MAX_CONTEXT)?
+                    {
                         return Err("The proposed recipe changed a saved material origin.".into());
                     }
-                    match preparation{RunPreparation::ExactPcr{forward,reverse}=>Preparation::ExactPcr{forward:forward.clone(),reverse:reverse.clone()},RunPreparation::OverlapExtensionPcr{request}=>Preparation::OverlapExtensionPcr{request:request.clone()},_=>return Err("The native whole-assembly preparation is outside the supported flat PCR vocabulary.".into())}
+                    match preparation {
+                        RunPreparation::ExactPcr {
+                            template_strand,
+                            forward,
+                            reverse,
+                        } => Preparation::ExactPcr {
+                            template_strand: *template_strand,
+                            forward: forward.clone(),
+                            reverse: reverse.clone(),
+                        },
+                        RunPreparation::OverlapExtensionPcr { request } => {
+                            Preparation::OverlapExtensionPcr {
+                                request: request.clone(),
+                            }
+                        }
+                        _ => {
+                            return Err(
+                                "The proposed preparation is outside the supported PCR vocabulary."
+                                    .into(),
+                            );
+                        }
+                    }
+                }
+                Preparation::FromDerived {
+                    origin,
+                    preparation,
+                } => {
+                    let saved = draft.methods.rows[index]
+                        .run_origin
+                        .as_ref()
+                        .ok_or("An unrequested saved origin appeared in the proposed recipe.")?;
+                    if receipt(
+                        &collagene_core::run_material::MaterialOrigin::Derived(origin.clone()),
+                        MAX_CONTEXT,
+                    )? != receipt(saved.as_ref(), MAX_CONTEXT)?
+                    {
+                        return Err("The proposed recipe changed a saved material origin.".into());
+                    }
+                    match preparation {
+                        RunPreparation::ExactPcr {
+                            template_strand,
+                            forward,
+                            reverse,
+                        } => Preparation::ExactPcr {
+                            template_strand: *template_strand,
+                            forward: forward.clone(),
+                            reverse: reverse.clone(),
+                        },
+                        RunPreparation::OverlapExtensionPcr { request } => {
+                            Preparation::OverlapExtensionPcr {
+                                request: request.clone(),
+                            }
+                        }
+                        _ => {
+                            return Err(
+                                "The proposed preparation is outside the supported PCR vocabulary."
+                                    .into(),
+                            );
+                        }
+                    }
                 }
                 other => {
                     if draft.methods.rows[index].run_origin.is_some() {
@@ -509,8 +557,14 @@ impl Proposal {
             let edited = draft.edits.iter().any(|e| e.role == fragment.role)
                 || draft.substitutions.iter().any(|e| e.role == fragment.role);
             let row = &mut next.methods.rows[index];
+            row.reverse = fragment.reverse;
             match prep {
-                Preparation::ExactPcr { forward, reverse } if !edited => {
+                Preparation::ExactPcr {
+                    template_strand,
+                    forward,
+                    reverse,
+                } if !edited => {
+                    row.template_strand = template_strand;
                     row.preparation = OverlapPreparation::ExactPcr;
                     row.forward_name = forward.name;
                     row.forward = forward.annealing.as_str().into();
@@ -548,10 +602,19 @@ impl Proposal {
         .join(",");
         next.sync_rows();
         next.validate()?;
+        if next.alternatives.is_some() {
+            next = crate::assembly_alternatives::save_active(&next)?;
+        }
         Ok(next)
     }
     pub fn rows(&self) -> &[native::RowDesign] {
         &self.worker.rows
+    }
+    pub fn source_frame(&self, input_id: &str) -> Option<&native::SourceFrame> {
+        self.worker
+            .source_frames
+            .iter()
+            .find(|frame| frame.input_id == input_id)
     }
     pub fn tails(&self) -> &[native::TailDeclaration] {
         &self.worker.tails
@@ -586,13 +649,14 @@ mod tests {
             molecule,
         })
     }
-    fn intent(draft: &Draft) -> IntendedReference {
-        let (inputs, base, _) = assembly_draft_model::inputs_request(draft, None).unwrap();
+    fn intent(draft: &Draft, workspace: &Workspace) -> IntendedReference {
+        let (inputs, base, _) =
+            assembly_draft_model::inputs_request(draft, Some(workspace)).unwrap();
         IntendedReference::Edits(
             assembly_edit_intent::build(
                 &inputs,
                 &assembly_draft_model::edit_request(draft, base),
-                None,
+                Some(workspace),
             )
             .unwrap(),
         )
@@ -658,14 +722,95 @@ mod tests {
         options: &Options,
     ) -> Proposal {
         let events = attest(draft, frame).unwrap();
-        let (_, inputs, native) = request(draft, intended, &events, options).unwrap();
-        let report = native::design(&inputs, &native).unwrap();
-        from_design(draft, intended, &events, options, report).unwrap()
+        let (_, inputs, native) = request(draft, intended, &events, options, Some(frame)).unwrap();
+        let report = native::design(&inputs, &native, Some(frame)).unwrap();
+        from_design(draft, intended, &events, options, report, Some(frame)).unwrap()
+    }
+    #[test]
+    fn explicit_library_construct_proposal_changes_only_its_overrides_and_survives_native_archive()
+    {
+        let (mut original, mut frame, options) = fixture();
+        original.edits.clear();
+        original.substitutions.clear();
+        let first = crate::assembly_alternatives::enable(&original, "edit-primers").unwrap();
+        let first_id = first.alternatives.as_ref().unwrap().active_row.clone();
+        let choices = first.alternatives.as_ref().unwrap().rows[0].choices.clone();
+        let mut second = crate::assembly_alternatives::add_row(&first, choices).unwrap();
+        second = assembly_edit_model::declare(&second, 1, "17", "21", "TT", None).unwrap();
+        let first_saved = second.alternatives.as_ref().unwrap().rows[0].clone();
+        let frozen = intent(&second, &frame);
+        let target = frozen.target().revision();
+        let proposal = propose(&second, &frozen, &frame, &options);
+        assert_eq!(
+            proposal.verification.status,
+            Status::ConsistentUnderAssumptions,
+            "{:?}",
+            proposal.verification.findings
+        );
+        let applied = proposal
+            .apply(
+                &second,
+                &frozen,
+                &proposal.capture.sources,
+                &options,
+                Some(&frame),
+            )
+            .unwrap();
+        assert!(applied.alternatives.as_ref().unwrap().rows[0] == first_saved);
+        assert_eq!(frozen.target().revision(), target);
+        assert!(matches!(
+            applied.methods.rows[1].preparation,
+            OverlapPreparation::OverlapExtensionPcr
+        ));
+        crate::assembly_edited_primer_commit::validate(&second, &applied, &second).unwrap();
+        let first_again = crate::assembly_alternatives::open_row(&applied, &first_id).unwrap();
+        assert!(
+            proposal
+                .apply(
+                    &first_again,
+                    &frozen,
+                    &proposal.capture.sources,
+                    &options,
+                    Some(&frame)
+                )
+                .is_err()
+        );
+        let bytes = assembly_draft_model::encode(&applied).unwrap();
+        let hash = blake3::hash(&bytes).to_hex().to_string();
+        frame.attachments.insert(
+            hash.clone(),
+            collagene_core::workspace::WorkspaceAttachment {
+                kind: assembly_draft_model::ATTACHMENT_KIND.into(),
+                name: "Row declarations".into(),
+                media_type: "application/json".into(),
+                bytes,
+            },
+        );
+        let reopened = collagene_core::workspace::load_workspace(
+            &collagene_core::workspace::save_workspace(&frame).unwrap(),
+        )
+        .unwrap();
+        let draft = assembly_draft_model::decode(&reopened.attachments[&hash].bytes).unwrap();
+        assert!(draft == applied);
+        assert!(draft.alternatives.as_ref().unwrap().rows[0] == first_saved);
+        let mut changed = second.clone();
+        changed.edits[0].replacement = "AA".into();
+        assert!(
+            proposal
+                .apply(
+                    &changed,
+                    &frozen,
+                    &proposal.capture.sources,
+                    &options,
+                    Some(&frame)
+                )
+                .is_err()
+        );
     }
     #[test]
     fn whole_proposal_uses_edited_downstream_homology_and_applies_only_active_fields() {
         let (draft, frame, options) = fixture();
-        let intended = intent(&draft);
+        let intended = intent(&draft, &frame);
         let original_target = intended.target().revision();
         let p = propose(&draft, &intended, &frame, &options);
         assert_eq!(
@@ -679,7 +824,13 @@ mod tests {
         assert_eq!(p.rows()[0].designs.len(), 1);
         assert_eq!(p.rows()[1].designs.len(), 3);
         let after = p
-            .apply(&draft, &intended, &p.capture.sources, &options)
+            .apply(
+                &draft,
+                &intended,
+                &p.capture.sources,
+                &options,
+                Some(&frame),
+            )
             .unwrap();
         assert_eq!(
             crate::assembly_edited_primer_commit::validate(&draft, &after, &draft).unwrap(),
@@ -719,14 +870,26 @@ mod tests {
     fn contribution_navigation_preserves_whole_proposal_but_scientific_changes_stale_it() {
         let (mut draft, frame, options) = fixture();
         draft.active_slot = 0;
-        let intended = intent(&draft);
+        let intended = intent(&draft, &frame);
         let p = propose(&draft, &intended, &frame, &options);
         let mut navigated = draft.clone();
         navigated.active_slot = 1;
-        p.validate_binding(&navigated, &intended, &p.capture.sources, &options)
-            .unwrap();
+        p.validate_binding(
+            &navigated,
+            &intended,
+            &p.capture.sources,
+            &options,
+            Some(&frame),
+        )
+        .unwrap();
         let after = p
-            .apply(&navigated, &intended, &p.capture.sources, &options)
+            .apply(
+                &navigated,
+                &intended,
+                &p.capture.sources,
+                &options,
+                Some(&frame),
+            )
             .unwrap();
         assert_eq!(after.active_slot, 1);
         crate::assembly_edited_primer_commit::validate(&navigated, &after, &navigated).unwrap();
@@ -734,14 +897,20 @@ mod tests {
             .forward_name
             .push_str(" changed declaration");
         assert!(
-            p.apply(&navigated, &intended, &p.capture.sources, &options)
-                .is_err()
+            p.apply(
+                &navigated,
+                &intended,
+                &p.capture.sources,
+                &options,
+                Some(&frame)
+            )
+            .is_err()
         );
     }
     #[test]
     fn guards_preserve_explicit_tails_source_events_and_sealed_public_receipts() {
         let (draft, frame, options) = fixture();
-        let intended = intent(&draft);
+        let intended = intent(&draft, &frame);
         let p = propose(&draft, &intended, &frame, &options);
         for prep in [
             OverlapPreparation::Digest,
@@ -754,35 +923,71 @@ mod tests {
             let mut changed = draft.clone();
             changed.methods.rows[0].preparation = prep;
             changed.sync_rows();
-            assert!(request(&changed, &intended, &p.capture.sources, &options).is_err());
+            assert!(
+                request(
+                    &changed,
+                    &intended,
+                    &p.capture.sources,
+                    &options,
+                    Some(&frame)
+                )
+                .is_err()
+            );
         }
         let mut changed = draft.clone();
         changed.methods.rows[0].forward_name.push_str("stale");
         assert!(
-            p.apply(&changed, &intended, &p.capture.sources, &options)
-                .is_err()
+            p.apply(
+                &changed,
+                &intended,
+                &p.capture.sources,
+                &options,
+                Some(&frame)
+            )
+            .is_err()
         );
         let mut events = p.capture.sources.clone();
         events[0].event_id.push('x');
-        assert!(p.apply(&draft, &intended, &events, &options).is_err());
+        assert!(
+            p.apply(&draft, &intended, &events, &options, Some(&frame))
+                .is_err()
+        );
         let mut other_options = options.clone();
         other_options.overlap -= 1;
         assert!(
-            p.apply(&draft, &intended, &p.capture.sources, &other_options)
-                .is_err()
+            p.apply(
+                &draft,
+                &intended,
+                &p.capture.sources,
+                &other_options,
+                Some(&frame)
+            )
+            .is_err()
         );
         let mut changed = p.clone();
         changed.warnings.push("tampered".into());
         assert!(
             changed
-                .apply(&draft, &intended, &p.capture.sources, &options)
+                .apply(
+                    &draft,
+                    &intended,
+                    &p.capture.sources,
+                    &options,
+                    Some(&frame)
+                )
                 .is_err()
         );
         let mut changed = p.clone();
         changed.recipe.fragments[0].reverse = true;
         assert!(
             changed
-                .apply(&draft, &intended, &p.capture.sources, &options)
+                .apply(
+                    &draft,
+                    &intended,
+                    &p.capture.sources,
+                    &options,
+                    Some(&frame)
+                )
                 .is_err()
         );
         let mut bad_frame = frame.clone();
@@ -792,7 +997,16 @@ mod tests {
         explicit.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
         explicit.methods.rows[0].forward_tail = "A".into();
         explicit.sync_rows();
-        assert!(request(&explicit, &intent(&explicit), &p.capture.sources, &options).is_err());
+        assert!(
+            request(
+                &explicit,
+                &intent(&explicit, &frame),
+                &p.capture.sources,
+                &options,
+                Some(&frame)
+            )
+            .is_err()
+        );
         explicit.methods.rows[0].forward_tail.clear();
         explicit.methods.rows[0].reverse_tail = p.tails()[0]
             .reverse_tail
@@ -800,7 +1014,16 @@ mod tests {
             .chars()
             .map(|c| format!("{c} "))
             .collect();
-        assert!(request(&explicit, &intent(&explicit), &p.capture.sources, &options).is_ok());
+        assert!(
+            request(
+                &explicit,
+                &intent(&explicit, &frame),
+                &p.capture.sources,
+                &options,
+                Some(&frame)
+            )
+            .is_ok()
+        );
     }
     #[test]
     fn substitution_reference_keeps_original_metadata_receipt_while_canonical_check_is_separate() {
@@ -827,14 +1050,30 @@ mod tests {
         assert_eq!(p.capture.target_revision, frozen);
         assert_ne!(p.worker.intent.target.revision(), frozen);
         let after = p
-            .apply(&draft, &intended, &p.capture.sources, &options)
+            .apply(
+                &draft,
+                &intended,
+                &p.capture.sources,
+                &options,
+                Some(&frame),
+            )
             .unwrap();
         assert_eq!(after.substitutions, draft.substitutions);
         assert_eq!(intended.target().revision(), frozen);
         crate::assembly_edited_primer_commit::validate(&draft, &after, &draft).unwrap();
         let mut forged = p.worker.as_ref().clone();
         forged.intent.target.name.push_str("forged");
-        assert!(from_design(&draft, &intended, &p.capture.sources, &options, forged).is_err());
+        assert!(
+            from_design(
+                &draft,
+                &intended,
+                &p.capture.sources,
+                &options,
+                forged,
+                Some(&frame)
+            )
+            .is_err()
+        );
     }
     #[test]
     fn saved_origin_is_kept_and_replayed_in_complete_assembly_check() {
@@ -866,6 +1105,7 @@ mod tests {
                 molecule: stock,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "TGACGATC", "").unwrap(),
@@ -907,8 +1147,9 @@ mod tests {
             )
             .unwrap(),
         );
+        draft.slots[1].material_origin = draft.methods.rows[1].run_origin.clone();
         draft.sync_rows();
-        let intended = intent(&draft);
+        let intended = intent(&draft, &saved.workspace);
         let p = propose(&draft, &intended, &saved.workspace, &options);
         assert_eq!(
             p.verification.status,
@@ -917,7 +1158,13 @@ mod tests {
             p.verification.findings
         );
         let after = p
-            .apply(&draft, &intended, &p.capture.sources, &options)
+            .apply(
+                &draft,
+                &intended,
+                &p.capture.sources,
+                &options,
+                Some(&saved.workspace),
+            )
             .unwrap();
         assert_eq!(
             after.methods.rows[1].run_origin,

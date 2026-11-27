@@ -82,6 +82,7 @@ pub(crate) fn prepared_rows(
                     }
                 } else if row.preparation == OverlapPreparation::PcrCatalogDigest {
                     Preparation::PcrCatalogDigest {
+                        template_strand:row.template_strand,
                         forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail)
                             .map_err(|e| e.to_string())?,
                         reverse: Primer::new(
@@ -133,6 +134,7 @@ pub(crate) fn prepared_rows(
                 options: row.mismatch_options()?,
             },
             OverlapPreparation::ExactPcr => Preparation::ExactPcr {
+                template_strand:row.template_strand,
                 forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail)
                     .map_err(|e| e.to_string())?,
                 reverse: Primer::new(&row.reverse_name, &row.reverse_primer, &row.reverse_tail)
@@ -145,11 +147,11 @@ pub(crate) fn prepared_rows(
                 Preparation::WholeLinear => RunPreparation::WholeLinear,
                 Preparation::Digest { enzymes, fragment_index, repair } => RunPreparation::Digest { enzymes, fragment_index, repair },
                 Preparation::CatalogDigest { selection, fragment_index, repair } => RunPreparation::CatalogDigest { selection, fragment_index, repair },
-                Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
+                Preparation::ExactPcr { template_strand,forward, reverse } => RunPreparation::ExactPcr { template_strand,forward, reverse },
                 Preparation::OverlapExtensionPcr { request } => RunPreparation::OverlapExtensionPcr { request },
                 Preparation::OverlapExtensionPcrCatalogDigest { request, selection, fragment_index, repair } => RunPreparation::OverlapExtensionPcrCatalogDigest { request, selection, fragment_index, repair },
                 Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
-                Preparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { forward, reverse, selection, fragment_index, repair },
+                Preparation::PcrCatalogDigest { template_strand,forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { template_strand,forward, reverse, selection, fragment_index, repair },
                 Preparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair },
                 Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } | Preparation::FromDerived { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
             };
@@ -285,9 +287,7 @@ mod tailing_tests {
     }
     #[test]
     fn independently_declared_circle_and_linear_terminal_intent_feed_actual_tailing() {
-        use collagene_core::{
-            assembly_intent, assembly_junction_edit, overlap_primer_design, verification::Status,
-        };
+        use collagene_core::{assembly_intent, assembly_junction_edit, verification::Status};
         for circular in [true, false] {
             let mut state = MethodsState::default();
             state.mode = Mode::Tailing;
@@ -540,9 +540,7 @@ mod tailing_tests {
 mod annealed_tests {
     use super::*;
     use crate::cloning_methods_model::{Mode, Treatment};
-    use collagene_core::{
-        Topology, assembly_intent, catalog_digest, overlap_primer_design, verification::Status,
-    };
+    use collagene_core::{Topology, assembly_intent, catalog_digest, verification::Status};
     #[test]
     fn two_reference_contributions_keep_three_original_sources_through_ligation() {
         let catalog = catalog_digest::builtin_catalog().unwrap();
@@ -873,6 +871,7 @@ mod overlap_extension_tests {
                 molecule: original,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "TGACGATC", "").unwrap(),

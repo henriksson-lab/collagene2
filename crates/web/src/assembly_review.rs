@@ -1765,6 +1765,7 @@ mod tests {
             target_revision: intent.target.revision(),
             inputs,
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("original".into()),
                 forward: Primer::new("Original F", "ACGACCCC", "").unwrap(),
                 reverse: Primer::new("Original R", "GTTACCCC", "").unwrap(),

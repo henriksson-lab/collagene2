@@ -10,22 +10,25 @@ use crate::{
     overlap_primer_design::{self, Fragment},
     overlap_profiles::ProfileOptions,
     primers::{self, DesignOptions, DesignReport},
-    run_material::Capsule,
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
+    run_material::MaterialOrigin,
+    verification::{self, Operation, PlanInput},
+    workspace::Workspace,
 };
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
-pub const ENGINE_VERSION: &str = "assembly-edited-primer-design-1";
+pub const ENGINE_VERSION: &str = "assembly-edited-primer-design-2";
 const MAX_WORK: usize = 100_000_000;
 const MAX_BYTES: usize = 32 << 20;
 const MAX_ROWS: usize = 32;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub struct RoleOrigin{pub role:String,pub origin:Capsule}}
-dto! {pub struct Request{pub intent:assembly_edit_intent::Request,pub overlap:usize,pub options:extension::Options,pub profile_options:ProfileOptions,pub origins:Vec<RoleOrigin>}}
+dto! {pub struct Request{pub intent:assembly_edit_intent::Request,pub overlap:usize,pub options:extension::Options,pub profile_options:ProfileOptions}}
 dto! {#[derive(PartialEq,Eq)] pub struct TailDeclaration{pub role:String,pub input_id:String,pub forward_tail:String,pub reverse_tail:String,pub outgoing_insert:String,pub homology:String,pub downstream_role:Option<String>}}
+// Documentary source-view evidence for inspecting a proposal. This cannot be
+// constructed into FreshMaterial or used as a physical template by the verifier.
+dto! {pub struct SourceFrame{pub input_id:String,pub template_strand:crate::chemistry::Strand,pub state_revision:String,pub sequence:Sequence,pub topology:Topology}}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RowDesign {
@@ -33,13 +36,10 @@ pub struct RowDesign {
     pub input_id: String,
     pub input_revision: String,
     pub fragment: Fragment,
+    pub template_strand: crate::chemistry::Strand,
     pub edits: Vec<Edit>,
     pub designs: Vec<DesignReport>,
     pub search: Vec<PairSearch>,
-    /// Local original-input proposal diagnostic; exact saved-origin replay is
-    /// assessed in the full preview, never restored from a local status.
-    pub verification_status: Status,
-    pub findings: Vec<String>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,6 +47,7 @@ pub struct Report {
     pub engine_version: String,
     pub context_revision: String,
     pub source_revisions: Vec<String>,
+    pub source_frames: Vec<SourceFrame>,
     pub request: Request,
     pub intent: assembly_edit_intent::Report,
     pub recipe: assembly_recipe::Recipe,
@@ -85,15 +86,9 @@ fn size(value: &impl Serialize) -> Result<(), Error> {
 }
 fn shape(r: &Request) -> Result<(), Error> {
     let base = &r.intent.base.base;
-    if !base.material_bindings.is_empty() {
-        return Err(bad(
-            "primer proposals require reference ranges; material-strand primer templates are unsupported",
-        ));
-    }
     if base.fragments.is_empty()
         || base.fragments.len() > MAX_ROWS
         || base.name.len() > 1024
-        || r.origins.len() > MAX_ROWS
         || r.overlap == 0
         || r.overlap > 80
         || r.options.primer_options.max_pairs == 0
@@ -109,11 +104,7 @@ fn shape(r: &Request) -> Result<(), Error> {
     }
     if base.fragments.iter().any(|f| {
         f.role.is_empty() || f.role.len() > 128 || f.input_id.is_empty() || f.input_id.len() > 128
-    }) || r
-        .origins
-        .iter()
-        .any(|o| o.role.is_empty() || o.role.len() > 128)
-    {
+    }) {
         return Err(bad(
             "bound all source and role identities before copying declarations",
         ));
@@ -124,7 +115,7 @@ fn shape(r: &Request) -> Result<(), Error> {
         fragments: base
             .fragments
             .iter()
-            .map(crate::assembly_intent::Contribution::reference_fragment)
+            .map(frame_fragment)
             .collect::<Result<Vec<_>, _>>()?,
         overlap: r.overlap,
         circular: base.circular,
@@ -143,8 +134,150 @@ fn shape(r: &Request) -> Result<(), Error> {
     {
         return Err(bad("invalid shared extension/total-oligo/search limits"));
     }
-    crate::run_material::capsules_preflight(r.origins.iter().map(|o| &o.origin))?;
+    crate::run_material::material_origins_preflight(
+        base.material_bindings.iter().map(|binding| &binding.origin),
+    )?;
     Ok(())
+}
+fn frame_fragment(contribution: &crate::assembly_intent::Contribution) -> Result<Fragment, Error> {
+    match &contribution.selector {
+        crate::assembly_intent::Selector::ReferenceRange { .. } => {
+            contribution.reference_fragment()
+        }
+        crate::assembly_intent::Selector::MaterialStrandRange { start, end, .. } => Ok(Fragment {
+            role: contribution.role.clone(),
+            input_id: contribution.input_id.clone(),
+            start: *start,
+            end: *end,
+            reverse: false,
+        }),
+    }
+}
+fn strand(contribution: &crate::assembly_intent::Contribution) -> crate::chemistry::Strand {
+    match &contribution.selector {
+        crate::assembly_intent::Selector::ReferenceRange { .. } => crate::chemistry::Strand::Top,
+        crate::assembly_intent::Selector::MaterialStrandRange { strand, .. } => *strand,
+    }
+}
+// These borrowed views are inspection/ranking coordinates, never native stock.
+// Only pcr_source::Template::fresh can authorize physical saved-template work.
+fn frame_views<'a>(
+    inputs: &[(&str, &'a Molecule)],
+    r: &Request,
+    evidence: &'a [SourceFrame],
+) -> Result<BTreeMap<String, crate::analysis::TemplateView<'a>>, Error> {
+    if evidence.len() > MAX_ROWS
+        || evidence
+            .iter()
+            .try_fold(0usize, |sum, frame| {
+                sum.checked_add(frame.sequence.len())
+                    .filter(|n| *n <= 16 << 20)
+            })
+            .is_none()
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut used = BTreeSet::new();
+    let mut result = BTreeMap::new();
+    for contribution in &r.intent.base.base.fragments {
+        let source = inputs
+            .iter()
+            .find(|(id, _)| *id == contribution.input_id)
+            .ok_or_else(|| bad("missing original frame source"))?
+            .1;
+        let template_strand = strand(contribution);
+        let binding = r
+            .intent
+            .base
+            .base
+            .material_bindings
+            .iter()
+            .find(|b| b.input_id == contribution.input_id);
+        let (sequence, topology) = if binding.is_some() {
+            let (index, frame) = evidence
+                .iter()
+                .enumerate()
+                .find(|(_, frame)| {
+                    frame.input_id == contribution.input_id
+                        && frame.template_strand == template_strand
+                })
+                .ok_or_else(|| bad("native source frame evidence missing"))?;
+            if !hex(&frame.state_revision)
+                || frame.sequence.is_empty()
+                || frame.sequence.alphabet() != crate::Alphabet::Dna
+                || frame.topology != source.topology
+                || template_strand == crate::chemistry::Strand::Top
+                    && frame.sequence != source.sequence
+            {
+                return Err(bad("invalid documentary source frame"));
+            }
+            if let crate::assembly_intent::Selector::MaterialStrandRange {
+                expected_state_revision,
+                ..
+            } = &contribution.selector
+            {
+                if expected_state_revision != &frame.state_revision {
+                    return Err(bad("source frame state differs from declared selector"));
+                }
+            }
+            used.insert(index);
+            (&frame.sequence, frame.topology)
+        } else {
+            if template_strand != crate::chemistry::Strand::Top {
+                return Err(bad("bottom frame requires explicit native source"));
+            }
+            (&source.sequence, source.topology)
+        };
+        result.insert(
+            contribution.role.clone(),
+            crate::analysis::TemplateView {
+                sequence,
+                topology,
+                template_strand,
+            },
+        );
+    }
+    if used.len() != evidence.len() {
+        return Err(bad("duplicate or unused native frame evidence"));
+    }
+    Ok(result)
+}
+fn source_frames(
+    resolved: &crate::assembly_intent::Resolved<'_>,
+    r: &Request,
+) -> Result<Vec<SourceFrame>, Error> {
+    let mut result = vec![];
+    let mut seen = BTreeSet::new();
+    let mut bases = 0usize;
+    for contribution in &r.intent.base.base.fragments {
+        let Some(material) = resolved.material(&contribution.input_id) else {
+            continue;
+        };
+        let template_strand = strand(contribution);
+        if !seen.insert((
+            contribution.input_id.clone(),
+            template_strand == crate::chemistry::Strand::Bottom,
+        )) {
+            continue;
+        }
+        let duplex = &material.tracked().duplex;
+        let sequence = match template_strand {
+            crate::chemistry::Strand::Top => &duplex.top,
+            crate::chemistry::Strand::Bottom => &duplex.bottom,
+        };
+        bases = bases
+            .checked_add(sequence.len())
+            .filter(|n| *n <= 16 << 20)
+            .ok_or(Error::TooLarge)?;
+        result.push(SourceFrame {
+            input_id: contribution.input_id.clone(),
+            template_strand,
+            state_revision: crate::modified_duplex::summary(material.tracked())?.state_revision,
+            sequence: sequence.clone(),
+            topology: duplex.topology,
+        });
+    }
+    Ok(result)
 }
 #[derive(Clone)]
 struct RowGeometry {
@@ -152,7 +285,7 @@ struct RowGeometry {
     edits: Vec<Edit>,
     edited_length: usize,
 }
-fn base_at(source: &Molecule, f: &Fragment, offset: usize) -> u8 {
+fn base_at(source: &crate::analysis::TemplateView<'_>, f: &Fragment, offset: usize) -> u8 {
     let local = if f.reverse {
         f.end - f.start - 1 - offset
     } else {
@@ -165,7 +298,11 @@ fn base_at(source: &Molecule, f: &Fragment, offset: usize) -> u8 {
         raw
     }
 }
-fn edited_prefix(source: &Molecule, row: &RowGeometry, count: usize) -> Result<String, Error> {
+fn edited_prefix(
+    source: &crate::analysis::TemplateView<'_>,
+    row: &RowGeometry,
+    count: usize,
+) -> Result<String, Error> {
     let mut out = String::with_capacity(count);
     let mut cursor = 0usize;
     for e in &row.edits {
@@ -197,19 +334,17 @@ fn edited_prefix(source: &Molecule, row: &RowGeometry, count: usize) -> Result<S
     Ok(out)
 }
 fn geometry(
-    inputs: &[(&str, &Molecule)],
+    sources: &BTreeMap<String, crate::analysis::TemplateView<'_>>,
     r: &Request,
 ) -> Result<(Vec<RowGeometry>, Vec<TailDeclaration>), Error> {
     shape(r)?;
-    assembly_edit_intent::source_preflight(inputs, &r.intent, None)?;
     let base = &r.intent.base.base;
-    let sources = inputs.iter().copied().collect::<BTreeMap<_, _>>();
     let lengths = base
         .fragments
         .iter()
         .map(|f| {
             sources
-                .get(f.input_id.as_str())
+                .get(f.role.as_str())
                 .map(|m| m.sequence.len())
                 .ok_or_else(|| bad("missing bound source"))
         })
@@ -237,9 +372,9 @@ fn geometry(
         inserts[j.junction] = text;
     }
     for (original, f) in base.fragments.iter().zip(adjusted) {
-        let original = original.reference_fragment()?;
-        let f = f.reference_fragment()?;
-        let source = sources[f.input_id.as_str()];
+        let original = frame_fragment(original)?;
+        let f = frame_fragment(&f)?;
+        let source = &sources[f.role.as_str()];
         let turn = if source.topology == Topology::Circular && f.start < original.start {
             source.sequence.len()
         } else {
@@ -327,7 +462,7 @@ fn geometry(
                 ));
             }
             (
-                edited_prefix(sources[next.fragment.input_id.as_str()], next, r.overlap)?,
+                edited_prefix(&sources[next.fragment.role.as_str()], next, r.overlap)?,
                 Some(next.fragment.role.clone()),
             )
         } else {
@@ -369,24 +504,6 @@ fn geometry(
             downstream_role,
         });
     }
-    let mut seen = BTreeSet::new();
-    for origin in &r.origins {
-        if !seen.insert(origin.role.as_str()) {
-            return Err(bad(
-                "each role may have only one explicit closed source origin",
-            ));
-        }
-        let row = rows
-            .iter()
-            .find(|row| row.fragment.role == origin.role)
-            .ok_or_else(|| bad("origin refers to an unknown contribution role"))?;
-        let source = sources[row.fragment.input_id.as_str()];
-        if source.revision() != origin.origin.selection.event.revision {
-            return Err(bad(
-                "role origin does not bind its exact original source revision",
-            ));
-        }
-    }
     Ok((rows, tails))
 }
 fn row_request(r: &Request, row: &RowGeometry, tail: &TailDeclaration) -> extension::Request {
@@ -426,7 +543,10 @@ fn exact_options(
     }
     Ok(o)
 }
-fn exact_work(source: &Molecule, o: &DesignOptions) -> Result<(usize, usize), Error> {
+fn exact_work(
+    source: crate::pcr_source::Template<'_>,
+    o: &DesignOptions,
+) -> Result<(usize, usize), Error> {
     let count = o.max_length - o.min_length + 1;
     let width = o.max_length + o.forward_tail.len().max(o.reverse_tail.len());
     let pair = count
@@ -446,8 +566,7 @@ fn exact_work(source: &Molecule, o: &DesignOptions) -> Result<(usize, usize), Er
         .and_then(|n| n.checked_mul(12))
         .ok_or(Error::TooLarge)?;
     let scan = source
-        .sequence
-        .len()
+        .comparison_bases()?
         .checked_mul(o.max_length)
         .and_then(|n| n.checked_mul(8))
         .ok_or(Error::TooLarge)?;
@@ -463,16 +582,15 @@ fn exact_work(source: &Molecule, o: &DesignOptions) -> Result<(usize, usize), Er
     ))
 }
 fn reserved_scope(
-    inputs: &[(&str, &Molecule)],
+    sources: &BTreeMap<String, crate::analysis::TemplateView<'_>>,
     r: &Request,
     rows: &[RowGeometry],
     tails: &[TailDeclaration],
 ) -> Result<(usize, usize), Error> {
-    let sources = inputs.iter().copied().collect::<BTreeMap<_, _>>();
     let mut work = 0usize;
     let mut material = 0usize;
     for (row, tail) in rows.iter().zip(tails) {
-        let source = sources[row.fragment.input_id.as_str()];
+        let source = &sources[row.fragment.role.as_str()];
         let multiplicity = if row.edits.is_empty() { 1 } else { 3 };
         let scan = source
             .sequence
@@ -520,16 +638,18 @@ fn reserved_scope(
         .ok_or(Error::TooLarge)?;
     Ok((work, material))
 }
-pub fn source_preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
-    let (rows, tails) = geometry(inputs, r)?;
+fn proposal_preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
+    let views = frame_views(inputs, r, &[])?;
+    let (rows, tails) = geometry(&views, r)?;
     let sources = inputs.iter().copied().collect::<BTreeMap<_, _>>();
-    let (mut work, mut material) = reserved_scope(inputs, r, &rows, &tails)?;
+    let (mut work, mut material) = reserved_scope(&views, r, &rows, &tails)?;
     for (row, tail) in rows.iter().zip(&tails) {
-        let source = sources[row.fragment.input_id.as_str()];
+        let source =
+            crate::pcr_source::Template::reference(sources[row.fragment.input_id.as_str()])?;
         let charge = if row.edits.is_empty() {
             exact_work(source, &exact_options(r, row, tail)?)?
         } else {
-            extension::work_preflight(source, &row_request(r, row, tail))?
+            extension::source_work_preflight(source, &row_request(r, row, tail))?
         };
         work = work
             .checked_add(charge.0)
@@ -542,13 +662,37 @@ pub fn source_preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(),
     }
     size(&(inputs, r))
 }
-pub fn preflight(inputs: &[PlanInput], r: &Request) -> Result<(), Error> {
+/// Attest saved sources documentarily before primer search or origin copying.
+/// Native recipe verification, not this ownership check, supplies fresh chemistry.
+pub fn source_preflight(
+    inputs: &[(&str, &Molecule)],
+    r: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<(), Error> {
+    shape(r)?;
+    if inputs.len() > MAX_ROWS {
+        return Err(Error::TooLarge);
+    }
+    crate::model::bounds::model_preflight(&inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>())?;
+    size(&(inputs, r))?;
+    assembly_edit_intent::source_preflight(inputs, &r.intent, workspace)?;
+    if r.intent.base.base.material_bindings.is_empty() {
+        proposal_preflight(inputs, r)?;
+    }
+    Ok(())
+}
+pub fn preflight(
+    inputs: &[PlanInput],
+    r: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<(), Error> {
     source_preflight(
         &inputs
             .iter()
             .map(|i| (i.id.as_str(), &i.molecule))
             .collect::<Vec<_>>(),
         r,
+        workspace,
     )?;
     if inputs
         .iter()
@@ -571,54 +715,43 @@ fn context(inputs: &[PlanInput], r: &Request) -> Result<String, Error> {
         r,
     ))
 }
-pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Error> {
-    preflight(inputs, r)?;
+pub fn design_revision(
+    inputs: &[PlanInput],
+    r: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<String, Error> {
+    preflight(inputs, r, workspace)?;
     context(inputs, r)
 }
-/// Read source/literal/trim geometry only; no primer ranking, PCR, whole-target
-/// construction or molecular transformation runs on this early conflict path.
-pub fn expected_tails(inputs: &[PlanInput], r: &Request) -> Result<Vec<TailDeclaration>, Error> {
-    preflight(inputs, r)?;
-    geometry(
-        &inputs
-            .iter()
-            .map(|i| (i.id.as_str(), &i.molecule))
-            .collect::<Vec<_>>(),
-        r,
-    )
-    .map(|(_, tails)| tails)
-}
-pub fn tail_preflight(inputs: &[PlanInput], r: &Request) -> Result<Vec<TailDeclaration>, Error> {
-    expected_tails(inputs, r)
-}
-fn exact_expected(
-    source: &Molecule,
-    row: &RowGeometry,
-    tail: &TailDeclaration,
-) -> Result<Molecule, Error> {
-    let mut dna = tail.forward_tail.clone();
-    // Exact-PCR preparation is stored source orientation, before row.reverse.
-    for offset in 0..row.fragment.end - row.fragment.start {
-        dna.push(
-            source.sequence.as_str().as_bytes()
-                [(row.fragment.start + offset) % source.sequence.len()] as char,
-        );
+/// Derive literal tails without primer search or assembly. Actual saved strands
+/// require fresh origin reconstruction; callers must run this native phase off the UI thread.
+pub fn expected_tails(
+    inputs: &[PlanInput],
+    r: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<Vec<TailDeclaration>, Error> {
+    preflight(inputs, r, workspace)?;
+    let borrowed = inputs
+        .iter()
+        .map(|i| (i.id.as_str(), &i.molecule))
+        .collect::<Vec<_>>();
+    if r.intent.base.base.material_bindings.is_empty() {
+        return geometry(&frame_views(&borrowed, r, &[])?, r).map(|(_, tails)| tails);
     }
-    if !tail.reverse_tail.is_empty() {
-        dna.push_str(
-            Sequence::dna(&tail.reverse_tail)?
-                .reverse_complement()?
-                .as_str(),
-        );
-    }
-    Molecule::dna(
-        format!("{} independent exact-PCR expectation", row.fragment.role),
-        &dna,
-        Topology::Linear,
-    )
+    let resolved = crate::assembly_intent::resolve(inputs, &r.intent.base.base, workspace)?;
+    assembly_edit_intent::build_resolved(&resolved, &r.intent)?;
+    let evidence = source_frames(&resolved, r)?;
+    geometry(&frame_views(&borrowed, r, &evidence)?, r).map(|(_, tails)| tails)
+}
+pub fn tail_preflight(
+    inputs: &[PlanInput],
+    r: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<Vec<TailDeclaration>, Error> {
+    expected_tails(inputs, r, workspace)
 }
 fn ordinary(
-    source: &Molecule,
+    source: crate::pcr_source::Template<'_>,
     r: &Request,
     row: &RowGeometry,
     tail: &TailDeclaration,
@@ -645,41 +778,33 @@ fn ordinary(
     let preparation = Preparation::ExactPcr {
         forward: pair.forward.primer.clone(),
         reverse: pair.reverse.primer.clone(),
+        template_strand: source.strand,
     };
-    let target = exact_expected(source, row, tail)?;
-    let plan = DesignPlan {
-        name: format!("{} original exact-PCR proposal", row.fragment.role),
-        target_revision: target.revision(),
-        inputs: vec![PlanInput {
-            id: row.fragment.input_id.clone(),
-            revision: source.revision(),
-            molecule: source.clone(),
-        }],
-        steps: vec![Operation::Pcr {
-            template: Source::Input(row.fragment.input_id.clone()),
-            forward: pair.forward.primer.clone(),
-            reverse: pair.reverse.primer.clone(),
-        }],
-    };
-    let verification = verification::verify(&plan, &target);
     Ok((
         preparation,
         RowDesign {
             role: row.fragment.role.clone(),
             input_id: row.fragment.input_id.clone(),
-            input_revision: source.revision(),
+            input_revision: source.reference.revision(),
             fragment: row.fragment.clone(),
+            template_strand: source.strand,
             edits: vec![],
             designs: vec![design],
             search: vec![search],
-            verification_status: verification.status,
-            findings: verification.findings,
         },
     ))
 }
-fn from_run(preparation: Preparation, origin: &Capsule) -> Result<Preparation, Error> {
+fn from_origin(preparation: Preparation, origin: &MaterialOrigin) -> Result<Preparation, Error> {
     let child = match preparation {
-        Preparation::ExactPcr { forward, reverse } => RunPreparation::ExactPcr { forward, reverse },
+        Preparation::ExactPcr {
+            forward,
+            reverse,
+            template_strand,
+        } => RunPreparation::ExactPcr {
+            forward,
+            reverse,
+            template_strand,
+        },
         Preparation::OverlapExtensionPcr { request } => {
             RunPreparation::OverlapExtensionPcr { request }
         }
@@ -689,39 +814,68 @@ fn from_run(preparation: Preparation, origin: &Capsule) -> Result<Preparation, E
             ));
         }
     };
-    Ok(Preparation::FromRun {
-        origin: origin.clone(),
-        preparation: child,
+    Ok(match origin {
+        MaterialOrigin::Run(origin) => Preparation::FromRun {
+            origin: origin.clone(),
+            preparation: child,
+        },
+        MaterialOrigin::Derived(origin) => Preparation::FromDerived {
+            origin: origin.clone(),
+            preparation: child,
+        },
     })
 }
-pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
-    let context_revision = design_revision(inputs, r)?;
+pub fn design(
+    inputs: &[PlanInput],
+    r: &Request,
+    workspace: Option<&Workspace>,
+) -> Result<Report, Error> {
+    let context_revision = design_revision(inputs, r, workspace)?;
     let borrowed = inputs
         .iter()
         .map(|i| (i.id.as_str(), &i.molecule))
         .collect::<Vec<_>>();
-    let (geometry, tails) = geometry(&borrowed, r)?;
+    let resolved = crate::assembly_intent::resolve(inputs, &r.intent.base.base, workspace)?;
+    let intent = assembly_edit_intent::build_resolved(&resolved, &r.intent)?;
+    let source_frames = source_frames(&resolved, r)?;
+    let views = frame_views(&borrowed, r, &source_frames)?;
+    let (geometry, tails) = geometry(&views, r)?;
     let sources = inputs
         .iter()
         .map(|i| (i.id.as_str(), &i.molecule))
         .collect::<BTreeMap<_, _>>();
-    let (work, material) = reserved_scope(&borrowed, r, &geometry, &tails)?;
+    let (work, material) = reserved_scope(&views, r, &geometry, &tails)?;
     let mut budget = extension::Budget {
         used: work,
         limit: MAX_WORK,
         materialized: material,
     };
     // Intent is a separate source/literal construction before molecular proposals.
-    let intent = assembly_edit_intent::build(inputs, &r.intent, None)?;
     let mut rows = Vec::with_capacity(geometry.len());
     let mut fragments = Vec::with_capacity(geometry.len());
     for (row, tail) in geometry.iter().zip(&tails) {
-        let source = sources[row.fragment.input_id.as_str()];
+        let original = sources[row.fragment.input_id.as_str()];
+        let contribution = r
+            .intent
+            .base
+            .base
+            .fragments
+            .iter()
+            .find(|c| c.role == row.fragment.role)
+            .ok_or(Error::TooLarge)?;
+        let source = if let Some(material) = resolved.material(&row.fragment.input_id) {
+            crate::pcr_source::Template::fresh(original, material.tracked(), strand(contribution))?
+        } else {
+            crate::pcr_source::Template::reference(original)?
+        };
         let (mut preparation, design) = if row.edits.is_empty() {
             ordinary(source, r, row, tail, &mut budget)?
         } else {
-            let proposal =
-                extension::design_with_budget(source, &row_request(r, row, tail), &mut budget)?;
+            let proposal = extension::compile_source_with_budget(
+                source,
+                &row_request(r, row, tail),
+                &mut budget,
+            )?;
             (
                 Preparation::OverlapExtensionPcr {
                     request: proposal.preparation,
@@ -731,16 +885,22 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
                     input_id: row.fragment.input_id.clone(),
                     input_revision: proposal.source_revision,
                     fragment: row.fragment.clone(),
+                    template_strand: source.strand,
                     edits: row.edits.clone(),
                     designs: proposal.designs,
                     search: proposal.search,
-                    verification_status: proposal.verification.status,
-                    findings: proposal.verification.findings,
                 },
             )
         };
-        if let Some(origin) = r.origins.iter().find(|o| o.role == row.fragment.role) {
-            preparation = from_run(preparation, &origin.origin)?;
+        if let Some(origin) = r
+            .intent
+            .base
+            .base
+            .material_bindings
+            .iter()
+            .find(|binding| binding.input_id == row.fragment.input_id)
+        {
+            preparation = from_origin(preparation, &origin.origin)?;
         }
         fragments.push(FragmentSpec {
             generation: None,
@@ -760,10 +920,10 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         options: r.profile_options.clone(),
     };
     let preview = assembly_recipe::preview(inputs, &intent.target, &recipe)?;
-    let report=Report{engine_version:ENGINE_VERSION.into(),context_revision,source_revisions:inputs.iter().map(|i|i.revision.clone()).collect(),request:r.clone(),intent,recipe,tails,rows,preview,warnings:vec![
+    let report=Report{engine_version:ENGINE_VERSION.into(),context_revision,source_revisions:inputs.iter().map(|i|i.revision.clone()).collect(),source_frames,request:r.clone(),intent,recipe,tails,rows,preview,warnings:vec![
         "Every source contribution, junction trim/insert, SNP and internal edit is a literal declaration built independently of molecular reconstruction. Outgoing homology is taken from the next edited retained source core, never chosen from a successful reconstructed product or arbitrary target.".into(),
-        "Ordinary rows use source-bound ranked exact PCR; edited rows use two PCR branches, physical reciprocal extension and outer PCR. One shared100M comparison-work/material ledger covers native primer/PCR/junction searches, local proposal verification and final whole-recipe molecular searches; no role receives an independent100M allowance. Literal-reference/annotation construction and closed-origin replay retain their separate native aggregate/copy/replay bounds;100M is not an absolute end-to-end runtime bound.".into(),
-        "Row-local proposal statuses describe original-input diagnostics. The final preview separately replays declared exact saved origins and retains originating/terminal/PCR uncertainty. Component selection and reference agreement do not establish isolation or experimental success.".into(),
+        "Ordinary rows use source-bound ranked exact PCR; edited rows use two PCR branches, physical reciprocal extension and outer PCR. One shared100M comparison-work/material ledger covers native primer/PCR/junction searches and the declared final whole-recipe molecular search reservation; no role receives an independent100M allowance. Literal-reference/annotation construction and closed-origin replay retain their separate native aggregate/copy/replay bounds;100M is not an absolute end-to-end runtime bound.".into(),
+        "Per-row ranked calls and search notes are proposal evidence, not a separate molecular assessment. The one final preview replays declared exact saved origins and retains originating/terminal/PCR uncertainty. Component selection and reference agreement do not establish isolation or experimental success.".into(),
         format!("Shared charged comparison work{} of{}; materialized/reserved base units{} of64MiB. Native ranked lists and caps are retained per role; no global search optimality is asserted.",budget.used,MAX_WORK,budget.materialized),
     ]};
     report.validate_binding(&report.context_revision)?;
@@ -779,12 +939,20 @@ fn rc(text: &str) -> Result<String, Error> {
             .to_owned())
     }
 }
-fn stored_segment(source: &Molecule, f: &Fragment, start: usize, end: usize) -> String {
+fn stored_segment(
+    source: &crate::analysis::TemplateView<'_>,
+    f: &Fragment,
+    start: usize,
+    end: usize,
+) -> String {
     (start..end)
         .map(|j| source.sequence.as_str().as_bytes()[(f.start + j) % source.sequence.len()] as char)
         .collect()
 }
-fn edited_bridge(source: &Molecule, row: &RowGeometry) -> Result<(usize, usize, String), Error> {
+fn edited_bridge(
+    source: &crate::analysis::TemplateView<'_>,
+    row: &RowGeometry,
+) -> Result<(usize, usize, String), Error> {
     let start = row
         .edits
         .iter()
@@ -820,7 +988,7 @@ fn edited_bridge(source: &Molecule, row: &RowGeometry) -> Result<(usize, usize, 
     }
 }
 fn call_options(
-    source: &Molecule,
+    source: &crate::analysis::TemplateView<'_>,
     r: &Request,
     row: &RowGeometry,
     tail: &TailDeclaration,
@@ -909,14 +1077,16 @@ fn location_guard(location: &crate::Location, n: usize, maximum: usize) -> Resul
     Ok(())
 }
 fn validate_design(
-    source: &Molecule,
+    source: &crate::analysis::TemplateView<'_>,
+    source_revision: &str,
     d: &DesignReport,
     search: &PairSearch,
     o: &DesignOptions,
     call: &str,
     maximum: usize,
 ) -> Result<(), Error> {
-    if d.source_revision != source.revision()
+    if d.source_revision != source_revision
+        || d.template_strand != source.template_strand
         || d.options != *o
         || d.pairs.is_empty()
         || d.pairs.len() > o.max_pairs
@@ -1006,7 +1176,7 @@ fn validate_design(
     Ok(())
 }
 fn selected_preparation(
-    source: &Molecule,
+    source: &crate::analysis::TemplateView<'_>,
     r: &Request,
     row: &RowGeometry,
     d: &RowDesign,
@@ -1022,6 +1192,7 @@ fn selected_preparation(
         return Ok(Preparation::ExactPcr {
             forward: p.forward.primer.clone(),
             reverse: p.reverse.primer.clone(),
+            template_strand: d.template_strand,
         });
     }
     let (_, _, insert) = edited_bridge(source, row)?;
@@ -1030,6 +1201,11 @@ fn selected_preparation(
         Ok::<_, Error>(overlap_extension_pcr::PrimerPair {
             forward: p.forward.primer.clone(),
             reverse: p.reverse.primer.clone(),
+            template_strand: if i == 2 {
+                crate::chemistry::Strand::Top
+            } else {
+                d.template_strand
+            },
         })
     };
     Ok(Preparation::OverlapExtensionPcr {
@@ -1063,19 +1239,28 @@ impl Report {
             || self.source_revisions.iter().any(|s| !hex(s))
             || self.warnings.len() > 32
             || self.warnings.iter().any(|s| s.len() > 8192)
-            || self.rows.iter().any(|row| {
-                row.designs.len() > 3
-                    || row.search.len() > 3
-                    || row.findings.len() > 1000
-                    || row.findings.iter().any(|s| s.len() > 8192)
-            })
+            || self
+                .rows
+                .iter()
+                .any(|row| row.designs.len() > 3 || row.search.len() > 3)
         {
             return Err(bad("invalid bounded whole-proposal report shape"));
         }
         shape(&self.request)?;
         size(self)?;
         let inputs = &self.preview.compiled.plan.inputs;
-        preflight(inputs, &self.request)?;
+        if self.request.intent.base.base.material_bindings.is_empty() {
+            proposal_preflight(
+                &inputs
+                    .iter()
+                    .map(|i| (i.id.as_str(), &i.molecule))
+                    .collect::<Vec<_>>(),
+                &self.request,
+            )?;
+        }
+        if inputs.iter().any(|i| i.revision != i.molecule.revision()) {
+            return Err(bad("captured proposal source revision changed"));
+        }
         if self.source_revisions
             != inputs
                 .iter()
@@ -1091,16 +1276,13 @@ impl Report {
             return Err(bad("independent typed intent declaration changed"));
         }
         self.intent
-            .validate_binding(&assembly_edit_intent::intent_revision(
-                inputs,
-                &self.request.intent,
-                None,
-            )?)?;
+            .validate_binding(&self.intent.context_revision)?;
         let borrowed = inputs
             .iter()
             .map(|i| (i.id.as_str(), &i.molecule))
             .collect::<Vec<_>>();
-        let (geometry, tails) = geometry(&borrowed, &self.request)?;
+        let views = frame_views(&borrowed, &self.request, &self.source_frames)?;
+        let (geometry, tails) = geometry(&views, &self.request)?;
         if tails != self.tails {
             return Err(bad("literal source/edit/junction tail provenance changed"));
         }
@@ -1127,10 +1309,12 @@ impl Report {
             .zip(&tails)
             .zip(&self.recipe.fragments)
         {
-            let source = sources[derived.fragment.input_id.as_str()];
+            let original = sources[derived.fragment.input_id.as_str()];
+            let source = &views[derived.fragment.role.as_str()];
             if row.role != derived.fragment.role
                 || row.input_id != derived.fragment.input_id
-                || row.input_revision != source.revision()
+                || row.input_revision != original.revision()
+                || row.template_strand != source.template_strand
                 || assembly_recipe::hash(&row.fragment)?
                     != assembly_recipe::hash(&derived.fragment)?
                 || row.edits != derived.edits
@@ -1160,6 +1344,7 @@ impl Report {
                 };
                 validate_design(
                     source,
+                    &original.revision(),
                     call,
                     search,
                     options,
@@ -1168,8 +1353,16 @@ impl Report {
                 )?;
             }
             let mut preparation = selected_preparation(source, &self.request, derived, row)?;
-            if let Some(origin) = self.request.origins.iter().find(|o| o.role == row.role) {
-                preparation = from_run(preparation, &origin.origin)?;
+            if let Some(origin) = self
+                .request
+                .intent
+                .base
+                .base
+                .material_bindings
+                .iter()
+                .find(|binding| binding.input_id == row.input_id)
+            {
+                preparation = from_origin(preparation, &origin.origin)?;
             }
             if assembly_recipe::hash(&preparation)? != assembly_recipe::hash(&fragment.preparation)?
             {
@@ -1217,6 +1410,30 @@ impl Report {
             ));
         }
         Ok(())
+    }
+    /// Exact current workspace/source acceptance without repeating primer search
+    /// or PCR/reconstructing material from the documentary preview.
+    pub fn validate_sources(
+        &self,
+        inputs: &[PlanInput],
+        expected: &str,
+        workspace: Option<&Workspace>,
+    ) -> Result<(), Error> {
+        if design_revision(inputs, &self.request, workspace)? != expected {
+            return Err(bad("current source/origin/options differ from proposal"));
+        }
+        self.validate_binding(expected)?;
+        let retained = &self.preview.compiled.plan.inputs;
+        if retained.len() != inputs.len()
+            || retained
+                .iter()
+                .zip(inputs)
+                .any(|(a, b)| a.id != b.id || a.revision != b.revision || a.molecule != b.molecule)
+        {
+            return Err(bad("proposal contains substituted source input"));
+        }
+        self.intent
+            .validate_sources(inputs, &self.intent.context_revision, workspace)
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         if self.context_revision != expected {

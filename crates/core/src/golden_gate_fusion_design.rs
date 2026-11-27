@@ -922,6 +922,8 @@ impl Materialized {
                         selection,
                         fragment_index,
                         repair,
+                        template_strand: crate::chemistry::Strand::Top,
+                        ..
                     } = &row.source.preparation
                     else {
                         return Err(bad("selected preparation is not actual pinned PCR/digest"));

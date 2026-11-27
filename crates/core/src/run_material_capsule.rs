@@ -19,6 +19,9 @@ pub const MAX_NESTING: usize = 8;
 pub const MAX_CAPSULE_BYTES: usize = 8 * 1024 * 1024;
 /// Worker91 policy: one ledger for all root/descendant native origin wrappers.
 pub const MAX_AGGREGATE_ORIGIN_BYTES: usize = 32 * 1024 * 1024;
+/// One library may declare distinct saved sources for all bounded alternatives.
+/// Operation-specific input limits and the shared ancestry/byte ledger still apply.
+pub const MAX_DOCUMENTARY_ORIGINS: usize = 256;
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_STEPS: usize = 1000;
 const MAX_INPUT_BASES: usize = 8 * 1024 * 1024;
@@ -816,7 +819,7 @@ pub fn documentary_origins(
     if selections
         .len()
         .checked_add(graph_selections.len())
-        .is_none_or(|n| n > 32)
+        .is_none_or(|n| n > MAX_DOCUMENTARY_ORIGINS)
     {
         return Err(Error::TooLarge);
     }
@@ -843,7 +846,7 @@ pub fn documentary_origins(
             run_material::MaterialSelection::Run(selection) => {
                 let record = run_lineage::load_run(workspace, &selection.run_id)?;
                 // Bound retained decoded roots as they enter the collection too;
-                // repeated selection of a large run cannot accumulate 32 copies
+                // repeated selection of a large run cannot accumulate uncharged copies
                 // before the mixed ancestry phase checks its aggregate allowance.
                 charge_serialized_bounded(&mut loaded, &record, MAX_AGGREGATE_ORIGIN_BYTES)?;
                 run_material::selected_reference(workspace, selection, &record)?;

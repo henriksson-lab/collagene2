@@ -93,19 +93,39 @@ fn actual_thirteen_seventeen_strands_support_top_contained_pcr_without_silent_re
     let before = source.clone();
     let forward = Primer::new("F", "AGTC", "").unwrap();
     let reverse = Primer::new("R", "GTAGC", "").unwrap();
-    let previews = material_pcr::simulate(&source, &origin, &forward, &reverse).unwrap();
+    let previews = material_pcr::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].molecule.sequence.as_str(), "AGTCCGATGCTAC");
+    assert_eq!(
+        previews[0].geometry.template_strand,
+        collagene_core::chemistry::Strand::Top
+    );
     assert!(
         previews[0]
             .findings
             .iter()
-            .any(|s| s.contains("initially staggered"))
+            .any(|s| s.contains("complementary-strand coverage")
+                && s.contains("without filling, repairing or cropping"))
     );
+    let evidence: material_pcr::OriginEvidence =
+        serde_json::from_str(&previews[0].molecule.metadata[material_pcr::ORIGIN_METADATA])
+            .unwrap();
+    let actual = origin.replay(&source).unwrap();
+    assert_eq!(evidence.origin_incomplete, actual.incomplete());
+    assert_eq!(actual.tracked().duplex.top.as_str(), "AGTCCGATGCTAC");
+    assert_eq!(actual.tracked().duplex.bottom.as_str(), "GTAGGTAGCATCGGACT");
+
     assert_eq!(source, before);
 }
 #[test]
-fn bottom_only_extra_bases_creating_second_geometry_are_explicit_unsupported_not_false_unique() {
+fn top_frame_refuses_uncovered_geometry_while_bottom_retains_both_real_products() {
     let (source, origin) = staggered();
     let before = source.clone();
     let forward = Primer::new("F", "AGTC", "").unwrap();
@@ -127,13 +147,38 @@ fn bottom_only_extra_bases_creating_second_geometry_are_explicit_unsupported_not
             .len(),
         2
     );
-    let error = material_pcr::simulate(&source, &origin, &forward, &reverse)
-        .unwrap_err()
-        .to_string();
+    let error = material_pcr::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap_err();
     assert!(
-        error.contains("outside the top-reference-contained"),
+        matches!(error,collagene_core::Error::Unsupported(ref message) if message.contains("outside the selected intact strand frame")&&message.contains("no unique product")),
         "{error}"
     );
+    let bottom = material_pcr::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Bottom,
+    )
+    .unwrap();
+    let mut lengths = bottom
+        .iter()
+        .map(|p| p.molecule.sequence.len())
+        .collect::<Vec<_>>();
+    lengths.sort();
+    assert_eq!(lengths, vec![13, 17]);
+    assert!(
+        bottom
+            .iter()
+            .all(|p| p.geometry.template_strand == collagene_core::chemistry::Strand::Bottom)
+    );
+
     assert_eq!(source, before);
 }
 #[test]
@@ -154,6 +199,7 @@ fn freshly_replayed_unsealed_nicks_remain_unsupported_for_pcr_and_source_is_unch
                 template: Source::Input("left".into()),
                 forward: Primer::new("LF", "TTGCAATC", "").unwrap(),
                 reverse: Primer::new("LR", "GCTAGCAT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(0),
@@ -163,6 +209,7 @@ fn freshly_replayed_unsealed_nicks_remain_unsupported_for_pcr_and_source_is_unch
                 template: Source::Input("right".into()),
                 forward: Primer::new("RF", "ATCGTCGA", "").unwrap(),
                 reverse: Primer::new("RR", "GTACCGCT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Ligate {
                 fragments: vec![
@@ -185,9 +232,15 @@ fn freshly_replayed_unsealed_nicks_remain_unsupported_for_pcr_and_source_is_unch
     let before = source.clone();
     let forward = Primer::new("F", "TTGCAATC", "").unwrap();
     let reverse = Primer::new("R", "GTACCGCT", "").unwrap();
-    let error = material_pcr::simulate(&source, &origin, &forward, &reverse)
-        .unwrap_err()
-        .to_string();
+    let error = material_pcr::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap_err()
+    .to_string();
     assert!(error.contains("nick propagation"), "{error}");
     assert_eq!(source, before);
 }

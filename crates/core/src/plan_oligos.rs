@@ -3,7 +3,7 @@
 use crate::{
     Alphabet, Error, Molecule, Sequence, Topology,
     analysis::Primer,
-    chemistry::Terminus,
+    chemistry::{Strand, Terminus},
     formats::ExportReport,
     mutagenesis::PcrOptions,
     oligo_formats::{
@@ -41,6 +41,9 @@ pub struct OligoUse {
     pub source: Option<Source>,
     pub primer: Option<Primer>,
     pub mismatch_options: Option<PcrOptions>,
+    /// Coordinates belong to this declared source strand; no binding is inferred.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub template_strand: Option<Strand>,
     pub declared_terminus: Option<Terminus>,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -302,6 +305,7 @@ pub fn preflight(plan: &DesignPlan, target: &Molecule, _options: &Options) -> Re
                 template,
                 forward,
                 reverse,
+                ..
             }
             | Operation::PcrWithMismatches {
                 template,
@@ -435,6 +439,7 @@ impl Builder {
         source: &Source,
         p: &Primer,
         policy: Option<&PcrOptions>,
+        template_strand: Strand,
     ) -> Result<(), Error> {
         let normalized = Primer::new(&p.name, p.annealing.as_str(), &p.tail)?;
         let name = if p.name.is_empty() {
@@ -462,6 +467,7 @@ impl Builder {
                 source: Some(source.clone()),
                 primer: Some(p.clone()),
                 mismatch_options: policy.cloned(),
+                template_strand: Some(template_strand),
                 declared_terminus: None,
             },
         )
@@ -544,6 +550,7 @@ impl Builder {
                 source: Some(source.clone()),
                 primer: None,
                 mismatch_options: None,
+                template_strand: None,
                 declared_terminus: Some(terminus),
             },
         )
@@ -621,6 +628,15 @@ fn source_modification(m: &Molecule) -> Result<Option<String>, Error> {
     }
     Ok(None)
 }
+fn frame_labels(mask: u8) -> &'static str {
+    match mask {
+        0 => "",
+        1 => "Top",
+        2 => "Bottom",
+        3 => "Top | Bottom",
+        _ => unreachable!("closed native strand flags"),
+    }
+}
 pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<Report, Error> {
     preflight(plan, target, options)?;
     let mut builder=Builder{entries:vec![],uses:vec![],keys:BTreeMap::new(),warnings:vec!["Declared oligos from the exact typed plan only. Order extraction performs no PCR or target verification and does not establish experimental success.".into(),"No stock, supplier notation, order quantities or downstream treatment-derived modifications are inferred. PCR primers have no explicit modification field in this model.".into()],unavailable:vec![],dedup:options.deduplicate};
@@ -630,9 +646,24 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                 template,
                 forward,
                 reverse,
+                template_strand,
             } => {
-                builder.pcr(index, "pcr-forward", template, forward, None)?;
-                builder.pcr(index, "pcr-reverse", template, reverse, None)?;
+                builder.pcr(
+                    index,
+                    "pcr-forward",
+                    template,
+                    forward,
+                    None,
+                    *template_strand,
+                )?;
+                builder.pcr(
+                    index,
+                    "pcr-reverse",
+                    template,
+                    reverse,
+                    None,
+                    *template_strand,
+                )?;
             }
             Operation::PcrWithMismatches {
                 template,
@@ -646,6 +677,7 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                     template,
                     forward,
                     Some(options),
+                    Strand::Top,
                 )?;
                 builder.pcr(
                     index,
@@ -653,6 +685,7 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                     template,
                     reverse,
                     Some(options),
+                    Strand::Top,
                 )?;
             }
             Operation::AnnealOligos {
@@ -716,6 +749,7 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                                 source,
                                 forward,
                                 None,
+                                Strand::Top,
                             )?;
                             builder.pcr(
                                 index,
@@ -723,6 +757,7 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                                 source,
                                 reverse,
                                 None,
+                                Strand::Top,
                             )?;
                             if tail.is_some() {
                                 warning(
@@ -797,6 +832,14 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
     if builder.entries.is_empty() {
         warning(&mut builder.warnings,"No orderable typed PCR primers or original anneal oligos were found. No synthesis order was inferred from other preparation steps.".into());
     }
+    let mut row_frames = vec![0u8; builder.entries.len()];
+    for (row, usage) in &builder.uses {
+        row_frames[*row] |= match usage.template_strand {
+            Some(Strand::Top) => 1,
+            Some(Strand::Bottom) => 2,
+            None => 0,
+        };
+    }
     let mut writer = csv::WriterBuilder::new()
         .terminator(csv::Terminator::CRLF)
         .from_writer(Bounded {
@@ -812,9 +855,10 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
             "Modifications",
             "Names preview",
             "Distinct labels (not quantity)",
+            "PCR template frames (declarations)",
         ])
         .map_err(|_| Error::TooLarge)?;
-    for entry in &builder.entries {
+    for (row, entry) in builder.entries.iter().enumerate() {
         let (domain, tail) = entry
             .domains
             .as_ref()
@@ -836,6 +880,7 @@ pub fn build(plan: &DesignPlan, target: &Molecule, options: &Options) -> Result<
                 entry.modification.as_deref().unwrap_or(""),
                 &names,
                 &entry.names.len().to_string(),
+                frame_labels(row_frames[row]),
             ])
             .map_err(|_| Error::TooLarge)?;
     }
@@ -891,6 +936,7 @@ impl Report {
         {
             return Err(Error::TooLarge);
         }
+        let mut frames = BTreeMap::<&str, u8>::new();
         for usage in &self.uses {
             if usage.kind.len() > 64
                 || usage.primer_name.len() > 1024
@@ -905,6 +951,26 @@ impl Report {
             }
             if let Some(primer) = &usage.primer {
                 primer_guard(primer)?;
+                let frame = usage
+                    .template_strand
+                    .ok_or_else(|| bad("PCR use is missing its explicit template strand"))?;
+                if usage.source.is_none()
+                    || usage.declared_terminus.is_some()
+                    || usage.mismatch_options.is_some() && frame != Strand::Top
+                {
+                    return Err(bad("PCR source/frame or mismatch declaration differs"));
+                }
+                *frames.entry(usage.oligo_id.as_str()).or_default() |= match frame {
+                    Strand::Top => 1,
+                    Strand::Bottom => 2,
+                };
+            } else if usage.template_strand.is_some()
+                || usage.mismatch_options.is_some()
+                || usage.declared_terminus.is_none()
+            {
+                return Err(bad(
+                    "non-PCR oligo cannot claim a template frame or mismatch policy",
+                ));
             }
             if let Some(Source::Input(id)) = &usage.source {
                 if id.len() > 128 {
@@ -929,7 +995,23 @@ impl Report {
                 return Err(Error::TooLarge);
             }
         }
+        if self.oligos.headers.get(7).map(String::as_str)
+            != Some("PCR template frames (declarations)")
+        {
+            return Err(bad(
+                "order table is missing its current template-frame column",
+            ));
+        }
         for row in &self.oligos.records {
+            if row.original_fields.get(7).map(String::as_str)
+                != Some(frame_labels(
+                    frames.get(row.row_id.as_str()).copied().unwrap_or(0),
+                ))
+            {
+                return Err(bad(
+                    "saved order row frame declarations differ from exact uses",
+                ));
+            }
             if row.name.len() > 1024
                 || row.row_id.len() > 96
                 || !hex(&row.original_record_blake3)
@@ -982,7 +1064,7 @@ pub fn export_revision(
 ) -> Result<String, Error> {
     preflight(plan, target, options)?;
     crate::assembly_recipe::hash(&(
-        "plan-oligo-export-1",
+        "plan-oligo-export-2",
         verification::plan_revision(plan),
         target.revision(),
         options,

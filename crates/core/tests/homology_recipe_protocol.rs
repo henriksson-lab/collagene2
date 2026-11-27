@@ -267,6 +267,7 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
             RunPreparation::ExactPcr {
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "GAATTCGA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             CIRCLE,
         ),
@@ -360,6 +361,7 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         template: Source::Step(2),
         forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
         reverse: Primer::new("R", "GAATTCGA", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     });
     let report = verification::verify(&plan, &linear);
     assert_ne!(report.status, Status::ConsistentUnderAssumptions);

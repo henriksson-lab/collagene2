@@ -335,7 +335,14 @@ pub fn build_intent(
         workspace,
     )?;
     let resolved = assembly_intent::resolve(inputs, base, workspace)?;
-    let built = build_resolved(&resolved, base, edits)?;
+    report_resolved(&resolved, base, edits)
+}
+pub(crate) fn report_resolved(
+    resolved: &assembly_intent::Resolved<'_>,
+    base: &assembly_intent::Request,
+    edits: &[Edit],
+) -> Result<Intent, Error> {
+    let built = build_resolved(resolved, base, edits)?;
     let report = Intent {
         context_revision: context(&resolved.context, base, edits)?,
         source_context_revision: resolved.context.clone(),
@@ -540,6 +547,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
             preparation: Preparation::ExactPcr {
                 forward: pair.forward.primer.clone(),
                 reverse: pair.reverse.primer.clone(),
+                template_strand: crate::chemistry::Strand::Top,
             },
             reverse: f.reverse,
         });
@@ -745,7 +753,13 @@ impl Report {
             {
                 return Err(bad("ranked pair source/interval changed"));
             }
-            let Preparation::ExactPcr { forward, reverse } = &row.preparation else {
+            let Preparation::ExactPcr {
+                forward,
+                reverse,
+                template_strand: crate::chemistry::Strand::Top,
+                ..
+            } = &row.preparation
+            else {
                 return Err(bad("junction proposals require exact original-source PCR"));
             };
             let pair = &d.pairs[0];

@@ -107,6 +107,7 @@ fn fixture() -> (Workspace, String, EventBinding, EventBinding, Molecule) {
             template: Source::Input("template".into()),
             forward: Primer::new("F", "ACGA", "").unwrap(),
             reverse: Primer::new("R", "GTTA", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let saved = run_lineage::record_run(

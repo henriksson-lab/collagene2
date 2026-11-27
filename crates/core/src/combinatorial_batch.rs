@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 pub const KIND: &str = "combinatorial-batch-record-v1";
 pub const ENGINE_VERSION: &str = verification::ENGINE_VERSION;
-const CONTRACT: &str = "combinatorial-batch-1";
+const CONTRACT: &str = "combinatorial-batch-2";
 pub const MAX_RECORD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 /// Aggregate declared DNA-search/repeat work, not a measured CPU-time claim.
@@ -155,15 +155,7 @@ impl Request {
                             }
                         }
                     }
-                    if let design::TargetDeclaration::OriginalRegions { junction_edits } =
-                        &construct.target
-                    {
-                        if junction_edits.len() > design::MAX_BINS
-                            || junction_edits.iter().any(|edit| edit.inserted.len() > 200)
-                        {
-                            return Err(Error::TooLarge);
-                        }
-                    }
+                    design::declaration_bounds(&construct.target)?;
                     &construct.choices
                 }
                 RowRequest::DraftError {
@@ -258,7 +250,7 @@ fn evaluate_row(
     index: usize,
     row: &RowRequest,
     design: Option<&Design>,
-    workspace: &Workspace,
+    resolved: Result<design::Resolved, Error>,
 ) -> RowEvidence {
     let construct = match row {
         RowRequest::DraftError { message, .. } => {
@@ -280,7 +272,7 @@ fn evaluate_row(
     };
     let combination = design::combination_key(design, &construct.choices).ok();
     let result = (|| -> Result<RowEvidence, Error> {
-        let evaluated = design::evaluate_validated(design, construct, workspace)?;
+        let evaluated = design::evaluate_resolved(resolved?)?;
         let report = evaluated.verification();
         let plan = evaluated.plan();
         if report.findings.len() > 4096
@@ -499,42 +491,60 @@ impl Session {
         if index != self.rows.len() || index >= self.request.rows.len() {
             return Err(bad("advance exactly the next selected construct"));
         }
-        let charge = match (&self.request.rows[index], self.request.design.as_ref()) {
-            (RowRequest::Ready(construct), Some(design)) => {
-                design::work_charge(design, construct, &self.workspace).unwrap_or_else(|error| {
-                    if matches!(error, Error::TooLarge) {
-                        MAX_BATCH_WORK + 1
-                    } else {
-                        1
-                    }
-                })
+        let request = &self.request.rows[index];
+        let mut row = match request {
+            RowRequest::DraftError { message, .. } => {
+                error_row(index, request, RowState::DraftError, message.clone(), None)
             }
-            _ => 0,
-        };
-        let exceeds = self.work_exhausted
-            || self
-                .work_used
-                .checked_add(charge)
-                .is_none_or(|n| n > MAX_BATCH_WORK);
-        let mut row = if charge > 0 && exceeds {
-            self.work_exhausted = true;
-            error_row(
-                index,
-                &self.request.rows[index],
-                RowState::Error,
-                format!(
-                    "Not computed: aggregate batch work budget ({MAX_BATCH_WORK} declared units) was reached. Remaining ready rows require a smaller selected batch."
-                ),
-                None,
-            )
-        } else {
-            self.work_used += charge;
-            evaluate_row(
-                index,
-                &self.request.rows[index],
-                self.request.design.as_ref(),
-                &self.workspace,
-            )
+            RowRequest::Ready(construct) => {
+                let withheld = |index, request| {
+                    error_row(
+                        index,
+                        request,
+                        RowState::Error,
+                        format!(
+                            "Not computed: aggregate batch work budget ({MAX_BATCH_WORK} declared units) was reached. Remaining ready rows require a smaller selected batch."
+                        ),
+                        None,
+                    )
+                };
+                if self.work_exhausted {
+                    withheld(index, request)
+                } else {
+                    let resolved = self
+                        .request
+                        .design
+                        .as_ref()
+                        .ok_or_else(|| bad("typed source design unavailable"))
+                        .and_then(|design| {
+                            design::resolve_validated(design, construct, &self.workspace)
+                        });
+                    match resolved {
+                        Ok(resolved) => {
+                            let charge = resolved.declared_work();
+                            if self
+                                .work_used
+                                .checked_add(charge)
+                                .is_none_or(|n| n > MAX_BATCH_WORK)
+                            {
+                                self.work_exhausted = true;
+                                withheld(index, request)
+                            } else {
+                                self.work_used += charge;
+                                evaluate_row(
+                                    index,
+                                    request,
+                                    self.request.design.as_ref(),
+                                    Ok(resolved),
+                                )
+                            }
+                        }
+                        Err(error) => {
+                            evaluate_row(index, request, self.request.design.as_ref(), Err(error))
+                        }
+                    }
+                }
+            }
         };
         let remaining = self.request.rows.len() - index - 1;
         let limit = MAX_RECORD_BYTES - 4096 - remaining * 8192;
@@ -620,6 +630,52 @@ fn expected_inputs(
     Ok(bindings)
 }
 impl Record {
+    /// Explicit indivisible documentary publication must attest every embedded
+    /// closed source, including unselected choices and diagnostic/error rows.
+    /// No historical verdict or literal edit is recomputed or upgraded here.
+    pub fn validate_source_closure(&self, workspace: &Workspace) -> Result<(), Error> {
+        self.validate()?;
+        let Some(design) = &self.request.design else {
+            return Ok(());
+        };
+        design::source_preflight(design, workspace)?;
+        for row in &self.request.rows {
+            let RowRequest::Ready(row) = row else {
+                continue;
+            };
+            if let Some(overrides) = &row.overrides {
+                for p in &overrides.preparations {
+                    let Some(preparation) = &p.preparation else {
+                        continue;
+                    };
+                    if !matches!(
+                        preparation,
+                        crate::assembly_recipe::Preparation::FromRun { .. }
+                            | crate::assembly_recipe::Preparation::FromDerived { .. }
+                    ) {
+                        continue;
+                    }
+                    let bin = design
+                        .bins
+                        .iter()
+                        .find(|b| b.id == p.bin_id)
+                        .ok_or_else(|| bad("embedded saved source override has no exact bin"))?;
+                    let selected = row
+                        .choices
+                        .iter()
+                        .find(|c| c.bin_id == bin.id)
+                        .ok_or_else(|| bad("embedded saved source override lacks exact choice"))?;
+                    let choice = bin
+                        .choices
+                        .iter()
+                        .find(|c| c.id == selected.choice_id)
+                        .ok_or_else(|| bad("embedded saved source override choice absent"))?;
+                    design::preparation_binding(design, &choice.source, preparation)?;
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn validate(&self) -> Result<(), Error> {
         if self.schema_version != 1
             || !digest(&self.context_revision)
@@ -843,7 +899,13 @@ pub fn replay(workspace: &Workspace, hash: &str, index: usize) -> Result<Replaye
         .rows
         .get(index)
         .ok_or_else(|| bad("recorded row is unavailable"))?;
-    let current = evaluate_row(index, row, record.request.design.as_ref(), workspace);
+    let resolved = match (row, record.request.design.as_ref()) {
+        (RowRequest::Ready(construct), Some(design)) => {
+            design::resolve_validated(design, construct, workspace)
+        }
+        _ => Err(bad("no computable declaration")),
+    };
+    let current = evaluate_row(index, row, record.request.design.as_ref(), resolved);
     let replayed = Replayed {
         record_hash: hash.into(),
         row_index: index,

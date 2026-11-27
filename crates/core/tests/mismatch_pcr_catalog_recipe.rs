@@ -176,6 +176,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
             template: Source::Input("source".into()),
             forward: Primer::new("OriginF", "AAA", "").unwrap(),
             reverse: Primer::new("OriginR", "GGG", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Origin", vec![original, original_target], 1).unwrap();
@@ -449,6 +450,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
     )
     .unwrap();
     let mut declared = Design {
+        material_bindings: vec![],
         id: "typeiis-library".into(),
         name: "Explicit mutant source preparation".into(),
         circular: false,
@@ -460,9 +462,12 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
                 id: "mutant".into(),
                 label: "Explicit mismatch and BsaI".into(),
                 source: binding(&w, 0),
-                start: 0,
-                end: 32,
-                reverse: false,
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: 0,
+                    end: 32,
+                    reverse: false,
+                },
+                preparation_reverse: false,
                 preparation: Some(preparation),
                 treatment: None,
             }],

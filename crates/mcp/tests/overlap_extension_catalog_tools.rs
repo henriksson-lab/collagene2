@@ -19,6 +19,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("F", f, ft).unwrap(),
         reverse: Primer::new("R", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn extension() -> Extension {

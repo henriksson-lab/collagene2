@@ -533,6 +533,7 @@ fn native_run_history_and_fromrun_material_survive_working_restart() {
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let recorded = run_lineage::record_run(

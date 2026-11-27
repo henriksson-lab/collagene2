@@ -204,6 +204,7 @@ fn physical_pcr_and_ligation_steps_print_oligos_tails_chemistry_nicks_and_source
             template: Source::Input("template".into()),
             forward: Primer::new("F", "ACGA", "TT").unwrap(),
             reverse: Primer::new("R", "GTTA", "CC").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let output = pdf::export_protocol_pdf(&plan, &target).unwrap();

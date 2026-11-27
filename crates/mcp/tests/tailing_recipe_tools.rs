@@ -84,8 +84,8 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
     );
     let imported = call(&client, "import_document", json!({"text":text})).await;
     let recipe = json!({"name":"Original PCR products and explicit tails","profile":"Ta","fragments":[
-        {"source":{"generation":null,"role":"vector","input_id":"vector","preparation":{"ExactPcr":{"forward":Primer::new("VF","AAA","").unwrap(),"reverse":Primer::new("VR","GGG","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"T"}},"treatment":"Phosphorylate"},
-        {"source":{"generation":null,"role":"insert","input_id":"insert","preparation":{"ExactPcr":{"forward":Primer::new("IF","GGG","").unwrap(),"reverse":Primer::new("IR","AAA","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"A"}},"treatment":"Phosphorylate"}
+        {"source":{"generation":null,"role":"vector","input_id":"vector","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("VF","AAA","").unwrap(),"reverse":Primer::new("VR","GGG","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"T"}},"treatment":"Phosphorylate"},
+        {"source":{"generation":null,"role":"insert","input_id":"insert","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("IF","GGG","").unwrap(),"reverse":Primer::new("IR","AAA","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"A"}},"treatment":"Phosphorylate"}
     ],"circular":true,"allow_nicked":false});
     let args = json!({"inputs":[{"id":"vector","document":named(&imported,"vector")},{"id":"insert","document":named(&imported,"insert")}],"target":named(&imported,"ta_target"),"recipe":recipe});
     let result = call(&client, "propose_tailing_assembly", args.clone()).await;

@@ -34,14 +34,18 @@ fn fixture() -> (Workspace, Design) {
         id: id.into(),
         label: id.into(),
         source: binding(&w, index),
-        start: 0,
-        end: 4,
-        reverse: false,
+        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+            start: 0,
+            end: 4,
+            reverse: false,
+        },
+        preparation_reverse: false,
         generation: None,
         preparation: Some(Preparation::WholeLinear),
         treatment: None,
     };
     let d = Design {
+        material_bindings: vec![],
         id: "library-a".into(),
         name: "Two by two library".into(),
         circular: false,
@@ -79,6 +83,8 @@ fn construct() -> SelectedConstruct {
             },
         ],
         target: TargetDeclaration::OriginalRegions {
+            substitutions: vec![],
+            edits: vec![],
             junction_edits: vec![],
         },
     }
@@ -141,6 +147,86 @@ fn original_contributions_declare_targets_independently_of_preparations() {
     assert_ne!(resolved.declaration_revision, wrong.declaration_revision);
     assert_eq!(resolved.combination_id, wrong.combination_id);
     // Resolve compiles a declaration; it deliberately supplies no success badge.
+}
+
+#[test]
+fn internal_edit_changes_only_declared_row_and_never_repairs_physical_preparation() {
+    use collagene_core::{assembly_edit_intent::Edit, chemistry::Terminus, verification::Status};
+    let (w, mut d) = fixture();
+    for bin in &mut d.bins {
+        for choice in &mut bin.choices {
+            choice.preparation = Some(Preparation::DeclaredDuplex {
+                left: Terminus::CLEAVED,
+                right: Terminus::CLEAVED,
+            });
+        }
+    }
+    let original = construct();
+    let mut edited = original.clone();
+    edited.id = "construct-edited".into();
+    edited.target = TargetDeclaration::OriginalRegions {
+        junction_edits: vec![],
+        substitutions: vec![],
+        edits: vec![Edit {
+            role: "fragment-backbone".into(),
+            start: 2,
+            end: 4,
+            expected: "CC".into(),
+            replacement: "TAG".into(),
+        }],
+    };
+    let source_bytes = serde_json::to_vec(&w).unwrap();
+    let prepared = design::evaluate(&d, &original, &w).unwrap();
+    assert_eq!(prepared.resolved.target.sequence.as_str(), "AACCTTAA");
+    assert_eq!(
+        prepared.verification().status,
+        Status::ConsistentUnderAssumptions
+    );
+    let changed = design::evaluate(&d, &edited, &w).unwrap();
+    assert_eq!(changed.resolved.target.sequence.as_str(), "AATAGTTAA");
+    assert_eq!(changed.verification().status, Status::Invalid);
+    assert_eq!(
+        changed
+            .verification()
+            .products
+            .last()
+            .unwrap()
+            .sequence
+            .as_str(),
+        "AACCTTAA"
+    );
+    assert_ne!(
+        prepared.resolved.declaration_revision,
+        changed.resolved.declaration_revision
+    );
+    assert_eq!(
+        design::resolve(&d, &original, &w)
+            .unwrap()
+            .target
+            .sequence
+            .as_str(),
+        "AACCTTAA"
+    );
+    assert_eq!(serde_json::to_vec(&w).unwrap(), source_bytes);
+    let TargetDeclaration::OriginalRegions { edits, .. } = &mut edited.target else {
+        unreachable!()
+    };
+    edits[0].expected = "GG".into();
+    assert!(design::resolve(&d, &edited, &w).is_err());
+}
+
+#[test]
+fn current_library_declarations_require_explicit_internal_edit_vectors() {
+    let current = serde_json::to_value(construct()).unwrap();
+    assert!(serde_json::from_value::<SelectedConstruct>(current.clone()).is_ok());
+    for field in ["substitutions", "edits"] {
+        let mut malformed = current.clone();
+        malformed["target"]["OriginalRegions"]
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+        assert!(serde_json::from_value::<SelectedConstruct>(malformed).is_err());
+    }
 }
 #[test]
 fn wrong_event_owner_and_duplicate_ids_are_rejected() {
@@ -260,7 +346,12 @@ fn fresh_existing_verifier_preserves_a_wrong_target_and_changed_contribution() {
         "AACCTTAA"
     );
     let mut cropped = d.clone();
-    cropped.bins[0].choices[0].start = 1;
+    let collagene_core::assembly_intent::Selector::ReferenceRange { start, .. } =
+        &mut cropped.bins[0].choices[0].selector
+    else {
+        unreachable!()
+    };
+    *start = 1;
     let changed = design::evaluate(&cropped, &row, &w).unwrap();
     assert_eq!(changed.resolved.target.sequence.as_str(), "ACCTTAA");
     assert_eq!(changed.verification().status, Status::Invalid);
@@ -319,6 +410,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
     let m = Molecule::dna("circle", "ACGTAA", Topology::Circular).unwrap();
     let w = Workspace::from_documents("circle choices", vec![m], 0).unwrap();
     let d = Design {
+        material_bindings: vec![],
         id: "circle-design".into(),
         name: "Circle design".into(),
         circular: false,
@@ -329,13 +421,17 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
                 id: "crossing".into(),
                 label: "Crossing".into(),
                 source: binding(&w, 0),
-                start: 4,
-                end: 8,
-                reverse: true,
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: 4,
+                    end: 8,
+                    reverse: true,
+                },
+                preparation_reverse: true,
                 generation: None,
                 preparation: Some(Preparation::ExactPcr {
                     forward: Primer::new("F", "AAAC", "").unwrap(),
                     reverse: Primer::new("R", "GTTT", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 }),
                 treatment: None,
             }],
@@ -353,13 +449,20 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
             choice_id: "crossing".into(),
         }],
         target: TargetDeclaration::OriginalRegions {
+            substitutions: vec![],
+            edits: vec![],
             junction_edits: vec![],
         },
     };
     let resolved = design::resolve(&d, &row, &w).unwrap();
     assert_eq!(resolved.target.sequence.as_str(), "GTTT");
     let mut overrun = d.clone();
-    overrun.bins[0].choices[0].end = 11;
+    let collagene_core::assembly_intent::Selector::ReferenceRange { end, .. } =
+        &mut overrun.bins[0].choices[0].selector
+    else {
+        unreachable!()
+    };
+    *end = 11;
     assert!(design::resolve(&overrun, &row, &w).is_err());
     let mut unsupported = d.clone();
     unsupported.method = Method::OrderedTypeIis {

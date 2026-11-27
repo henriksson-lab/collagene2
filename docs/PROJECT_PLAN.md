@@ -17,6 +17,14 @@ This is a target specification and implementation proposal. Priority controls de
 Keep the full product objective and all existing scope constraints. Change the
 execution order and validation workflow as follows:
 
+- **27 November execution update: use larger coherent implementation batches.**
+  Finish related core, schema, transport, UI, caller and fixture edits together
+  before compiling. Use static caller/enum searches to catch integration omissions.
+  Parallel patches belong to one batch, not separate build checkpoints. Run focused
+  native/WASM verification for the completed batch, collect actual failures, and
+  repair them together before a recheck. Reuse unchanged passing evidence and
+  keep Cargo package/features consistent; do not add compilation or test cycles
+  merely to keep intermediate code green. Required final correctness checks remain.
 - **Do not run browser checks until the in-scope code is complete.** This applies
   to automated browser suites, browser smoke checks, screenshots, browser
   performance checks and GUI acceptance runs during implementation. Completion
@@ -395,7 +403,7 @@ P0 is the foundation and first usable cloning release. P1 supplies everyday mole
 | F12 | P1 | Basic primer selection/reuse, annealing oligos, GC/Tm calculations and binding checks | Embedded calculations have reference cases and recorded conditions; advanced thermodynamics/design engines remain deferred |
 | F13 | P1 | Golden Gate/Type IIS and combinatorial assembly libraries | Cleavage outside recognition sites, overhang orientation and recutting are checked |
 | F14 | P1 | Site-directed, inverse-PCR and overlap-extension mutagenesis | Intended substitutions/indels and junction translations match the target |
-| F15 | P1 | Gateway, In-Fusion/HiFi-style overlaps, TA/GC, TOPO and end repair | Each method has explicit rules, test fixtures and unsupported-state diagnostics |
+| F15 | P1 | Gateway, In-Fusion cloning, Gibson/HiFi-style overlaps, TA/GC, TOPO and end repair | Each method has explicit rules, test fixtures and unsupported-state diagnostics; In-Fusion has its own preparation/annealing/host-rescue interpretation |
 | F16 | P1 | Sanger chromatograms, quality trimming, reference alignment and consensus | Trace peaks and quality align to calls; low-quality and uncovered regions stay visible |
 | F17 | P1 | Pairwise alignments, whole-plasmid verification and sequence differences | Rotation and reverse-complement equivalence are handled; coverage gaps are reported |
 | F18 | P1 | Translation, alternative genetic codes, fusion frames and protein properties | CDS phase, stop codons and compound locations are respected |
@@ -417,6 +425,47 @@ P0 is the foundation and first usable cloning release. P1 supplies everyday mole
 | F35 | P1 | Import by Addgene plasmid URL/ID, NCBI nucleotide/GenBank URL or accession.version, and direct sequence-file URLs through source adapters | Imported sequence/topology/features are validated by the same parsers; canonical source, accession/version, retrieval timestamp and evidence hash survive save/export; missing authentication, multiple sequence choices and fetch failures remain explicit |
 
 Accessibility is a cross-cutting requirement: keyboard navigation, readable labels, a DOM representation of selected sequence/features, high contrast, and reduced motion. Browser storage limitations, interrupted tasks and unsaved changes need clear recovery behavior.
+
+### In-Fusion cloning — explicit required workflow
+
+In-Fusion is included in F15 and the cloning-first delivery queue. Deliver the
+complete design workflow in the existing assembly dock, worker/MCP interface,
+saved history and HTML/PDF protocols; a generic overlap-length screening option
+alone does not complete this requirement.
+
+- Support a linearized vector and one or multiple inserts, with explicit fragment
+  order/orientation, source events, PCR or digest preparation, and terminal overlaps.
+  Use manufacturer guidance of15-bp overlaps for a vector plus one insert and
+  recommended20-bp overlaps for multiple inserts as visible design guidance;
+  retain exact overlap evidence and diagnostic findings instead of treating a
+  preferred length as a guarantee of experimental success.
+- Propose ordered primers with independently visible annealing domains and5′
+  homology tails. Preserve user-declared added bases, linkers, reading frames and
+  junction edits. For restriction-linearized vectors, account for actual ends:
+  manufacturer guidance counts5′ overhang bases toward homology and excludes3′
+  overhang bases. Internal matching sequence cannot replace terminal homology.
+- Keep the method distinct from the existing5′ resection/polymerase/ligase
+  assembly model. In-Fusion's documented3′ exonuclease exposes5′ overhangs,
+  followed by annealing and rescue in E. coli. Retain the annealed strand/nick/gap
+  state and the explicit downstream host-rescue assumption; a matching reference
+  must not silently become a covalently closed reusable material product.
+- Freeze the intended circular construct from original source contributions and
+  literal edits before preparing or selecting products. Deterministically check
+  actual source ends, both terminal junctions, orientation, repeated/alternative
+  homologies, introduced DNA and requested fusion frames. Retain uncertainty and
+  alternatives through save/reopen, batch processing and AI proposals.
+- Export vector linearization, PCR primers/products, fragment order, overlaps,
+  assembly and transformation/rescue steps with the exact design and verification
+  evidence. Independently authored acceptance cases must cover single/multi-insert
+  cloning, blunt/5′/3′ restriction ends, reverse inserts, added junction bases,
+  competing overlaps and a wrong independent target across native/WASM paths.
+
+Existing source has an In-Fusion overlap profile and separate generic3′
+resection/annealing kernels. Their presence does not establish the complete
+connected In-Fusion workflow or proprietary reaction performance. Close the
+remaining method-specific integration in F15 without adding an external runtime.
+Primary references: [experiment planning](https://help.takarabio.com/36168/kb/article/109886/how-should-i-plan-my-in-fusion-experiment),
+[primer and restriction-end guidance](https://help.takarabio.com/36168/kb/article/109895/what-are-pcr-primer-design-considerations-for-compatible-with-infusion-cloning).
 
 ## File formats and migration
 
@@ -645,6 +694,24 @@ Suggested tools and resources:
 | `apply_plan` | Transactional project mutation under scoped write authorization and expected base revision |
 
 Resources expose immutable molecule revisions, plans, catalogs and verification reports by URI. Large sequences/alignments use paginated regions and artifact references, rather than filling model context. Long-running jobs expose cancellation/status. Treat imported feature notes as data; they cannot grant tool privileges. Remote service access requires project authorization; local bridges require origin checks and scoped authentication. Apply stale-revision checks and idempotency keys to writes.
+
+#### Optional WebMCP adapter
+
+Add a thin, feature-detected WebMCP adapter for agents interacting with the open
+browser workspace. It exposes current document/selection and draft context,
+reviewed design proposals and navigation through the same Rust commands, typed
+contracts and deterministic verifier used by the UI and ordinary MCP. Keep
+JavaScript glue minimal; do not duplicate scientific logic or add an independent
+planning engine. Bind every response/apply to exact source and draft revisions,
+and preserve existing review, authorization and stale-result checks.
+
+Ordinary MCP remains available for external clients, unattended jobs and native
+use. Unsupported browsers retain the full application without WebMCP. Check
+Tauri webview availability separately. Acceptance requires live unsaved-context
+handling, selection-aware proposals, stale-result refusal and the same verification
+outcomes as ordinary commands. This optional adapter remains planned, not delivered.
+See the [official comparison](https://developer.chrome.com/docs/ai/webmcp/compare-mcp)
+and [experimental browser availability](https://developer.chrome.com/docs/ai/webmcp).
 
 MCP uses standard UTF-8 JSON-RPC over its standard transports, as specified in the [MCP transport documentation](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports). The application's binary protocol is a separate interface.
 
@@ -3591,3 +3658,55 @@ two fixture inputs to required typed selectors and explicit material bindings,
 without changing scientific assertions or accepting the old shape. Its CI rerun
 passes on Windows, macOS, Linux and web. The TOPO implementation is a separate
 change.
+
+### Library edits and actual-strand primer/library integration — integrated checkpoint
+
+Each selected construct declares required substitution and indel vectors alongside
+its junction edits. Coordinates and expected literals refer to the original
+oriented contribution, identified by stable role. Build this independent target
+before executing any physical preparation; an unchanged preparation against an
+edited declaration must fail verification rather than repair itself from the target.
+Existing-target declarations remain immutable references.
+
+Retain these declarations across construct switching, draft save/recovery, batch
+capture and release. Preserve edits when stable contributions are reordered;
+replacement of a source event or selector must invalidate the affected literals.
+New rows start without edits unless the user explicitly duplicates a construct.
+Batch evaluation must retain row-local failures while continuing other rows.
+
+An explicit primer proposal for the active construct uses the existing native
+edited-overlap planner, extended directly to Run and Derived origins. Review and
+apply its physical preparation separately. Bind proposals to the exact source
+events, contribution selectors, declaration and request context; refuse stale
+responses. No library-wide automatic PCR or target-selected physical product.
+
+The integrated batch uses worker106, candidate28, native plan26, science29,
+saved editor draft17 and192 MCP tools. Exact PCR declarations and coordinate
+reports carry an explicit template strand. History retains internal-edit recovery
+counts under the single current v2 record. No alternate internal decoder exists.
+
+Library choices now use typed selectors and explicit saved-source bindings,
+keeping physical preparation orientation separate from target orientation.
+Primer planning consumes fresh borrowed native strand views and competing
+geometries without fabricating a reference stock for bottom DNA. Actual source
+coverage, completeness, annotations and work budgets remain enforced. Whole-source
+geometries beyond a supported intact-strand frame remain diagnostic. Independent
+target identity survives unrelated workspace metadata changes while exact current
+source ownership is still checked.
+
+Validation covers178 distinct focused native cases. The integrated web/worker
+WASM check passed before the final shared-model policy guard; that guard passes
+14 native projection cases. Exact-source CI remains to run after publication.
+The previous commit's three native OS jobs found the same five stale fixture
+expectations, corrected without changing bounds. Its web and desktop jobs passed.
+Public8082 still serves the immutable443f51b frontend (worker105). Browser and
+application HTTP checks remain deferred, and private library storage is untouched.
+
+The next connected cloning batch must carry actual3′ annealing and5′ homology
+processing policies through native library recipes and whole-primer finishing.
+Until connected, selecting these policies produces a row-local error while
+preserving the raw declaration; they are never silently dropped into a reference
+preview. Complete In-Fusion still requires actual staggered-end handling,
+method-bound planned host-rescue evidence and the acceptance cases above.
+Standalone Derived PCR-digest and single-contribution material OE controls also
+remain open. This checkpoint does not complete the full product goal.

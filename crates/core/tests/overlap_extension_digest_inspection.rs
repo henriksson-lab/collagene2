@@ -20,6 +20,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("Forward", f, ft).unwrap(),
         reverse: Primer::new("Reverse", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn request() -> Request {
@@ -172,11 +173,13 @@ fn saved(incomplete: bool) -> (Molecule, Capsule) {
                 template: Source::Input("original".into()),
                 forward: p.left.forward,
                 reverse: p.left.reverse,
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("original".into()),
                 forward: p.right.forward,
                 reverse: p.right.reverse,
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::OverlapExtension {
                 left: collagene_core::verification::OrientedSource {
@@ -193,6 +196,7 @@ fn saved(incomplete: bool) -> (Molecule, Capsule) {
                 template: Source::Step(2),
                 forward: p.outer.forward,
                 reverse: p.outer.reverse,
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ]);
         Molecule::dna("Independent originating edited38", EDITED, Topology::Linear).unwrap()
@@ -201,6 +205,7 @@ fn saved(incomplete: bool) -> (Molecule, Capsule) {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         });
         Molecule::dna(
             "Independent originating stock40",

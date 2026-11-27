@@ -46,6 +46,8 @@ pub struct RowImpact {
     pub construct_added: bool,
     pub primer_review_bins: Vec<String>,
     pub removed_preparation_bins: Vec<String>,
+    pub retained_internal_edits: usize,
+    pub recovered_internal_edits: usize,
     pub retained_junctions: usize,
     pub recovered_junctions: usize,
     pub new_junctions: Vec<usize>,
@@ -190,6 +192,8 @@ fn install_active(draft: &mut Draft) -> Result<(), String> {
     draft.circular = row.edits.circular;
     draft.methods = row.edits.methods.clone();
     draft.junction_edits = row.edits.junction_edits.clone();
+    draft.substitutions = row.edits.substitutions.clone();
+    draft.edits = row.edits.edits.clone();
     draft.active_slot = row.edits.active_slot;
     Ok(())
 }
@@ -442,7 +446,15 @@ pub fn propose(current: &Draft, change: Change) -> Result<Proposal, String> {
         row.edits.active_slot = previous_active
             .and_then(|id| new_ids.iter().position(|value| value == id))
             .unwrap_or(old.edits.active_slot.min(new_ids.len() - 1));
-        row.edits.methods.source_roles = Some(roles(library, &row.id, &row.choices)?);
+        let new_roles = roles(library, &row.id, &row.choices)?;
+        row.edits
+            .substitutions
+            .retain(|edit| new_roles.iter().any(|r| r.role == edit.role));
+        row.edits
+            .edits
+            .retain(|edit| new_roles.iter().any(|r| r.role == edit.role));
+        let internal_retained = row.edits.substitutions.len() + row.edits.edits.len();
+        row.edits.methods.source_roles = Some(new_roles);
         impacts.push(RowImpact {
             construct_id: row.id.clone(),
             name: row.edits.name.clone(),
@@ -462,6 +474,9 @@ pub fn propose(current: &Draft, change: Change) -> Result<Proposal, String> {
                 .filter(|id| !new_ids.contains(id))
                 .cloned()
                 .collect(),
+            retained_internal_edits: internal_retained,
+            recovered_internal_edits: old.edits.substitutions.len() + old.edits.edits.len()
+                - internal_retained,
             retained_junctions: row.edits.junction_edits.len(),
             recovered_junctions: old.edits.junction_edits.len() - row.edits.junction_edits.len(),
             new_junctions,
@@ -499,6 +514,8 @@ pub struct EffectiveEdits<'a> {
     pub circular: bool,
     pub methods: &'a crate::cloning_methods_model::MethodsState,
     pub junctions: &'a [collagene_core::assembly_junction_edit::Edit],
+    pub substitutions: &'a [collagene_core::assembly_substitution_intent::Substitution],
+    pub edits: &'a [collagene_core::assembly_edit_intent::Edit],
 }
 pub fn effective_edits<'a>(
     draft: &'a Draft,
@@ -514,6 +531,8 @@ pub fn effective_edits<'a>(
             circular: draft.circular,
             methods: &draft.methods,
             junctions: &draft.junction_edits,
+            substitutions: &draft.substitutions,
+            edits: &draft.edits,
         }
     } else {
         EffectiveEdits {
@@ -521,6 +540,8 @@ pub fn effective_edits<'a>(
             circular: row.edits.circular,
             methods: &row.edits.methods,
             junctions: &row.edits.junction_edits,
+            substitutions: &row.edits.substitutions,
+            edits: &row.edits.edits,
         }
     }
 }
@@ -684,6 +705,16 @@ pub fn propose_restore(
         let new_candidate = next
             .and_then(|row| row.methods.golden_gate_pool.as_ref())
             .and_then(|pool| pool.candidate.as_ref());
+        let internal_retained = old
+            .zip(next)
+            .map(|(old, next)| {
+                old.substitutions
+                    .iter()
+                    .filter(|e| next.substitutions.contains(e))
+                    .count()
+                    + old.edits.iter().filter(|e| next.edits.contains(e)).count()
+            })
+            .unwrap_or(0);
         impacts.push(RowImpact {
             construct_id: id.into(),
             name: next.or(old).expect("union contains a row").name.to_string(),
@@ -703,6 +734,11 @@ pub fn propose_restore(
                     .cloned()
                     .collect()
             },
+            retained_internal_edits: internal_retained,
+            recovered_internal_edits: old
+                .map(|row| row.substitutions.len() + row.edits.len())
+                .unwrap_or(0)
+                - internal_retained,
             retained_junctions: retained,
             recovered_junctions: old.map(|row| row.junctions.len()).unwrap_or(0) - retained,
             new_junctions: new_edges

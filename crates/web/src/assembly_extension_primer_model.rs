@@ -526,6 +526,7 @@ fn raw_primer(primer: &Primer) -> ExtensionPrimerInput {
 }
 fn raw_pair(pair: &collagene_core::overlap_extension_pcr::PrimerPair) -> ExtensionPrimerPairInput {
     ExtensionPrimerPairInput {
+        template_strand: collagene_core::chemistry::Strand::Top,
         forward: raw_primer(&pair.forward),
         reverse: raw_primer(&pair.reverse),
     }
@@ -1291,6 +1292,7 @@ mod tests {
                 molecule: original,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "TGACGATC", "").unwrap(),
@@ -1332,6 +1334,7 @@ mod tests {
             )
             .unwrap(),
         );
+        draft.slots[1].material_origin = draft.methods.rows[1].run_origin.clone();
         draft.sync_rows();
         let intended = intent(&draft);
         let options = options(&draft);

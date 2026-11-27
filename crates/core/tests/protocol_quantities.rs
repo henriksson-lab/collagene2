@@ -41,6 +41,7 @@ fn fixture() -> (Workspace, DesignPlan, Request) {
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCC", "").unwrap(),
             reverse: Primer::new("R", "TACGT", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     w.candidates.push(Candidate::new(plan.clone()));

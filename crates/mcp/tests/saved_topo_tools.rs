@@ -90,6 +90,7 @@ fn saved() -> Commit {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "CACCA", "").unwrap(),
             reverse: Primer::new("R", "CGTCA", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let workspace = Workspace::from_documents("Saved PCR source", vec![source, target], 1).unwrap();
@@ -164,9 +165,15 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
     let origin = native::SourceOrigin::Saved(run_material::MaterialOrigin::Run(run_origin));
     let forward = Primer::new("New derived F", "CACCA", "").unwrap();
     let reverse = Primer::new("New derived R", "CGTCA", "").unwrap();
-    let preview = native::preview_pcr(source, &origin, &forward, &reverse)
-        .unwrap()
-        .remove(0);
+    let preview = native::preview_pcr(
+        source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap()
+    .remove(0);
     let derived = native::prepare_install(
         &commit.workspace,
         &native::Request {
@@ -180,6 +187,7 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
                     expected_preview_revision: preview.molecule.revision(),
                     geometry: preview.geometry,
                 },
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             name: "Reusable target-free PCR for TOPO".into(),
             save_primers: true,

@@ -35,6 +35,7 @@ pub mod pairwise_review;
 
 pub mod editing;
 
+pub(crate) mod pcr_source;
 pub mod primers;
 
 pub mod pdf;

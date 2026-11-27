@@ -82,9 +82,7 @@ pub fn declare(
     replacement: &str,
     review: Option<&crate::assembly_edit_model::SourceReview>,
 ) -> Result<Draft, String> {
-    if draft.alternatives.is_some() {
-        return Err("Internal substitutions currently belong to an ordinary construct.".into());
-    }
+    crate::assembly_alternatives::require_active_choice_match(draft)?;
     if position.len() > 20 || !position.bytes().all(|b| b.is_ascii_digit()) {
         return Err("Enter a one-based contribution position.".into());
     }

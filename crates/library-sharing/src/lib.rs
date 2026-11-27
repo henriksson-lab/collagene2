@@ -93,7 +93,7 @@ fn presentation(kind: &str) -> bool {
             | "oligo-table-v1"
             | "restriction-enzyme-sets-v1"
             | "named-digest-setup-v1"
-            | "assembly-library-history-v1"
+            | collagene_core::assembly_library_history::KIND
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
@@ -693,6 +693,11 @@ pub fn inspect_protocol_layout_closure(
         graph.edge()?;
         if !source.attachments.contains_key(hash) {
             return Err(Error::Unresolved("layout dependency attachment"));
+        }
+        let asset = &source.attachments[hash];
+        if asset.kind == collagene_core::combinatorial_batch::KIND {
+            let record = collagene_core::combinatorial_batch::load(source, hash)?;
+            record.validate_source_closure(source)?;
         }
         graph.kept_assets.insert(hash.clone());
     }

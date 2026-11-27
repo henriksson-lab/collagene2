@@ -87,7 +87,7 @@ fn edits() -> Value {
 fn request() -> Value {
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let pin = catalog_digest::select(&catalog, &["ecorv".into()]).unwrap();
-    let manual = json!({"generation":null,"role":"manual","input_id":"b","reverse":false,"preparation":{"ExactPcr":{"forward":Primer::new("Already reviewed named BF","GCATAGTC","").unwrap(),"reverse":Primer::new("Already reviewed named BR","TGCAAGCT","AGGTCGCTAACGGATGAT").unwrap()}}});
+    let manual = json!({"generation":null,"role":"manual","input_id":"b","reverse":false,"preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("Already reviewed named BF","GCATAGTC","").unwrap(),"reverse":Primer::new("Already reviewed named BR","TGCAAGCT","AGGTCGCTAACGGATGAT").unwrap()}}});
     let digest = json!({"generation":null,"role":"existing-cut","input_id":"c","reverse":false,"preparation":{"CatalogDigest":{"selection":pin,"fragment_index":1,"repair":null}}});
     json!({"base":base(),"edits":edits(),"rows":[{"DesignPcr":{"role":"left","input_id":"a","reverse":false}},{"Retain":manual},{"Retain":digest}],"overlaps":[15,18],"primer_options":options(),"profile_options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100}})
 }

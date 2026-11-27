@@ -47,11 +47,13 @@ fn stock(incomplete: bool) -> (Workspace, Molecule, run_material::Capsule) {
                     template: Source::Input("left".into()),
                     forward: Primer::new("LF", "AGTC", "").unwrap(),
                     reverse: Primer::new("LR", "TAGC", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 Operation::Pcr {
                     template: Source::Input("right".into()),
                     forward: Primer::new("RF", "GCTA", "").unwrap(),
                     reverse: Primer::new("RR", "GACT", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 Operation::HomologyAssembly {
                     fragments: vec![
@@ -95,6 +97,7 @@ fn stock(incomplete: bool) -> (Workspace, Molecule, run_material::Capsule) {
                 template: Source::Input("stock".into()),
                 forward: Primer::new("Original F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Original R", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             }],
         };
         (vec![source, target], plan, 1)
@@ -187,7 +190,14 @@ fn actual_run_origin_previews_and_selected_outputs_recompute_with_full_origin_bi
     let origin = MaterialOrigin::Run(origin);
     let forward = Primer::new("New F", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("New R", "TGACGATC", "").unwrap();
-    let previews = m::simulate(&source, &origin, &forward, &reverse).unwrap();
+    let previews = m::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     assert_eq!(
         previews[0].molecule.sequence.as_str(),
@@ -208,6 +218,7 @@ fn actual_run_origin_previews_and_selected_outputs_recompute_with_full_origin_bi
             save_product: true,
             save_primers: true,
         },
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let context = m::outputs_revision(&origin, &request).unwrap();
     let selected = m::prepare_outputs(&origin, &request).unwrap();
@@ -234,8 +245,23 @@ fn actual_staggered_digest_is_used_without_stripping_source_markers_or_trusting_
     let (source, origin) = cut(false);
     let before = source.clone();
     let (forward, reverse) = oligos(false);
-    assert!(verification::simulate_pcr_documents(&source, &forward, &reverse).is_err());
-    let previews = m::simulate(&source, &origin, &forward, &reverse).unwrap();
+    assert!(
+        verification::simulate_pcr_documents(
+            &source,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top
+        )
+        .is_err()
+    );
+    let previews = m::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(source, before);
     assert_eq!(previews.len(), 1);
     assert_eq!(
@@ -256,6 +282,7 @@ fn actual_staggered_digest_is_used_without_stripping_source_markers_or_trusting_
             save_product: true,
             save_primers: false,
         },
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     assert!(pcr_outputs::prepare(&request).is_err());
     assert!(
@@ -269,7 +296,14 @@ fn actual_staggered_digest_is_used_without_stripping_source_markers_or_trusting_
 fn reusable_but_incomplete_actual_origin_remains_explicitly_conditional_in_preview_and_output() {
     let (source, origin) = cut(true);
     let (forward, reverse) = oligos(true);
-    let previews = m::simulate(&source, &origin, &forward, &reverse).unwrap();
+    let previews = m::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     assert_eq!(
         previews[0].molecule.sequence.as_str(),
@@ -296,6 +330,7 @@ fn reusable_but_incomplete_actual_origin_remains_explicitly_conditional_in_previ
             save_product: true,
             save_primers: false,
         },
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let selected = m::prepare_outputs(&origin, &request).unwrap();
     let saved: m::OriginEvidence =
@@ -307,15 +342,51 @@ fn changed_source_origin_and_unbounded_oligo_are_rejected_before_preview_selecti
     let (mut source, origin) = cut(false);
     let (forward, reverse) = oligos(false);
     source.name = "Another revision".into();
-    assert!(m::revision(&source, &origin, &forward, &reverse).is_err());
+    assert!(
+        m::revision(
+            &source,
+            &origin,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top
+        )
+        .is_err()
+    );
     let (source, mut origin) = cut(false);
     if let MaterialOrigin::Derived(d) = &mut origin {
         d.record_bytes[44] ^= 1; // Actual opaque recipe checksum must fail before any PCR selection.
     }
-    assert!(m::simulate(&source, &origin, &forward, &reverse).is_err());
+    assert!(
+        m::simulate(
+            &source,
+            &origin,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top
+        )
+        .is_err()
+    );
     let (_, _, run) = stock(false);
-    assert!(m::simulate(&source, &MaterialOrigin::Run(run), &forward, &reverse).is_err());
+    assert!(
+        m::simulate(
+            &source,
+            &MaterialOrigin::Run(run),
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top
+        )
+        .is_err()
+    );
     let (source, origin) = cut(false);
     let long = Primer::new("Bounded F", &"A".repeat(1001), "").unwrap();
-    assert!(m::revision(&source, &origin, &long, &reverse).is_err());
+    assert!(
+        m::revision(
+            &source,
+            &origin,
+            &long,
+            &reverse,
+            collagene_core::chemistry::Strand::Top
+        )
+        .is_err()
+    );
 }

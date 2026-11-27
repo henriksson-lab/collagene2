@@ -32,6 +32,7 @@ fn fixture() -> (Molecule, m::Request) {
                 reverse: Primer::new("Mutation R", "GTTACCCC", "GGGAATTC").unwrap(),
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: Default::default(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             pcr_options: Default::default(),
         },
@@ -210,6 +211,7 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
             template: Source::Input("original".into()),
             forward: Primer::new("Origin F", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("Origin R", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let committed = cloning_outputs::finalize(

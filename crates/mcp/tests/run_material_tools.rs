@@ -100,6 +100,7 @@ fn original() -> Commit {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("R", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Recorded PCR", vec![source, target], 1).unwrap();
@@ -185,7 +186,7 @@ async fn exact_native_origin_discovery_preparation_and_immutable_context_refusal
         .unwrap()
         .id
         .clone();
-    let request = json!({"source_role":"savedPCR","forward":Primer::new("F","ACGACCCC","ATGCGAATTC").unwrap(),"reverse":Primer::new("R","GTTACCCC","ATGCGAATTC").unwrap(),"selection":collagene_core::catalog_digest::select(&catalog,&[id]).unwrap(),"options":collagene_core::restriction_inspection::InspectionOptions::default()});
+    let request = json!({"template_strand":"Top","source_role":"savedPCR","forward":Primer::new("F","ACGACCCC","ATGCGAATTC").unwrap(),"reverse":Primer::new("R","GTTACCCC","ATGCGAATTC").unwrap(),"selection":collagene_core::catalog_digest::select(&catalog,&[id]).unwrap(),"options":collagene_core::restriction_inspection::InspectionOptions::default()});
     let mut inspect_args = json!({"document":{"id":selected.event.revision,"revision":selected.event.revision},"request":request});
     reject(&client, "inspect_pcr_digest", inspect_args.clone()).await;
     inspect_args["origin"] = serde_json::to_value(&capsule).unwrap();

@@ -9,9 +9,10 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const KIND: &str = "assembly-library-history-v1";
-pub const ACTIVE_DRAFT_VERSION: u32 = 16;
-pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v16";
+pub const SCHEMA_VERSION: u16 = 2;
+pub const KIND: &str = "assembly-library-history-v2";
+pub const ACTIVE_DRAFT_VERSION: u32 = 17;
+pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v17";
 pub const MEDIA_TYPE: &str = "application/x-collagene-assembly-library-history+postcard";
 pub const MAX_RECORD_BYTES: usize = 32 << 20;
 pub const MAX_HISTORY_BYTES: usize = 32 << 20;
@@ -24,6 +25,7 @@ dto! {pub struct Impact {
     pub construct_id:String,pub name:String,
     #[serde(deserialize_with="decode_bins")]pub primer_review_bins:Vec<String>,
     #[serde(deserialize_with="decode_bins")]pub removed_preparation_bins:Vec<String>,
+    pub retained_internal_edits:usize,pub recovered_internal_edits:usize,
     pub retained_junctions:usize,pub recovered_junctions:usize,
     #[serde(deserialize_with="decode_junctions")]pub new_junctions:Vec<usize>,
     pub overlap_text_changed:bool,pub role_order_changed:bool,pub candidate_cleared:bool,
@@ -157,6 +159,12 @@ impl Impact {
             || self.name.len() > 256
             || self.name.chars().any(char::is_control)
             || self.construct_removed && self.construct_added
+            || self.retained_internal_edits > 512
+            || self.recovered_internal_edits > 512
+            || self
+                .retained_internal_edits
+                .checked_add(self.recovered_internal_edits)
+                .is_none_or(|total| total > 512)
             || self.retained_junctions > MAX_BINS
             || self.recovered_junctions > MAX_BINS
             || self.new_junctions.len() > MAX_BINS
@@ -180,7 +188,7 @@ impl Record {
     /// Structural historical data only. This cannot validate the host's complete
     /// draft schema, exhaustiveness of declared source pins, or scientific claims.
     pub fn validate(&self) -> Result<(), Error> {
-        if self.schema_version != 1
+        if self.schema_version != SCHEMA_VERSION
             || self.after_kind != ACTIVE_DRAFT_KIND
             || !id(&self.library_id, 48)
             || [
@@ -396,7 +404,7 @@ pub fn create(
         a.document_id == b.document_id && a.event_id == b.event_id && a.revision == b.revision
     });
     let record = Record {
-        schema_version: 1,
+        schema_version: SCHEMA_VERSION,
         before_active_hash: before_active_hash.into(),
         before_hash: hash(&before_raw),
         before_draft: before_raw,

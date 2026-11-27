@@ -171,6 +171,7 @@ pub fn AddLibraryBinView(
                 .map_err(|_| "Enter an explicit inclusive end position.")?;
             let flipped = reverse.get_untracked();
             let slot = Slot {
+                material_origin: None,
                 selector: collagene_core::assembly_intent::Selector::ReferenceRange {
                     start: first,
                     end: last,

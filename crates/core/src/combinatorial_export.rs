@@ -235,26 +235,16 @@ fn prepare(
     if options.protocols() {
         // A native run can be internally consistent yet forged away from the
         // original independent declaration. Rebuild declarations before science.
-        manifest.validate_current_declarations(workspace)?;
-        let saved = batch::load(workspace, &manifest.batch_hash)?;
-        let design = saved
-            .request
-            .design
-            .as_ref()
-            .ok_or_else(|| bad("released source design unavailable"))?;
+        // The same fresh independent-declaration context supplies actual strand
+        // costs. Do not replay origins a second time merely to estimate work.
+        let costs = manifest.validate_current_declarations(workspace)?;
         let mut work = 0usize;
         for &index in &indices {
             let id = &manifest.rows[index].construct_id;
-            let row = saved
-                .request
-                .rows
-                .iter()
-                .find_map(|row| match row {
-                    batch::RowRequest::Ready(row) if row.id == *id => Some(row),
-                    _ => None,
-                })
-                .ok_or_else(|| bad("released selected declaration is unavailable"))?;
-            work=work.checked_add(design::work_charge(design,row,workspace)?).filter(|n|*n<=batch::MAX_BATCH_WORK).ok_or_else(||bad("aggregate protocol reconstruction work limit reached; select fewer constructs"))?;
+            let charge = *costs
+                .get(id)
+                .ok_or_else(|| bad("released declaration cost unavailable"))?;
+            work=work.checked_add(charge).filter(|n|*n<=batch::MAX_BATCH_WORK).ok_or_else(||bad("aggregate protocol reconstruction work limit reached; select fewer constructs"))?;
         }
     }
     Ok((manifest, indices))

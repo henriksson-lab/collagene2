@@ -33,7 +33,7 @@ macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg
 dto! {pub enum SourceOrigin{OriginalReference,Saved(MaterialOrigin)}}
 dto! {pub struct PcrSelection{pub selected_index:usize,pub expected_preview_revision:String,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub geometry:analysis::PcrProduct}}
 dto! {pub struct MismatchPcrSelection{pub selected_index:usize,pub expected_preview_revision:String,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub geometry:crate::mutagenesis::MutantPcrProduct}}
-dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:MismatchPcrSelection},EndRepair{method:chemistry::EndRepairMethod}}}
+dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,template_strand:chemistry::Strand,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:MismatchPcrSelection},EndRepair{method:chemistry::EndRepairMethod}}}
 dto! {pub struct Request{pub source:EventBinding,pub origin:SourceOrigin,pub derivation:Derivation,pub name:String,pub save_primers:bool}}
 dto! {pub struct Record{pub schema_version:u32,pub engine_version:String,pub scientific_engine:String,pub source_workspace_fingerprint:String,pub context_revision:String,pub request:Request,pub product:EventBinding,pub product_state_revision:String,pub incomplete:bool}}
 mod record_bytes {
@@ -205,6 +205,7 @@ impl Request {
             Derivation::ExactPcr {
                 forward,
                 reverse,
+                template_strand,
                 selection,
             } => {
                 for p in [forward, reverse] {
@@ -218,7 +219,8 @@ impl Request {
                         ));
                     }
                 }
-                if selection.selected_index >= 10000
+                if selection.geometry.template_strand != *template_strand
+                    || selection.selected_index >= 10000
                     || !hex(&selection.expected_preview_revision)
                     || selection.geometry.sequence.is_empty()
                     || selection.geometry.sequence.len() > crate::model::MAX_SEQUENCE_LEN
@@ -486,15 +488,28 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
         Derivation::ExactPcr {
             forward,
             reverse,
+            template_strand,
             selection,
         } => {
             let previews = match &request.origin {
-                SourceOrigin::OriginalReference => {
-                    verification::simulate_pcr_documents(source, forward, reverse)?
-                }
-                SourceOrigin::Saved(origin) => {
-                    crate::material_pcr::simulate(source, origin, forward, reverse)?
-                }
+                SourceOrigin::OriginalReference => verification::simulate_pcr_documents(
+                    source,
+                    forward,
+                    reverse,
+                    *template_strand,
+                )?,
+                SourceOrigin::Saved(origin) => crate::material_pcr::simulate_from_fresh(
+                    source,
+                    origin,
+                    forward,
+                    reverse,
+                    *template_strand,
+                    &inherited.tracked,
+                    inherited.incomplete,
+                    &inherited.findings,
+                    inherited.findings_total,
+                    inherited.findings_truncated,
+                )?,
             };
             if previews.len() != 1 || selection.selected_index != 0 {
                 return Err(bad(
@@ -508,8 +523,9 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
             {
                 return Err(bad("selected PCR preview/geometry changed"));
             }
-            verification::pcr_material_preflight(source, &inherited.tracked, forward, reverse)?;
-            let geometries = analysis::simulate_pcr_geometry(source, forward, reverse)?;
+            let frame =
+                crate::pcr_source::Template::fresh(source, &inherited.tracked, *template_strand)?;
+            let geometries = frame.geometries(forward, reverse)?;
             if geometries.len() != 1 {
                 return Err(bad("actual exact PCR geometry is not unique"));
             }
@@ -517,7 +533,12 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
             let tracked = TrackedDuplex::exact_pcr(&geometry.product.sequence)?;
             let mut reference = tracked.duplex.molecule(&request.name)?;
             let mut findings = Vec::new();
-            verification::project_pcr_annotations(source, geometry, &mut reference, &mut findings)?;
+            verification::project_pcr_frame_annotations(
+                frame,
+                geometry,
+                &mut reference,
+                &mut findings,
+            )?;
             findings.push("Unique exact PCR produces newly synthesized unmodified blunt duplex strands with 5′OH/3′OH in the existing ideal-PCR model. Primer chemistry, yields, cleanup, amplification efficiency and experimental isolation are not measured.".into());
             (reference, tracked, findings)
         }
@@ -1189,6 +1210,7 @@ pub fn pcr_preview_revision(
     origin: &SourceOrigin,
     forward: &Primer,
     reverse: &Primer,
+    template_strand: chemistry::Strand,
 ) -> Result<String, Error> {
     crate::model::bounds::model_preflight(&[source])?;
     source.validate()?;
@@ -1200,6 +1222,11 @@ pub fn pcr_preview_revision(
     }
     match origin {
         SourceOrigin::OriginalReference => {
+            if template_strand != chemistry::Strand::Top {
+                return Err(bad(
+                    "Original reference PCR uses explicit Top; Bottom requires native source replay",
+                ));
+            }
             original_source(source)?;
         }
         SourceOrigin::Saved(origin) => {
@@ -1217,6 +1244,7 @@ pub fn pcr_preview_revision(
         origin,
         forward,
         reverse,
+        template_strand,
     ))
 }
 pub fn preview_pcr(
@@ -1224,14 +1252,15 @@ pub fn preview_pcr(
     origin: &SourceOrigin,
     forward: &Primer,
     reverse: &Primer,
+    template_strand: chemistry::Strand,
 ) -> Result<Vec<verification::PcrDocument>, Error> {
-    pcr_preview_revision(source, origin, forward, reverse)?;
+    pcr_preview_revision(source, origin, forward, reverse, template_strand)?;
     match origin {
         SourceOrigin::OriginalReference => {
-            verification::simulate_pcr_documents(source, forward, reverse)
+            verification::simulate_pcr_documents(source, forward, reverse, template_strand)
         }
         SourceOrigin::Saved(origin) => {
-            crate::material_pcr::simulate(source, origin, forward, reverse)
+            crate::material_pcr::simulate(source, origin, forward, reverse, template_strand)
         }
     }
 }

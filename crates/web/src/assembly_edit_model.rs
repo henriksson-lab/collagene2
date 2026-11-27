@@ -386,9 +386,7 @@ pub fn declare(
     replacement: &str,
     review: Option<&SourceReview>,
 ) -> Result<Draft, String> {
-    if draft.alternatives.is_some() {
-        return Err("Internal contribution edits currently require an ordinary construct.".into());
-    }
+    crate::assembly_alternatives::require_active_choice_match(draft)?;
     let start = boundary(start)?;
     let end = boundary(end)?;
     let expected = source_text(draft, slot, start, end, review)?;

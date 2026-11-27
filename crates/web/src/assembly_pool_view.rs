@@ -426,6 +426,12 @@ pub fn AssemblyPoolView(
                 design::IndependentIntent::Junctions(intent) => {
                     crate::assembly_review::IntendedReference::Junctions(intent)
                 }
+                design::IndependentIntent::Substitutions(intent) => {
+                    crate::assembly_review::IntendedReference::Substitutions(intent)
+                }
+                design::IndependentIntent::Edits(intent) => {
+                    crate::assembly_review::IntendedReference::Edits(intent)
+                }
             };
             let request = crate::assembly_workspace::ReviewRequest {
                 candidate: collagene_core::transfer::Candidate::new(plan),

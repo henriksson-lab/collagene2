@@ -4,6 +4,100 @@ use super::*;
 use collagene_core::{combinatorial_batch as batch, combinatorial_design as design};
 use collagene_core::{combinatorial_export as archive, combinatorial_release as release};
 
+/// Session-resolved source selectors: callers never supply closed material bindings.
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryMaterialBinding {
+    pub event: collagene_core::run_lineage::EventBinding,
+    pub selection: collagene_core::run_material::MaterialSelection,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryDesign {
+    pub id: String,
+    pub name: String,
+    pub circular: bool,
+    pub bins: Vec<design::Bin>,
+    pub method: design::Method,
+    pub material_bindings: Vec<LibraryMaterialBinding>,
+}
+impl LibraryDesign {
+    fn into_native(self, frame: &workspace::Workspace) -> Result<design::Design, ErrorData> {
+        bounded_json_limit(&self, 32 * 1024 * 1024)?;
+        if self.bins.is_empty()
+            || self.bins.len() > design::MAX_BINS
+            || self.material_bindings.len() > design::MAX_CHOICES
+            || self.bins.iter().any(|b| b.choices.len() > 64)
+            || self.bins.iter().map(|b| b.choices.len()).sum::<usize>() > design::MAX_CHOICES
+        {
+            return Err(bad("bounded source library required"));
+        }
+        let mut pins = BTreeSet::new();
+        for b in &self.material_bindings {
+            b.selection.validate().map_err(bad)?;
+            if b.selection.event() != &b.event
+                || !pins.insert((&b.event.document_id, &b.event.event_id, &b.event.revision))
+            {
+                return Err(bad(
+                    "duplicate or mismatched exact material source selector",
+                ));
+            }
+        }
+        let selections = self
+            .material_bindings
+            .iter()
+            .map(|b| b.selection.clone())
+            .collect::<Vec<_>>();
+        let origins = collagene_core::run_material::documentary_origins(frame, &selections, &[])
+            .map_err(bad)?
+            .materials;
+        if origins.len() != self.material_bindings.len() {
+            return Err(bad("native material hydration count differs"));
+        }
+        let native = design::Design {
+            id: self.id,
+            name: self.name,
+            circular: self.circular,
+            bins: self.bins,
+            method: self.method,
+            material_bindings: self
+                .material_bindings
+                .into_iter()
+                .zip(origins)
+                .map(|(b, origin)| design::LibraryMaterialBinding {
+                    event: b.event,
+                    origin,
+                })
+                .collect(),
+        };
+        design::source_preflight(&native, frame).map_err(bad)?;
+        Ok(native)
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LibraryRequest {
+    pub design: Option<LibraryDesign>,
+    pub rows: Vec<batch::RowRequest>,
+}
+impl LibraryRequest {
+    fn bounds(&self) -> Result<(), ErrorData> {
+        if self.rows.is_empty() || self.rows.len() > design::MAX_SELECTED {
+            return Err(bad("select1–256 current library rows"));
+        }
+        bounded_json_limit(self, batch::MAX_RECORD_BYTES)?;
+        Ok(())
+    }
+    fn into_native(self, frame: &workspace::Workspace) -> Result<batch::Request, ErrorData> {
+        self.bounds()?;
+        let native = batch::Request {
+            design: self.design.map(|d| d.into_native(frame)).transpose()?,
+            rows: self.rows,
+        };
+        native.validate().map_err(bad)?;
+        Ok(native)
+    }
+}
 fn page_size() -> usize {
     20
 }
@@ -11,7 +105,7 @@ fn page_size() -> usize {
 #[serde(deny_unknown_fields)]
 pub struct MatrixQuery {
     pub workspace: WorkspaceRef,
-    pub design: design::Design,
+    pub design: LibraryDesign,
     #[serde(default)]
     pub first: u128,
     #[serde(default = "page_size")]
@@ -21,14 +115,14 @@ pub struct MatrixQuery {
 #[serde(deny_unknown_fields)]
 pub struct InspectQuery {
     pub workspace: WorkspaceRef,
-    pub design: design::Design,
+    pub design: LibraryDesign,
     pub construct: design::SelectedConstruct,
 }
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct BatchQuery {
     pub workspace: WorkspaceRef,
-    pub matrix: batch::Request,
+    pub matrix: LibraryRequest,
 }
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -80,52 +174,6 @@ fn hash(value: &str) -> Result<(), ErrorData> {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     {
         return Err(bad("an exact lower-case batch attachment hash is required"));
-    }
-    Ok(())
-}
-// Matrix rows are declarations, but their claimed source ownership and literal
-// original intervals can still be checked without running preparation science.
-fn attest_sources(
-    frame: &workspace::Workspace,
-    declared: &design::Design,
-) -> Result<(), ErrorData> {
-    design::validate_design(declared).map_err(bad)?;
-    let mut checked = BTreeSet::new();
-    for bin in &declared.bins {
-        for choice in &bin.choices {
-            let b = &choice.source;
-            if !frame.documents.iter().any(|doc| doc.id == b.document_id) {
-                return Err(bad("an alternative source document is not retained"));
-            }
-            let event = frame
-                .history
-                .iter()
-                .find(|event| event.id == b.event_id)
-                .ok_or_else(|| bad("an alternative source event is not retained"))?;
-            if event.document_id != b.document_id || event.revision != b.revision {
-                return Err(bad("alternative source document/event/revision mismatch"));
-            }
-            let molecule = frame
-                .revisions
-                .get(&b.revision)
-                .ok_or_else(|| bad("an alternative source revision is not retained"))?;
-            if checked.insert(&b.revision) && molecule.revision() != b.revision {
-                return Err(bad(
-                    "alternative source content differs from the retained revision",
-                ));
-            }
-            let n = molecule.sequence.len();
-            if molecule.sequence.alphabet() != collagene_core::Alphabet::Dna
-                || choice.start >= n
-                || choice.end <= choice.start
-                || choice.end - choice.start > n
-                || (molecule.topology == collagene_core::Topology::Linear && choice.end > n)
-            {
-                return Err(bad(
-                    "an alternative contribution is outside its original DNA source or exceeds one turn",
-                ));
-            }
-        }
     }
     Ok(())
 }
@@ -220,13 +268,13 @@ impl CollageneServer {
         &self,
         args: BatchQuery,
     ) -> Result<CallToolResult, ErrorData> {
-        args.matrix.validate().map_err(bad)?;
+        args.matrix.bounds()?;
         let server = self.clone();
         self.compute(move||{
-            let frame=server.restore_workspace(&args.workspace)?;
-            let context=batch::begin_revision(&frame,&args.matrix).map_err(bad)?;
+            let frame=server.restore_workspace(&args.workspace)?;let matrix=args.matrix.into_native(&frame)?;
+            let context=batch::begin_revision(&frame,&matrix).map_err(bad)?;
             let install=batch::capture_revision(&frame,&context).map_err(bad)?;
-            let mut session=batch::Session::begin(frame,args.matrix).map_err(bad)?;
+            let mut session=batch::Session::begin(frame,matrix).map_err(bad)?;
             let mut progress=session.summary();
             if progress.context_revision!=context{return Err(bad("batch session differs from its exact native input context"));}
             let total=progress.total_rows;
@@ -300,10 +348,10 @@ impl CollageneServer {
         }
         let server = self.clone();
         self.compute(move||{
-            let frame=server.restore_workspace(&args.workspace)?;attest_sources(&frame,&args.design)?;
-            let page=design::matrix_page(&args.design,args.first,args.limit).map_err(bad)?;
-            output(json!({"workspace":args.workspace,"design_id":args.design.id,"design_name":args.design.name,"page":page,
-                "state":"source-bound-declarations","verified":false,"authority":"Exact retained source events and original contribution intervals were resolved. Matrix enumeration does not check preparations, junctions, target agreement or experimental success."}))
+            let frame=server.restore_workspace(&args.workspace)?;let declared=args.design.into_native(&frame)?;
+            let page=design::matrix_page(&declared,args.first,args.limit).map_err(bad)?;
+            output(json!({"workspace":args.workspace,"design_id":declared.id,"design_name":declared.name,"page":page,
+                "state":"source-bound-declarations","verified":false,"authority":"Exact retained source events and declared native ownership were checked; actual material state/ranges are freshly checked when resolving a construct. Matrix enumeration does not check preparations, junctions, target agreement or experimental success."}))
         }).await
     }
     pub(super) async fn combinatorial_pool_inspect(
@@ -312,13 +360,13 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move || {
-            let frame = server.restore_workspace(&args.workspace)?;
-            let resolved = design::resolve_pool(&args.design, &args.construct, &frame).map_err(bad)?;
+            let frame = server.restore_workspace(&args.workspace)?;let declared=args.design.into_native(&frame)?;
+            let resolved = design::resolve_pool(&declared, &args.construct, &frame).map_err(bad)?;
             let design::Recipe::GoldenGatePool { request, source_revision, .. } = &resolved.recipe else {
                 return Err(bad("selected construct is not a Golden Gate reaction pool"));
             };
             let report = collagene_core::golden_gate_reaction::inspect(&resolved.inputs, &resolved.target, request).map_err(bad)?;
-            let evidence = json!({"workspace":args.workspace,"design":args.design,"construct":args.construct,
+            let evidence = json!({"workspace":args.workspace,"design":declared,"construct":args.construct,
                 "source_revision":source_revision,"construct_id":resolved.construct_id,
                 "combination_id":resolved.combination_id,"declaration_revision":resolved.declaration_revision,
                 "input_bindings":resolved.bindings,"target_binding":resolved.target_binding,
@@ -339,15 +387,15 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move || {
-            let frame = server.restore_workspace(&args.workspace)?;
-            let report = design::inspect_multisite(&args.design, &args.construct, &frame).map_err(bad)?;
-            report.validate_binding(&design::inspect_multisite_revision(&args.design, &args.construct, &frame).map_err(bad)?).map_err(bad)?;
+            let frame = server.restore_workspace(&args.workspace)?;let declared=args.design.into_native(&frame)?;
+            let report = design::inspect_multisite(&declared, &args.construct, &frame).map_err(bad)?;
+            report.validate_binding(&design::inspect_multisite_revision(&declared, &args.construct, &frame).map_err(bad)?).map_err(bad)?;
             let candidates = report.batch.reference.candidates.iter().take(25).map(|candidate| json!({
                 "candidate_id":candidate.id,"sites":candidate.sites,"pairs":candidate.pairs,
                 "components":candidate.products.iter().enumerate().map(|(i,p)|json!({"component_id":i,"length":p.molecule.sequence.len(),"topology":p.molecule.topology,"reference_revision":p.molecule.revision()})).collect::<Vec<_>>()
             })).collect::<Vec<_>>();
             let artifact = server.text_artifact(bounded_json_limit(&json!({
-                "workspace":args.workspace,"design":args.design,"construct":args.construct,"inspection":report,
+                "workspace":args.workspace,"design":declared,"construct":args.construct,"inspection":report,
                 "state":"fresh-reference-network-discovery","verified":false
             }),32*1024*1024)?,"application/json","combinatorial-multisite-reference.json")?;
             output(json!({"workspace":args.workspace,"context_revision":report.context_revision,"source_revision":report.source_revision,
@@ -365,12 +413,12 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let frame=server.restore_workspace(&args.workspace)?;
-            let resolved=design::resolve(&args.design,&args.construct,&frame).map_err(bad)?;
+            let frame=server.restore_workspace(&args.workspace)?;let declared=args.design.into_native(&frame)?;
+            let resolved=design::resolve(&declared,&args.construct,&frame).map_err(bad)?;
             let mut summary=summaries(&resolved);
-            let intent=match &resolved.intent{Some(design::IndependentIntent::Regions(report))=>json!({"OriginalRegions":report}),Some(design::IndependentIntent::Junctions(report))=>json!({"OriginalJunctions":report}),None=>Value::Null};
+            let intent=match &resolved.intent{Some(design::IndependentIntent::Regions(report))=>json!({"OriginalRegions":report}),Some(design::IndependentIntent::Junctions(report))=>json!({"OriginalJunctions":report}),Some(design::IndependentIntent::Substitutions(report))=>json!({"OriginalSubstitutions":report}),Some(design::IndependentIntent::Edits(report))=>json!({"OriginalEdits":report}),None=>Value::Null};
             let recipe=match &resolved.recipe{design::Recipe::Overlap(recipe)=>json!({"Overlap":recipe}),design::Recipe::Ligation{recipe,cleavage_policy}=>json!({"Ligation":{"recipe":recipe,"cleavage_policy":cleavage_policy}}),design::Recipe::GoldenGatePool{request,selection,source_revision}=>json!({"GoldenGatePool":{"request":request,"selection":selection,"source_revision":source_revision}}),design::Recipe::MultiSiteReference{request,selection,source_revision,sources}=>json!({"MultiSiteReference":{"request":request,"selection":selection,"source_revision":source_revision,"sources":sources}})};
-            let evidence=json!({"workspace":args.workspace,"design":args.design,"construct":args.construct,"construct_id":resolved.construct_id,"combination_id":resolved.combination_id,"declaration_revision":resolved.declaration_revision,"input_bindings":resolved.bindings,"inputs":resolved.inputs,"independent_target":resolved.target,"target_binding":resolved.target_binding,"independent_intent":intent,"recipe":recipe,"verified":false});
+            let evidence=json!({"workspace":args.workspace,"design":declared,"construct":args.construct,"construct_id":resolved.construct_id,"combination_id":resolved.combination_id,"declaration_revision":resolved.declaration_revision,"input_bindings":resolved.bindings,"inputs":resolved.inputs,"independent_target":resolved.target,"target_binding":resolved.target_binding,"independent_intent":intent,"recipe":recipe,"verified":false});
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","combinatorial-construct.json")?;
             summary["workspace"]=serde_json::to_value(args.workspace).map_err(bad)?;summary["artifact_id"]=json!(artifact);
             summary["authority"]=json!("Independent target and explicit preparation recipe only. Use fresh batch evaluation to reconstruct operations and check target agreement; inspection does not establish experimental success.");

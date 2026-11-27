@@ -205,6 +205,7 @@ fn digest_and_unique_pcr_tailing_previews_replay_real_sources() {
     let recipe = TailSubstrate::ExactPcr {
         forward: Primer::new("f", "ACGA", "").unwrap(),
         reverse: Primer::new("r", "GTTA", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let r = simulate_tailing(&pcr, &recipe, TailingBase::A).unwrap();
     assert_eq!(r.tailing.duplex.top.as_str(), "ACGACCCCGGGGTAACA");

@@ -127,7 +127,9 @@ pub fn source_preflight(
                 reverse,
                 options,
             } => preparation::mismatch_pcr_shape(forward, reverse, options)?,
-            preparation::Preparation::ExactPcr { forward, reverse }
+            preparation::Preparation::ExactPcr {
+                forward, reverse, ..
+            }
             | preparation::Preparation::PcrCatalogDigest {
                 forward, reverse, ..
             } => {

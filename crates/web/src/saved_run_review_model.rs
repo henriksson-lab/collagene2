@@ -94,6 +94,7 @@ mod tests {
                 molecule: source,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "AGTCC", "").unwrap(),
                 reverse: Primer::new("R", "TACGT", "").unwrap(),

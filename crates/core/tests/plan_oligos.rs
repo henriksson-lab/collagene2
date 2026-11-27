@@ -24,6 +24,7 @@ fn fixture() -> (DesignPlan, Molecule) {
                 template: Source::Input("s".into()),
                 forward: Primer::new("=forward", "ACGT", "GG").unwrap(),
                 reverse: Primer::new("same name", "TTAA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::PcrWithMismatches {
                 template: Source::Step(0),

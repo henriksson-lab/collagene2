@@ -65,6 +65,7 @@ fn pcr(template: Source, f: (&str, &str), r: (&str, &str)) -> Operation {
         template,
         forward: Primer::new("F", f.0, f.1).unwrap(),
         reverse: Primer::new("R", r.0, r.1).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn input(id: &str) -> Source {
@@ -151,6 +152,7 @@ fn equal_pcr_sequences_with_distinct_template_origins_remain_ambiguous() {
             template: input("t"),
             forward: a,
             reverse: b,
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
         "CAAAACCCCTTTTG",
         Topology::Linear,

@@ -75,6 +75,7 @@ fn pcr(template: Source) -> Operation {
         template,
         forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
         reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn run_fixture() -> (Workspace, Workspace, Selection, run_material::Selection) {

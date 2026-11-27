@@ -88,8 +88,8 @@ async fn actual_ligation_crossing_codon_keeps_source_cds_conditional_and_target_
     );
     let imported = call(&client, "import_document", json!({"text":text})).await;
     let recipe = json!({"name":"Source-bound junction literal","fragments":[
-        {"source":{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
-        {"source":{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
+        {"source":{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
+        {"source":{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
     ],"circular":false,"allow_nicked":false});
     let args = json!({"inputs":[{"id":"l","document":named(&imported,"left_template")},{"id":"r","document":named(&imported,"right_template")}],"target":named(&imported,"target"),"recipe":recipe});
     let plan = call(&client, "propose_ligation_assembly", args.clone()).await;

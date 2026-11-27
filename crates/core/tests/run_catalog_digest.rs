@@ -124,6 +124,7 @@ fn pcr() -> (Molecule, Capsule) {
             template: Source::Input("input-0".into()),
             forward: Primer::new("F", "AAA", "CCGAATTC").unwrap(),
             reverse: Primer::new("R", "GGG", "GGCTCGAG").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     )
 }
@@ -296,6 +297,7 @@ fn actual_retained_nicks_withhold_products_but_keep_recognition_scan() {
                 template: Source::Input("input-0".into()),
                 forward: Primer::new("LF", "AAA", "").unwrap(),
                 reverse: Primer::new("LR", "GGG", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             // Each junction needs at least one real seal. Only the left PCR
             // fragment is phosphorylated, leaving one genuine nick per junction.
@@ -307,6 +309,7 @@ fn actual_retained_nicks_withhold_products_but_keep_recognition_scan() {
                 template: Source::Input("input-1".into()),
                 forward: Primer::new("RF", "GGG", "").unwrap(),
                 reverse: Primer::new("RR", "AAA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Ligate {
                 fragments: vec![

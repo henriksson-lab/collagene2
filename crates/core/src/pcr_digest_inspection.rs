@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "pcr-digest-inspection-1";
 const MAX_GEOMETRIES: usize = 10_000;
 macro_rules! dto {($($x:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
-dto! {pub struct Request {pub source_role:String,pub forward:Primer,pub reverse:Primer,pub selection:CatalogSelection,pub options:InspectionOptions}}
-dto! {pub struct GeometrySummary {pub index:usize,pub forward_start:usize,pub reverse_start:usize,pub product_length:usize}}
+dto! {pub struct Request {pub template_strand:chemistry::Strand,pub source_role:String,pub forward:Primer,pub reverse:Primer,pub selection:CatalogSelection,pub options:InspectionOptions}}
+dto! {pub struct GeometrySummary {pub template_strand:chemistry::Strand,pub index:usize,pub forward_start:usize,pub reverse_start:usize,pub product_length:usize}}
 dto! {pub struct Preview {pub engine_version:String,pub context_revision:String,pub source_revision:String,pub request:Request,pub pcr_geometries:Vec<GeometrySummary>,pub amplicon:Option<Molecule>,pub inspection:Option<RestrictionInspection>,pub findings:Vec<String>}}
 fn bad(message: &str) -> Error {
     Error::Unsupported(format!("PCR digest inspection: {message}"))
@@ -61,6 +61,11 @@ pub fn source_preflight(source: &Molecule, request: &Request) -> Result<(), Erro
 }
 fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Result<(), Error> {
     shape(request)?;
+    if reject_imported && request.template_strand != chemistry::Strand::Top {
+        return Err(bad(
+            "Bottom template PCR requires freshly reconstructed native material",
+        ));
+    }
     crate::model::bounds::model_preflight(&[source])?;
     if reject_imported && chemistry::has_unmapped_physical_evidence(source) {
         return Err(bad(
@@ -77,6 +82,7 @@ fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Res
             selection: request.selection.clone(),
             fragment_index: 0,
             repair: None,
+            template_strand: request.template_strand,
         },
         reverse: false,
     };
@@ -113,8 +119,12 @@ pub fn preview_revision(source: &Molecule, request: &Request) -> Result<String, 
 }
 pub fn inspect(source: &Molecule, request: &Request) -> Result<Preview, Error> {
     let context_revision = inspection_revision(source, request)?;
-    let documents =
-        verification::simulate_pcr_documents(source, &request.forward, &request.reverse)?;
+    let documents = verification::simulate_pcr_documents(
+        source,
+        &request.forward,
+        &request.reverse,
+        request.template_strand,
+    )?;
     finish(source, request, context_revision, documents)
 }
 fn finish(
@@ -130,6 +140,7 @@ fn finish(
         .iter()
         .enumerate()
         .map(|(index, p)| GeometrySummary {
+            template_strand: p.geometry.template_strand,
             index,
             forward_start: p.geometry.forward_start,
             reverse_start: p.geometry.reverse_start,
@@ -184,6 +195,7 @@ impl Preview {
         }
         for (i, g) in self.pcr_geometries.iter().enumerate() {
             if g.index != i
+                || g.template_strand != self.request.template_strand
                 || g.product_length == 0
                 || g.product_length > crate::model::MAX_SEQUENCE_LEN
                 || g.forward_start > crate::model::MAX_SEQUENCE_LEN
@@ -280,6 +292,7 @@ pub fn inspect_from_run(
         &request.forward,
         &request.reverse,
         &material.tracked,
+        request.template_strand,
     )?;
     let mut preview = finish(
         source,

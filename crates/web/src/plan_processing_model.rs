@@ -98,6 +98,7 @@ mod tests {
                     molecule: stock,
                 }],
                 steps: vec![Operation::Pcr {
+                    template_strand: collagene_core::chemistry::Strand::Top,
                     template: Source::Input("stock".into()),
                     forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                     reverse: Primer::new("R", "TGAAGTCC", "").unwrap(),
@@ -184,6 +185,7 @@ mod tests {
         );
         assert!(
             raw.apply(&Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("stock".into()),
                 forward: Primer::new("F", "ACGT", "").unwrap(),
                 reverse: Primer::new("R", "TGCA", "").unwrap()

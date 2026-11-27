@@ -4,29 +4,33 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker100, candidate26, native plan24, science27, draft15 and
-190 MCP tools. Unsupported internal schemas are rejected; implementations and
-callers are updated directly without compatibility readers. The shared cloning
-workflow now carries original generation declarations and exact Run/Derived
-origins through positional checked Golden Gate preparation, initial cutting and
-candidate recutting. Undetermined source cleavage withholds the pool. Actual
-tracked candidate strands, exact catalog/profile evidence and bounded enclosing
-work remain separate from the independent intended target.
-[Scientific scope and limits](CHECKED_GOLDEN_GATE.md).
+Current source uses worker106, candidate28, native plan26, science29, draft17 and
+192 MCP tools. There is one current internal representation; unsupported internal
+schemas are rejected without compatibility readers. Saved activated TOPO graph
+reuse is pushed in `443f51b`. The current working change adds row-specific library
+substitutions/indels, saved Run/Derived primer proposals, exact source ownership,
+and persistent recovery counts under history v2. The same batch adds typed native
+library selectors, an independent source-binding roster, borrowed actual-strand
+PCR/OE planning, explicit preparation orientation and strand-aware oligo evidence.
+Intended DNA remains independent of physical preparation and verification.
 
-Pushed checkpoint `7d5dc6c` passes 73 focused native plate/cleanup/CI cases and
-integrated web/worker WASM compilation. Current source adds saved-template inverse
-PCR on exact Run/Derived material; its 63 focused workflow/transport cases, formatting and WASM check pass.
-Five stale worker-version assertions found by7d CI now inspect actual current
-request/reply headers; all 15 cases in those targets pass. Browser and
-application HTTP acceptance remain deferred until all in-scope code is complete.
+The integrated batch passes178 distinct focused native cases, including actual
+strand PCR, source ownership, library budgets, transport and web models. Failed
+and related cases received74 focused rechecks; the final processing-policy guard
+passes14 projection cases. The integrated web/worker WASM check passed before
+that final shared-model guard; exact-source WASM and cross-platform CI remain to
+run after publication. Formatting and whitespace checks accompany publication.
+The prior commit's native CI on Windows, macOS and Linux found the same five
+stale binary selector/size-lane fixture expectations, corrected in current source
+without relaxing bounds. Its web and all three desktop build jobs passed. Full
+graphical and installed-desktop acceptance remain open.
 
-Port8082 serves the immutable CI frontend for `7d5dc6c` (worker99), including plate
-layouts, checked Golden Gate and saved-run editing. Its 13 assets, static integrity,
-snapshot process and socket were checked without application requests. The newer
-inverse-PCR worktree is not served. Scientific CI for7d failed only the five stale
-version assertions on each OS. Installed/offline graphical acceptance and current
-cross-platform CI remain open.
+Port8082 serves the immutable successful CI frontend for `443f51b` (worker105),
+including saved activated TOPO graph reuse. Static asset integrity, exact process
+ownership and the listening socket were checked without application requests.
+The working per-construct library and actual-strand changes are not served there. Private library
+assets and storage remain untouched. Browser and application HTTP acceptance
+remain deferred until all in-scope code is complete.
 
 Saved-run review now explicitly opens a separate candidate in the existing DAG
 editor, preserving original source and target events after document heads advance.
@@ -39,8 +43,8 @@ after restart prepare the saved run again. [Contract](RUN_REVIEW.md).
 Documentary96/384-well layouts are integrated in the saved-batch panel, including
 explicit planned/released identities, replicates, immutable capture and CSV/HTML/PDF.
 MCP supports explicit whole-layout dependency review/projection; ordinary plasmid
-sharing omits these sidecars. Quantities remain missing; the exact reaction-planning
-UI remains unfinished. [Model](PROTOCOL_LAYOUT.md) · [Sharing](PROTOCOL_LAYOUT_TRANSPORT.md).
+sharing omits these sidecars. Exact reaction quantities and combined HTML/PDF companions are now implemented.
+Bulk quantity application and revision of saved quantity reports remain open. [Model](PROTOCOL_LAYOUT.md) · [Sharing](PROTOCOL_LAYOUT_TRANSPORT.md).
 
 Saved-template inverse PCR now reuses the existing compiler, worker and MCP tool.
 It preserves exact origin events, independently frozen targets and fresh native
@@ -50,7 +54,8 @@ circular contours remain diagnostic. Inherited incomplete origins retain their
 findings. [Native workflow](INVERSE_PCR_MATERIAL.md).
 
 The checkpoint evidence below records earlier implementation stages. Current
-schema and public-preview claims are the ones above.
+schema and public-preview claims are the ones above; historical claims of missing
+features do not reopen capabilities implemented in later checkpoints.
 
 Parallel format work now adds selected XDNA v0 reference export, SCF regeneration
 from retained real trace signals, and direct MCP annotated text exports. These

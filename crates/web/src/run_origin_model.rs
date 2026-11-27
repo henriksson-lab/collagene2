@@ -7,23 +7,60 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub struct PinnedOrigin(Arc<MaterialOrigin>);
+pub struct PinnedOrigin {
+    material: Arc<MaterialOrigin>,
+    revision: String,
+}
 impl PinnedOrigin {
     pub(crate) fn from_material(origin: MaterialOrigin) -> Result<Self, String> {
         origin.validate_documentary().map_err(|e| e.to_string())?;
-        Ok(Self(Arc::new(origin)))
+        struct Hash {
+            inner: blake3::Hasher,
+            bytes: usize,
+        }
+        impl std::io::Write for Hash {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.bytes = self
+                    .bytes
+                    .checked_add(bytes.len())
+                    .filter(|n| *n <= 128 * 1024 * 1024)
+                    .ok_or_else(|| {
+                        std::io::Error::other("Origin identity exceeds bounded source context")
+                    })?;
+                self.inner.update(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let mut hash = Hash {
+            inner: blake3::Hasher::new(),
+            bytes: 0,
+        };
+        serde_json::to_writer(&mut hash, &origin).map_err(|e| e.to_string())?;
+        Ok(Self {
+            material: Arc::new(origin),
+            revision: hash.inner.finalize().to_hex().to_string(),
+        })
+    }
+    /// Immutable source identity computed once when captured or decoded; no replay.
+    pub(crate) fn revision(&self) -> &str {
+        &self.revision
     }
     pub(crate) fn as_ref(&self) -> &MaterialOrigin {
-        &self.0
+        &self.material
     }
     pub(crate) fn event(&self) -> &EventBinding {
-        self.0.event()
+        self.material.event()
     }
     pub(crate) fn selection(&self) -> MaterialSelection {
-        self.0.selection()
+        self.material.selection()
     }
     pub(crate) fn validate_documentary(&self) -> Result<(), String> {
-        self.0.validate_documentary().map_err(|e| e.to_string())
+        self.material
+            .validate_documentary()
+            .map_err(|e| e.to_string())
     }
     /// Advanced run-only workflows must refuse derived digest material explicitly.
     pub(crate) fn as_run(&self) -> Result<&Capsule, String> {
@@ -48,11 +85,7 @@ impl PinnedOrigin {
 }
 impl PartialEq for PinnedOrigin {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0)
-            || serde_json::to_vec(self.as_ref())
-                .ok()
-                .zip(serde_json::to_vec(other.as_ref()).ok())
-                .is_some_and(|(a, b)| a == b)
+        Arc::ptr_eq(&self.material, &other.material) || self.revision == other.revision
     }
 }
 impl Eq for PinnedOrigin {}

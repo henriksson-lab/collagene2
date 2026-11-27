@@ -104,6 +104,7 @@ fn new_preparation_cannot_hide_inside_an_old_recipe_envelope() {
                     .unwrap(),
                     fragment_index: 1,
                     repair: None,
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
             },
             treatment: None,

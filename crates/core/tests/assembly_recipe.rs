@@ -107,6 +107,7 @@ fn actual_pcr_and_literal_ecorv_fragment_compile_without_source_extraction() {
             a::Preparation::ExactPcr {
                 forward: Primer::new("ordered forward", "TTGCAATC", "").unwrap(),
                 reverse: Primer::new("ordered reverse", "GCTAGCAT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             false,
         ),
@@ -202,6 +203,7 @@ fn circles_stale_bindings_and_failed_preparation_never_become_manufactured_linea
             a::Preparation::ExactPcr {
                 forward: Primer::new("absent", "AAAAAAAA", "").unwrap(),
                 reverse: Primer::new("absent", "CCCCCCCC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             false,
         ),

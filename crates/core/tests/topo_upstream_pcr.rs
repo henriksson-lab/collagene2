@@ -320,6 +320,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
         template: Source::Input("template".into()),
         forward: Primer::new("Fresh F", "CACCA", "").unwrap(),
         reverse: Primer::new("Fresh R", "CGTCA", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let mut staggered = plan.clone();
     staggered.steps[0] = pcr.clone();

@@ -75,6 +75,7 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
             template: Source::Input("left".into()),
             forward: Primer::new("Original LF", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("Original LR", "TACGTAGC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::TreatEnds {
             template: Source::Step(0),
@@ -84,6 +85,7 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
             template: Source::Input("right".into()),
             forward: Primer::new("Original RF", "GGACTTCA", "").unwrap(),
             reverse: Primer::new("Original RR", "TACAGGTC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
     ];
     let right_step = if nicked {
@@ -423,6 +425,7 @@ fn wrong_target_and_tampered_documentary_receipts_cannot_inherit_success() {
         template: Source::Input("template".into()),
         forward: changed.forward.clone(),
         reverse: changed.reverse.clone(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     assert!(changed.validate_binding(&context).is_err());
     let mut changed = design.clone();
@@ -497,11 +500,13 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
                 template: Source::Input("left".into()),
                 forward: Primer::new("LF", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("LR", "GTCCTACG", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("right".into()),
                 forward: Primer::new("RF", "GGACTTCA", "").unwrap(),
                 reverse: Primer::new("RR", "GACTTACA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::HomologyAssembly {
                 fragments: vec![

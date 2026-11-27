@@ -46,15 +46,7 @@ impl Draft {
             material_origins: self
                 .slots
                 .iter()
-                .zip(&self.methods.rows)
-                .map(|(slot, row)| {
-                    matches!(
-                        &slot.selector,
-                        assembly_intent::Selector::MaterialStrandRange { .. }
-                    )
-                    .then(|| row.run_origin.clone())
-                    .flatten()
-                })
+                .map(|slot| slot.material_origin.clone())
                 .collect(),
             paired_rows: self
                 .methods
@@ -350,6 +342,7 @@ pub fn AssemblyWorkspace(
             status.set(error);
             return;
         }
+        next.slots[index].material_origin = None;
         next.slots[index].captured = Some(Arc::new(CapturedSource { source, molecule }));
         next.slots[index].anneal_bottom = None;
         let orientation = next.methods.rows[index].reverse;
@@ -639,13 +632,18 @@ pub fn AssemblyWorkspace(
                     Some(false) => {}
                     None => return Err("Proposed row preservation choices are incomplete.".into()),
                 }
-                let (forward, reverse, selection, fragment_index) = match &fragment.preparation {
-                    collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse }
-                        if matches!(&proposal.report, JunctionReport::Overlap(_)) =>
-                    {
-                        (forward, reverse, None, None)
+                let (forward, reverse, selection, fragment_index, template_strand) = match &fragment
+                    .preparation
+                {
+                    collagene_core::assembly_recipe::Preparation::ExactPcr {
+                        template_strand,
+                        forward,
+                        reverse,
+                    } if matches!(&proposal.report, JunctionReport::Overlap(_)) => {
+                        (forward, reverse, None, None, *template_strand)
                     }
                     collagene_core::assembly_recipe::Preparation::PcrCatalogDigest {
+                        template_strand,
                         forward,
                         reverse,
                         selection,
@@ -661,6 +659,7 @@ pub fn AssemblyWorkspace(
                             reverse,
                             Some(selection.clone()),
                             Some(*fragment_index),
+                            *template_strand,
                         )
                     }
                     _ => {
@@ -675,6 +674,7 @@ pub fn AssemblyWorkspace(
                 } else {
                     OverlapPreparation::ExactPcr
                 };
+                row.template_strand = template_strand;
                 row.catalog_selection = selection;
                 if let Some(index) = fragment_index {
                     row.fragment = (index + 1).to_string();
@@ -806,13 +806,15 @@ pub fn AssemblyWorkspace(
         <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{<Show when=move||draft.with(|d|d.active_slot==i)><article class="assembly-slot"><h3>{move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default())}</h3><details class="assembly-fragment-options"><summary>"Fragment options"</summary><label>"Slot label"<input maxlength="80" aria-label=format!("Assembly slot {} label",i+1) prop:value=move||draft.with(|d|d.slots.get(i).map(|s|s.label.clone()).unwrap_or_default()) on:input=move|e|draft.update(|d|if let Some(s)=d.slots.get_mut(i){s.label=event_target_value(&e)})/></label><div class="method-row-actions"><button class="text-tool" disabled=move||i==0||draft.with(|d|d.alternatives.is_some()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i>0&&i<d.slots.len(){d.slots.swap(i,i-1);d.methods.swap_rows(i,i-1);d.junction_edits.clear();d.active_slot=i-1;d.sync_rows();}})>"Move earlier"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||i+1>=d.slots.len()) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&i+1<d.slots.len(){d.slots.swap(i,i+1);d.methods.swap_rows(i,i+1);d.junction_edits.clear();d.active_slot=i+1;d.sync_rows();}})>"Move later"</button><button class="text-tool" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()<=if d.methods.mode==Mode::Tailing{2}else{1}) on:click=move|_|draft.update(|d|{if d.alternatives.is_none()&&d.slots.len()>if d.methods.mode==Mode::Tailing{2}else{1}&&i<d.slots.len(){if let Err(error)=d.clear_slot_substitutions(i){status.set(error);return;}d.slots.remove(i);d.methods.remove_row(i);d.junction_edits.clear();d.active_slot=d.active_slot.min(d.slots.len()-1);d.sync_rows();}})>"Remove slot"</button></div></details>
             <p>{move||draft.with(|d|d.slots.get(i).map(|s|match s.captured.as_deref(){Some(c)=>format!("{} · {}",c.source.name,crate::assembly_draft_model::selector_label(&s.selector)),None=>"No source fragment set".into()}).unwrap_or_default())}</p>
             <p class="helper"><strong>"Declared preparation: "</strong>{move||draft.with(|d|preparation_overview(&d.methods,i))}</p>
+            <crate::run_origin_view::SourceOriginPicker source=Memo::new(move|_|draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref().map(|c|c.source.clone())))) epoch get_workspace=snapshot selected=Memo::new(move|_|draft.with(|d|d.slots.get(i).and_then(|s|s.material_origin.clone()))) on_select=Callback::new(move|pin|{let next=crate::assembly_draft_model::set_material_origin(&draft.get_untracked(),i,pin)?;draft.set(next);Ok(())})/>
             <details class="assembly-source-details"><summary>"Source details"</summary><p class="helper">{move||draft.with(|d|d.slots.get(i).and_then(|s|s.captured.as_ref()).map(|c|format!("Pinned source event {} · revision {}",c.source.binding.event_id,c.source.binding.revision)).unwrap_or_default())}</p></details>
             <p class="helper">{move||{let captured=draft.with(|d|d.slots.get(i).and_then(|s|s.captured.clone()));captured.map(|c|sources.with(|current|if current.iter().any(|s|s.binding==c.source.binding){"Current source version is pinned"}else{"Using the captured source version; current tabs do not replace it"})).unwrap_or("")}}</p>
-            <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) disabled=move||draft.with(|d|d.methods.rows.get(i).is_some_and(|row|row.preparation==OverlapPreparation::AnnealedOligos)) prop:checked=move||draft.with(|d|d.methods.rows.get(i).is_some_and(|row|row.reverse)) on:change=move|e|{match crate::assembly_draft_model::orient_fragment(&draft.get_untracked(),i,event_target_checked(&e)){Ok(next)=>draft.set(next),Err(error)=>status.set(error)}}/>"Reverse fragment in construct"</label>
+            <label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse assembly slot {}",i+1) disabled=move||draft.with(|d|d.methods.rows.get(i).is_some_and(|row|row.preparation==OverlapPreparation::AnnealedOligos)) prop:checked=move||draft.with(|d|d.slots.get(i).is_some_and(|slot|match &slot.selector{assembly_intent::Selector::ReferenceRange{reverse,..}=>*reverse,assembly_intent::Selector::MaterialStrandRange{strand,..}=>*strand==collagene_core::chemistry::Strand::Bottom})) on:change=move|e|{match crate::assembly_draft_model::orient_fragment(&draft.get_untracked(),i,event_target_checked(&e)){Ok(next)=>draft.set(next),Err(error)=>status.set(error)}}/>"Reverse source contribution"</label>
             <Show when=move||draft.with(|d|d.methods.rows.get(i).is_some_and(|row|row.preparation==OverlapPreparation::AnnealedOligos))><p class="helper">"Swap the ordered oligo roles to reverse a paired insert. This uses the full previous bottom as the new top contribution and resets its neighboring junction declarations. Inspect and select the geometry again."</p><button class="button secondary" on:click=move|_|{
                 let next=draft.with_untracked(|d|d.swap_oligo_roles(i));
                 match next{Ok(next)=>{draft.set(next);status.set("Oligo roles and chemistry swapped; neighboring junction declarations reset. Review the full new top contribution and reconstruct annealing and ligation again.".into());},Err(error)=>status.set(error)}
             }>"Swap ordered oligo roles"</button></Show>
+            <Show when=move||draft.with(|d|d.slots.get(i).is_some_and(|slot|matches!(&slot.selector,assembly_intent::Selector::MaterialStrandRange{..})))><label class="checkbox-label"><input type="checkbox" aria-label=format!("Reverse prepared fragment {}",i+1) prop:checked=move||draft.with(|d|d.methods.rows.get(i).is_some_and(|row|row.reverse)) on:change=move|event|draft.update(|d|{if let Some(row)=d.methods.rows.get_mut(i){row.reverse=event_target_checked(&event);}})/>"Reverse prepared fragment"</label><p class="helper">"Preparation orientation is separate from the selected source strand. Primer proposals declare their own source frame."</p></Show>
             <div class="method-row-actions"><button class="text-tool" on:click=move|_|{let current=draft.get_untracked();let result=(||->Result<_,String>{let slot=current.slots.get(i).ok_or("Choose a source first")?;let capture=slot.captured.as_ref().ok_or("Pin a source first")?;let review=source_review.get_untracked();let length=slot.selector.length().map_err(|e|e.to_string())?;let regions=crate::assembly_edit_model::top_regions(&current,i,0,length,review.as_deref())?;Ok(SelectionNavigation{source:capture.source.binding.clone(),regions,description:crate::assembly_draft_model::selector_label(&slot.selector)})})();match result{Ok(nav)=>on_navigate.run(nav),Err(error)=>status.set(error)}}>"View source region"</button></div>
         </article></Show>}/></div>
         <button class="button secondary" disabled=move||draft.with(|d|d.alternatives.is_some()||d.slots.len()>=if d.methods.mode==Mode::Tailing{2}else{12}) on:click=move|_|{
@@ -1112,19 +1114,16 @@ fn FrozenWorkspace(
         {bound.with_value(|f|warnings(&f.intent).iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
         <h3>{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"3. Reconstruct and choose a reference component"}else{"3. Prepare fragments and verify the method"})}</h3><p class="helper">{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"Reconstruct the whole original parents under the reviewed site profile, then choose a reciprocal component explicitly. The intended reference remains a separate requirement; sequence agreement does not establish physical recombination."}else{"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."})}</p>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteReview draft epoch busy=workspace_busy snapshot capture=reference_inputs guard=reference_guard target_revision=bound.with_value(|f|f.target_revision.clone()) on_review=review on_finalize=finalize/></Show>
-        {bound.with_value(|f| match &f.intent {
-            IntendedReference::Edits(_) | IntendedReference::Substitutions(_) => Some(view! {
-                <crate::assembly_inverse_pcr_view::InversePcrPreparationView
-                    draft intent=Arc::new(f.intent.clone()) epoch snapshot
-                    current=reference_current guard=reference_guard on_review=review on_finalize=finalize/>
-                <crate::assembly_edited_primer_view::EditedAssemblyPrimerView
-                    draft intent=Arc::new(f.intent.clone()) epoch snapshot
-                    current=reference_current guard=reference_guard on_use=use_assembly_primers/>
-                <crate::assembly_extension_primer_view::ExtensionPrimerProposalView
-                    draft intent=Arc::new(f.intent.clone()) epoch snapshot
-                    current=reference_current guard=reference_guard on_use=use_extension_primers/>
-            }),
-            _ => None,
+        {bound.with_value(|f| {
+            let edited=matches!(&f.intent,IntendedReference::Edits(_)|IntendedReference::Substitutions(_));
+            let material=f.identity.slots.iter().any(|slot|matches!(&slot.2,assembly_intent::Selector::MaterialStrandRange{..}));
+            if !edited&&!material{return None;}
+            let selected_intent=StoredValue::new(Arc::new(f.intent.clone()));
+            Some(view!{
+                <Show when=move||edited><crate::assembly_inverse_pcr_view::InversePcrPreparationView draft intent=selected_intent.get_value() epoch snapshot current=reference_current guard=reference_guard on_review=review on_finalize=finalize/></Show>
+                <crate::assembly_edited_primer_view::EditedAssemblyPrimerView draft intent=selected_intent.get_value() epoch snapshot current=reference_current guard=reference_guard on_use=use_assembly_primers/>
+                <Show when=move||edited><crate::assembly_extension_primer_view::ExtensionPrimerProposalView draft intent=selected_intent.get_value() epoch snapshot current=reference_current guard=reference_guard on_use=use_extension_primers/></Show>
+            })
         })}
         <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer active_row=Some(active_preparation) on_edit_row=Some(edit_preparation) fixed_sources=true get_workspace=Some(snapshot) disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()||!f.identity.substitutions.is_empty()||!f.identity.edits.is_empty()||f.identity.slots.iter().any(|slot|matches!(&slot.2,assembly_intent::Selector::MaterialStrandRange{..}))) on_source=Some(diagnostic_source)/></Show>
         <p role="status">{move||status.get()}</p>

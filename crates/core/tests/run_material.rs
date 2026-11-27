@@ -47,6 +47,7 @@ fn pcr() -> Commit {
             template: Source::Input("original".into()),
             forward: Primer::new("Forward", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("Reverse", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let workspace =
@@ -171,6 +172,7 @@ fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
                 template: Source::Input("left".into()),
                 forward: Primer::new("Left forward", "TTGCAATC", "").unwrap(),
                 reverse: Primer::new("Left reverse", "GCTAGCAT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(0),
@@ -180,6 +182,7 @@ fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
                 template: Source::Input("right".into()),
                 forward: Primer::new("Right forward", "ATCGTCGA", "").unwrap(),
                 reverse: Primer::new("Right reverse", "GTACCGCT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Ligate {
                 fragments: vec![

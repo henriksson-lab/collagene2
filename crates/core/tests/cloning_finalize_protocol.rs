@@ -22,6 +22,7 @@ fn request() -> Request {
             template: Source::Input("source".into()),
             forward: Primer::new("forward", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("reverse", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let workspace = Workspace::from_documents("finalization", vec![source, target], 1).unwrap();

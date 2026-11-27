@@ -190,12 +190,12 @@ fn export_responses_reject_unsafe_metadata_and_keep_the_ordinary_32mib_budget() 
     wire[4..6].copy_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
     for (magic, tag, response) in [
+        (b"CGQ\0", 123u32, false),
+        (b"CGR\0", 115u32, true),
+        (b"CGQ\0", 124u32, false),
+        (b"CGR\0", 116u32, true),
         (b"CGQ\0", 125u32, false),
         (b"CGR\0", 117u32, true),
-        (b"CGQ\0", 126u32, false),
-        (b"CGR\0", 118u32, true),
-        (b"CGQ\0", 127u32, false),
-        (b"CGR\0", 119u32, true),
     ] {
         wire[..4].copy_from_slice(magic);
         let body = postcard::to_allocvec(&(56u32, "export", tag)).unwrap();

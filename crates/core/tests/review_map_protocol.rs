@@ -43,6 +43,7 @@ fn saved() -> (Workspace, String) {
             template: Source::Input("stock".into()),
             forward: Primer::new("F", "AGTCC", "").unwrap(),
             reverse: Primer::new("R", "TACGT", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let result = run_lineage::record_run(

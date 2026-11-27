@@ -65,6 +65,7 @@ fn fixture() -> (Vec<PlanInput>, Request) {
             forward: Primer::new("operator named B forward", "ATCCGTTA", "").unwrap(),
             reverse: Primer::new("operator named B reverse", "TTCCAAGG", "ACCGCTAGCATCGACGAT")
                 .unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         reverse: false,
     };
@@ -272,10 +273,14 @@ fn retained_manual_domains_do_not_inherit_selected_primer_length_constraints() {
         s.preparation = Preparation::ExactPcr {
             forward: Primer::new("manual four-base F", "ATCC", "").unwrap(),
             reverse: Primer::new("manual four-base R", "TTCC", "ACCGCTAGCATCGACGAT").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         };
     }
     let report = design(&inputs, &r).unwrap();
-    let Preparation::ExactPcr { forward, reverse } = &report.recipe.fragments[1].preparation else {
+    let Preparation::ExactPcr {
+        forward, reverse, ..
+    } = &report.recipe.fragments[1].preparation
+    else {
         panic!()
     };
     assert_eq!(forward.annealing.len(), 4);

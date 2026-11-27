@@ -76,15 +76,19 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
                 id: format!("choice-{i}"),
                 label: format!("Original parent {i}"),
                 source: binding(&w, i),
-                start: 0,
-                end: 14,
-                reverse: false,
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: 0,
+                    end: 14,
+                    reverse: false,
+                },
+                preparation_reverse: false,
                 preparation: None,
                 treatment: None,
             }],
         })
         .collect();
     let d = Design {
+        material_bindings: vec![],
         id: "reference-library".into(),
         name: "Two-parent reference library".into(),
         circular: false,

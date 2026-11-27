@@ -36,6 +36,7 @@ fn fixture() -> (Workspace, Request) {
         right: Terminus::CLEAVED,
     });
     let design = Design {
+        material_bindings: vec![],
         id: "library".into(),
         name: "Literal two-part batch".into(),
         circular: false,
@@ -51,9 +52,12 @@ fn fixture() -> (Workspace, Request) {
                     id: "left-choice".into(),
                     label: "Left choice".into(),
                     source: binding(&w, 0),
-                    start: 0,
-                    end: 4,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 4,
+                        reverse: false,
+                    },
+                    preparation_reverse: false,
                     preparation: preparation.clone(),
                     treatment: None,
                 }],
@@ -66,9 +70,12 @@ fn fixture() -> (Workspace, Request) {
                     id: "right-choice".into(),
                     label: "Right choice".into(),
                     source: binding(&w, 1),
-                    start: 0,
-                    end: 4,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 4,
+                        reverse: false,
+                    },
+                    preparation_reverse: false,
                     preparation,
                     treatment: None,
                 }],
@@ -89,6 +96,8 @@ fn fixture() -> (Workspace, Request) {
             },
         ],
         target: TargetDeclaration::OriginalRegions {
+            substitutions: vec![],
+            edits: vec![],
             junction_edits: vec![],
         },
         overrides: None,
@@ -102,6 +111,7 @@ fn fixture() -> (Workspace, Request) {
     unfinished.name = "Unfinished per-row preparation".into();
     unfinished.overrides = Some(ConstructOverrides {
         preparations: vec![PreparationOverride {
+            preparation_reverse: false,
             generation: None,
             bin_id: "left-bin".into(),
             preparation: None,

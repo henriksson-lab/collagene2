@@ -210,6 +210,7 @@ fn pcr_recipe_unknown_fields_never_become_end_chemistry_declarations() {
     let recipe = TailSubstrate::ExactPcr {
         forward: Primer::new("f", "ACGA", "").unwrap(),
         reverse: Primer::new("r", "GTTA", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let mut value = serde_json::to_value(recipe).unwrap();
     value["ExactPcr"]["phosphorylated"] = serde_json::json!(true);

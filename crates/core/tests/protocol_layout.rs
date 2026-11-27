@@ -44,13 +44,17 @@ fn fixture() -> (Workspace, String) {
         id: id.into(),
         label: id.into(),
         source: event(&w, index),
-        start: 0,
-        end: 4,
-        reverse: false,
+        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+            start: 0,
+            end: 4,
+            reverse: false,
+        },
+        preparation_reverse: false,
         preparation: prepare.clone(),
         treatment: None,
     };
     let design = Design {
+        material_bindings: vec![],
         id: "native-layout-batch".into(),
         name: "Actual intended eight bases".into(),
         circular: false,
@@ -87,6 +91,8 @@ fn fixture() -> (Workspace, String) {
                     },
                 ],
                 target: TargetDeclaration::OriginalRegions {
+                    substitutions: vec![],
+                    edits: vec![],
                     junction_edits: vec![],
                 },
                 overrides: None,

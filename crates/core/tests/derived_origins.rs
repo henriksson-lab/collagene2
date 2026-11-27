@@ -30,7 +30,13 @@ fn pcr(w: &Workspace) -> native::PreparedInstallation {
     let source = w.head(&w.documents[0].id).unwrap();
     let forward = Primer::new("Forward", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("Reverse", "TGACGATC", "").unwrap();
-    let mut previews = verification::simulate_pcr_documents(source, &forward, &reverse).unwrap();
+    let mut previews = verification::simulate_pcr_documents(
+        source,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     let preview = previews.remove(0);
     native::prepare_install(
@@ -46,6 +52,7 @@ fn pcr(w: &Workspace) -> native::PreparedInstallation {
                     expected_preview_revision: preview.molecule.revision(),
                     geometry: preview.geometry,
                 },
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             name: "Actual target-free PCR".into(),
             save_primers: false,
@@ -157,8 +164,14 @@ fn nested_pcr_then_digest_keeps_exact_sources_and_actual_staggered_state_after_a
     let before = source.clone();
     let forward = Primer::new("New forward", "AATTCCGT", "").unwrap();
     let reverse = Primer::new("New reverse", "TGACGATC", "").unwrap();
-    let previews =
-        collagene_core::material_pcr::simulate(&source, &origin, &forward, &reverse).unwrap();
+    let previews = collagene_core::material_pcr::simulate(
+        &source,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     assert_eq!(
         previews[0].molecule.sequence.as_str(),

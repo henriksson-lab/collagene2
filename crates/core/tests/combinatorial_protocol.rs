@@ -54,6 +54,7 @@ fn fixture() -> (Workspace, batch::Request) {
     };
     let matrix = batch::Request {
         design: Some(Design {
+            material_bindings: vec![],
             id: "wire-library".into(),
             name: "Declared duplex alternatives".into(),
             circular: false,
@@ -67,9 +68,12 @@ fn fixture() -> (Workspace, batch::Request) {
                         id: id.into(),
                         label: id.into(),
                         source: binding(&workspace, index),
-                        start: 0,
-                        end: 4,
-                        reverse: false,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: 0,
+                            end: 4,
+                            reverse: false,
+                        },
+                        preparation_reverse: false,
                         preparation: Some(Preparation::DeclaredDuplex {
                             left: Terminus::CLEAVED,
                             right: Terminus::CLEAVED,
@@ -86,6 +90,8 @@ fn fixture() -> (Workspace, batch::Request) {
             ready(
                 "construct-good",
                 TargetDeclaration::OriginalRegions {
+                    substitutions: vec![],
+                    edits: vec![],
                     junction_edits: vec![],
                 },
             ),
@@ -384,9 +390,9 @@ fn ordinary_progress_limits_and_explicit_workspace_budget_whitelist_remain_disti
     wire[4..6].copy_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
     for (magic, tag, response) in [
-        (b"CGQ\0", 129u32, false),
-        (b"CGR\0", 120u32, true),
-        (b"CGR\0", 121u32, true),
+        (b"CGQ\0", 127u32, false),
+        (b"CGR\0", 118u32, true),
+        (b"CGR\0", 119u32, true),
     ] {
         wire[..4].copy_from_slice(magic);
         let body = postcard::to_allocvec(&(7u32, "context", tag)).unwrap();
@@ -401,9 +407,9 @@ fn ordinary_progress_limits_and_explicit_workspace_budget_whitelist_remain_disti
         assert!(matches!(rejected, Err(Error::TooLarge)));
     }
     for (magic, tag, response) in [
+        (b"CGQ\0", 126u32, false),
         (b"CGQ\0", 128u32, false),
-        (b"CGQ\0", 130u32, false),
-        (b"CGR\0", 122u32, true),
+        (b"CGR\0", 120u32, true),
     ] {
         wire[..4].copy_from_slice(magic);
         let body = postcard::to_allocvec(&(7u32, "context", tag)).unwrap();

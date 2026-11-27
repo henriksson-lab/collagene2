@@ -3,7 +3,7 @@ use collagene_core::{
     Molecule, Sequence, Topology,
     analysis::Primer,
     assembly_edit_intent::{self, Edit},
-    assembly_edited_primer_design::{self as design, Request, RoleOrigin},
+    assembly_edited_primer_design::{self as design, Request},
     assembly_intent,
     assembly_intent::{Contribution, Selector},
     assembly_junction_edit,
@@ -80,7 +80,6 @@ fn request() -> Request {
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
-        origins: vec![],
     }
 }
 fn inputs() -> Vec<PlanInput> {
@@ -112,11 +111,11 @@ fn mixed_exact_and_edited_rows_prepare_actual_branches_before_whole_independent_
     let inputs = inputs();
     let before = serde_json::to_value(&inputs).unwrap();
     let req = request();
-    let p = design::design(&inputs, &req).unwrap();
+    let p = design::design(&inputs, &req, None).unwrap();
     check(&p, TARGET);
     assert_eq!(
         p.context_revision,
-        design::design_revision(&inputs, &req).unwrap()
+        design::design_revision(&inputs, &req, None).unwrap()
     );
     assert_eq!(
         p.preview
@@ -137,7 +136,10 @@ fn mixed_exact_and_edited_rows_prepare_actual_branches_before_whole_independent_
     assert!(
         matches!(&p.recipe.fragments[1].preparation,Preparation::OverlapExtensionPcr{request}if request.outer.forward.tail.is_empty()&&request.outer.reverse.tail.is_empty())
     );
-    assert_eq!(p.tails, design::expected_tails(&inputs, &req).unwrap());
+    assert_eq!(
+        p.tails,
+        design::expected_tails(&inputs, &req, None).unwrap()
+    );
     assert_eq!(p.tails[0].homology, "AGTCCGAT");
     assert_eq!(p.tails[0].downstream_role.as_deref(), Some("insert"));
     assert_eq!(serde_json::to_value(&inputs).unwrap(), before);
@@ -146,10 +148,10 @@ fn mixed_exact_and_edited_rows_prepare_actual_branches_before_whole_independent_
 fn outgoing_homology_prefix_is_taken_after_the_downstream_literal_indel() {
     let mut req = request();
     req.overlap = 20;
-    let tails = design::expected_tails(&inputs(), &req).unwrap();
+    let tails = design::expected_tails(&inputs(), &req, None).unwrap();
     assert_eq!(tails[0].homology, "AGTCCGATGCTACGTATTTT");
     assert_eq!(tails[0].reverse_tail, "AAAATACGTAGCATCGGACT");
-    let p = design::design(&inputs(), &req).unwrap();
+    let p = design::design(&inputs(), &req, None).unwrap();
     check(&p, TARGET);
     assert_eq!(p.preview.verification.products[0].sequence.len(), 36);
 }
@@ -173,7 +175,7 @@ fn source_orientation_is_preserved_for_reverse_ordinary_and_reverse_edited_contr
                 *selected_reverse = true;
             }
         }
-        let p = design::design(&ins, &req).unwrap();
+        let p = design::design(&ins, &req, None).unwrap();
         check(&p, TARGET);
         assert_eq!(p.recipe.fragments[0].reverse, vector_reverse);
         assert_eq!(p.recipe.fragments[1].reverse, insert_reverse);
@@ -224,7 +226,7 @@ fn incoming_trims_junction_insert_and_snp_are_normalized_to_retained_core_coordi
         expected: "A".into(),
         replacement: "G".into(),
     }];
-    let p = design::design(&ins, &req).unwrap();
+    let p = design::design(&ins, &req, None).unwrap();
     check(
         &p,
         "GGGGCACGTTCGTAGGACCAGCAGTCCGATGCTACGTATTTTCGGACCTGTAGATCGTCAAAAA",
@@ -262,7 +264,7 @@ fn circular_closure_and_its_literal_insert_keep_first_retained_origin_and_uncert
         remove_right: 0,
         inserted: "TA".into(),
     }];
-    let p = design::design(&inputs(), &req).unwrap();
+    let p = design::design(&inputs(), &req, None).unwrap();
     check(
         &p,
         "CACGTTCGTAGGACCAAGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCATA",
@@ -275,7 +277,7 @@ fn circular_closure_and_its_literal_insert_keep_first_retained_origin_and_uncert
     assert_eq!(p.tails[1].outgoing_insert, "TA");
     assert_eq!(p.tails[1].downstream_role.as_deref(), Some("vector"));
     req.options.max_comparisons = 18;
-    let conditional = design::design(&inputs(), &req).unwrap();
+    let conditional = design::design(&inputs(), &req, None).unwrap();
     assert_eq!(conditional.preview.verification.status, Status::Incomplete);
     assert_eq!(
         conditional
@@ -296,7 +298,7 @@ fn binding(w: &Workspace, i: usize) -> EventBinding {
         revision: d.head.clone(),
     }
 }
-fn saved() -> (Molecule, Capsule) {
+fn saved() -> (Molecule, Capsule, Workspace) {
     let src = input("original", ORIGINAL);
     let target =
         Molecule::dna("Independent original PCR stock", ORIGINAL, Topology::Linear).unwrap();
@@ -308,6 +310,7 @@ fn saved() -> (Molecule, Capsule) {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Origin", vec![src.molecule, target], 1).unwrap();
@@ -338,23 +341,28 @@ fn saved() -> (Molecule, Capsule) {
         },
     )
     .unwrap();
-    (m, origin)
+    (m, origin, commit.workspace)
 }
 #[test]
 fn per_role_closed_origin_replays_only_in_whole_scope_and_never_retargets_original_run() {
-    let (source, origin) = saved();
+    let (source, origin, workspace) = saved();
     let immutable = serde_json::to_value(&origin).unwrap();
     let mut ins = inputs();
     ins[1].molecule = source;
     ins[1].revision = ins[1].molecule.revision();
     let mut req = request();
-    req.origins = vec![RoleOrigin {
-        role: "insert".into(),
-        origin,
+    req.intent.base.base.material_bindings = vec![assembly_intent::MaterialBinding {
+        input_id: "insert".into(),
+        event: origin.selection.event.clone(),
+        origin: collagene_core::run_material::MaterialOrigin::Run(origin),
     }];
-    let p = design::design(&ins, &req).unwrap();
+    let p = design::design(&ins, &req, Some(&workspace)).unwrap();
     check(&p, TARGET);
-    assert_eq!(p.rows[1].verification_status, Status::Incomplete);
+    assert_eq!(
+        p.rows[1].template_strand,
+        collagene_core::chemistry::Strand::Top
+    );
+    assert_eq!(p.rows[1].search.len(), 3);
     let Preparation::FromRun {
         origin,
         preparation: RunPreparation::OverlapExtensionPcr { .. },
@@ -367,13 +375,13 @@ fn per_role_closed_origin_replays_only_in_whole_scope_and_never_retargets_origin
     let mut wrong = ins;
     wrong[1].molecule.name.push('!');
     wrong[1].revision = wrong[1].molecule.revision();
-    assert!(design::preflight(&wrong, &req).is_err());
+    assert!(design::preflight(&wrong, &req, Some(&workspace)).is_err());
 }
 #[test]
 fn ambiguous_source_exact_pcr_cannot_be_selected_using_the_independent_whole_target() {
     let mut ins = inputs();
     ins[0] = input("vector", &format!("{VECTOR}{VECTOR}"));
-    let p = design::design(&ins, &request()).unwrap();
+    let p = design::design(&ins, &request(), None).unwrap();
     assert_eq!(p.intent.target.sequence.as_str(), TARGET);
     assert_eq!(p.preview.verification.status, Status::Incomplete);
     assert!(p.preview.verification.products.is_empty());
@@ -385,7 +393,7 @@ fn ambiguous_source_exact_pcr_cannot_be_selected_using_the_independent_whole_tar
     )
     .unwrap();
     wrong.features.clear();
-    let mut plan = design::design(&inputs(), &request())
+    let mut plan = design::design(&inputs(), &request(), None)
         .unwrap()
         .preview
         .compiled
@@ -399,13 +407,13 @@ fn ambiguous_source_exact_pcr_cannot_be_selected_using_the_independent_whole_tar
 fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_guarded() {
     let mut req = request();
     req.options.outer_forward_tail = "AC".into();
-    assert!(design::preflight(&inputs(), &req).is_err());
+    assert!(design::preflight(&inputs(), &req, None).is_err());
     req = request();
     req.options.primer_options.reverse_tail = "AC".into();
-    assert!(design::preflight(&inputs(), &req).is_err());
+    assert!(design::preflight(&inputs(), &req, None).is_err());
     req = request();
     req.intent.edits[0].expected = "AAAA".into();
-    assert!(design::preflight(&inputs(), &req).is_err());
+    assert!(design::preflight(&inputs(), &req, None).is_err());
     let stock = input("shared", &"ACGT".repeat(2500));
     let mut many = request();
     many.intent.base.base.fragments = vec![Contribution {
@@ -424,7 +432,7 @@ fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_
         expected: "A".into(),
         replacement: "T".into(),
     }];
-    assert!(design::preflight(&[stock.clone()], &many).is_ok());
+    assert!(design::preflight(&[stock.clone()], &many, None).is_ok());
     many.intent.base.base.fragments = (0..32)
         .map(|i| Contribution {
             role: format!("r{i}"),
@@ -445,8 +453,8 @@ fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_
             replacement: "T".into(),
         })
         .collect();
-    assert!(design::preflight(&[stock], &many).is_err());
-    let report = design::design(&inputs(), &request()).unwrap();
+    assert!(design::preflight(&[stock], &many, None).is_err());
+    let report = design::design(&inputs(), &request(), None).unwrap();
     let decoded: design::Report =
         serde_json::from_slice(&serde_json::to_vec(&report).unwrap()).unwrap();
     decoded.validate_binding(&report.context_revision).unwrap();

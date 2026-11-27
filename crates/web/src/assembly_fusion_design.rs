@@ -302,6 +302,7 @@ mod tests {
             panic!("manual row was regenerated");
         };
         let Preparation::PcrCatalogDigest {
+            template_strand: _,
             forward,
             reverse,
             selection,

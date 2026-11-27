@@ -66,6 +66,11 @@ fn typed_row(
     let mut preparation_state = state.clone();
     let method = match state.mode {
         Mode::Overlap => {
+            if state.homology.as_ref().is_some_and(|form| form.enabled)
+                || state.annealing.as_ref().is_some_and(|form| form.enabled)
+            {
+                return Err("Library rows do not support explicit resection or homology-annealing processing yet. The requested settings are retained.".into());
+            }
             let (overlaps, options) = state.profile()?;
             Method::Overlap { overlaps, options }
         }
@@ -158,6 +163,10 @@ fn typed_row(
             );
         }
     };
+    let ordered_preparations = !matches!(
+        &method,
+        Method::GoldenGatePool { .. } | Method::MultiSiteReference { .. }
+    );
     let preparations = if state.mode == Mode::MultiSiteReference {
         library
             .bins
@@ -166,6 +175,7 @@ fn typed_row(
             .map(|(bin, raw)| {
                 Ok(PreparationOverride {
                     bin_id: bin.id.clone(),
+                    preparation_reverse: ordered_preparations && raw.reverse,
                     preparation: None,
                     treatment: None,
                     generation: raw.generation()?,
@@ -182,6 +192,7 @@ fn typed_row(
             .zip(&preparation_state.rows)
             .map(|((bin, fragment), raw)| PreparationOverride {
                 bin_id: bin.id.clone(),
+                preparation_reverse: ordered_preparations && fragment.reverse,
                 generation: fragment.generation,
                 preparation: Some(fragment.preparation),
                 treatment: raw.treatment.operation(),
@@ -194,6 +205,8 @@ fn typed_row(
         choices: selections(library, row),
         target: TargetDeclaration::OriginalRegions {
             junction_edits: row.edits.junction_edits.clone(),
+            substitutions: row.edits.substitutions.clone(),
+            edits: row.edits.edits.clone(),
         },
         overrides: Some(ConstructOverrides {
             preparations,
@@ -210,6 +223,7 @@ struct SourceKey<'a> {
     label: &'a str,
     source: Option<&'a EventBinding>,
     selector: &'a collagene_core::assembly_intent::Selector,
+    material_origin: Option<&'a str>,
     digest_geometry: Option<&'a DigestGeometry>,
 }
 fn source_key<'a>(slot: &'a Slot, label: &'a str) -> SourceKey<'a> {
@@ -220,6 +234,7 @@ fn source_key<'a>(slot: &'a Slot, label: &'a str) -> SourceKey<'a> {
             .as_ref()
             .map(|capture| &capture.source.binding),
         selector: &slot.selector,
+        material_origin: slot.material_origin.as_ref().map(|pin| pin.revision()),
         digest_geometry: slot.digest_geometry.as_ref(),
     }
 }
@@ -227,7 +242,8 @@ fn source_key<'a>(slot: &'a Slot, label: &'a str) -> SourceKey<'a> {
 struct ChoiceKey<'a> {
     id: &'a str,
     source: SourceKey<'a>,
-    preparation: &'a OverlapInput,
+    preparation: OverlapInput,
+    physical_origin: Option<&'a str>,
 }
 #[derive(Serialize)]
 struct BinKey<'a> {
@@ -241,8 +257,11 @@ struct RowKey<'a> {
     choices: &'a [String],
     name: &'a str,
     circular: bool,
-    methods: &'a MethodsState,
+    methods: MethodsState,
+    physical_origins: Vec<Option<&'a str>>,
     junction_edits: &'a [Edit],
+    substitutions: &'a [collagene_core::assembly_substitution_intent::Substitution],
+    edits: &'a [collagene_core::assembly_edit_intent::Edit],
     sources: Vec<SourceKey<'a>>,
 }
 struct HashBytes {
@@ -263,11 +282,59 @@ impl io::Write for HashBytes {
         Ok(())
     }
 }
-fn declaration_revision(stored: &Draft, request: &batch::Request) -> Result<String, String> {
+/// Raw declaration identity for UI guards. Large immutable captures are represented
+/// by validated source revisions and cached origin identities, not copied/replayed.
+pub fn declaration_revision(stored: &Draft) -> Result<String, String> {
     let library = stored
         .alternatives
         .as_ref()
         .ok_or("Enable source alternatives before preparing a construct batch.")?;
+    if stored.slots.len() > 12
+        || library.bins.is_empty()
+        || library.bins.len() > alternatives::MAX_BINS
+        || library.rows.len() > alternatives::MAX_ROWS
+        || library
+            .bins
+            .iter()
+            .any(|bin| bin.choices.len() > alternatives::MAX_CHOICES_PER_BIN)
+        || library
+            .bins
+            .iter()
+            .map(|bin| bin.choices.len())
+            .sum::<usize>()
+            > alternatives::MAX_CHOICES
+    {
+        return Err("Library declaration exceeds bounded row/source counts".into());
+    }
+    if stored.methods.rows.len() > 12
+        || library
+            .rows
+            .iter()
+            .any(|row| row.edits.methods.rows.len() > 12)
+    {
+        return Err("Library method rows exceed the declaration bound".into());
+    }
+    crate::assembly_draft_model::validate_controls(
+        &stored.name,
+        stored.circular,
+        stored.active_slot,
+        stored.slots.len(),
+        &stored.methods,
+        &stored.junction_edits,
+    )?;
+    for row in &library.rows {
+        crate::assembly_draft_model::validate_controls(
+            &row.edits.name,
+            row.edits.circular,
+            row.edits.active_slot,
+            library.bins.len(),
+            &row.edits.methods,
+            &row.edits.junction_edits,
+        )?;
+    }
+    for choice in library.bins.iter().flat_map(|bin| &bin.choices) {
+        crate::assembly_draft_model::validate_preparation_input(&choice.row)?;
+    }
     let bins = library
         .bins
         .iter()
@@ -280,7 +347,12 @@ fn declaration_revision(stored: &Draft, request: &batch::Request) -> Result<Stri
                 .map(|choice| ChoiceKey {
                     id: &choice.id,
                     source: source_key(&choice.slot, &bin.label),
-                    preparation: &choice.row,
+                    preparation: {
+                        let mut fields = choice.row.clone();
+                        fields.run_origin = None;
+                        fields
+                    },
+                    physical_origin: choice.row.run_origin.as_ref().map(|pin| pin.revision()),
                 })
                 .collect(),
         })
@@ -324,21 +396,45 @@ fn declaration_revision(stored: &Draft, request: &batch::Request) -> Result<Stri
                 } else {
                     row.edits.circular
                 },
-                methods: if active {
+                methods: {
+                    let mut fields = if active {
+                        stored.methods.clone()
+                    } else {
+                        row.edits.methods.clone()
+                    };
+                    for raw in &mut fields.rows {
+                        raw.run_origin = None;
+                    }
+                    fields
+                },
+                physical_origins: if active {
                     &stored.methods
                 } else {
                     &row.edits.methods
-                },
+                }
+                .rows
+                .iter()
+                .map(|raw| raw.run_origin.as_ref().map(|pin| pin.revision()))
+                .collect(),
                 junction_edits: if active {
                     &stored.junction_edits
                 } else {
                     &row.edits.junction_edits
                 },
+                substitutions: if active {
+                    &stored.substitutions
+                } else {
+                    &row.edits.substitutions
+                },
+                edits: if active {
+                    &stored.edits
+                } else {
+                    &row.edits.edits
+                },
                 sources,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let request_revision = batch::request_revision(request).map_err(|e| e.to_string())?;
     let mut output = HashBytes {
         hash: blake3::Hasher::new(),
         bytes: 0,
@@ -346,19 +442,63 @@ fn declaration_revision(stored: &Draft, request: &batch::Request) -> Result<Stri
     serde_json::to_writer(
         &mut output,
         &(
-            "assembly-batch-projection-1",
+            "assembly-batch-projection-2",
+            crate::assembly_draft_model::CURRENT_VERSION,
+            collagene_core::verification::ENGINE_VERSION,
             &library.id,
             bins,
             rows,
-            request_revision,
         ),
     )
     .map_err(|e| e.to_string())?;
     Ok(output.hash.finalize().to_hex().to_string())
 }
 
+fn material_bindings(library: &Library) -> Result<Vec<design::LibraryMaterialBinding>, String> {
+    let mut sources: Vec<(&EventBinding, &crate::run_origin_model::PinnedOrigin)> = Vec::new();
+    for choice in library.bins.iter().flat_map(|bin| &bin.choices) {
+        let Some(origin) = choice.slot.material_origin.as_ref() else {
+            continue;
+        };
+        let captured = choice
+            .slot
+            .captured
+            .as_ref()
+            .ok_or("Saved material source has no captured event")?;
+        if origin.event() != &captured.source.binding {
+            return Err("Library source material pin belongs to another exact event".into());
+        }
+        if let Some((_, previous)) = sources
+            .iter()
+            .find(|(event, _)| *event == &captured.source.binding)
+        {
+            if *previous != origin {
+                return Err("Library source event has conflicting material origins".into());
+            }
+        } else {
+            sources.push((&captured.source.binding, origin));
+        }
+    }
+    collagene_core::run_material::material_capsules_preflight(sources.iter().map(|(_, origin)| {
+        match origin.as_ref() {
+            collagene_core::run_material::MaterialOrigin::Run(c) => {
+                collagene_core::run_material::MaterialOriginRef::Run(c)
+            }
+            collagene_core::run_material::MaterialOrigin::Derived(c) => {
+                collagene_core::run_material::MaterialOriginRef::Derived(c)
+            }
+        }
+    }))
+    .map_err(|e| e.to_string())?;
+    Ok(sources
+        .into_iter()
+        .map(|(event, origin)| design::LibraryMaterialBinding {
+            event: event.clone(),
+            origin: origin.as_ref().clone(),
+        })
+        .collect())
+}
 pub fn project(draft: &Draft) -> Result<Projection, String> {
-    crate::assembly_draft_model::require_reference_selectors(draft)?;
     let stored = alternatives::for_storage(draft)?;
     let library = stored
         .alternatives
@@ -376,14 +516,12 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
                 .iter()
                 .filter_map(|choice| {
                     let capture = choice.slot.captured.as_ref()?;
-                    let (start, end, reverse) = choice.slot.selector.reference_interval().ok()?;
                     Some(design::Choice {
                         id: choice.id.clone(),
                         label: source_label(&capture.source.name, &choice.id),
                         source: capture.source.binding.clone(),
-                        start,
-                        end,
-                        reverse,
+                        selector: choice.slot.selector.clone(),
+                        preparation_reverse: choice.row.reverse,
                         preparation: None,
                         treatment: None,
                         generation: None,
@@ -397,6 +535,7 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
     } else {
         Some(design::Design {
             id: library.id.clone(),
+            material_bindings: material_bindings(library)?,
             name: format!("Assembly alternatives {}", library.id),
             circular: false,
             bins,
@@ -426,7 +565,7 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
         rows,
     };
     request.validate().map_err(|e| e.to_string())?;
-    let revision = declaration_revision(&stored, &request)?;
+    let revision = declaration_revision(draft)?;
     Ok(Projection { request, revision })
 }
 
@@ -555,6 +694,85 @@ mod tests {
     }
 
     #[test]
+    fn requested_processing_is_a_row_local_error_and_raw_policy_is_retained() {
+        for three_prime in [false, true] {
+            let mut draft = two_rows();
+            draft.methods.mode = Mode::Overlap;
+            if three_prime {
+                let mut form = crate::cloning_methods_model::AnnealingForm::default();
+                form.enabled = true;
+                form.cuts = "unfinished 3-prime cuts".into();
+                draft.methods.annealing = Some(form);
+            } else {
+                let mut form = crate::cloning_methods_model::HomologyForm::default();
+                form.enabled = true;
+                form.cuts = "unfinished 5-prime cuts".into();
+                draft.methods.homology = Some(form);
+            }
+            draft.sync_rows();
+            let before = serde_json::to_vec(&draft).unwrap();
+            let projection = project(&draft).unwrap();
+            assert!(matches!(&projection.request.rows[0], RowRequest::Ready(_)));
+            assert!(
+                matches!(&projection.request.rows[1],RowRequest::DraftError{message,..} if message.contains("do not support explicit resection or homology-annealing"))
+            );
+            assert_eq!(serde_json::to_vec(&draft).unwrap(), before);
+            if three_prime {
+                draft.methods.annealing.as_mut().unwrap().enabled = false;
+            } else {
+                draft.methods.homology.as_mut().unwrap().enabled = false;
+            }
+            assert!(
+                matches!(
+                    &project(&draft).unwrap().request.rows[1],
+                    RowRequest::Ready(_)
+                ),
+                "Inactive raw settings must remain saveable without requesting processing"
+            );
+        }
+    }
+    #[test]
+    fn row_local_literals_enter_the_native_declaration_and_raw_projection_key() {
+        let draft = two_rows();
+        let draft = crate::assembly_edit_model::declare(&draft, 0, "3", "5", "TAG", None).unwrap();
+        let draft = crate::assembly_substitution_model::declare(&draft, 1, "1", "A", None).unwrap();
+        let projected = project(&draft).unwrap();
+        assert_eq!(declaration_revision(&draft).unwrap(), projected.revision);
+        let TargetDeclaration::OriginalRegions {
+            substitutions: first_subs,
+            edits: first_edits,
+            ..
+        } = &ready(&projected.request, 0).target
+        else {
+            panic!("literal declaration")
+        };
+        assert!(first_subs.is_empty() && first_edits.is_empty());
+        let TargetDeclaration::OriginalRegions {
+            substitutions,
+            edits,
+            ..
+        } = &ready(&projected.request, 1).target
+        else {
+            panic!("literal declaration")
+        };
+        assert_eq!(edits[0].expected, "CC");
+        assert_eq!(edits[0].replacement, "TAG");
+        assert_eq!(substitutions[0].expected, "T");
+        assert_eq!(substitutions[0].replacement, "A");
+        let mut changed = draft.clone();
+        changed.edits[0].expected = "AA".into();
+        let stale = project(&changed).unwrap();
+        assert_ne!(projected.revision, stale.revision);
+        assert_eq!(
+            serde_json::to_vec(&ready(&projected.request, 0)).unwrap(),
+            serde_json::to_vec(&ready(&stale.request, 0)).unwrap()
+        );
+        let mut changed = draft.clone();
+        changed.edits[0].replacement = "unfinished?".into();
+        assert_ne!(declaration_revision(&changed).unwrap(), projected.revision);
+        assert!(project(&changed).is_err());
+    }
+    #[test]
     fn resolved_generation_is_explicit_in_overrides_and_partial_text_stays_row_local() {
         use crate::cloning_methods_model::SourceGenerationInput;
         use collagene_core::methylation::MethylationState;
@@ -649,8 +867,11 @@ mod tests {
             matches!(&second_settings.method,Some(Method::Overlap{overlaps,..})if overlaps==&vec![4,4])
         );
         assert_eq!(second_settings.circular, Some(true));
-        let Some(Preparation::ExactPcr { forward, reverse }) =
-            &second_settings.preparations[0].preparation
+        let Some(Preparation::ExactPcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
+            forward,
+            reverse,
+        }) = &second_settings.preparations[0].preparation
         else {
             panic!("missing row-local PCR")
         };
@@ -810,8 +1031,11 @@ mod tests {
         let projection = project(&draft).unwrap();
         let row = ready(&projection.request, 1);
         let overrides = row.overrides.as_ref().unwrap();
-        let Some(collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse }) =
-            &overrides.preparations[0].preparation
+        let Some(collagene_core::assembly_recipe::Preparation::ExactPcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
+            forward,
+            reverse,
+        }) = &overrides.preparations[0].preparation
         else {
             panic!("whole amplicon did not retain PCR");
         };
@@ -1003,9 +1227,9 @@ mod tests {
             );
             assert_eq!(
                 (
-                    bin.choices[0].start,
-                    bin.choices[0].end,
-                    bin.choices[0].reverse
+                    bin.choices[0].selector.reference_interval().unwrap().0,
+                    bin.choices[0].selector.reference_interval().unwrap().1,
+                    bin.choices[0].selector.reference_interval().unwrap().2
                 ),
                 (
                     draft.slots[i].selector.reference_interval().unwrap().0,

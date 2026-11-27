@@ -59,6 +59,7 @@ pub fn fixture() -> (Workspace, q::Request) {
             template: Source::Input("template".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TACGTAGC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let inputs = vec![InputEventBinding {

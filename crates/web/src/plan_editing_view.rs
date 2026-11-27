@@ -133,6 +133,7 @@ fn new_operation(kind: &str, source: Source) -> Operation {
             candidate_index: 0,
         },
         _ => Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: source,
             forward: Primer::new("Forward", "N", "").expect("literal primer"),
             reverse: Primer::new("Reverse", "N", "").expect("literal primer"),

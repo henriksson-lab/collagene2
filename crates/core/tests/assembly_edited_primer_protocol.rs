@@ -3,7 +3,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     assembly_edit_intent::{self, Edit},
-    assembly_edited_primer_design::{self, Request as DesignRequest, RoleOrigin},
+    assembly_edited_primer_design::{self, Request as DesignRequest},
     assembly_intent,
     assembly_intent::{Contribution, Selector},
     assembly_junction_edit,
@@ -101,7 +101,6 @@ fn fixture() -> (Vec<PlanInput>, DesignRequest) {
                 ..Default::default()
             },
             profile_options: Default::default(),
-            origins: vec![],
         },
     )
 }
@@ -114,12 +113,22 @@ fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8>
     bytes.extend(payload);
     bytes
 }
-fn execute(inputs: Vec<PlanInput>, request: DesignRequest) -> protocol::Response {
-    let revision = assembly_edited_primer_design::design_revision(&inputs, &request).unwrap();
+fn execute(
+    inputs: Vec<PlanInput>,
+    request: DesignRequest,
+    workspace: Option<Workspace>,
+) -> protocol::Response {
+    let revision =
+        assembly_edited_primer_design::design_revision(&inputs, &request, workspace.as_ref())
+            .unwrap();
     let r = Request {
         id: 166,
         revision,
-        job: AnalysisJob::DesignEditedOverlapPrimers { inputs, request },
+        job: AnalysisJob::DesignEditedOverlapPrimers {
+            inputs,
+            request,
+            workspace,
+        },
     };
     protocol::decode_response(
         &protocol::process_request(&protocol::encode_request(&r).unwrap()).unwrap(),
@@ -131,13 +140,14 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
  {
     let (inputs, request) = fixture();
     let before = serde_json::to_value(&inputs).unwrap();
-    let context = assembly_edited_primer_design::design_revision(&inputs, &request).unwrap();
+    let context = assembly_edited_primer_design::design_revision(&inputs, &request, None).unwrap();
     let r = Request {
         id: 166,
         revision: context.clone(),
         job: AnalysisJob::DesignEditedOverlapPrimers {
             inputs: inputs.clone(),
             request: request.clone(),
+            workspace: None,
         },
     };
     let bytes = protocol::encode_request(&r).unwrap();
@@ -205,12 +215,9 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     assert!(transfer::load_candidate(&encoded_candidate).is_ok());
-    assert!(
-        report
-            .preview
-            .verification
-            .engine_version
-            .ends_with("/science-28")
+    assert_eq!(
+        report.preview.verification.engine_version,
+        verification::ENGINE_VERSION
     );
     assert_eq!(
         verification::verify(&candidate.plan, &report.intent.target).status,
@@ -222,7 +229,7 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
 fn whole_context_binds_options_sources_and_intent_and_reverse_preparation_stays_in_original_orientation()
  {
     let (inputs, request) = fixture();
-    let context = assembly_edited_primer_design::design_revision(&inputs, &request).unwrap();
+    let context = assembly_edited_primer_design::design_revision(&inputs, &request, None).unwrap();
     let mut changed_source = inputs.clone();
     changed_source[0]
         .molecule
@@ -241,12 +248,16 @@ fn whole_context_binds_options_sources_and_intent_and_reverse_preparation_stays_
         let r = Request {
             id: 166,
             revision: context.clone(),
-            job: AnalysisJob::DesignEditedOverlapPrimers { inputs, request },
+            job: AnalysisJob::DesignEditedOverlapPrimers {
+                inputs,
+                request,
+                workspace: None,
+            },
         };
         assert!(protocol::process_request(&protocol::encode_request(&r).unwrap()).is_err());
     }
     let AnalysisResult::EditedOverlapPrimersDesigned(mut report) =
-        execute(inputs.clone(), request.clone()).result
+        execute(inputs.clone(), request.clone(), None).result
     else {
         panic!("design");
     };
@@ -271,7 +282,7 @@ fn whole_context_binds_options_sources_and_intent_and_reverse_preparation_stays_
         panic!("reference selector required by fixture");
     }
     let AnalysisResult::EditedOverlapPrimersDesigned(report) =
-        execute(reverse_inputs, reverse).result
+        execute(reverse_inputs, reverse, None).result
     else {
         panic!("reverse whole design");
     };
@@ -317,6 +328,7 @@ fn per_role_saved_origin_is_retained_and_replayed_without_turning_its_metadata_i
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Saved role source", vec![source, target], 1).unwrap();
@@ -346,11 +358,18 @@ fn per_role_saved_origin_is_retained_and_replayed_without_turning_its_metadata_i
         "original",
         commit.workspace.revisions[&selected.event.revision].clone(),
     );
-    request.origins.push(RoleOrigin {
-        role: "insert".into(),
-        origin: origin.clone(),
-    });
-    let AnalysisResult::EditedOverlapPrimersDesigned(report) = execute(inputs, request).result
+    request
+        .intent
+        .base
+        .base
+        .material_bindings
+        .push(assembly_intent::MaterialBinding {
+            input_id: "original".into(),
+            event: origin.selection.event.clone(),
+            origin: collagene_core::run_material::MaterialOrigin::Run(origin.clone()),
+        });
+    let AnalysisResult::EditedOverlapPrimersDesigned(report) =
+        execute(inputs, request, Some(commit.workspace)).result
     else {
         panic!("saved role whole design");
     };

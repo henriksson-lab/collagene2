@@ -86,7 +86,7 @@ async fn tailing_reconstructs_digest_and_unique_pcr_with_explicit_strands_and_no
     reject(&c,"simulate_tailing",json!({"document":source,"recipe":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"blunt_before":false}},"base":"T"})).await;
     let pcr = import(&c, "PCR source", "ACGACCCCGGGGTAAC", Topology::Linear).await;
     let primer = |name: &str, seq: &str| json!({"name":name,"annealing":{"alphabet":"Dna","bases":seq},"tail":""});
-    let recipe = json!({"ExactPcr":{"forward":primer("f","ACGA"),"reverse":primer("r","GTTA")}});
+    let recipe = json!({"ExactPcr":{"template_strand":"Top","forward":primer("f","ACGA"),"reverse":primer("r","GTTA")}});
     let r = call(
         &c,
         "simulate_tailing",

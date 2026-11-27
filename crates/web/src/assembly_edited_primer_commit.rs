@@ -41,11 +41,8 @@ pub(crate) fn validate(before: &Draft, after: &Draft, current: &Draft) -> Result
         );
     }
     let n = before.slots.len();
-    if before.methods.mode != Mode::Overlap
-        || before.alternatives.is_some()
-        || !(2..=12).contains(&n)
-    {
-        return Err("Whole-assembly primer proposals require an ordinary overlap construct with two to twelve source contributions.".into());
+    if before.methods.mode != Mode::Overlap || !(2..=12).contains(&n) {
+        return Err("Whole-assembly primer proposals require an overlap construct with two to twelve source contributions.".into());
     }
     let roles = before.methods.role_ids(n)?;
     let overlaps = after
@@ -87,6 +84,7 @@ pub(crate) fn validate(before: &Draft, after: &Draft, current: &Draft) -> Result
             || before.substitutions.iter().any(|e| e.role == role.role);
         let row = &after.methods.rows[i];
         let dest = &mut expected.methods.rows[i];
+        dest.reverse = row.reverse;
         if edited {
             if row.preparation != OverlapPreparation::OverlapExtensionPcr {
                 return Err("Internally edited contributions require their explicit overlap-extension PCR preparation.".into());
@@ -105,6 +103,7 @@ pub(crate) fn validate(before: &Draft, after: &Draft, current: &Draft) -> Result
             }
             exact(row)?;
             dest.preparation = OverlapPreparation::ExactPcr;
+            dest.template_strand = row.template_strand;
             dest.forward_name = row.forward_name.clone();
             dest.forward = row.forward.clone();
             dest.forward_tail = row.forward_tail.clone();
@@ -114,6 +113,9 @@ pub(crate) fn validate(before: &Draft, after: &Draft, current: &Draft) -> Result
         }
     }
     expected.sync_rows();
+    if expected.alternatives.is_some() {
+        expected = crate::assembly_alternatives::save_active(&expected)?;
+    }
     if expected != *after {
         return Err("Primer suggestions may change only active PCR oligos and the requested overlap lengths. Sources, intent, saved origins and other settings must remain unchanged.".into());
     }

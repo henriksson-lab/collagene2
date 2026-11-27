@@ -21,6 +21,7 @@ pub fn SubstitutionEditor(
         draft.with(|d| {
             d.slots.get(d.active_slot).map(|s| {
                 (
+                    crate::assembly_alternatives::identity(d),
                     d.active_slot,
                     s.captured.as_ref().map(|c| c.source.binding.clone()),
                     s.selector.clone(),
@@ -84,8 +85,8 @@ pub fn SubstitutionEditor(
     };
     view! {<details class="assembly-internal-edits"><summary>{move||draft.with(|d|format!("Internal substitutions ({})",d.substitutions.len()))}</summary>
         <p class="helper">"Declare changes in the active fragment before choosing primers. Positions are one-based within its original contribution, in construct orientation. Junction trimming cannot silently remove an edit."</p>
-        <Show when=move||draft.with(|d|d.alternatives.is_some())><p>"Internal substitutions currently require an ordinary construct. Library rows retain their existing junction-edit workflow."</p></Show>
-        <Show when=move||draft.with(|d|d.alternatives.is_none())>
+        <Show when=move||draft.with(|d|d.alternatives.is_some())><p class="helper">"These edits apply only to the selected construct."</p></Show>
+        <div>
         <div class="primer-grid"><label>"Contribution position"<input type="number" min="1" maxlength="20" aria-label="Internal substitution contribution position" prop:value=move||position.get() on:input=move|e|position.set(event_target_value(&e))/></label>
         <label>"Intended replacement"<select aria-label="Internal substitution replacement" prop:value=move||replacement.get() on:change=move|e|replacement.set(event_target_value(&e))><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label></div>
         <p class="helper">{move||{
@@ -95,7 +96,7 @@ pub fn SubstitutionEditor(
                 .unwrap_or_else(||"Choose a position in the pinned source contribution.".into())
         }}</p>
         <div class="method-row-actions"><button class="button secondary" on:click=from_selection>"Use single-base sequence selection"</button><button class="button primary" on:click=add>"Declare substitution"</button></div>
-        </Show>
+        </div>
         <p role="status">{move||status.get()}</p>
         <ul>{move||draft.with(|d|d.substitutions.iter().skip(page.get().saturating_mul(20)).take(20).cloned().collect::<Vec<_>>()).into_iter().map(|edit|{
             let remove=edit.clone();let navigate=edit.clone();

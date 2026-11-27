@@ -29,6 +29,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("Forward", f, ft).unwrap(),
         reverse: Primer::new("Reverse", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn request() -> Request {
@@ -74,6 +75,7 @@ fn overlap(reverse: bool) -> (Vec<PlanInput>, Molecule, a::Recipe) {
                     Preparation::ExactPcr {
                         forward: Primer::new("Vector forward", "CACGTTCG", "").unwrap(),
                         reverse: Primer::new("Vector reverse", reverse_primer, "").unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                     false,
                 ),
@@ -163,6 +165,7 @@ fn actual_prepared_duplex_can_be_phosphorylated_and_ligated_without_reference_ma
                     Preparation::ExactPcr {
                         forward: Primer::new("Vector F", "CACG", "").unwrap(),
                         reverse: Primer::new("Vector R", "CGAA", "").unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                     false,
                 ),
@@ -231,6 +234,7 @@ fn saved_original_is_replayed_before_both_branches_without_changing_its_origin_t
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Origin", vec![source.molecule, original_target], 1).unwrap();

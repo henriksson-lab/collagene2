@@ -230,6 +230,7 @@ fn saved(
             template: Source::Input("stock".into()),
             forward: Primer::new("Saved F", "CACCA", "").unwrap(),
             reverse: Primer::new("Saved R", "CGTCA", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let expected = if staggered {
@@ -1108,7 +1109,14 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     let forward = Primer::new("Derived template F", "CACCA", "").unwrap();
     let reverse = Primer::new("Derived template R", "CGTCA", "").unwrap();
     let declaration = d::SourceOrigin::Saved(run_origin);
-    let previews = d::preview_pcr(&inputs[2].molecule, &declaration, &forward, &reverse).unwrap();
+    let previews = d::preview_pcr(
+        &inputs[2].molecule,
+        &declaration,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     assert_eq!(previews[0].molecule.sequence.as_str(), "CACCATGACG");
     let installed = d::prepare_install(
@@ -1124,6 +1132,7 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
                     expected_preview_revision: previews[0].molecule.revision(),
                     geometry: previews[0].geometry.clone(),
                 },
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             name: "Saved target-free insert template PCR".into(),
             save_primers: true,
@@ -1394,11 +1403,13 @@ fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr()
                 template: Source::Input("a".into()),
                 forward: Primer::new("AF", "AGT", "").unwrap(),
                 reverse: Primer::new("AR", "CGG", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("b".into()),
                 forward: Primer::new("BF", "GAC", "").unwrap(),
                 reverse: Primer::new("BR", "TCA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(1),

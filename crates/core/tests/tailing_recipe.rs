@@ -22,6 +22,7 @@ fn pcr(f: &str, r: &str) -> Preparation {
     Preparation::ExactPcr {
         forward: Primer::new("F", f, "").unwrap(),
         reverse: Primer::new("R", r, "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn row(
@@ -78,6 +79,7 @@ fn saved_tail(
                 template: Source::Input("stock".into()),
                 forward: Primer::new("Historical F", f, "").unwrap(),
                 reverse: Primer::new("Historical R", r, "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Tail3Prime {
                 template: Source::Step(0),
@@ -503,11 +505,13 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
                 template: Source::Input("left".into()),
                 forward: Primer::new("LF", "AGTC", "").unwrap(),
                 reverse: Primer::new("LR", "TAGC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("right".into()),
                 forward: Primer::new("RF", "GCTA", "").unwrap(),
                 reverse: Primer::new("RR", "GGTT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::HomologyAssembly {
                 fragments: vec![
@@ -669,6 +673,7 @@ mod preparation_and_receipt_tests {
                 preparation: Preparation::ExactPcr {
                     forward: Primer::new("Forward", forward, "").unwrap(),
                     reverse: Primer::new("Reverse", reverse, "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 reverse: false,
             },
@@ -872,6 +877,7 @@ mod preparation_and_receipt_tests {
                             selection: selection.clone(),
                             fragment_index: 1,
                             repair: None,
+                            template_strand: collagene_core::chemistry::Strand::Top,
                         },
                         reverse: false,
                     },

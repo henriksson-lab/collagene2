@@ -4,7 +4,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     assembly_edit_intent::{self, Edit},
-    assembly_edited_primer_design::{Report, Request, RoleOrigin},
+    assembly_edited_primer_design::{Report, Request},
     assembly_intent,
     assembly_intent::{Contribution, Selector},
     assembly_junction_edit, assembly_substitution_intent, cloning_outputs,
@@ -84,7 +84,6 @@ fn request() -> Request {
             ..Default::default()
         },
         profile_options: Default::default(),
-        origins: vec![],
     }
 }
 async fn setup() -> (Client, tokio::task::JoinHandle<()>) {
@@ -166,7 +165,7 @@ async fn whole_proposal_uses_literal_junction_and_native_oe_then_separate_intent
     let vector = named(&imported, "vector");
     let inputs = json!([{"id":"original","document":original},{"id":"vector","document":vector}]);
     let before = call(&client, "list_documents", json!({})).await;
-    let args = json!({"inputs":inputs,"request":request()});
+    let args = json!({"inputs":inputs,"request":request(),"origin_workspace":null});
     let proposal = call(&client, "design_edited_overlap_primers", args.clone()).await;
     assert_eq!(proposal["state"], "advisory");
     assert_eq!(proposal["verified"], false);
@@ -305,6 +304,7 @@ async fn saved_role_requires_exact_workspace_attestation_before_any_full_design(
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents(
@@ -334,18 +334,14 @@ async fn saved_role_requires_exact_workspace_attestation_before_any_full_design(
         step_index: 0,
         event: commit.receipt.construct,
     };
-    let capsule = run_material::capsule(&commit.workspace, &selected).unwrap();
     let imported=call(&client,"import_workspace_archive",json!({"data_base64":STANDARD.encode(workspace::save_workspace(&commit.workspace).unwrap())})).await;
     let wr = json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
-    let mut r = request();
-    r.origins.push(RoleOrigin {
-        role: "insert".into(),
-        origin: capsule,
-    });
-    let args = json!({"inputs":[{"id":"original","document":{"id":selected.event.revision,"revision":selected.event.revision}},{"id":"vector","document":{"id":vector.revision(),"revision":vector.revision()}}],"request":r});
+    let mut projected = json!(request());
+    projected["intent"]["base"]["base"]["material_bindings"] = json!([{"input_id":"original","event":selected.event,"selection":run_material::MaterialSelection::Run(selected.clone())}]);
+    let args = json!({"inputs":[{"id":"original","document":{"id":selected.event.revision,"revision":selected.event.revision}},{"id":"vector","document":{"id":vector.revision(),"revision":vector.revision()}}],"request":projected,"origin_workspace":null});
     reject(&client, "design_edited_overlap_primers", args.clone()).await;
     let mut bound = args;
-    bound["origin_workspaces"] = json!([{"role":"insert","workspace":wr}]);
+    bound["origin_workspace"] = wr;
     let before = call(&client, "list_documents", json!({})).await;
     let proposal = call(&client, "design_edited_overlap_primers", bound.clone()).await;
     assert_eq!(
@@ -359,11 +355,112 @@ async fn saved_role_requires_exact_workspace_attestation_before_any_full_design(
     );
     assert_eq!(call(&client, "list_documents", json!({})).await, before);
     let mut wrong = bound.clone();
-    wrong["origin_workspaces"][0]["role"] = json!("vector");
+    wrong["request"]["intent"]["base"]["base"]["material_bindings"][0]["input_id"] =
+        json!("vector");
     reject(&client, "design_edited_overlap_primers", wrong).await;
     let mut wrong = bound;
-    wrong["origin_workspaces"][0]["workspace"]["revision"] = json!("0".repeat(64));
+    wrong["origin_workspace"]["revision"] = json!("0".repeat(64));
     reject(&client, "design_edited_overlap_primers", wrong).await;
     drop(client);
     server.await.unwrap();
+}
+
+#[tokio::test]
+async fn derived_template_is_hydrated_from_exact_native_selection_and_never_client_capsule() {
+    use collagene_core::material_derivation::{
+        self as native, Derivation, PcrSelection, SourceOrigin,
+    };
+    use collagene_core::run_material::MaterialSelection;
+    let (client, server) = setup().await;
+    let source = Molecule::dna(
+        "Original for target-free source PCR",
+        ORIGINAL,
+        Topology::Linear,
+    )
+    .unwrap();
+    let vector = Molecule::dna("Vector source", VECTOR, Topology::Linear).unwrap();
+    let w = Workspace::from_documents(
+        "Native target-free PCR template",
+        vec![source.clone(), vector.clone()],
+        0,
+    )
+    .unwrap();
+    let forward = Primer::new("Exact F", "AGTCCGAT", "").unwrap();
+    let reverse = Primer::new("Exact R", "TGACGATC", "").unwrap();
+    let product = verification_preview(&source, &forward, &reverse);
+    let installed = native::prepare_install(
+        &w,
+        &native::Request {
+            source: binding(&w, 0),
+            origin: SourceOrigin::OriginalReference,
+            derivation: Derivation::ExactPcr {
+                forward,
+                reverse,
+                selection: PcrSelection {
+                    selected_index: 0,
+                    expected_preview_revision: product.molecule.revision(),
+                    geometry: product.geometry,
+                },
+                template_strand: collagene_core::chemistry::Strand::Top,
+            },
+            name: "Saved target-free original PCR".into(),
+            save_primers: false,
+        },
+    )
+    .unwrap();
+    let chosen = MaterialSelection::Derived(installed.receipt.product.clone());
+    let imported=call(&client,"import_workspace_archive",json!({"data_base64":STANDARD.encode(workspace::save_workspace(&installed.workspace).unwrap())})).await;
+    let wr = json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
+    let mut projected = json!(request());
+    projected["intent"]["base"]["base"]["material_bindings"] =
+        json!([{"input_id":"original","event":chosen.event(),"selection":chosen}]);
+    let args = json!({"inputs":[{"id":"original","document":{"id":installed.receipt.product.revision,"revision":installed.receipt.product.revision}},{"id":"vector","document":{"id":vector.revision(),"revision":vector.revision()}}],"request":projected,"origin_workspace":wr});
+    let before = call(&client, "list_documents", json!({})).await;
+    let proposal = call(&client, "design_edited_overlap_primers", args.clone()).await;
+    assert_eq!(
+        proposal["verification"]["status"], "ConsistentUnderAssumptions",
+        "{proposal}"
+    );
+    assert!(
+        proposal["recipe"]["fragments"][0]["preparation"]
+            .get("FromDerived")
+            .is_some()
+    );
+    assert_eq!(proposal["ordered_oligos"].as_array().unwrap().len(), 8);
+    let full = artifact(&client, &proposal["artifact_id"]).await;
+    let report: Report = serde_json::from_value(full["report"].clone()).unwrap();
+    assert_eq!(report.intent.target.sequence.as_str(), TARGET);
+    assert_eq!(
+        full["request"]["intent"]["base"]["base"]["material_bindings"][0]["selection"],
+        json!(chosen)
+    );
+    assert_eq!(full["origin_workspace"], args["origin_workspace"]);
+    assert_eq!(call(&client, "list_documents", json!({})).await, before);
+    let mut wrong = args.clone();
+    wrong["request"]["intent"]["base"]["base"]["material_bindings"][0]["selection"]["Derived"]["event_id"] =
+        json!("wrong-event");
+    reject(&client, "design_edited_overlap_primers", wrong).await;
+    let mut supplied = args.clone();
+    supplied["request"]["intent"]["base"]["base"]["material_bindings"][0] = json!({"input_id":"original","event":chosen.event(),"origin":native::capsule(&installed.workspace,&installed.receipt.product).unwrap()});
+    reject(&client, "design_edited_overlap_primers", supplied).await;
+    let mut missing = args;
+    missing.as_object_mut().unwrap().remove("origin_workspace");
+    reject(&client, "design_edited_overlap_primers", missing).await;
+    drop(client);
+    server.await.unwrap();
+}
+fn verification_preview(
+    source: &Molecule,
+    forward: &Primer,
+    reverse: &Primer,
+) -> collagene_core::verification::PcrDocument {
+    let mut products = collagene_core::verification::simulate_pcr_documents(
+        source,
+        forward,
+        reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
+    assert_eq!(products.len(), 1);
+    products.remove(0)
 }

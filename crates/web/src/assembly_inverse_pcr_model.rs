@@ -1101,6 +1101,7 @@ mod tests {
             }));
             draft.methods.rows[0].run_origin =
                 Some(crate::run_origin_model::PinnedOrigin::from_material(origin.clone()).unwrap());
+            draft.slots[0].material_origin = draft.methods.rows[0].run_origin.clone();
             draft.sync_rows();
             let (inputs, base_request, _) =
                 crate::assembly_draft_model::inputs_request(&draft, None).unwrap();
@@ -1132,6 +1133,7 @@ mod tests {
             assert!(propose(&draft, &intent, &alias, &intent.target, &options).is_err());
             let mut changed = draft.clone();
             changed.methods.rows[0].run_origin = None;
+            changed.slots[0].material_origin = changed.methods.rows[0].run_origin.clone();
             assert!(
                 proposal
                     .validate_binding(&changed, &intent, &event, &intent.target, &options)

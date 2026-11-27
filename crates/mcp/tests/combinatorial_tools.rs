@@ -121,9 +121,12 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         id: id.into(),
         label: id.into(),
         source: binding(&original, index),
-        start: 0,
-        end: 4,
-        reverse: false,
+        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+            start: 0,
+            end: 4,
+            reverse: false,
+        },
+        preparation_reverse: false,
         preparation: Some(Preparation::DeclaredDuplex {
             left: Terminus::CLEAVED,
             right: Terminus::CLEAVED,
@@ -131,6 +134,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         treatment: None,
     };
     let d = Design {
+        material_bindings: vec![],
         id: "mcp-library".into(),
         name: "MCP alternative sources".into(),
         circular: false,
@@ -164,6 +168,8 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             },
         ],
         target: TargetDeclaration::OriginalRegions {
+            substitutions: vec![],
+            edits: vec![],
             junction_edits: vec![],
         },
         overrides: None,
@@ -428,6 +434,115 @@ async fn fresh_selected_batches_save_historical_records_and_replay_exact_rows_wi
         &c,
         "evaluate_combinatorial_batch",
         json!({"workspace":{"id":wr["id"],"revision":"0".repeat(64)},"matrix":matrix}),
+    )
+    .await;
+    c.cancel().await.unwrap();
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn internal_library_declarations_are_row_local_and_never_rewrite_preparations() {
+    use collagene_core::{assembly_edit_intent::Edit, assembly_substitution_intent::Substitution};
+    let (c, server) = setup().await;
+    let (w, d, ordinary) = fixture();
+    let imported = upload(&c, &w).await;
+    let wr = workspace_ref(&imported);
+    let (_, role) =
+        design::source_role_ids(&d.id, "snp-row", &d.bins[0].id, &d.bins[0].choices[0].id).unwrap();
+    let mut snp = ordinary.clone();
+    snp.id = "snp-row".into();
+    snp.name = "Only this row requests A to G".into();
+    snp.target = TargetDeclaration::OriginalRegions {
+        junction_edits: vec![],
+        substitutions: vec![Substitution {
+            role: role.clone(),
+            offset: 1,
+            expected: "A".into(),
+            replacement: "G".into(),
+        }],
+        edits: vec![],
+    };
+    let mut indel = ordinary.clone();
+    indel.id = "indel-row".into();
+    indel.name = "Only this row replaces AC with T".into();
+    indel.target = TargetDeclaration::OriginalRegions {
+        junction_edits: vec![],
+        substitutions: vec![],
+        edits: vec![Edit {
+            role: role.clone(),
+            start: 1,
+            end: 3,
+            expected: "AC".into(),
+            replacement: "T".into(),
+        }],
+    };
+    let mut stale = snp.clone();
+    stale.id = "stale-row".into();
+    stale.name = "Stale expected base is a row-local error".into();
+    stale.target = TargetDeclaration::OriginalRegions {
+        junction_edits: vec![],
+        substitutions: vec![Substitution {
+            role,
+            offset: 1,
+            expected: "C".into(),
+            replacement: "G".into(),
+        }],
+        edits: vec![],
+    };
+    for (row, literal) in [
+        (&ordinary, "AACCTTAA"),
+        (&snp, "AGCCTTAA"),
+        (&indel, "ATCTTAA"),
+    ] {
+        let inspected = call(
+            &c,
+            "inspect_combinatorial_construct",
+            json!({"workspace":wr,"design":d,"construct":row}),
+        )
+        .await;
+        let evidence = text_artifact(&c, &inspected["artifact_id"]).await;
+        assert_eq!(evidence["independent_target"]["sequence"]["bases"], literal);
+        assert_eq!(
+            evidence["input_bindings"][0]["event"],
+            json!(d.bins[0].choices[0].source)
+        );
+    }
+    let before = workspace::save_workspace(&w).unwrap();
+    let matrix = json!({"design":d,"rows":[{"Ready":ordinary},{"Ready":snp},{"Ready":indel},{"Ready":stale}]});
+    let saved = call(
+        &c,
+        "evaluate_combinatorial_batch",
+        json!({"workspace":wr,"matrix":matrix}),
+    )
+    .await;
+    let record = text_artifact(&c, &saved["artifact_id"]).await;
+    assert_eq!(record["request"], matrix);
+    assert_eq!(record["rows"][0]["status"], "ConsistentUnderAssumptions");
+    for row in &record["rows"].as_array().unwrap()[1..3] {
+        assert_eq!(row["state"], "Evaluated");
+        assert_eq!(
+            row["status"], "Invalid",
+            "unedited material cannot satisfy a new intended mutation: {row}"
+        );
+    }
+    assert_eq!(record["rows"][3]["state"], "Error");
+    assert!(record["rows"][3]["status"].is_null());
+    let restored = native_artifact(&c, &saved["native_artifact_id"]).await;
+    assert_eq!(restored.history.len(), w.history.len());
+    assert_eq!(restored.documents.len(), w.documents.len());
+    for doc in &w.documents {
+        assert_eq!(restored.head(&doc.id).unwrap(), w.head(&doc.id).unwrap());
+    }
+    assert_eq!(workspace::save_workspace(&w).unwrap(), before);
+    let mut obsolete_shape = matrix;
+    obsolete_shape["rows"][0]["Ready"]["target"]["OriginalRegions"]
+        .as_object_mut()
+        .unwrap()
+        .remove("edits");
+    reject(
+        &c,
+        "evaluate_combinatorial_batch",
+        json!({"workspace":wr,"matrix":obsolete_shape}),
     )
     .await;
     c.cancel().await.unwrap();

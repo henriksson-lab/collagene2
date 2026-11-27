@@ -72,6 +72,7 @@ pub struct ExtensionPrimerInput {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExtensionPrimerPairInput {
+    pub template_strand: collagene_core::chemistry::Strand,
     pub forward: ExtensionPrimerInput,
     pub reverse: ExtensionPrimerInput,
 }
@@ -94,12 +95,14 @@ impl ExtensionPrimerPairInput {
             tail: String::new(),
         };
         Self {
+            template_strand: collagene_core::chemistry::Strand::Top,
             forward: primer("forward"),
             reverse: primer("reverse"),
         }
     }
     fn typed(&self) -> Result<collagene_core::overlap_extension_pcr::PrimerPair, String> {
         Ok(collagene_core::overlap_extension_pcr::PrimerPair {
+            template_strand: self.template_strand,
             forward: Primer::new(
                 &self.forward.name,
                 &self.forward.annealing,
@@ -239,6 +242,7 @@ pub struct OverlapInput {
     pub reverse: bool,
     pub treatment: Treatment,
     pub preparation: OverlapPreparation,
+    pub template_strand: collagene_core::chemistry::Strand,
     #[serde(deserialize_with = "required_option")]
     pub overlap_extension_pcr: Option<OverlapExtensionPcrInput>,
     #[serde(deserialize_with = "required_option")]
@@ -320,6 +324,7 @@ fn default_mismatch_bases() -> String {
 impl Default for OverlapInput {
     fn default() -> Self {
         Self {
+            template_strand: collagene_core::chemistry::Strand::Top,
             run_origin: None,
             source_generation: None,
             document: 0,

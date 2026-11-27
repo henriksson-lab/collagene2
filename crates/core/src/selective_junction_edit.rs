@@ -66,7 +66,12 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
         } => {
             assembly_recipe::anneal_shape(bottom_input_id, options, *candidate_index)?;
         }
-        Preparation::ExactPcr { forward, reverse } => {
+        Preparation::ExactPcr {
+            forward,
+            reverse,
+            template_strand: crate::chemistry::Strand::Top,
+            ..
+        } => {
             primer(forward)?;
             primer(reverse)?;
         }
@@ -74,6 +79,7 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
             forward,
             reverse,
             selection,
+            template_strand: crate::chemistry::Strand::Top,
             ..
         } => {
             primer(forward)?;
@@ -412,6 +418,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
                     preparation: Preparation::ExactPcr {
                         forward: pair.forward.primer.clone(),
                         reverse: pair.reverse.primer.clone(),
+                        template_strand: crate::chemistry::Strand::Top,
                     },
                     reverse: f.reverse,
                 });
@@ -521,7 +528,13 @@ impl Report {
                     {
                         return Err(bad("selected design no longer binds its source/interval"));
                     }
-                    let Preparation::ExactPcr { forward, reverse } = &row.preparation else {
+                    let Preparation::ExactPcr {
+                        forward,
+                        reverse,
+                        template_strand: crate::chemistry::Strand::Top,
+                        ..
+                    } = &row.preparation
+                    else {
                         return Err(bad("selected row must remain original-source exact PCR"));
                     };
                     let pair = &d.pairs[0];

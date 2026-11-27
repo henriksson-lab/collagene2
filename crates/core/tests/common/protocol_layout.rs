@@ -28,6 +28,7 @@ pub fn fixture() -> (Workspace, layout::Request) {
     };
     let request = batch::Request {
         design: Some(Design {
+            material_bindings: vec![],
             id: "library".into(),
             name: "One literal clone".into(),
             circular: false,
@@ -41,9 +42,12 @@ pub fn fixture() -> (Workspace, layout::Request) {
                     id: "stock".into(),
                     label: "Stock".into(),
                     source,
-                    start: 0,
-                    end: 8,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 8,
+                        reverse: false,
+                    },
+                    preparation_reverse: false,
                     preparation: Some(Preparation::DeclaredDuplex {
                         left: Terminus::CLEAVED,
                         right: Terminus::CLEAVED,
@@ -61,6 +65,8 @@ pub fn fixture() -> (Workspace, layout::Request) {
                 choice_id: "stock".into(),
             }],
             target: TargetDeclaration::OriginalRegions {
+                substitutions: vec![],
+                edits: vec![],
                 junction_edits: vec![],
             },
             overrides: None,

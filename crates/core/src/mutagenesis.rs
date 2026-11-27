@@ -597,6 +597,7 @@ pub fn compile_inverse_pcr(
         },
         forward: forward.clone(),
         reverse: reverse.clone(),
+        template_strand: crate::chemistry::Strand::Top,
     });
     steps.push(Operation::TreatEnds {
         template: Source::Step(pcr_step),
@@ -715,6 +716,7 @@ fn validate_inverse_fields(
         }) if id == "template" => Some(MaterialOrigin::Derived(origin.clone())),
         Some(Operation::Pcr {
             template: Source::Input(id),
+            template_strand: crate::chemistry::Strand::Top,
             ..
         }) if id == "template" => None,
         _ => return Err(bad()),
@@ -753,6 +755,8 @@ fn validate_inverse_fields(
             template,
             forward: f,
             reverse: r,
+            template_strand: crate::chemistry::Strand::Top,
+            ..
         } if crate::assembly_recipe::hash(&(template, f, r))?
             == crate::assembly_recipe::hash(&(expected_template, forward, reverse))? =>
         {

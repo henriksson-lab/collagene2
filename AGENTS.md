@@ -9,5 +9,8 @@
 
 ## Verification
 
+- Implement in coherent batches across the scientific core, schemas, transport, UI, callers, and fixtures before compiling. Prefer temporarily broken intermediate code to small changes made only to keep each step building.
+- Reduce compiler and test invocations: inspect callers and enum matches statically, finish the batch, then run its focused native and WASM checks. Collect concrete failures and fix them together before rechecking. Do not rerun unchanged passing cases without a specific reason.
+- Parallel workers contribute to the same integration batch; their individual patches do not each trigger a build. Keep Cargo package/feature selections consistent so rechecks reuse the existing cache.
 - Do not run browser, CDP, screenshot, or application HTTP checks until in-scope code is complete, as requested by the user.
 - Run necessary compiler checks in the background while continuing implementation. Use the existing shared Cargo cache; do not introduce additional caches or automatic release-build verification.

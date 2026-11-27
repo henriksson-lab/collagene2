@@ -1,4 +1,4 @@
-//! One explicit all-row oligo proposal in the ordinary overlap-assembly dock.
+//! One explicit oligo proposal for the selected overlap construct.
 use crate::{
     assembly_draft_model::Draft, assembly_edited_primer_model as model,
     assembly_review::IntendedReference, worker::CachedWorker,
@@ -65,13 +65,21 @@ fn oe_oligos(
 }
 fn oligos(prep: &Preparation) -> Vec<(&'static str, &Primer)> {
     match prep {
-        Preparation::ExactPcr { forward, reverse } => {
+        Preparation::ExactPcr {
+            template_strand: _,
+            forward,
+            reverse,
+        } => {
             vec![("Forward", forward), ("Reverse", reverse)]
         }
         Preparation::OverlapExtensionPcr { request } => oe_oligos(request),
         Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
             match preparation {
-                RunPreparation::ExactPcr { forward, reverse } => {
+                RunPreparation::ExactPcr {
+                    template_strand: _,
+                    forward,
+                    reverse,
+                } => {
                     vec![("Forward", forward), ("Reverse", reverse)]
                 }
                 RunPreparation::OverlapExtensionPcr { request } => oe_oligos(request),
@@ -169,13 +177,17 @@ pub fn EditedAssemblyPrimerView(
                 return Err("Review the unchanged intended construct before proposing all assembly primers.".into());
             }
             let baseline = draft.get_untracked();
-            let events = model::attest(&baseline, &snapshot.run(())?)?;
+            let workspace = snapshot.run(())?;
+            let events = model::attest(&baseline, &workspace)?;
             let options = read_options()?;
-            let (capture, inputs, request) =
-                intent.with_value(|i| model::request(&baseline, i.as_ref(), &events, &options))?;
-            Ok::<_, String>((baseline, events, options, capture, inputs, request))
+            let (capture, inputs, request) = intent.with_value(|i| {
+                model::request(&baseline, i.as_ref(), &events, &options, Some(&workspace))
+            })?;
+            Ok::<_, String>((
+                baseline, events, options, capture, inputs, request, workspace,
+            ))
         })();
-        let (baseline, events, options, capture, inputs, request) = match captured {
+        let (baseline, events, options, capture, inputs, request, workspace) = match captured {
             Ok(v) => v,
             Err(error) => {
                 status.set(error);
@@ -206,7 +218,11 @@ pub fn EditedAssemblyPrimerView(
                 .ask(Request {
                     id: token,
                     revision: revision.clone(),
-                    job: AnalysisJob::DesignEditedOverlapPrimers { inputs, request },
+                    job: AnalysisJob::DesignEditedOverlapPrimers {
+                        inputs,
+                        request,
+                        workspace: Some(workspace),
+                    },
                 })
                 .await;
             live.close();
@@ -225,7 +241,8 @@ pub fn EditedAssemblyPrimerView(
                 if model::context_draft(now.clone()) != model::context_draft(baseline.clone()) {
                     return Err("The assembly draft changed while proposing primers.".into());
                 }
-                let sources = model::attest(&now, &snapshot.run(())?)?;
+                let fresh_workspace = snapshot.run(())?;
+                let sources = model::attest(&now, &fresh_workspace)?;
                 if sources != events {
                     return Err(
                         "An exact original-source event changed while proposing primers.".into(),
@@ -241,7 +258,14 @@ pub fn EditedAssemblyPrimerView(
                     _ => return Err("Unexpected whole-assembly primer response.".into()),
                 };
                 let proposed = intent.with_value(|i| {
-                    model::from_design(&now, i.as_ref(), &sources, &options, report)
+                    model::from_design(
+                        &now,
+                        i.as_ref(),
+                        &sources,
+                        &options,
+                        report,
+                        Some(&fresh_workspace),
+                    )
                 })?;
                 if proposed.capture != capture {
                     return Err("The original whole-assembly declaration changed.".into());
@@ -266,16 +290,19 @@ pub fn EditedAssemblyPrimerView(
             return Err("The independent intended construct is stale.".into());
         }
         let before = draft.get_untracked();
-        let events = model::attest(&before, &snapshot.run(())?)?;
+        let workspace = snapshot.run(())?;
+        let events = model::attest(&before, &workspace)?;
         let options = read_options()?;
-        let next = intent.with_value(|i| saved.apply(&before, i.as_ref(), &events, &options))?;
+        let next = intent.with_value(|i| {
+            saved.apply(&before, i.as_ref(), &events, &options, Some(&workspace))
+        })?;
         on_use.run((before, next))?;
         proposal.set(None);
         Ok::<_, String>(())
     });
-    view! {<Show when=move||draft.with(|d|d.methods.mode==crate::cloning_methods_model::Mode::Overlap)><details class="assembly-fragment-options"><summary>"Propose all overlap-assembly primers"</summary>
+    view! {<Show when=move||draft.with(|d|d.methods.mode==crate::cloning_methods_model::Mode::Overlap)><details class="assembly-fragment-options"><summary>"Propose primers for this construct"</summary>
         <p class="helper">"Design every contribution together. Edited contributions use two source PCRs, reciprocal extension and outer PCR; other contributions use exact PCR. Junction tails use your literal inserts and the next edited contribution’s homology. Original sources and intended DNA remain unchanged."</p>
-        <Show when=move||!eligible.get()><p class="helper">"Use two to twelve ordinary overlap contributions. Keep active digest, paired-oligo and declared-chemistry preparations in their existing workflow, or explicitly choose plain PCR before using this proposal."</p></Show>
+        <Show when=move||!eligible.get()><p class="helper">"Use two to twelve overlap contributions. Keep active digest, paired-oligo and declared-chemistry preparations in their existing workflow, or explicitly choose plain PCR before using this proposal."</p></Show>
         <div class="primer-grid">
             <label>"Uniform junction homology (bp)"<input type="number" min="1" max="80" prop:value=move||overlap.get() on:input=move|e|overlap.set(event_target_value(&e))/></label>
             <label>"Minimum annealing length"<input type="number" min="8" max="80" prop:value=move||minimum.get() on:input=move|e|minimum.set(event_target_value(&e))/></label>
@@ -298,20 +325,21 @@ pub fn EditedAssemblyPrimerView(
         <p role="status">{move||status.get()}</p>
         {move||proposal.get().map(|saved|{
             let invalid=saved.verification.status==Status::Invalid;
-            let diagnostic=format!("Complete assembly check: {}. This check uses the canonical declared reference. After applying, rerun the ordinary assembly against your unchanged intended construct.",status_label(&saved.verification.status));
+            let diagnostic=format!("Complete assembly check: {}. This check uses the canonical declared reference. After applying, rerun the selected assembly against your unchanged intended construct.",status_label(&saved.verification.status));
             let saved=StoredValue::new(saved);
             view!{<section class="assembly-edited-primer-proposal"><p>{diagnostic}</p>
                 {saved.with_value(|p|p.recipe.fragments.iter().enumerate().map(|(index,fragment)|{
                     let primers=oligos(&fragment.preparation);let count=primers.len();
                     view!{<details><summary>{format!("Fragment {} · {} · {} ordered oligos",index+1,fragment.role,count)}</summary>
                         <table><thead><tr><th>"Stage"</th><th>"Primer"</th><th>"Ordered sequence · 5′→3′"</th></tr></thead><tbody>{primers.into_iter().map(|(stage,primer)|view!{<tr><td>{stage}</td><td>{primer.name.clone()}</td><td><pre>{primer.ordered_sequence()}</pre></td></tr>}).collect_view()}</tbody></table>
-                        {p.tails().get(index).map(|tail|view!{<p class="helper">{format!("Declared junction insert {} bp · outgoing homology {} bp{}",tail.outgoing_insert.len(),tail.homology.len(),tail.downstream_role.as_ref().map(|role|format!(" toward {role}")).unwrap_or_default())}</p>})}
-                        {p.rows().get(index).map(|row|view!{<details><summary>"Local design notes"</summary><p>{format!("Local design check: {}; the complete assembly check above includes retained saved-origin replay.",status_label(&row.verification_status))}</p>{row.findings.iter().take(20).map(|finding|view!{<p class="helper">{finding.clone()}</p>}).collect_view()}</details>})}
+                        {p.rows().get(index).map(|row|view!{<p>{format!("PCR source frame: {:?}",row.template_strand)}</p>})}{p.tails().get(index).map(|tail|view!{<p class="helper">{format!("Declared junction insert {} bp · outgoing homology {} bp{}",tail.outgoing_insert.len(),tail.homology.len(),tail.downstream_role.as_ref().map(|role|format!(" toward {role}")).unwrap_or_default())}</p>})}
+                        {p.rows().get(index).map(|row|view!{<details><summary>"Primer search notes"</summary>{row.search.iter().map(|search|view!{<section><p>{format!("{} · examined {} · candidates {} · rejected {} · capped {} · unique geometry {}",search.call,search.examined,search.candidates,search.rejected,search.capped,search.unique_geometry)}</p><p>{format!("Showing {} of {} notes",search.notes.len().min(20),search.notes.len())}</p>{search.notes.iter().take(20).map(|note|view!{<p class="helper">{note.clone()}</p>}).collect_view()}</section>}).collect_view()}</details>})}
+                        {p.source_frame(&fragment.input_id).map(|frame|view!{<details><summary>{format!("Actual {:?} template · {} calls",frame.template_strand,frame.sequence.len())}</summary><pre>{frame.sequence.as_str().chars().take(200).collect::<String>()}</pre><p class="helper">{format!("{} of {} native template calls shown. Original top-reference positions exist only where mapped by the source evidence.",frame.sequence.len().min(200),frame.sequence.len())}</p><code>{frame.state_revision.clone()}</code></details>})}
                     </details>}
                 }).collect_view())}
                 {saved.with_value(|p|p.warnings.iter().take(24).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
                 <details><summary>"Whole-recipe findings"</summary>{saved.with_value(|p|p.verification.findings.iter().take(40).map(|finding|view!{<p>{finding.clone()}</p>}).collect_view())}</details>
-                <button class="button primary" disabled=move||invalid||!current.get() on:click=move|_|match apply.run(saved.get_value()){Ok(())=>status.set("All proposed oligos entered. Reconstruct and verify the complete ordinary assembly against the unchanged intended construct.".into()),Err(error)=>status.set(error)}>"Use all proposed oligos"</button>
+                <button class="button primary" disabled=move||invalid||!current.get() on:click=move|_|match apply.run(saved.get_value()){Ok(())=>status.set("All proposed oligos entered. Reconstruct and verify the complete assembly against the unchanged intended construct.".into()),Err(error)=>status.set(error)}>"Use all proposed oligos"</button>
             </section>}
         })}
     </details></Show>}

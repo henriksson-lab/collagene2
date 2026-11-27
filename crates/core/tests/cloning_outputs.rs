@@ -30,6 +30,7 @@ fn fixture() -> (Workspace, DesignPlan) {
             template: Source::Input("source".into()),
             forward: Primer::new("forward", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("reverse", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     (
@@ -294,6 +295,7 @@ fn ordinary_capture_does_not_apply_the_optional_oligo_order_length_profile() {
             template: Source::Input("source".into()),
             forward: Primer::new("forward", &"A".repeat(201), "").unwrap(),
             reverse: Primer::new("reverse", &"G".repeat(201), "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("long primer capture", vec![source, target], 1).unwrap();

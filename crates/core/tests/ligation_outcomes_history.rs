@@ -37,6 +37,7 @@ fn fixture(target: &str) -> (Vec<Molecule>, DesignPlan) {
             template: verification::Source::Input("a".into()),
             forward: Primer::new("Vector F", "AGT", "").unwrap(),
             reverse: Primer::new("Vector R", "CGG", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::TreatEnds {
             template: verification::Source::Step(0),
@@ -46,6 +47,7 @@ fn fixture(target: &str) -> (Vec<Molecule>, DesignPlan) {
             template: verification::Source::Input("b".into()),
             forward: Primer::new("Insert F", "GAC", "").unwrap(),
             reverse: Primer::new("Insert R", "TCA", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::TreatEnds {
             template: verification::Source::Step(2),
@@ -141,8 +143,14 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
     let forward = Primer::new("Current F", "AGT", "").unwrap();
     let reverse = Primer::new("Current R", "TCA", "").unwrap();
     let origin = run_material::MaterialOrigin::Run(capsule);
-    let revision =
-        collagene_core::material_pcr::revision(&reference, &origin, &forward, &reverse).unwrap();
+    let revision = collagene_core::material_pcr::revision(
+        &reference,
+        &origin,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     let request = collagene_core::protocol::Request {
         id: 172,
         revision,
@@ -151,6 +159,7 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
             origin,
             forward,
             reverse,
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
     };
     let bytes = collagene_core::protocol::encode_request(&request).unwrap();

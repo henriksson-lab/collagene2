@@ -100,6 +100,7 @@ fn original() -> Commit {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("R", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Recorded PCR", vec![source, target], 1).unwrap();

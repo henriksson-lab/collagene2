@@ -22,6 +22,7 @@ fn pcr(template: Source) -> Operation {
         template,
         forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
         reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn add(w: &mut Workspace, id: &str, m: Molecule) {
@@ -349,7 +350,7 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
     kinds.extend(
         [
             "assembly-design-v1",
-            "assembly-library-history-v1",
+            collagene_core::assembly_library_history::KIND,
             "primer-pair-draft-v2",
             "annotation-display-v1",
             "lab-library-bindings-v1",

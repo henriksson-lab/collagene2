@@ -296,7 +296,13 @@ pub fn build(inputs: &[PlanInput], r: &Request, w: Option<&Workspace>) -> Result
         w,
     )?;
     let resolved = assembly_intent::resolve(inputs, &r.base, w)?;
-    let built = build_resolved(&resolved, r)?;
+    report_resolved(&resolved, r)
+}
+pub(crate) fn report_resolved(
+    resolved: &assembly_intent::Resolved<'_>,
+    r: &Request,
+) -> Result<Report, Error> {
+    let built = build_resolved(resolved, r)?;
     let report = Report {
         context_revision: context(&resolved.context, r)?,
         source_context_revision: resolved.context.clone(),

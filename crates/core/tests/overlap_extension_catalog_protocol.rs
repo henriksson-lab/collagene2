@@ -23,6 +23,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("F", f, ft).unwrap(),
         reverse: Primer::new("R", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn extension() -> Extension {
@@ -197,6 +198,7 @@ fn saved() -> (Molecule, run_material::Capsule) {
             template: Source::Input("source".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w =

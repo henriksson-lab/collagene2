@@ -57,7 +57,7 @@ fn named(imported: &Value, name: &str) -> Value {
 }
 
 fn pcr(role: &str, input: &str, forward: &str, reverse: &str, tail: &str) -> Value {
-    json!({"generation":null,"role":role,"input_id":input,"preparation":{"ExactPcr":{"forward":Primer::new(format!("{role}-F"),forward,"").unwrap(),"reverse":Primer::new(format!("{role}-R"),reverse,tail).unwrap()}},"reverse":false})
+    json!({"generation":null,"role":role,"input_id":input,"preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new(format!("{role}-F"),forward,"").unwrap(),"reverse":Primer::new(format!("{role}-R"),reverse,tail).unwrap()}},"reverse":false})
 }
 fn profile() -> Value {
     json!({"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100})

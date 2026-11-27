@@ -352,7 +352,7 @@ async fn sdk_library_multisite_freezes_original_intent_before_explicit_network_s
         })
         .collect::<Vec<_>>();
     let mut design = json!({"id":"multisite-library","name":"Declared ordered source-body scars","circular":true,"bins":bins,"method":{"MultiSiteReference":{"request":request(),"selection":null}}});
-    let construct = json!({"id":"construct-main","name":"Frozen scar-bearing reference","choices":(0..4).map(|i|json!({"bin_id":format!("bin-{i}"),"choice_id":format!("choice-{i}")})).collect::<Vec<_>>(),"target":{"OriginalRegions":{"junction_edits":[]}},"overrides":null});
+    let construct = json!({"id":"construct-main","name":"Frozen scar-bearing reference","choices":(0..4).map(|i|json!({"bin_id":format!("bin-{i}"),"choice_id":format!("choice-{i}")})).collect::<Vec<_>>(),"target":{"OriginalRegions":{"junction_edits":[],"substitutions":[],"edits":[]}},"overrides":null});
     // Resolve declared intent before invoking reaction discovery at all.
     let intent = call(
         &client,

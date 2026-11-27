@@ -190,7 +190,7 @@ fn documentary_reply_validation_rejects_bad_context_profile_paths_and_container_
     assert!(serde_json::from_value::<export::Assessment>(raw).is_err());
 }
 #[test]
-fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_header_refusal() {
+fn worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsolete_headers() {
     let m = molecule();
     let format = Format::Xdna;
     let context = export::revision(&m, &format).unwrap();
@@ -206,7 +206,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&request.job).unwrap())
             .unwrap()
             .0,
-        173
+        171
     );
     let bytes = protocol::encode_request(&request).unwrap();
     let mut old = bytes.clone();
@@ -217,7 +217,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        163
+        161
     );
     let protocol::AnalysisResult::SequenceExportAssessment(review) = response.result else {
         panic!("export assessment")
@@ -237,7 +237,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&request.job).unwrap())
             .unwrap()
             .0,
-        174
+        172
     );
     let response = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
     let mut old = response.clone();
@@ -248,7 +248,7 @@ fn worker_review_and_prepare_append_only_tags_use_the_same_context_and_old_heade
         postcard::take_from_bytes::<u32>(&postcard::to_allocvec(&response.result).unwrap())
             .unwrap()
             .0,
-        164
+        162
     );
     let protocol::AnalysisResult::SequenceExportPrepared(prepared) = response.result else {
         panic!("prepared export")

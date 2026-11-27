@@ -22,6 +22,7 @@ pub fn ContributionEditEditor(
         draft.with(|d| {
             d.slots.get(d.active_slot).map(|s| {
                 (
+                    crate::assembly_alternatives::identity(d),
                     d.active_slot,
                     s.captured.as_ref().map(|c| c.source.binding.clone()),
                     s.selector.clone(),
@@ -88,8 +89,8 @@ pub fn ContributionEditEditor(
     };
     view! {<details class="assembly-internal-edits"><summary>{move||draft.with(|d|format!("Internal insertions, deletions and replacements ({})",d.edits.len()))}</summary>
         <p class="helper">"Declare literal changes before preparing DNA. Boundaries are one-based within the original contribution in construct orientation: start is included, end is excluded. Equal boundaries insert DNA; empty inserted DNA deletes the interval. For example, start 3 and end 5 replace bases 3–4."</p>
-        <Show when=move||draft.with(|d|d.alternatives.is_some())><p>"Internal edits currently require an ordinary construct."</p></Show>
-        <Show when=move||draft.with(|d|d.alternatives.is_none())>
+        <Show when=move||draft.with(|d|d.alternatives.is_some())><p class="helper">"These edits apply only to the selected construct."</p></Show>
+        <div>
         <div class="primer-grid">
             <label>"Start boundary"<input type="number" min="1" maxlength="20" aria-label="Internal edit start boundary" prop:value=move||start.get() on:input=move|e|start.set(event_target_value(&e))/></label>
             <label>"End boundary (excluded)"<input type="number" min="1" maxlength="20" aria-label="Internal edit end boundary" prop:value=move||end.get() on:input=move|e|end.set(event_target_value(&e))/></label>
@@ -109,7 +110,7 @@ pub fn ContributionEditEditor(
             }
         }}</p>
         <div class="method-row-actions"><button class="button secondary" on:click=from_selection>"Use exact sequence selection"</button><button class="button primary" on:click=add>"Declare edit"</button></div>
-        </Show>
+        </div>
         <p role="status">{move||status.get()}</p>
         <ul>{move||draft.with(|d|d.edits.iter().skip(page.get().saturating_mul(20)).take(20).cloned().collect::<Vec<_>>()).into_iter().map(|edit|{
             let remove=edit.clone();let navigate=edit.clone();

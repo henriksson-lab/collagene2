@@ -99,7 +99,7 @@ async fn actual_plan_oligos_keep_tails_duplicates_domain_uses_and_target_context
     let source = named(&imported, "source");
     let target = named(&imported, "independent_target");
     let steps = json!([
-        {"Pcr":{"template":{"Input":"s"},"forward":Primer::new("=forward","ACGT","GG").unwrap(),"reverse":Primer::new("same name","TTAA","").unwrap()}},
+        {"Pcr":{"template_strand":"Top","template":{"Input":"s"},"forward":Primer::new("=forward","ACGT","GG").unwrap(),"reverse":Primer::new("same name","TTAA","").unwrap()}},
         {"PcrWithMismatches":{"template":{"Step":0},"forward":Primer::new("renamed","GACGT","G").unwrap(),"reverse":Primer::new("same name","CCGG","").unwrap(),"options":PcrOptions::default()}},
         {"TreatEnds":{"template":{"Step":1},"treatment":"Phosphorylate"}}
     ]);

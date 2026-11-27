@@ -77,9 +77,14 @@ fn fixture() -> Fixture {
     let original_source = source.revision();
     let forward = Primer::new("New original F", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("New original R", "TGACGATC", "").unwrap();
-    let preview = verification::simulate_pcr_documents(&source, &forward, &reverse)
-        .unwrap()
-        .remove(0);
+    let preview = verification::simulate_pcr_documents(
+        &source,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap()
+    .remove(0);
     let first = native::prepare_install(
         &w,
         &native::Request {
@@ -93,6 +98,7 @@ fn fixture() -> Fixture {
                     expected_preview_revision: preview.molecule.revision(),
                     geometry: preview.geometry,
                 },
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             name: "Actual target-free PCR".into(),
             save_primers: true,
@@ -142,6 +148,7 @@ fn fixture() -> Fixture {
                 template: Source::Input("vector".into()),
                 forward: Primer::new("Vector F", "CACGTTCG", "").unwrap(),
                 reverse: Primer::new("Vector R", "ACGGAATT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::ReconstructMaterial {
                 template: Source::Input("cut".into()),
@@ -151,6 +158,7 @@ fn fixture() -> Fixture {
                 template: Source::Step(1),
                 forward: Primer::new("Insert F", "AATTCCGT", "").unwrap(),
                 reverse: Primer::new("Insert R", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::HomologyAssembly {
                 fragments: vec![

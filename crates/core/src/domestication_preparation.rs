@@ -351,8 +351,8 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
                 limit: 100_000_000,
                 materialized: extra,
             };
-            let compiled = crate::overlap_extension_primer_design::compile_with_budget(
-                &input.molecule,
+            let compiled = crate::overlap_extension_primer_design::compile_source_with_budget(
+                crate::pcr_source::Template::reference(&input.molecule)?,
                 &native,
                 &mut budget,
             )?;
@@ -363,9 +363,16 @@ pub fn materialize(input: &PlanInput, request: &Request) -> Result<Prepared, Err
                     "literal OE declaration differs from independently checked substitutions",
                 ));
             }
-            let mut plan = compiled.plan;
-            plan.name = format!("Overlap-extension domestication of {}", input.molecule.name);
-            plan.target_revision = target.revision();
+            let mut steps = vec![];
+            compiled
+                .preparation
+                .append(Source::Input(INPUT_ID.into()), &mut steps)?;
+            let mut plan = verification::DesignPlan {
+                name: format!("Overlap-extension domestication of {}", input.molecule.name),
+                target_revision: target.revision(),
+                inputs: vec![input.clone()],
+                steps,
+            };
             if input.molecule.topology == Topology::Circular {
                 plan.steps.push(Operation::TreatEnds {
                     template: Source::Step(3),

@@ -115,6 +115,7 @@ fn fixture() -> (Workspace, Value) {
     )
     .unwrap();
     let d = Design {
+        material_bindings: vec![],
         id: "bulk-sdk".into(),
         name: "Bulk SDK Ω".into(),
         circular: false,
@@ -130,9 +131,12 @@ fn fixture() -> (Workspace, Value) {
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
                     source: binding(&w, i),
-                    start: 0,
-                    end: 4,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 4,
+                        reverse: false,
+                    },
+                    preparation_reverse: false,
                     preparation: Some(Preparation::DeclaredDuplex {
                         left: Terminus::CLEAVED,
                         right: Terminus::CLEAVED,
@@ -153,6 +157,8 @@ fn fixture() -> (Workspace, Value) {
         name: "Cloning Ω good".into(),
         choices: choices.clone(),
         target: TargetDeclaration::OriginalRegions {
+            substitutions: vec![],
+            edits: vec![],
             junction_edits: vec![],
         },
         overrides: None,

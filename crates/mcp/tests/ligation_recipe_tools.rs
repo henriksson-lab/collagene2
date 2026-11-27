@@ -80,8 +80,8 @@ async fn actual_two_pcr_fragments_require_explicit_phosphorylation_and_independe
     let left = named(&imported, "left_template");
     let right = named(&imported, "right_template");
     let recipe = json!({"name":"Two actual PCR products, explicit phosphorylation","fragments":[
-        {"source":{"generation":null,"role":"left","input_id":"left_template","preparation":{"ExactPcr":{"forward":Primer::new("ordered LF","ACGACCCC","").unwrap(),"reverse":Primer::new("ordered LR","GTTACCCC","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
-        {"source":{"generation":null,"role":"right","input_id":"right_template","preparation":{"ExactPcr":{"forward":Primer::new("ordered RF","TATGAGCT","").unwrap(),"reverse":Primer::new("ordered RR","TGACCTGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
+        {"source":{"generation":null,"role":"left","input_id":"left_template","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("ordered LF","ACGACCCC","").unwrap(),"reverse":Primer::new("ordered LR","GTTACCCC","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
+        {"source":{"generation":null,"role":"right","input_id":"right_template","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("ordered RF","TATGAGCT","").unwrap(),"reverse":Primer::new("ordered RR","TGACCTGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
     ],"circular":false,"allow_nicked":false});
     let args = json!({"inputs":[{"id":"left_template","document":left},{"id":"right_template","document":right}],"target":named(&imported,"literal_target"),"recipe":recipe});
     let result = call(&client, "propose_ligation_assembly", args.clone()).await;

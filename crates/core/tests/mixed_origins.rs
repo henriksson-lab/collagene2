@@ -46,6 +46,7 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
             template: Source::Input("stock".into()),
             forward: Primer::new("Original F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("Original R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let saved = cloning_outputs::finalize(
@@ -127,6 +128,7 @@ fn prepared_plan(
                 template: Source::Step(0),
                 forward: Primer::new("New F", "CCGTAGGA", "").unwrap(),
                 reverse: Primer::new("New R", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ],
     };

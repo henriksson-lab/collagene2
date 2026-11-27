@@ -113,6 +113,11 @@ fn build_base(state: &MethodsState, row: usize) -> Result<Request, String> {
         .ok_or("Choose an exact pinned catalog enzyme selection first.")?;
     selection.validate().map_err(|error| error.to_string())?;
     Ok(Request {
+        template_strand: if input.preparation == OverlapPreparation::MismatchPcrCatalogDigest {
+            collagene_core::chemistry::Strand::Top
+        } else {
+            input.template_strand
+        },
         source_role: roles[row].role.clone(),
         forward,
         reverse,
@@ -125,7 +130,8 @@ fn same_primer(a: &Primer, b: &Primer) -> bool {
     a.name == b.name && a.annealing == b.annealing && a.tail == b.tail
 }
 fn same_request(a: &Request, b: &Request) -> bool {
-    a.source_role == b.source_role
+    a.template_strand == b.template_strand
+        && a.source_role == b.source_role
         && same_primer(&a.forward, &b.forward)
         && same_primer(&a.reverse, &b.reverse)
         && a.selection == b.selection
@@ -533,6 +539,7 @@ impl InspectionPreview {
                 .take(20)
                 .map(
                     |(index, g)| collagene_core::pcr_digest_inspection::GeometrySummary {
+                        template_strand: collagene_core::chemistry::Strand::Top,
                         index,
                         forward_start: g.forward_start,
                         reverse_start: g.reverse_start,
@@ -1046,6 +1053,7 @@ mod overlap_extension_digest_tests {
                 molecule: original,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("stock".into()),
                 forward: Primer::new("Stock F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Stock R", "TGACGATC", "").unwrap(),

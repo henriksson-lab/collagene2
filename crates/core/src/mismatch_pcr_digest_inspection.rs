@@ -25,6 +25,11 @@ fn same(a: &impl Serialize, b: &impl Serialize) -> Result<bool, Error> {
 }
 fn shape(r: &Request) -> Result<(), Error> {
     pcr_digest_inspection::shape(&r.base)?;
+    if r.base.template_strand != chemistry::Strand::Top {
+        return Err(bad(
+            "Mismatch PCR supports the explicit Top frame only; Bottom mismatch seeding is not modeled",
+        ));
+    }
     assembly_recipe::mismatch_pcr_shape(&r.base.forward, &r.base.reverse, &r.pcr_options)?;
     Ok(())
 }

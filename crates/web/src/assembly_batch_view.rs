@@ -52,7 +52,7 @@ pub fn AssemblyBatchView(
     on_release: Callback<String>,
 ) -> impl IntoView {
     let key = Memo::new(move |_| {
-        draft.with(|value| assembly_batch_projection::project(value).map(|p| p.revision))
+        draft.with(|value| assembly_batch_projection::declaration_revision(value))
     });
     let scope = RwSignal::new(None::<Arc<Binding>>);
     let rows = RwSignal::new(Vec::<RowEvidence>::new());

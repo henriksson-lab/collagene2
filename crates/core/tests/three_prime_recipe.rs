@@ -44,6 +44,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
                 forward: Primer::new("Left F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Left R + downstream homology", "GTCCTACG", "GGTCTGAA")
                     .unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         },
         FragmentSpec {
@@ -59,6 +60,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
                     if circular { "ATCGGACT" } else { "" },
                 )
                 .unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         },
     ];
@@ -229,6 +231,7 @@ fn saved_annealed_reference_cannot_supply_pcr_resection_or_saved_material_recove
             template: Source::Step(2),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::ResectThreePrime {
             source: Source::Step(2),

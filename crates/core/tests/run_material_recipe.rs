@@ -71,6 +71,7 @@ fn pcr_saved() -> (Molecule, Capsule) {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "AAA", "").unwrap(),
             reverse: Primer::new("R", "GGG", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     )
 }
@@ -230,6 +231,7 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
             RunPreparation::ExactPcr {
                 forward: Primer::new("NewF", "AAA", "").unwrap(),
                 reverse: Primer::new("NewR", "GGG", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             }
         } else {
             RunPreparation::WholeLinear
@@ -328,6 +330,7 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
                 preparation: RunPreparation::ExactPcr {
                     forward: Primer::new("F", "AAA", "").unwrap(),
                     reverse: Primer::new("R", "GGG", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
             },
             None,
@@ -408,6 +411,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                             selection: selected("SmaI"),
                             fragment_index: 1,
                             repair: Some(EndRepairMethod::Blunt),
+                            template_strand: collagene_core::chemistry::Strand::Top,
                         },
                     },
                 },
@@ -425,6 +429,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                     preparation: Preparation::ExactPcr {
                         forward: Primer::new("NewF", "GGG", "").unwrap(),
                         reverse: Primer::new("NewR", "AAA", "").unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                 },
                 action: collagene_core::tailing_recipe::Action::AddTail {

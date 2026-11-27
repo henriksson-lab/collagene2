@@ -52,12 +52,21 @@ fn pcr(
 ) -> d::Request {
     let source = source(w, pin);
     let previews = match &origin {
-        d::SourceOrigin::OriginalReference => {
-            verification::simulate_pcr_documents(&source, &forward, &reverse).unwrap()
-        }
-        d::SourceOrigin::Saved(origin) => {
-            material_pcr::simulate(&source, origin, &forward, &reverse).unwrap()
-        }
+        d::SourceOrigin::OriginalReference => verification::simulate_pcr_documents(
+            &source,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap(),
+        d::SourceOrigin::Saved(origin) => material_pcr::simulate(
+            &source,
+            origin,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap(),
     };
     assert_eq!(previews.len(), 1);
     d::Request {
@@ -71,6 +80,7 @@ fn pcr(
                 expected_preview_revision: previews[0].molecule.revision(),
                 geometry: previews[0].geometry.clone(),
             },
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         name: name.into(),
         save_primers: true,
@@ -302,6 +312,7 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
             template: Source::Input("stock".into()),
             forward: f.clone(),
             reverse: r.clone(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let saved = cloning_outputs::finalize(
@@ -518,11 +529,13 @@ fn an_actual_reusable_incomplete_origin_stays_incomplete_after_new_unmodified_pc
                 template: Source::Input("a".into()),
                 forward: Primer::new("aF", "AGTC", "").unwrap(),
                 reverse: Primer::new("aR", "TAGC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("b".into()),
                 forward: Primer::new("bF", "GCTA", "").unwrap(),
                 reverse: Primer::new("bR", "GACT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::HomologyAssembly {
                 fragments: vec![
@@ -608,7 +621,13 @@ fn multiple_pcr_geometries_and_detached_chemical_summaries_never_become_implicit
     .unwrap();
     let w = Workspace::from_documents("Multiple PCR products", vec![repeated.clone()], 0).unwrap();
     let (f, r) = primers();
-    let previews = verification::simulate_pcr_documents(&repeated, &f, &r).unwrap();
+    let previews = verification::simulate_pcr_documents(
+        &repeated,
+        &f,
+        &r,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert!(previews.len() > 1);
     let request = d::Request {
         source: event(&w, 0),
@@ -621,6 +640,7 @@ fn multiple_pcr_geometries_and_detached_chemical_summaries_never_become_implicit
                 expected_preview_revision: previews[0].molecule.revision(),
                 geometry: previews[0].geometry.clone(),
             },
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         name: "Explicit selection is not isolation".into(),
         save_primers: false,

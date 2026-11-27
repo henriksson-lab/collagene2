@@ -39,6 +39,7 @@ fn original() -> Commit {
             template: Source::Input("original".into()),
             forward: Primer::new("F", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("R", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Recorded PCR", vec![source, target], 1).unwrap();
@@ -229,6 +230,7 @@ fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_insp
         reverse: Primer::new("R", "GTTACCCC", "ATGCGAATTC").unwrap(),
         selection: catalog_digest::select(&catalog, &[id]).unwrap(),
         options: InspectionOptions::default(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     assert!(pcr_digest_inspection::source_preflight(&molecule, &request).is_err());
     let revision =

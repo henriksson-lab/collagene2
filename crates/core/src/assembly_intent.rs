@@ -193,12 +193,7 @@ pub(crate) fn shape(r: &Request) -> Result<(), Error> {
     let mut ids = BTreeSet::new();
     for b in &r.material_bindings {
         token(&b.input_id, 128)?;
-        if !ids.insert(&b.input_id)
-            || !r.fragments.iter().any(|f| {
-                f.input_id == b.input_id
-                    && matches!(f.selector, Selector::MaterialStrandRange { .. })
-            })
-        {
+        if !ids.insert(&b.input_id) || !r.fragments.iter().any(|f| f.input_id == b.input_id) {
             return Err(bad("duplicate or unused material source binding"));
         }
         crate::run_material::event_shape(&b.event)?;
@@ -254,8 +249,18 @@ pub fn preflight(
     if !r.material_bindings.is_empty() {
         let w =
             w.ok_or_else(|| bad("actual material strands require native workspace attestation"))?;
+        run_material::validate_native_origins(
+            w,
+            r.material_bindings
+                .iter()
+                .map(|binding| match &binding.origin {
+                    MaterialOrigin::Run(origin) => run_material::NativeOriginRef::Run(origin),
+                    MaterialOrigin::Derived(origin) => {
+                        run_material::NativeOriginRef::Derived(origin)
+                    }
+                }),
+        )?;
         for b in &r.material_bindings {
-            b.origin.validate_for_workspace(w, &b.event)?;
             let m = inputs
                 .iter()
                 .find(|(id, _)| *id == b.input_id)
@@ -307,14 +312,11 @@ pub fn intent_revision(
             .iter()
             .map(|i| (&i.id, &i.revision))
             .collect::<Vec<_>>(),
+        // Ownership was attested above. Exact events, closed source instructions
+        // and the scientific model determine these source declarations; saving
+        // an attachment or advancing an unrelated head cannot change target DNA
+        // identity. Host request/adoption guards still bind the workspace scope.
         r,
-        if r.material_bindings.is_empty() {
-            None
-        } else {
-            Some(crate::run_lineage::workspace_fingerprint(
-                w.ok_or_else(|| bad("native workspace missing"))?,
-            )?)
-        },
     ))
 }
 fn slice(s: &Sequence, start: usize, end: usize) -> Result<Sequence, Error> {
@@ -397,6 +399,17 @@ pub(crate) struct Resolved<'a> {
     pub descriptors: Vec<MaterialDescriptor>,
     pub warnings: Vec<String>,
     pub context: String,
+    materials: BTreeMap<String, run_material::FreshMaterial>,
+    material_keys: BTreeMap<String, String>,
+}
+impl Resolved<'_> {
+    /// Lend the exact freshly replayed source, shared by target construction and
+    /// primer planning. No imported report or selected target supplies this state.
+    pub(crate) fn material(&self, input_id: &str) -> Option<&run_material::FreshMaterial> {
+        self.material_keys
+            .get(input_id)
+            .and_then(|key| self.materials.get(key))
+    }
 }
 pub(crate) fn resolve<'a>(
     inputs: &'a [PlanInput],
@@ -405,6 +418,7 @@ pub(crate) fn resolve<'a>(
 ) -> Result<Resolved<'a>, Error> {
     let context = intent_revision(inputs, r, w)?;
     let mut cache = BTreeMap::new();
+    let mut material_keys = BTreeMap::new();
     let mut material = 0usize;
     let mut descriptors = vec![];
     let mut warnings=vec!["Independently declared reference only. Native source replay identifies actual input strand calls; no planned digest/PCR/assembly product or desired target selects these bases. This is not a PCR/digest/assembly prediction, physical material or experimental success.".into()];
@@ -425,6 +439,7 @@ pub(crate) fn resolve<'a>(
             cache.insert(key.clone(), fresh);
         }
         let fresh = &cache[&key];
+        material_keys.insert(b.input_id.clone(), key);
         let d = &fresh.tracked().duplex;
         let state = crate::modified_duplex::summary(fresh.tracked())?.state_revision;
         descriptors.push(MaterialDescriptor {
@@ -553,6 +568,8 @@ pub(crate) fn resolve<'a>(
         descriptors,
         warnings,
         context,
+        materials: cache,
+        material_keys,
     })
 }
 /// Clip original-local mappings to retained original offsets and place in target.

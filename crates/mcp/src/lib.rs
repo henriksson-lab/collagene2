@@ -1021,6 +1021,7 @@ pub enum MaterialDerivationOperation {
         forward: Primer,
         reverse: Primer,
         selection: MaterialPcrChoice,
+        template_strand: collagene_core::chemistry::Strand,
     },
     MismatchPcr {
         forward: Primer,
@@ -1054,6 +1055,7 @@ pub enum MaterialDerivationTask {
         origin: MaterialDerivationOrigin,
         forward: Primer,
         reverse: Primer,
+        template_strand: collagene_core::chemistry::Strand,
     },
     PreviewMismatchPcr {
         source: collagene_core::run_lineage::EventBinding,
@@ -1518,14 +1520,23 @@ pub struct AnnealingRecipePreviewQuery {
     #[serde(default)]
     pub origin_workspaces: Vec<MaterialOriginWorkspace>,
 }
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct EditedOverlapPrimerRequest {
+    pub intent: ContributionEditIntentRequest,
+    pub overlap: usize,
+    pub options: collagene_core::overlap_extension_primer_design::Options,
+    pub profile_options: collagene_core::overlap_profiles::ProfileOptions,
+}
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EditedOverlapPrimerDesignQuery {
     pub inputs: Vec<BoundInput>,
-    pub request: collagene_core::assembly_edited_primer_design::Request,
-    /// One exact native workspace attestation for every requested saved-source role.
-    #[serde(default)]
-    pub origin_workspaces: Vec<MaterialOriginWorkspace>,
+    pub request: EditedOverlapPrimerRequest,
+    /// One immutable native archive owning every selected saved-source role; null for originals.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(required)]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -6487,16 +6498,16 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             struct MaterialPreviewEvidence<'a,T:Serialize,P:Serialize>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,parameters:P,preview:&'a T}
             let mut workspace=server.restore_workspace(&args.workspace)?;
             match args.task {
-                MaterialDerivationTask::PreviewPcr{source,origin,forward,reverse}=>{
+                MaterialDerivationTask::PreviewPcr{source,origin,forward,reverse,template_strand}=>{
                     let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     let molecule=server.material_derivation_source(&workspace,&source,&origin)?;
-                    let context=native::pcr_preview_revision(&molecule,&origin,&forward,&reverse).map_err(bad)?;
-                    let documents=native::preview_pcr(&molecule,&origin,&forward,&reverse).map_err(bad)?;
+                    let context=native::pcr_preview_revision(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
+                    let documents=native::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
                     #[derive(Serialize)]
-                    struct PcrEvidence<'a>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,context_revision:&'a str,forward:&'a Primer,reverse:&'a Primer,documents:&'a[verification::PcrDocument]}
-                    let text=bounded_json_limit(&PcrEvidence{workspace:&args.workspace,source:&source,context_revision:&context,forward:&forward,reverse:&reverse,documents:&documents},32*1024*1024)?;
+                    struct PcrEvidence<'a>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,context_revision:&'a str,forward:&'a Primer,reverse:&'a Primer,template_strand:collagene_core::chemistry::Strand,documents:&'a[verification::PcrDocument]}
+                    let text=bounded_json_limit(&PcrEvidence{workspace:&args.workspace,source:&source,context_revision:&context,forward:&forward,reverse:&reverse,template_strand,documents:&documents},32*1024*1024)?;
                     let artifact=server.text_artifact(text,"application/json","material-pcr-preview.json")?;
-                    let rows=documents.iter().take(100).enumerate().map(|(index,d)|json!({"index":index,"preview_revision":d.molecule.revision(),"length":d.molecule.sequence.len(),"reusable":documents.len()==1 && d.molecule.sequence.as_str().bytes().all(|b|b"ACGT".contains(&b)) && forward.ordered_sequence().bytes().chain(reverse.ordered_sequence().bytes()).all(|b|b"ACGT".contains(&b)),"forward_start":d.geometry.forward_start,"reverse_start":d.geometry.reverse_start,"crosses_origin":d.geometry.crosses_origin,"forward_primer":d.geometry.forward_primer,"reverse_primer":d.geometry.reverse_primer})).collect::<Vec<_>>();
+                    let rows=documents.iter().take(100).enumerate().map(|(index,d)|json!({"index":index,"preview_revision":d.molecule.revision(),"length":d.molecule.sequence.len(),"reusable":documents.len()==1 && d.molecule.sequence.as_str().bytes().all(|b|b"ACGT".contains(&b)) && forward.ordered_sequence().bytes().chain(reverse.ordered_sequence().bytes()).all(|b|b"ACGT".contains(&b)),"template_strand":d.geometry.template_strand,"forward_start":d.geometry.forward_start,"reverse_start":d.geometry.reverse_start,"crosses_origin":d.geometry.crosses_origin,"forward_primer":d.geometry.forward_primer,"reverse_primer":d.geometry.reverse_primer})).collect::<Vec<_>>();
                     output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"count":documents.len(),"previews":rows,"previews_truncated":documents.len()>100,"artifact_id":artifact,"authority":"Reference PCR previews only. Use the explicit preview index and revision for Install; the server recomputes full geometry internally. Full geometry remains optional artifact evidence. Multiple products do not establish isolation or reusable material."}))
                 },
                 MaterialDerivationTask::PreviewMismatchPcr{source,origin,forward,reverse,options}=>{
@@ -6535,12 +6546,12 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                     let origin=server.resolve_material_derivation_origin(&workspace,&request.source,&request.origin)?;
                     let molecule=server.material_derivation_source(&workspace,&request.source,&origin)?;
                     let derivation=match request.derivation {
-                        MaterialDerivationOperation::ExactPcr{forward,reverse,selection}=>{
+                        MaterialDerivationOperation::ExactPcr{forward,reverse,selection,template_strand}=>{
                             if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit PCR preview index/revision."));}
-                            let previews=native::preview_pcr(&molecule,&origin,&forward,&reverse).map_err(bad)?;
+                            let previews=native::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
                             let chosen=previews.into_iter().nth(selection.selected_index).ok_or_else(||bad("The explicitly selected PCR preview no longer exists."))?;
                             if chosen.molecule.revision()!=selection.expected_preview_revision {return Err(bad("The explicitly selected PCR preview changed; preview again."));}
-                            native::Derivation::ExactPcr{forward,reverse,selection:native::PcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry:chosen.geometry}}
+                            native::Derivation::ExactPcr{forward,reverse,template_strand,selection:native::PcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry:chosen.geometry}}
                         },
                         MaterialDerivationOperation::MismatchPcr{forward,reverse,options,selection}=>{
                             if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit mismatch-PCR preview index/revision."));}
@@ -6964,7 +6975,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let expected=collagene_core::assembly_junction_edit::design_revision(&inputs,&args.request).map_err(bad)?;report.validate_binding(&expected).map_err(bad)?;
             let evidence=json!({"inputs":args.inputs,"report":report});
             let artifact=server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","edited-assembly-primers.json")?;
-            let ordered=report.recipe.fragments.iter().map(|f|match &f.preparation{collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse}=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),_=>Err(bad("edited primer proposal lost its exact original-source PCR"))}).collect::<Result<Vec<_>,_>>()?;
+            let ordered=report.recipe.fragments.iter().map(|f|match &f.preparation{collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse, .. }=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),_=>Err(bad("edited primer proposal lost its exact original-source PCR"))}).collect::<Result<Vec<_>,_>>()?;
             output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,"intent_context_revision":report.intent.context_revision,
                 "target_revision":report.intent.target.revision(),"recipe":report.recipe,"ordered_oligos":ordered,"design_count":report.designs.len(),"warnings":report.warnings,"artifact_id":artifact}))
         }).await
@@ -6992,7 +7003,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let ordered=report.recipe.fragments.iter().zip(&report.request.rows).filter_map(|(f,row)|match row {
                 collagene_core::selective_junction_edit::Row::Retain(_) => None,
                 collagene_core::selective_junction_edit::Row::DesignPcr{..} => Some(match &f.preparation {
-                    collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse}=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),
+                    collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse, .. }=>Ok(json!({"role":f.role,"input_id":f.input_id,"reverse_fragment":f.reverse,"forward":forward,"reverse":reverse,"forward_ordered":forward.ordered_sequence(),"reverse_ordered":reverse.ordered_sequence()})),
                     _=>Err(bad("selected primer proposal lost its exact original-source PCR"))
                 })
             }).collect::<Result<Vec<_>,_>>()?;
@@ -7279,7 +7290,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             report.validate_binding(&expected).map_err(bad)?;
             let ordered_oligos=report.recipe.fragments.iter().map(|fragment| {
                 match &fragment.preparation {
-                    collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse}=>Ok(json!({
+                    collagene_core::assembly_recipe::Preparation::ExactPcr{forward,reverse, .. }=>Ok(json!({
                         "role":fragment.role,"input_id":fragment.input_id,"reverse_fragment":fragment.reverse,
                         "forward":{"primer":forward,"ordered_sequence":forward.ordered_sequence()},
                         "reverse":{"primer":reverse,"ordered_sequence":reverse.ordered_sequence()}})),
@@ -7306,39 +7317,30 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Propose primers for an entire explicitly edited overlap assembly from immutable original source documents and a typed independent contribution/junction/substitution edit intent. Unedited rows use original-source exact PCR; internally edited rows use actual two-branch overlap-extension PCR. Outgoing tails come from literal junction inserts plus the next edited source-core prefix, never a supplied product sequence. Freshly verifies the whole composed recipe against the separately built edit intent and retains failures/uncertainty. Optional per-role saved origins require exact native workspace attestations and fresh reconstruction. Returns a read-only advisory recipe, ordered oligos and bounded status summaries with full evidence; no source, target document, candidate or material status is installed. Retain the intended target separately with build_contribution_edit_intent using the same intent, then use propose_overlap_assembly and normal review/finalization."
+        description = "Propose primers for an entire explicitly edited overlap assembly from immutable original source documents and a typed independent contribution/junction/substitution edit intent. Unedited rows use exact PCR in their explicitly bound original or native strand frame; internally edited rows use actual two-branch overlap-extension PCR. Outgoing tails come from literal junction inserts plus the next edited source-core prefix, never a supplied product sequence. Freshly verifies the whole composed recipe against the separately built edit intent and retains failures/uncertainty. The single intent material-binding roster contains compact exact input/event Run/Derived selections, including actual Top/Bottom strands; all bindings require one exact origin_workspace. Closed recipes are hydrated jointly without replay, then the native proposal freshly reconstructs them. Returns a read-only advisory recipe, ordered oligos and bounded status summaries with full evidence; no source, target document, candidate or material status is installed. Retain the intended target separately with build_contribution_edit_intent using the same intent, then use propose_overlap_assembly and normal review/finalization."
     )]
     async fn design_edited_overlap_primers(
         &self,
         Parameters(args): Parameters<EditedOverlapPrimerDesignQuery>,
     ) -> Result<CallToolResult, ErrorData> {
-        if args.inputs.is_empty()
-            || args.inputs.len() > 32
-            || args.origin_workspaces.len() > 32
-            || args.origin_workspaces.len() != args.request.origins.len()
+        if args.inputs.is_empty() || args.inputs.len() > 32 {
+            return Err(bad("choose1..32 exact sources"));
+        }
+        bounded_json_limit(&args.request, 2 * 1024 * 1024)?;
+        if !args.request.intent.base.base.material_bindings.is_empty()
+            && args.origin_workspace.is_none()
         {
             return Err(bad(
-                "choose1..32 original sources and one exact workspace for each saved-origin role",
+                "material source bindings require one exact origin_workspace",
             ));
         }
-        let mut workspace_roles = BTreeSet::new();
-        for binding in &args.origin_workspaces {
-            if binding.role.is_empty()
-                || binding.role.len() > 128
-                || !workspace_roles.insert(binding.role.as_str())
-                || !args
-                    .request
-                    .origins
-                    .iter()
-                    .any(|origin| origin.role == binding.role)
-            {
-                return Err(bad(
-                    "saved-origin workspace role is invalid, duplicated or unused",
-                ));
-            }
-        }
         let server = self.clone();
-        self.compute(move || {
+        self.compute(move||{
+            let frame=args.origin_workspace.as_ref().map(|wr|server.restore_workspace(wr)).transpose()?;
+            let request=collagene_core::assembly_edited_primer_design::Request {
+                intent:args.request.intent.native(frame.as_ref())?,overlap:args.request.overlap,
+                options:args.request.options.clone(),profile_options:args.request.profile_options.clone(),
+            };
             let inputs = {
                 let store = server.store.lock().unwrap();
                 let mut ids = BTreeSet::new();
@@ -7349,41 +7351,37 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                     }
                     sources.push((input.id.as_str(), store.document(&input.document)?));
                 }
-                collagene_core::assembly_edited_primer_design::source_preflight(&sources, &args.request).map_err(bad)?;
+                // Native source_preflight jointly attests the single input/event
+                // roster against borrowed immutable session documents before cloning.
+                collagene_core::assembly_edited_primer_design::source_preflight(&sources, &request, frame.as_ref()).map_err(bad)?;
                 sources.into_iter().map(|(id,molecule)|PlanInput { id:id.into(),revision:molecule.revision(),molecule:molecule.clone() }).collect::<Vec<_>>()
             };
-            for origin in &args.request.origins {
-                let workspace = args.origin_workspaces.iter().find(|binding|binding.role == origin.role).ok_or_else(||bad("saved origin has no exact workspace binding"))?;
-                let fragment = args.request.intent.base.base.fragments.iter().find(|fragment|fragment.role == origin.role).ok_or_else(||bad("saved origin has no declared source role"))?;
-                let source = inputs.iter().find(|input|input.id == fragment.input_id).ok_or_else(||bad("saved origin source is unavailable"))?;
-                server.attest_run_source(&workspace.workspace, &origin.origin, &source.molecule)?;
-            }
-            let report = collagene_core::assembly_edited_primer_design::design(&inputs, &args.request).map_err(bad)?;
-            let expected = collagene_core::assembly_edited_primer_design::design_revision(&inputs, &args.request).map_err(bad)?;
-            report.validate_binding(&expected).map_err(bad)?;
+            let expected = collagene_core::assembly_edited_primer_design::design_revision(&inputs, &request, frame.as_ref()).map_err(bad)?;
+            let report = collagene_core::assembly_edited_primer_design::design(&inputs, &request, frame.as_ref()).map_err(bad)?;
+            report.validate_sources(&inputs, &expected, frame.as_ref()).map_err(bad)?;
             let mut ordered = Vec::new();
             for fragment in &report.recipe.fragments {
                 use collagene_core::assembly_recipe::{Preparation,RunPreparation};
-                let pairs:Vec<(&str,&Primer,&Primer)> = match &fragment.preparation {
-                    Preparation::ExactPcr {forward,reverse} => vec![("exact_pcr",forward,reverse)],
-                    Preparation::OverlapExtensionPcr {request} => vec![("left_pcr",&request.left.forward,&request.left.reverse),("right_pcr",&request.right.forward,&request.right.reverse),("outer_pcr",&request.outer.forward,&request.outer.reverse)],
-                    Preparation::FromRun {preparation:RunPreparation::ExactPcr {forward,reverse},..} => vec![("exact_pcr",forward,reverse)],
-                    Preparation::FromRun {preparation:RunPreparation::OverlapExtensionPcr {request},..} => vec![("left_pcr",&request.left.forward,&request.left.reverse),("right_pcr",&request.right.forward,&request.right.reverse),("outer_pcr",&request.outer.forward,&request.outer.reverse)],
+                let pairs:Vec<(&str,&Primer,&Primer,collagene_core::chemistry::Strand)> = match &fragment.preparation {
+                    Preparation::ExactPcr {forward,reverse,template_strand} => vec![("exact_pcr",forward,reverse,*template_strand)],
+                    Preparation::OverlapExtensionPcr {request} => vec![("left_pcr",&request.left.forward,&request.left.reverse,request.left.template_strand),("right_pcr",&request.right.forward,&request.right.reverse,request.right.template_strand),("outer_pcr",&request.outer.forward,&request.outer.reverse,request.outer.template_strand)],
+                    Preparation::FromRun {preparation:RunPreparation::ExactPcr {forward,reverse,template_strand},..} | Preparation::FromDerived {preparation:RunPreparation::ExactPcr {forward,reverse,template_strand},..} => vec![("exact_pcr",forward,reverse,*template_strand)],
+                    Preparation::FromRun {preparation:RunPreparation::OverlapExtensionPcr {request},..} | Preparation::FromDerived {preparation:RunPreparation::OverlapExtensionPcr {request},..} => vec![("left_pcr",&request.left.forward,&request.left.reverse,request.left.template_strand),("right_pcr",&request.right.forward,&request.right.reverse,request.right.template_strand),("outer_pcr",&request.outer.forward,&request.outer.reverse,request.outer.template_strand)],
                     _ => return Err(bad("edited assembly primer proposal lost its explicit exact/OE PCR preparation")),
                 };
-                for (stage,forward,reverse) in pairs {
+                for (stage,forward,reverse,template_strand) in pairs {
                     for (direction,primer) in [("forward",forward),("reverse",reverse)] {
-                        ordered.push(json!({"role":fragment.role,"input_id":fragment.input_id,"reverse_fragment":fragment.reverse,"stage":stage,"direction":direction,"primer":primer,"ordered_sequence":primer.ordered_sequence()}));
+                        ordered.push(json!({"role":fragment.role,"input_id":fragment.input_id,"reverse_fragment":fragment.reverse,"stage":stage,"template_strand":template_strand,"direction":direction,"primer":primer,"ordered_sequence":primer.ordered_sequence()}));
                     }
                 }
             }
             #[derive(Serialize)]
-            struct Evidence<'a> { inputs:&'a [BoundInput],origin_workspaces:&'a [MaterialOriginWorkspace],report:&'a collagene_core::assembly_edited_primer_design::Report,interpretation:&'static str }
-            let evidence = Evidence { inputs:&args.inputs,origin_workspaces:&args.origin_workspaces,report:&report,
+            struct Evidence<'a> { inputs:&'a [BoundInput],origin_workspace:&'a Option<WorkspaceRef>,request:&'a EditedOverlapPrimerRequest,report:&'a collagene_core::assembly_edited_primer_design::Report,interpretation:&'static str }
+            let evidence = Evidence { inputs:&args.inputs,origin_workspace:&args.origin_workspace,request:&args.request,report:&report,
                 interpretation:"Read-only whole-construct primer proposal. Independent intended DNA is built only from exact original source contributions and explicit edit declarations. Primer tails and selected native source geometry never select or replace that intended target; whole-recipe reconstruction remains diagnostic until separate review/finalization." };
             let artifact = server.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","edited-overlap-primer-design.json")?;
             output(json!({
-                "state":"advisory","verified":false,"inputs":args.inputs,
+                "state":"advisory","verified":false,"inputs":args.inputs,"origin_workspace":args.origin_workspace,
                 "engine_version":report.engine_version,"context_revision":report.context_revision,"source_revisions":report.source_revisions,
                 "intent_context_revision":report.intent.context_revision,
                 "target_summary":{"revision":report.intent.target.revision(),"length":report.intent.target.sequence.len(),"topology":report.intent.target.topology},
@@ -7393,9 +7391,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                     "findings":report.preview.verification.findings.iter().take(50).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
                     "findings_truncated":report.preview.verification.findings.len()>50||report.preview.verification.findings.iter().take(50).any(|s|s.chars().count()>1024)},
                 "rows":report.rows.iter().take(32).map(|row|json!({"role":row.role,"input_id":row.input_id,"input_revision":row.input_revision,
-                    "edit_count":row.edits.len(),"design_count":row.designs.len(),"verification_status":row.verification_status,
-                    "findings":row.findings.iter().take(20).map(|s|s.chars().take(512).collect::<String>()).collect::<Vec<_>>(),
-                    "findings_truncated":row.findings.len()>20||row.findings.iter().take(20).any(|s|s.chars().count()>512)})).collect::<Vec<_>>(),
+                    "edit_count":row.edits.len(),"design_count":row.designs.len(),"template_strand":row.template_strand,"search":row.search})).collect::<Vec<_>>(),
                 "warnings":report.warnings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
                 "warnings_truncated":report.warnings.len()>100||report.warnings.iter().take(100).any(|s|s.chars().count()>1024),
                 "artifact_id":artifact,
@@ -7424,7 +7420,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let mut ordered_oligos = Vec::with_capacity(6);
             for (stage, pair) in [("left_pcr", &report.preparation.left), ("right_pcr", &report.preparation.right), ("outer_pcr", &report.preparation.outer)] {
                 for (direction, primer) in [("forward", &pair.forward), ("reverse", &pair.reverse)] {
-                    ordered_oligos.push(json!({"stage":stage,"direction":direction,"primer":primer,"ordered_sequence":primer.ordered_sequence()}));
+                    ordered_oligos.push(json!({"stage":stage,"template_strand":pair.template_strand,"direction":direction,"primer":primer,"ordered_sequence":primer.ordered_sequence()}));
                 }
             }
             #[derive(Serialize)]

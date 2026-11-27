@@ -1750,9 +1750,11 @@ fn export_protocol_pdf_checked_inner(
                 template,
                 forward,
                 reverse,
+                template_strand,
             } => format!(
-                "PCR of {}. Primers 5′→3′:\n{}: {} (annealing {}; 5′ tail {})\n{}: {} (annealing {}; 5′ tail {}).\nThe molecular model does not specify reaction conditions, enzyme choice or quantities.",
+                "PCR of {} using the actual {:?} template frame. Primers 5′→3′:\n{}: {} (annealing {}; 5′ tail {})\n{}: {} (annealing {}; 5′ tail {}).\nThe molecular model does not specify reaction conditions, enzyme choice or quantities.",
                 source_name(template),
+                template_strand,
                 forward.name,
                 forward.ordered_sequence(),
                 forward.annealing.as_str(),

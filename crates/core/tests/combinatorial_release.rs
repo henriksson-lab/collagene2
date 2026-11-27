@@ -58,6 +58,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
             Preparation::ExactPcr {
                 forward: Primer::new("F", f, "").unwrap(),
                 reverse: Primer::new("R", r, "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             }
         } else {
             Preparation::DeclaredDuplex {
@@ -67,6 +68,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
         }
     };
     let source_design = Design {
+        material_bindings: vec![],
         id: "release-library".into(),
         name: "Release literal inputs".into(),
         circular: false,
@@ -82,9 +84,12 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
                     source: binding(&workspace, i),
-                    start: 0,
-                    end: if pcr { 20 } else { 4 },
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: if pcr { 20 } else { 4 },
+                        reverse: false,
+                    },
+                    preparation_reverse: false,
                     preparation: Some(prepare(i)),
                     treatment: pcr.then_some(EndTreatment::Phosphorylate),
                 }],
@@ -107,6 +112,8 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
                     TargetDeclaration::Existing(binding(&workspace, 2))
                 } else {
                     TargetDeclaration::OriginalRegions {
+                        substitutions: vec![],
+                        edits: vec![],
                         junction_edits: vec![],
                     }
                 },

@@ -1011,12 +1011,14 @@ pub(crate) fn describe_step(step: &Operation) -> String {
             options
         ),
         Operation::Pcr {
+            template_strand,
             template,
             forward,
             reverse,
         } => format!(
-            "Template: {}\nForward primer {} (5′→3′): {}\nReverse primer {} (5′→3′): {}",
+            "Template: {} · {:?} strand frame\nForward primer {} (5′→3′): {}\nReverse primer {} (5′→3′): {}",
             source(template),
+            template_strand,
             forward.name,
             forward.ordered_sequence(),
             reverse.name,
@@ -3128,8 +3130,14 @@ pub fn App() -> impl IntoView {
         let revision = match origin.as_ref().map_or_else(
             || Ok(source_revision.clone()),
             |origin| {
-                collagene_core::material_pcr::revision(&mol, origin.as_ref(), &forward, &reverse)
-                    .map_err(|e| e.to_string())
+                collagene_core::material_pcr::revision(
+                    &mol,
+                    origin.as_ref(),
+                    &forward,
+                    &reverse,
+                    collagene_core::chemistry::Strand::Top,
+                )
+                .map_err(|e| e.to_string())
             },
         ) {
             Ok(revision) => revision,
@@ -3180,6 +3188,7 @@ pub fn App() -> impl IntoView {
             revision: revision.clone(),
             job: if let Some(origin) = &origin {
                 protocol::AnalysisJob::MaterialPcrDocuments {
+                    template_strand: collagene_core::chemistry::Strand::Top,
                     molecule: mol,
                     origin: origin.as_ref().clone(),
                     forward,
@@ -3187,6 +3196,7 @@ pub fn App() -> impl IntoView {
                 }
             } else {
                 protocol::AnalysisJob::PcrDocuments {
+                    template_strand: collagene_core::chemistry::Strand::Top,
                     molecule: mol,
                     forward,
                     reverse,
@@ -3238,6 +3248,12 @@ pub fn App() -> impl IntoView {
                         revision: response_revision,
                     }),
                 ) if id == generation && response_revision == revision => {
+                    if products.iter().any(|document| {
+                        document.geometry.template_strand != collagene_core::chemistry::Strand::Top
+                    }) {
+                        message.set("PCR preview returned another source coordinate frame. Recompute the current preview.".into());
+                        return;
+                    }
                     let count = products.len();
                     pcr_review.set(Some(crate::pcr_outputs::Review {
                         source: pcr_source,
@@ -3392,6 +3408,7 @@ pub fn App() -> impl IntoView {
             return;
         }
         let request = collagene_core::pcr_outputs::Request {
+            template_strand: collagene_core::chemistry::Strand::Top,
             source,
             forward: choice.review.forward.clone(),
             reverse: choice.review.reverse.clone(),

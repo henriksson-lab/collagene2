@@ -142,7 +142,7 @@ fn typed_reverse_copy_and_paste_keep_source_and_destination_annotations() {
 }
 
 #[test]
-fn schema53_selectors_are_rejected_before_old_payload_decode_and_bind_both_sources() {
+fn current_reference_tags_bind_both_sources_and_reject_obsolete_headers() {
     let (copy, destination) = fixture();
     let copied = reference_transfer::copy(&copy).unwrap();
     let requests = [
@@ -151,8 +151,8 @@ fn schema53_selectors_are_rejected_before_old_payload_decode_and_bind_both_sourc
     ];
     for (request, expected_job, expected_result) in requests
         .iter()
-        .zip([120, 121])
-        .zip([112, 113])
+        .zip([118, 119])
+        .zip([110, 111])
         .map(|((r, j), v)| (r, j, v))
     {
         let wire = protocol::encode_request(request).unwrap();
@@ -164,7 +164,7 @@ fn schema53_selectors_are_rejected_before_old_payload_decode_and_bind_both_sourc
             Err(Error::Unsupported(_))
         ));
         // Only the borrowed discriminator prefix exists. Its checksum is
-        // deliberately stale: the new selector's minimum version comes first.
+        // deliberately stale: the current-only header check comes first.
         let body =
             postcard::to_allocvec(&(request.id, request.revision.as_str(), expected_job)).unwrap();
         let mut prefix = wire[..42].to_vec();

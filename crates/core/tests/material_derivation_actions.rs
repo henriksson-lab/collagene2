@@ -106,7 +106,8 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
             &detached_preview,
             &d::SourceOrigin::OriginalReference,
             &f,
-            &r
+            &r,
+            collagene_core::chemistry::Strand::Top
         )
         .is_err()
     );
@@ -178,7 +179,14 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
     let origin = MaterialOrigin::Derived(cap);
     let f = Primer::new("New inner F", "AGACCGAT", "").unwrap();
     let r = Primer::new("New inner R", "TCCAGGTC", "").unwrap();
-    let products = material_pcr::simulate(fresh.reference(), &origin, &f, &r).unwrap();
+    let products = material_pcr::simulate(
+        fresh.reference(),
+        &origin,
+        &f,
+        &r,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(products.len(), 1);
     assert_eq!(products[0].molecule.sequence.as_str(), MUTANT);
     let child = d::prepare_install(
@@ -194,6 +202,7 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
                     expected_preview_revision: products[0].molecule.revision(),
                     geometry: products[0].geometry.clone(),
                 },
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             name: "New PCR from saved mutant".into(),
             save_primers: true,
@@ -337,7 +346,8 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
             &detached_preview,
             &d::SourceOrigin::OriginalReference,
             &f,
-            &r
+            &r,
+            collagene_core::chemistry::Strand::Top
         )
         .is_err()
     );
@@ -582,11 +592,13 @@ fn end_repair_preserves_real_internal_nick_and_does_not_enable_unsupported_nicke
                 template: Source::Input("a".into()),
                 forward: Primer::new("AF", "AGT", "").unwrap(),
                 reverse: Primer::new("AR", "CGG", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("b".into()),
                 forward: Primer::new("BF", "GAC", "").unwrap(),
                 reverse: Primer::new("BR", "TCA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(1),

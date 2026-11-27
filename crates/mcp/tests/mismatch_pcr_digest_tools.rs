@@ -86,6 +86,7 @@ fn saved() -> cloning_outputs::Commit {
             template: Source::Input("source".into()),
             forward: Primer::new("F", "ACGACCCC", "").unwrap(),
             reverse: Primer::new("R", "GTTACCCC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Actual saved PCR", vec![source, target], 1).unwrap();
@@ -137,7 +138,7 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
     let pin = catalog_digest::select(&catalog, &[id]).unwrap();
     let mut policy = PcrOptions::default();
     policy.binding.min_three_prime_exact = 2;
-    let request = json!({"source_role":"original","forward":Primer::new("Mismatch F","ACTACCCC","CCGAATTC").unwrap(),"reverse":Primer::new("R","GTTACCCC","GGGAATTC").unwrap(),"selection":pin,"options":InspectionOptions::default()});
+    let request = json!({"template_strand":"Top","source_role":"original","forward":Primer::new("Mismatch F","ACTACCCC","CCGAATTC").unwrap(),"reverse":Primer::new("R","GTTACCCC","GGGAATTC").unwrap(),"selection":pin,"options":InspectionOptions::default()});
     let args = json!({"document":reference(&imported,0),"request":request,"pcr_options":policy});
     let result = call(&c, "inspect_pcr_digest", args.clone()).await;
     assert_eq!(result["mode"], "mismatch-pcr");

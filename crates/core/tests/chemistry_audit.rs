@@ -173,6 +173,7 @@ fn staggered_physical_pcr_templates_need_a_two_strand_model_not_a_top_projection
                 template: Source::Step(0),
                 forward: Primer::new("F", "AAA", "").unwrap(),
                 reverse: Primer::new("R", "GACT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ],
     };

@@ -82,7 +82,7 @@ async fn actual_pcr_and_digest_ordered_recipe_binds_independent_target_and_saved
     };
     let inputs = json!([{"id":"template","document":refs("left_template")},{"id":"vector","document":refs("right_digest_source")}]);
     let recipe = json!({"name":"Actual PCR + EcoRV ordered assembly","fragments":[
-        {"generation":null,"role":"left","input_id":"template","preparation":{"ExactPcr":{"forward":Primer::new("actual forward","TTGCAATCGT","").unwrap(),"reverse":Primer::new("actual reverse","GCTAGCATCG","").unwrap()}},"reverse":false},
+        {"generation":null,"role":"left","input_id":"template","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("actual forward","TTGCAATCGT","").unwrap(),"reverse":Primer::new("actual reverse","GCTAGCATCG","").unwrap()}},"reverse":false},
         {"generation":null,"role":"right","input_id":"vector","preparation":{"Digest":{"enzymes":["EcoRV"],"fragment_index":1,"repair":null}},"reverse":false}
     ],"overlaps":[15],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100}});
     let args = json!({"inputs":inputs,"target":refs("independent_target"),"recipe":recipe});

@@ -43,6 +43,14 @@ pub fn PcrDigestPicker(
     epoch: RwSignal<u64>,
 ) -> impl IntoView {
     let row = move || config.with(|c| c.rows.get(index).cloned().unwrap_or_default());
+    let derived_source = Memo::new(move |_| {
+        row().run_origin.as_ref().is_some_and(|origin| {
+            matches!(
+                origin.as_ref(),
+                collagene_core::run_material::MaterialOrigin::Derived(_)
+            )
+        })
+    });
     let catalog = StoredValue::new(catalog_digest::builtin_catalog().ok());
     let search = RwSignal::new(String::new());
     let status = RwSignal::new(String::new());
@@ -308,11 +316,12 @@ pub fn PcrDigestPicker(
         <button class="text-tool" disabled=move||row().catalog_selection.is_none() on:click=move|_|config.update(|c|if let Some(row)=c.rows.get_mut(index){row.catalog_selection=None;})>"Clear enzyme selection"</button>
         <p class="helper">"Search by name and select each enzyme needed for the digest. The exact catalog identities and cleavage geometries are pinned together."</p></details>
         <p>{move||row().catalog_selection.map(|selection|selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(" + ")).unwrap_or_else(||"Choose the PCR-product digest enzymes.".into())}</p>
-        <button class="button secondary" disabled=move||busy.get() on:click=move|_|compute.run(())>"Inspect PCR digest fragments"</button>
+        <Show when=move||derived_source.get()><p class="helper">"PCR-product digest inspection is not available here for a saved derived template. Its origin remains retained; whole-construct primer preparation supports that source."</p></Show>
+        <button class="button secondary" disabled=move||busy.get()||derived_source.get() on:click=move|_|compute.run(())>"Inspect PCR digest fragments"</button>
         <p class="helper" role="status">{move||status.get()}</p>
         {move||proof.get().map(|saved|{
             let preview=&saved.preview;let count=preview.geometry_count();let start=geometry_page.get().min(count.saturating_sub(1)/20)*20;
-            let geometries=preview.geometry_page(start).iter().map(|g|view!{<tr><td>{g.index+1}</td><td>{g.product_length}</td><td>{format!("{} / {}",g.forward_start+1,g.reverse_start+1)}</td></tr>}).collect_view();
+            let geometries=preview.geometry_page(start).iter().map(|g|view!{<tr><td>{g.index+1}</td><td>{g.product_length}</td><td>{format!("{:?}: {} / {}",g.template_strand,g.forward_start+1,g.reverse_start+1)}</td></tr>}).collect_view();
             let selectable=preview.selectable();
             let extension=matches!(preview,InspectionPreview::Extension(_));
             view!{<section class="pcr-digest-result"><p>{if extension {format!("Overlap-extension preparation · {} reconstructed outer-PCR product",count)} else {format!("{} {} PCR geometries",count,if matches!(preview,InspectionPreview::Mismatch(_)){"intentional-mismatch"}else{"exact"})}}</p>
@@ -335,13 +344,13 @@ pub fn PcrDigestPicker(
                         {report.pcr_stages.iter().map(|stage|view!{<details><summary>{format!("PCR stage {} · {} geometries · {}",stage.stage,stage.geometries.len(),stage.product_length.map(|n|format!("{n} nt product")).unwrap_or_else(||"product unavailable".into()))}</summary>
                             <p class="helper">"Binding starts address this PCR stage’s actual template, before outer digestion and assembly orientation."</p>
                             <p class="helper">{format!("Template revision {}",stage.template_revision)}</p>
-                            <table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Binding starts · 1-based"</th></tr></thead><tbody>{stage.geometries.iter().take(20).map(|geometry|view!{<tr><td>{geometry.index+1}</td><td>{geometry.product_length}</td><td>{format!("{} / {}",geometry.forward_start+1,geometry.reverse_start+1)}</td></tr>}).collect_view()}</tbody></table>
+                            <table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Binding starts · 1-based"</th></tr></thead><tbody>{stage.geometries.iter().take(20).map(|geometry|view!{<tr><td>{geometry.index+1}</td><td>{geometry.product_length}</td><td>{format!("{:?}: {} / {}",geometry.template_strand,geometry.forward_start+1,geometry.reverse_start+1)}</td></tr>}).collect_view()}</tbody></table>
                             {(stage.geometries.len()>20).then(||view!{<p class="helper">"First20 geometries shown for this stage; the full retained stage evidence remains bound to this inspection."</p>})}
                         </details>}).collect_view()}
                     </details>}.into_any()
                 } else {().into_any()}}
                 {(!extension&&count>0).then(||view!{<details open={count>1}><summary>"PCR geometry review"</summary><table><thead><tr><th>"Geometry"</th><th>"Product nt"</th><th>"Template binding starts · 1-based"</th></tr></thead><tbody>{geometries}</tbody></table>
-                    <div class="method-row-actions"><button class="text-tool" disabled=move||geometry_page.get()==0 on:click=move|_|geometry_page.update(|p|*p=p.saturating_sub(1))>"Previous PCR geometries"</button><button class="text-tool" disabled=move||(geometry_page.get()+1)*20>=count on:click=move|_|geometry_page.update(|p|*p=p.saturating_add(1))>"Next PCR geometries"</button></div>
+                    <div class="method-row-actions"><button class="text-tool" disabled=move||geometry_page.get()==0 on:click=move|_|geometry_page.update(|p|*p=p.saturating_sub(1))>"Previous PCR geometries"</button><button class="text-tool" disabled={move||(geometry_page.get()+1)*20>=count} on:click=move|_|geometry_page.update(|p|*p=p.saturating_add(1))>"Next PCR geometries"</button></div>
                 </details>})}
                 {preview.amplicon().map(|amplicon|view!{<p>{format!("Reconstructed amplicon · {} nt",amplicon.sequence.len())}</p>})}
                 {preview.inspection().map(|inspection|{
@@ -351,7 +360,7 @@ pub fn PcrDigestPicker(
                         {inspection.diagnostics.iter().map(|message|view!{<p class="helper">{message.clone()}</p>}).collect_view()}
                         <p class="helper">"Ends and coordinates use the PCR product’s top-strand reference, before assembly orientation, end repair and terminal treatment. Full reconstruction checks those later steps."</p>
                         {inspection.fragments.iter().skip(start).take(20).map(|fragment|{let i=fragment.index;let conditional=preview.incomplete();view!{<details><summary>{format!("Fragment {} · top {} nt / bottom {} nt · starts at amplicon top boundary {} (zero-based)",i+1,fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start)}</summary>{crate::end_view::summary(&fragment.duplex)}<button class="button secondary" disabled=!selectable on:click=move|_|choose.run(i)>{move||if config.with(|c|c.rows.get(index).and_then(|row|row.fragment.parse::<usize>().ok())==Some(i+1)){if conditional{"Current conditional fragment request"}else{"Current fragment request"}}else{if conditional{"Use conditional fragment"}else{"Use this fragment"}}}</button></details>}}).collect_view()}
-                        <div class="method-row-actions"><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous fragments"</button><button class="text-tool" disabled=move||(page.get()+1)*20>=count on:click=move|_|page.update(|p|*p=p.saturating_add(1))>"Next fragments"</button></div>
+                        <div class="method-row-actions"><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous fragments"</button><button class="text-tool" disabled={move||(page.get()+1)*20>=count} on:click=move|_|page.update(|p|*p=p.saturating_add(1))>"Next fragments"</button></div>
                     </section>}
                 })}
             </section>}

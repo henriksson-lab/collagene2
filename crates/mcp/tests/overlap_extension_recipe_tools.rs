@@ -55,6 +55,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("Actual forward", f, ft).unwrap(),
         reverse: Primer::new("Actual reverse", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn recipe() -> Recipe {
@@ -86,6 +87,7 @@ fn recipe() -> Recipe {
                 preparation: Preparation::ExactPcr {
                     forward: Primer::new("Vector F", "GATCGTCA", "").unwrap(),
                     reverse: Primer::new("Vector R", "GCTAGGTA", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 reverse: false,
             },

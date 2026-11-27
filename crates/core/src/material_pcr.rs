@@ -56,6 +56,7 @@ pub fn revision(
     origin: &MaterialOrigin,
     forward: &Primer,
     reverse: &Primer,
+    template_strand: crate::chemistry::Strand,
 ) -> Result<String, Error> {
     preflight(source, origin, forward, reverse)?;
     crate::assembly_recipe::hash(&(
@@ -65,6 +66,7 @@ pub fn revision(
         origin,
         forward,
         reverse,
+        template_strand,
     ))
 }
 fn evidence(
@@ -108,14 +110,53 @@ pub fn simulate(
     origin: &MaterialOrigin,
     forward: &Primer,
     reverse: &Primer,
+    template_strand: crate::chemistry::Strand,
 ) -> Result<Vec<verification::PcrDocument>, Error> {
-    let context = revision(source, origin, forward, reverse)?;
+    preflight(source, origin, forward, reverse)?;
     let fresh = origin.replay(source)?;
-    let mut previews =
-        verification::simulate_pcr_documents_from_fresh(source, forward, reverse, fresh.tracked())?;
-    let (_, _, incomplete, findings, total, truncated) = fresh.into_parts();
+    simulate_from_fresh(
+        source,
+        origin,
+        forward,
+        reverse,
+        template_strand,
+        fresh.tracked(),
+        fresh.incomplete(),
+        fresh.findings(),
+        fresh.findings_total(),
+        fresh.findings_truncated(),
+    )
+}
+/// The caller already owns fresh private source state; do not replay its origin
+/// a second time to label the same preview.
+pub(crate) fn simulate_from_fresh(
+    source: &Molecule,
+    origin: &MaterialOrigin,
+    forward: &Primer,
+    reverse: &Primer,
+    template_strand: crate::chemistry::Strand,
+    tracked: &crate::modified_duplex::TrackedDuplex,
+    incomplete: bool,
+    findings: &[String],
+    total: usize,
+    truncated: bool,
+) -> Result<Vec<verification::PcrDocument>, Error> {
+    let context = revision(source, origin, forward, reverse, template_strand)?;
+    let mut previews = verification::simulate_pcr_documents_from_fresh(
+        source,
+        forward,
+        reverse,
+        tracked,
+        template_strand,
+    )?;
     let receipt = evidence(
-        source, origin, context, incomplete, findings, total, truncated,
+        source,
+        origin,
+        context,
+        incomplete,
+        findings.to_vec(),
+        total,
+        truncated,
     )?;
     let encoded = serde_json::to_string(&receipt).map_err(|e| bad(&e.to_string()))?;
     let mut bytes = 0usize;
@@ -173,6 +214,12 @@ pub fn prepare_outputs(
     request: &pcr_outputs::Request,
 ) -> Result<pcr_outputs::Prepared, Error> {
     let context = outputs_revision(origin, request)?;
-    let previews = simulate(&request.source, origin, &request.forward, &request.reverse)?;
+    let previews = simulate(
+        &request.source,
+        origin,
+        &request.forward,
+        &request.reverse,
+        request.template_strand,
+    )?;
     pcr_outputs::prepare_from_previews(request, context, previews)
 }

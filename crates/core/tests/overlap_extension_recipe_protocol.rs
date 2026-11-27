@@ -20,6 +20,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     PrimerPair {
         forward: Primer::new("Actual forward", f, ft).unwrap(),
         reverse: Primer::new("Actual reverse", r, rt).unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn extension() -> ExtensionRequest {
@@ -59,6 +60,7 @@ fn recipe(preparation: Preparation) -> Recipe {
                 preparation: Preparation::ExactPcr {
                     forward: Primer::new("Vector F", "GATCGTCA", "").unwrap(),
                     reverse: Primer::new("Vector R", "GCTAGGTA", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 reverse: false,
             },
@@ -236,6 +238,7 @@ fn flat_saved_run_preparation_variant7_cannot_hide_under_old_from_run_envelope()
             template: Source::Input("insert".into()),
             forward: Primer::new("Original F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("Original R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let workspace =

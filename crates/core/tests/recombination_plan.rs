@@ -187,6 +187,7 @@ fn reference_ancestry_cannot_gain_physical_authority_directly_or_after_overlap()
                     template: source,
                     forward: primer.clone(),
                     reverse: primer.clone(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 1 => Operation::PcrWithMismatches {
                     template: source,

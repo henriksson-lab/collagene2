@@ -34,8 +34,10 @@ fn fixture() -> (Molecule, DigestRequest) {
                 reverse: Primer::new("Exact R", "GTTACCCC", "GGGAATTC").unwrap(),
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: InspectionOptions::default(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             pcr_options: policy,
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
     )
 }

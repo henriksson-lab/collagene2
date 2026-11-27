@@ -255,6 +255,7 @@ fn physical_reconstruction_is_checked_against_predeclared_internal_changes() {
             template: Source::Input("original".into()),
             forward: Primer::new("OriginalF", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("OriginalR", "TACAGGTC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     assert_eq!(verification::verify(&plan, &target).status, Status::Invalid);

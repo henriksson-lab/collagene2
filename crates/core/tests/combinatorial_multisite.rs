@@ -103,9 +103,12 @@ fn fixture(existing: bool) -> (Workspace, Design, SelectedConstruct) {
                 id: format!("parent-{i}-choice"),
                 label: format!("Original parent {i} with explicit intended contribution"),
                 source: event(&w, i),
-                start: *start,
-                end: *end,
-                reverse: false,
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: *start,
+                    end: *end,
+                    reverse: false,
+                },
+                preparation_reverse: false,
                 preparation: None,
                 treatment: None,
             }],
@@ -125,12 +128,15 @@ fn fixture(existing: bool) -> (Workspace, Design, SelectedConstruct) {
             TargetDeclaration::Existing(event(&w, 4))
         } else {
             TargetDeclaration::OriginalRegions {
+                substitutions: vec![],
+                edits: vec![],
                 junction_edits: vec![],
             }
         },
         overrides: None,
     };
     let d = Design {
+        material_bindings: vec![],
         id: "whole-parent-library".into(),
         name: "Connected multi-site library".into(),
         circular: true,
@@ -275,6 +281,7 @@ fn preparation_treatment_and_topology_are_explicit_and_per_construct_reference_o
     assert!(design::inspect_multisite(&d, &row, &w).is_err());
     row.overrides = Some(ConstructOverrides {
         preparations: vec![PreparationOverride {
+            preparation_reverse: false,
             generation: None,
             bin_id: d.bins[0].id.clone(),
             preparation: None,

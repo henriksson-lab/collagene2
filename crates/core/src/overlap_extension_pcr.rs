@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 pub struct PrimerPair {
     pub forward: Primer,
     pub reverse: Primer,
+    pub template_strand: crate::chemistry::Strand,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -69,6 +70,11 @@ impl Request {
         for pair in [&self.left, &self.right, &self.outer] {
             primer(&pair.forward)?;
             primer(&pair.reverse)?;
+        }
+        if self.outer.template_strand != crate::chemistry::Strand::Top {
+            return Err(bad(
+                "outer PCR uses the newly synthesized extension's explicit Top frame",
+            ));
         }
         extension_shape(&self.extension)
     }
@@ -140,11 +146,13 @@ impl Request {
             template: source.clone(),
             forward: self.left.forward.clone(),
             reverse: self.left.reverse.clone(),
+            template_strand: self.left.template_strand,
         });
         steps.push(Operation::Pcr {
             template: source,
             forward: self.right.forward.clone(),
             reverse: self.right.reverse.clone(),
+            template_strand: self.right.template_strand,
         });
         steps.push(Operation::OverlapExtension {
             left: OrientedSource {
@@ -161,6 +169,7 @@ impl Request {
             template: Source::Step(extension),
             forward: self.outer.forward.clone(),
             reverse: self.outer.reverse.clone(),
+            template_strand: self.outer.template_strand,
         });
         Ok(Source::Step(outer))
     }

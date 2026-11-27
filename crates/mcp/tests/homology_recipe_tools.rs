@@ -263,6 +263,7 @@ async fn explicit_physical_recipe_and_attested_saved_product_support_actual_pcr_
             RunPreparation::ExactPcr {
                 forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("R", "GAATTCGA", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             "pcr_target",
             21,

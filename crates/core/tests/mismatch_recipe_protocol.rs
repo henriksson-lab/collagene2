@@ -209,6 +209,7 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
             template: Source::Input("source".into()),
             forward: Primer::new("exact F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("exact R", "TACAGGTC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let w = Workspace::from_documents("Exact source events", vec![source, target], 1).unwrap();

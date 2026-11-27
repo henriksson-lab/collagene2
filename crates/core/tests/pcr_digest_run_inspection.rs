@@ -78,6 +78,7 @@ fn pcr(template: Source, forward: &str, reverse: &str) -> Operation {
         template,
         forward: Primer::new("F", forward, "").unwrap(),
         reverse: Primer::new("R", reverse, "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn fixture() -> (Molecule, Capsule, p::Request) {

@@ -74,6 +74,7 @@ fn pcr_step(template: Source) -> Operation {
         template,
         forward: Primer::new("Forward", "ACGACCCC", "").unwrap(),
         reverse: Primer::new("Reverse", "GTTACCCC", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 fn pcr() -> Commit {
@@ -125,6 +126,7 @@ fn nicked_circle() -> Commit {
                 template: Source::Input("src0".into()),
                 forward: Primer::new("Left forward", "TTGCAATC", "").unwrap(),
                 reverse: Primer::new("Left reverse", "GCTAGCAT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::TreatEnds {
                 template: Source::Step(0),
@@ -134,6 +136,7 @@ fn nicked_circle() -> Commit {
                 template: Source::Input("src1".into()),
                 forward: Primer::new("Right forward", "ATCGTCGA", "").unwrap(),
                 reverse: Primer::new("Right reverse", "GTACCGCT", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Ligate {
                 fragments: vec![
@@ -475,6 +478,7 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
         template: Source::Step(0),
         forward: Primer::new("Forward", "TTGCAATC", "").unwrap(),
         reverse: Primer::new("Reverse", "GTACCGCT", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let rejected = verification::verify(&plan, w.head(&target.document_id).unwrap());
     assert!(matches!(
@@ -823,6 +827,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
             template: Source::Step(0),
             forward: Primer::new("TOPO forward", "AGGGGCAT", "").unwrap(),
             reverse: Primer::new("TOPO reverse", "TCATTCGA", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
     );
     let before = run_lineage::workspace_fingerprint(&w).unwrap();
@@ -848,6 +853,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
         template: Source::Input("saved".into()),
         forward: Primer::new("TOPO forward", "AGGGGCAT", "").unwrap(),
         reverse: Primer::new("TOPO reverse", "TCATTCGA", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     }];
     let detached_report = verification::verify(&detached, w.head(&target.document_id).unwrap());
     assert!(matches!(

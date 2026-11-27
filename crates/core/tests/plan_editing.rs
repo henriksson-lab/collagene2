@@ -20,6 +20,7 @@ fn graph() -> Vec<Operation> {
             template: input("original-a"),
             forward: Primer::new("A forward", "ACGT", "GG").unwrap(),
             reverse: Primer::new("A reverse", "TGCA", "CC").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::Digest {
             template: input("original-b"),

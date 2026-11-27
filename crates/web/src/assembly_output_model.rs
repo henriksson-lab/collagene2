@@ -75,6 +75,7 @@ mod tests {
                 molecule: source,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("original".into()),
                 forward: Primer::new("F", "ACGACCCC", "").unwrap(),
                 reverse: Primer::new("R", "GTTACCCC", "").unwrap(),
@@ -230,6 +231,7 @@ mod tests {
             unreachable!()
         };
         next.steps.push(Operation::Pcr {
+            template_strand: collagene_core::chemistry::Strand::Top,
             template: Source::Step(0),
             forward,
             reverse,

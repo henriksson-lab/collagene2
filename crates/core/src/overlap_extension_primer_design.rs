@@ -1,5 +1,6 @@
 //! Native anchored overlap-extension primer proposals from original DNA and
 //! separately declared literal edits. No intended-product sequence is an input.
+use crate::pcr_source::Template;
 use crate::{
     Alphabet, Error, Location, Molecule, Sequence, Topology,
     assembly_edit_intent::Edit,
@@ -73,7 +74,6 @@ pub struct Compilation {
     pub request: Request,
     pub preparation: overlap_extension_pcr::Request,
     pub expected: Molecule,
-    pub plan: DesignPlan,
     pub designs: Vec<DesignReport>,
     pub search: Vec<PairSearch>,
     pub warnings: Vec<String>,
@@ -188,22 +188,25 @@ struct Bounds<'a> {
     homology: usize,
     edits: Vec<StoredEdit<'a>>,
 }
-fn bounds<'a>(source: &Molecule, r: &'a Request) -> Result<Bounds<'a>, Error> {
+fn bounds<'a>(source: Template<'_>, r: &'a Request) -> Result<Bounds<'a>, Error> {
     options(&r.options)?;
     token(&r.fragment.role)?;
     token(&r.fragment.input_id)?;
     if r.edits.is_empty() || r.edits.len() > crate::assembly_edit_intent::MAX_EDITS {
         return Err(bad("declare1..256 literal contribution edits"));
     }
-    crate::model::bounds::model_preflight(&[source])?;
+    crate::model::bounds::model_preflight(&[source.reference])?;
     if source.sequence.alphabet() != Alphabet::Dna
         || source.sequence.is_empty()
         || source.sequence.len() > MAX_SOURCE_BASES
     {
         return Err(Error::TooLarge);
     }
-    source.validate()?;
-    bytes(source, MAX_SOURCE_BYTES)?;
+    source.reference.validate()?;
+    bytes(
+        &(source.reference, source.sequence, source.strand),
+        MAX_SOURCE_BYTES,
+    )?;
     let f = &r.fragment;
     let n = source.sequence.len();
     let length = f
@@ -356,7 +359,7 @@ fn bounds<'a>(source: &Molecule, r: &'a Request) -> Result<Bounds<'a>, Error> {
     Ok(bounds)
 }
 fn reserved_work(
-    source: &Molecule,
+    source: Template<'_>,
     r: &Request,
     b: &Bounds<'_>,
     derived: &[DesignOptions; 3],
@@ -391,8 +394,7 @@ fn reserved_work(
     // Reserve all final verifier PCR scans and two terminal scans (planning and
     // final reconstruction). Ranked-pair scans must fit the remaining budget.
     let final_scan = source
-        .sequence
-        .len()
+        .comparison_bases()?
         .checked_add(b.insert_length)
         .and_then(|n| {
             n.checked_add(r.options.outer_forward_tail.len() + r.options.outer_reverse_tail.len())
@@ -414,13 +416,17 @@ fn reserved_work(
 /// Borrowed source, literal-edit, geometry and aggregate work guards before any
 /// full source is cloned or native primer/PCR search is started.
 pub fn preflight(source: &Molecule, request: &Request) -> Result<(), Error> {
-    bounds(source, request).map(|_| ())
+    bounds(Template::reference(source)?, request).map(|_| ())
 }
 pub fn design_revision(source: &Molecule, request: &Request) -> Result<String, Error> {
     preflight(source, request)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, source.revision(), request))
+    assembly_recipe::hash(&(
+        ENGINE_VERSION,
+        Template::reference(source)?.context_revision()?,
+        request,
+    ))
 }
-fn segment(source: &Molecule, f: &Fragment, start: usize, end: usize, out: &mut String) {
+fn segment(source: Template<'_>, f: &Fragment, start: usize, end: usize, out: &mut String) {
     let n = source.sequence.len();
     for i in start..end {
         out.push(source.sequence.as_str().as_bytes()[(f.start + i) % n] as char);
@@ -435,7 +441,7 @@ fn replacement(out: &mut String, e: &Edit, reverse: bool) {
         out.push_str(&e.replacement);
     }
 }
-fn edited(source: &Molecule, r: &Request, b: &Bounds<'_>, start: usize, end: usize) -> String {
+fn edited(source: Template<'_>, r: &Request, b: &Bounds<'_>, start: usize, end: usize) -> String {
     let mut out = String::new();
     let mut cursor = start;
     for e in &b.edits {
@@ -446,7 +452,7 @@ fn edited(source: &Molecule, r: &Request, b: &Bounds<'_>, start: usize, end: usi
     segment(source, &r.fragment, cursor, end, &mut out);
     out
 }
-fn expected(source: &Molecule, r: &Request, b: &Bounds<'_>) -> Result<Molecule, Error> {
+fn expected(source: Template<'_>, r: &Request, b: &Bounds<'_>) -> Result<Molecule, Error> {
     let mut dna = r.options.outer_forward_tail.clone();
     dna.push_str(&edited(source, r, b, 0, b.length));
     // An absent outer tail contributes no bases; it is not a standalone DNA
@@ -465,7 +471,7 @@ fn expected(source: &Molecule, r: &Request, b: &Bounds<'_>) -> Result<Molecule, 
     )
 }
 fn derived_options(
-    source: &Molecule,
+    source: Template<'_>,
     r: &Request,
     b: &Bounds<'_>,
     left_tail: &str,
@@ -520,12 +526,13 @@ fn derived_options(
     Ok([left, right, outer])
 }
 pub(crate) fn propose(
-    source: &Molecule,
+    source: Template<'_>,
     options: &DesignOptions,
     label: &str,
     role: &str,
 ) -> Result<DesignReport, Error> {
-    let mut report = primers::design_primers(source, options)?;
+    let mut report =
+        primers::design_primers_view(source.view(), options, &source.reference.revision())?;
     if report.pairs.is_empty() {
         return Err(bad(&format!(
             "no {label} pair passes the declared native primer filters; adjust the filters or preparation method explicitly"
@@ -568,7 +575,7 @@ impl Budget {
     }
 }
 pub(crate) fn select(
-    source: &Molecule,
+    source: Template<'_>,
     d: &DesignReport,
     call: &str,
     start: usize,
@@ -587,9 +594,13 @@ pub(crate) fn select(
     };
     for (index, pair) in d.pairs.iter().enumerate() {
         let cost = source
-            .sequence
-            .len()
-            .checked_mul(pair.forward.primer.annealing.len() + pair.reverse.primer.annealing.len())
+            .comparison_bases()
+            .ok()
+            .and_then(|bases| {
+                bases.checked_mul(
+                    pair.forward.primer.annealing.len() + pair.reverse.primer.annealing.len(),
+                )
+            })
             .and_then(|n| n.checked_mul(4));
         if cost.is_none_or(|cost| !budget.reserve(cost)) || budget.materialized > 32 * 1024 * 1024 {
             search.capped = true;
@@ -597,18 +608,9 @@ pub(crate) fn select(
             break;
         }
         search.examined += 1;
-        match crate::analysis::simulate_pcr_geometry(
-            source,
-            &pair.forward.primer,
-            &pair.reverse.primer,
-        ) {
-            Ok(mut products) => {
-                let emitted = products
-                    .iter()
-                    .try_fold(0usize, |n, g| n.checked_add(g.product.sequence.len()));
-                budget.materialized = budget
-                    .materialized
-                    .saturating_add(emitted.unwrap_or(32 * 1024 * 1024));
+        match source.geometries_with_usage(&pair.forward.primer, &pair.reverse.primer) {
+            Ok((mut products, emitted)) => {
+                budget.materialized = budget.materialized.saturating_add(emitted);
                 let unique = products.len() == 1
                     && products.first().is_some_and(|g| {
                         g.product.forward_start == start % source.sequence.len()
@@ -634,7 +636,7 @@ pub(crate) fn select(
                 // The native engine itself caps one call at32million bases. On
                 // interruption charge that whole cap, rather than assuming it
                 // allocated no competing products.
-                budget.materialized = budget.materialized.saturating_add(32 * 1024 * 1024);
+                budget.materialized = budget.materialized.saturating_add(64 * 1024 * 1024);
                 search.rejected += 1;
                 search.capped = true;
                 search.notes.push(format!(
@@ -656,6 +658,7 @@ fn preparation(
     search: &[PairSearch],
     r: &Request,
     b: &Bounds<'_>,
+    template_strand: crate::chemistry::Strand,
 ) -> Result<overlap_extension_pcr::Request, Error> {
     let pair = |i: usize| {
         let p = designs
@@ -665,6 +668,11 @@ fn preparation(
         Ok::<_, Error>(PrimerPair {
             forward: p.forward.primer.clone(),
             reverse: p.reverse.primer.clone(),
+            template_strand: if i == 2 {
+                crate::chemistry::Strand::Top
+            } else {
+                template_strand
+            },
         })
     };
     Ok(overlap_extension_pcr::Request {
@@ -680,7 +688,7 @@ fn preparation(
     })
 }
 fn plan(
-    source: &Molecule,
+    source: Template<'_>,
     r: &Request,
     expected: &Molecule,
     preparation: &overlap_extension_pcr::Request,
@@ -692,14 +700,20 @@ fn plan(
         target_revision: expected.revision(),
         inputs: vec![PlanInput {
             id: r.fragment.input_id.clone(),
-            revision: source.revision(),
-            molecule: source.clone(),
+            revision: source.reference.revision(),
+            molecule: source.reference.clone(),
         }],
         steps,
     })
 }
 pub(crate) fn work_preflight(
     source: &Molecule,
+    request: &Request,
+) -> Result<(usize, usize), Error> {
+    source_work_preflight(Template::reference(source)?, request)
+}
+pub(crate) fn source_work_preflight(
+    source: Template<'_>,
     request: &Request,
 ) -> Result<(usize, usize), Error> {
     let b = bounds(source, request)?;
@@ -735,15 +749,21 @@ pub fn compile(source: &Molecule, request: &Request) -> Result<Compilation, Erro
         limit: MAX_WORK,
         materialized: 0,
     };
-    compile_with_budget(source, request, &mut budget)
+    compile_source_with_budget(Template::reference(source)?, request, &mut budget)
 }
 pub(crate) fn design_with_budget(
     source: &Molecule,
     request: &Request,
     budget: &mut Budget,
 ) -> Result<Report, Error> {
-    let compiled = compile_with_budget(source, request, budget)?;
-    let verification = verification::verify(&compiled.plan, &compiled.expected);
+    let compiled = compile_source_with_budget(Template::reference(source)?, request, budget)?;
+    let actual_plan = plan(
+        Template::reference(source)?,
+        request,
+        &compiled.expected,
+        &compiled.preparation,
+    )?;
+    let verification = verification::verify(&actual_plan, &compiled.expected);
     let mut warnings = compiled.warnings;
     if verification.status != Status::ConsistentUnderAssumptions {
         warnings.push("The selected oligos did not establish a complete target-consistent physical preparation. Keep the verifier findings; no intended sequence was substituted to obtain success.".into());
@@ -755,7 +775,7 @@ pub(crate) fn design_with_budget(
         request: compiled.request,
         preparation: compiled.preparation,
         expected: compiled.expected,
-        plan: compiled.plan,
+        plan: actual_plan,
         verification,
         designs: compiled.designs,
         search: compiled.search,
@@ -764,14 +784,15 @@ pub(crate) fn design_with_budget(
     report.validate()?;
     Ok(report)
 }
-pub(crate) fn compile_with_budget(
-    source: &Molecule,
+pub(crate) fn compile_source_with_budget(
+    source: Template<'_>,
     request: &Request,
     budget: &mut Budget,
 ) -> Result<Compilation, Error> {
     let b = bounds(source, request)?;
-    let source_revision = source.revision();
-    let context_revision = assembly_recipe::hash(&(ENGINE_VERSION, &source_revision, request))?;
+    let source_revision = source.reference.revision();
+    let context_revision =
+        assembly_recipe::hash(&(ENGINE_VERSION, source.context_revision()?, request))?;
     let insert = edited(source, request, &b, b.start, b.end);
     let mut right_prefix = String::with_capacity(request.options.homology_flank);
     segment(
@@ -845,8 +866,11 @@ pub(crate) fn compile_with_budget(
                     .fill
                     .duplex
                     .molecule("Source-bound selected reciprocal extension")?;
+                let tracked = crate::modified_duplex::TrackedDuplex::from_unknown_duplex(
+                    &geometry.fill.duplex,
+                )?;
                 select(
-                    &actual,
+                    Template::fresh(&actual, &tracked, crate::chemistry::Strand::Top)?,
                     &designs[2],
                     "outer",
                     0,
@@ -870,9 +894,8 @@ pub(crate) fn compile_with_budget(
     // Expected DNA is a separate source/literal construction. It is never read by
     // ranked pair selection, which uses only actual source endpoints/strand roles.
     let expected = expected(source, request, &b)?;
-    let preparation = preparation(&designs, &search, request, &b)?;
+    let preparation = preparation(&designs, &search, request, &b, source.strand)?;
     preparation.validate_shape()?;
-    let plan = plan(source, request, &expected, &preparation)?;
     let mut warnings=vec![
         "Native anchored pairs are ranked under the requested filters (at most20). Bounded search chooses the first unique declared source-endpoint/oligo-role PCR geometry in each ranked list; the outer list is checked on actual extended branch material. No intended target DNA chooses a pair or product. Searches are not globally optimal or exhaustive beyond the retained native lists.".into(),
         "Derived endpoints, physical maximum lengths, tails and max_pairs are recorded per native call. Requested Tm/GC/salt/structure filters remain unchanged. Work caps or ambiguous/competing PCRs retain an explicit diagnostic fallback rather than inventing material.".into(),
@@ -888,12 +911,11 @@ pub(crate) fn compile_with_budget(
         request: request.clone(),
         preparation,
         expected,
-        plan,
         designs,
         search,
         warnings,
     };
-    validate_preparation(
+    validate_source_preparation(
         source,
         request,
         &report.context_revision,
@@ -907,7 +929,6 @@ pub(crate) fn compile_with_budget(
             &report.request,
             &report.preparation,
             &report.expected,
-            &report.plan,
             &report.designs,
             &report.search,
             &report.warnings,
@@ -952,6 +973,23 @@ pub fn validate_preparation(
     designs: &[DesignReport],
     searches: &[PairSearch],
 ) -> Result<Molecule, Error> {
+    validate_source_preparation(
+        Template::reference(source)?,
+        request,
+        context,
+        prepared,
+        designs,
+        searches,
+    )
+}
+pub(crate) fn validate_source_preparation(
+    source: Template<'_>,
+    request: &Request,
+    context: &str,
+    prepared: &overlap_extension_pcr::Request,
+    designs: &[DesignReport],
+    searches: &[PairSearch],
+) -> Result<Molecule, Error> {
     if designs.len() != 3 || searches.len() != 3 {
         return Err(bad("expected three native primer calls"));
     }
@@ -975,8 +1013,8 @@ pub fn validate_preparation(
     }
     bytes(&(request, prepared, designs, searches), MAX_REPORT_BYTES)?;
     let b = bounds(source, request)?;
-    let source_revision = source.revision();
-    if design_revision(source, request)? != context {
+    let source_revision = source.reference.revision();
+    if assembly_recipe::hash(&(ENGINE_VERSION, source.context_revision()?, request))? != context {
         return Err(bad("returned source/request binding changed"));
     }
     prepared.validate_shape()?;
@@ -1004,7 +1042,8 @@ pub fn validate_preparation(
     right_tail.push_str(&insert);
     let derived = derived_options(source, &request, &b, &left_tail, &right_tail, true)?;
     for (call_index, (d, o)) in designs.iter().zip(&derived).enumerate() {
-        if d.source_revision != source_revision
+        if d.template_strand != source.strand
+            || d.source_revision != source_revision
             || d.options != *o
             || d.pairs.len() > o.max_pairs
             || searches[call_index].call != ["left", "right", "outer"][call_index]
@@ -1072,7 +1111,7 @@ pub fn validate_preparation(
             }
         }
     }
-    let selected = preparation(designs, searches, request, &b)?;
+    let selected = preparation(designs, searches, request, &b, source.strand)?;
     if assembly_recipe::hash(&selected)? != assembly_recipe::hash(prepared)? {
         return Err(bad(
             "returned preparation differs from the selected native oligos",

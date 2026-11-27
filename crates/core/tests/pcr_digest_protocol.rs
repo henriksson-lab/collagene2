@@ -25,6 +25,7 @@ fn fixture() -> (Molecule, InspectionRequest) {
             reverse: Primer::new("reverse added site", "AAA", "ATGCGAATTC").unwrap(),
             selection: catalog_digest::select(&catalog, &[id]).unwrap(),
             options: InspectionOptions::default(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
     )
 }

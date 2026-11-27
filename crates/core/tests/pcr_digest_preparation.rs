@@ -30,6 +30,7 @@ fn recipe() -> l::Recipe {
                     selection,
                     fragment_index: 1,
                     repair: None,
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
                 reverse: false,
             },

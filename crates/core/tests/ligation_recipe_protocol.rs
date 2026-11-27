@@ -34,6 +34,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {
             preparation: Preparation::ExactPcr {
                 forward: Primer::new(format!("{id}-forward"), f, "").unwrap(),
                 reverse: Primer::new(format!("{id}-reverse"), r, "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             reverse: false,
         },

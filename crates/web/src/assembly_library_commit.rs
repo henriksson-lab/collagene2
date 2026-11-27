@@ -56,6 +56,8 @@ fn impact(value: &topology::RowImpact) -> Impact {
         name: value.name.clone(),
         primer_review_bins: value.primer_review_bins.clone(),
         removed_preparation_bins: value.removed_preparation_bins.clone(),
+        retained_internal_edits: value.retained_internal_edits,
+        recovered_internal_edits: value.recovered_internal_edits,
         retained_junctions: value.retained_junctions,
         recovered_junctions: value.recovered_junctions,
         new_junctions: value.new_junctions.clone(),
@@ -245,6 +247,30 @@ mod tests {
             .map(|b| b.id.clone())
             .collect();
         topology::propose(draft, topology::Change::Reorder { bin_ids: ids }).unwrap()
+    }
+    #[test]
+    fn removed_and_retained_internal_edit_counts_survive_native_history_archive() {
+        let (frame, draft) = fixture();
+        let draft = crate::assembly_edit_model::declare(&draft, 0, "3", "5", "TAG", None).unwrap();
+        let draft = crate::assembly_substitution_model::declare(&draft, 1, "1", "A", None).unwrap();
+        let removed = draft.alternatives.as_ref().unwrap().bins[0].id.clone();
+        let proposal =
+            topology::propose(&draft, topology::Change::Remove { bin_id: removed }).unwrap();
+        let fp = run_lineage::workspace_fingerprint(&frame).unwrap();
+        let staged = stage(&frame, &draft, &proposal, proposal.revision(), &fp).unwrap();
+        let archive = collagene_core::workspace::save_workspace(&staged.workspace).unwrap();
+        let reopened = collagene_core::workspace::load_workspace(&archive).unwrap();
+        let (recovered, record) = load_recovery(&reopened, &staged.record_hash).unwrap();
+        assert!(recovered == draft);
+        assert_eq!(record.schema_version, history::SCHEMA_VERSION);
+        assert_eq!(record.impacts[0].retained_internal_edits, 1);
+        assert_eq!(record.impacts[0].recovered_internal_edits, 1);
+        assert!(staged.draft.edits.is_empty());
+        assert_eq!(staged.draft.substitutions.len(), 1);
+        assert_eq!(
+            reopened.attachments[&staged.record_hash].kind,
+            history::KIND
+        );
     }
     #[test]
     fn raw_unsaved_fields_and_inactive_captures_survive_crosslayer_commit() {

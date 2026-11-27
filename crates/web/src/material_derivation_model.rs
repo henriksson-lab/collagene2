@@ -174,6 +174,7 @@ impl PcrChoice {
             name: name.into(),
             save_primers,
             derivation: Derivation::ExactPcr {
+                template_strand: self.preview.geometry.template_strand,
                 forward: self.forward.clone(),
                 reverse: self.reverse.clone(),
                 selection: PcrSelection {
@@ -346,7 +347,13 @@ mod tests {
         let source_event = event(&workspace);
         let forward = Primer::new("Forward", "AGTCCG", "").unwrap();
         let reverse = Primer::new("Reverse", "AGTCTA", "").unwrap();
-        let previews = verification::simulate_pcr_documents(&source, &forward, &reverse).unwrap();
+        let previews = verification::simulate_pcr_documents(
+            &source,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap();
         assert_eq!(previews.len(), 1);
         let preview = Arc::new(previews.into_iter().next().unwrap());
         assert_eq!(preview.molecule.sequence.as_str(), "AGTCCGATGCTAGACT");

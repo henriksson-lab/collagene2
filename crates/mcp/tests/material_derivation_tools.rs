@@ -161,7 +161,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     let before_count = call(&c, "list_documents", json!({})).await["total"].clone();
     let forward = Primer::new("Literal F", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("Literal R", "TGACGATC", "").unwrap();
-    let preview=call(&c,"material_derivation",json!({"workspace":input,"task":{"PreviewPcr":{"source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse}}})).await;
+    let preview=call(&c,"material_derivation",json!({"workspace":input,"task":{"PreviewPcr":{"template_strand":"Top","source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse}}})).await;
     assert_eq!(preview["count"], 1);
     assert_eq!(
         call(&c, "list_documents", json!({})).await["total"],
@@ -181,6 +181,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
                     .unwrap()
                     .into(),
             },
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         name: "Standalone native PCR".into(),
         save_primers: true,
@@ -216,7 +217,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     .await;
     let mut stale = input.clone();
     stale["revision"] = json!("0".repeat(64));
-    reject(&c,json!({"workspace":stale,"task":{"PreviewPcr":{"source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse}}})).await;
+    reject(&c,json!({"workspace":stale,"task":{"PreviewPcr":{"template_strand":"Top","source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse}}})).await;
     let mut injected = serde_json::to_value(&request).unwrap();
     injected["derivation"]["ExactPcr"]["selection"]["geometry"] = json!({"sequence":STOCK});
     reject(
@@ -265,7 +266,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     closed.validate_for_workspace(&w, &receipt.product).unwrap();
     let origin = run_material::MaterialSelection::Derived(receipt.product.clone());
     // Even a handle with the right event must name its actual origin family.
-    reject(&c,json!({"workspace":reference(&installed),"task":{"PreviewPcr":{"source":receipt.product,"origin":{"Saved":run_material::MaterialSelection::Run(run_material::Selection { run_id: "0".repeat(64), step_index: 0, event: receipt.product.clone() })},"forward":forward,"reverse":reverse}}})).await;
+    reject(&c,json!({"workspace":reference(&installed),"task":{"PreviewPcr":{"template_strand":"Top","source":receipt.product,"origin":{"Saved":run_material::MaterialSelection::Run(run_material::Selection { run_id: "0".repeat(64), step_index: 0, event: receipt.product.clone() })},"forward":forward,"reverse":reverse}}})).await;
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let eco = catalog
         .edition()
@@ -312,11 +313,11 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     assert_eq!(fresh.tracked().duplex.bottom_start, 4);
     let inspection=call(&c,"inspect_material_origin",json!({"workspace":reference(&cut),"event":cut_receipt.product,"selection":run_material::MaterialSelection::Derived(cut_receipt.product.clone())})).await;
     assert_eq!(inspection["origin_available"], true);
-    reject(&c,json!({"workspace":input,"task":{"PreviewPcr":{"source":pin,"origin":{"Saved":origin},"forward":forward,"reverse":reverse}}})).await;
+    reject(&c,json!({"workspace":input,"task":{"PreviewPcr":{"template_strand":"Top","source":pin,"origin":{"Saved":origin},"forward":forward,"reverse":reverse}}})).await;
     let mut wrong = pin.clone();
     wrong.event_id = event(&original, 1).event_id;
-    reject(&c,json!({"workspace":input,"task":{"PreviewPcr":{"source":wrong,"origin":"OriginalReference","forward":forward,"reverse":reverse}}})).await;
-    reject(&c,json!({"workspace":input,"task":{"PreviewPcr":{"source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse,"claimed_duplex":{}}}})).await;
+    reject(&c,json!({"workspace":input,"task":{"PreviewPcr":{"template_strand":"Top","source":wrong,"origin":"OriginalReference","forward":forward,"reverse":reverse}}})).await;
+    reject(&c,json!({"workspace":input,"task":{"PreviewPcr":{"template_strand":"Top","source":pin,"origin":"OriginalReference","forward":forward,"reverse":reverse,"claimed_duplex":{}}}})).await;
     let exported = call(&c, "export_workspace_archive", input.clone()).await;
     let kept = native_archive(&c, &exported["artifact_id"]).await;
     assert_eq!(workspace::save_workspace(&kept).unwrap(), input_bytes);

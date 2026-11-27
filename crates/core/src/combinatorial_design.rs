@@ -1,7 +1,8 @@
 //! Explicit source alternatives over existing preparation compilers.
 //! This is a design-choice layer, independent of reaction-product enumeration.
 use crate::{
-    Error, Molecule, Topology, assembly_intent, assembly_junction_edit, assembly_recipe,
+    Error, Molecule, Topology, assembly_edit_intent, assembly_intent, assembly_junction_edit,
+    assembly_recipe, assembly_substitution_intent,
     chemistry::EndTreatment,
     golden_gate::{GoldenGateEnzyme, GoldenGateOptions},
     ligation_recipe,
@@ -13,7 +14,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
-const VERSION: &str = "combinatorial-source-design-2";
+const VERSION: &str = "combinatorial-source-design-3";
 pub const MAX_BINS: usize = 12;
 pub const MAX_CHOICES: usize = 256;
 pub const MAX_SELECTED: usize = 256;
@@ -22,9 +23,9 @@ const MAX_BYTES: usize = 32 * 1024 * 1024;
 macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Choice {
     pub id:String,pub label:String,pub source:EventBinding,
-    /// Literal original-source contribution, not a prepared/PCR output.
-    /// Start normalized, end unrolled at most one circular turn.
-    pub start:usize,pub end:usize,pub reverse:bool,
+    /// Explicit independent contribution domain. Stored native strand offsets
+    /// are distinct from original-reference coordinates and physical orientation.
+    pub selector:assembly_intent::Selector,pub preparation_reverse:bool,
     /// Unfinished alternatives can be retained; an explicitly chosen one needs preparation.
     pub preparation:Option<assembly_recipe::Preparation>,
     pub treatment:Option<EndTreatment>,
@@ -49,7 +50,8 @@ dto! {pub struct PoolSubstrate {pub bin_id:String,pub kind:PoolSubstrateKind}}
 dto! {pub struct PoolSelection {pub selection:crate::prepared_golden_gate::Selection,pub source_revision:String}}
 dto! {pub struct MultiSiteSelection {pub selection:crate::recombination::Selection,pub source_revision:String}}
 dto! {pub struct MultiSiteInspection {pub context_revision:String,pub source_revision:String,pub batch:crate::multisite_recombination::Batch}}
-dto! {pub struct Design {pub id:String,pub name:String,pub circular:bool,pub bins:Vec<Bin>,pub method:Method}}
+dto! {pub struct LibraryMaterialBinding {pub event:EventBinding,pub origin:crate::run_material::MaterialOrigin}}
+dto! {pub struct Design {pub id:String,pub name:String,pub circular:bool,pub bins:Vec<Bin>,pub method:Method,pub material_bindings:Vec<LibraryMaterialBinding>}}
 dto! {pub struct ChoiceSelection {pub bin_id:String,pub choice_id:String}}
 dto! {pub struct Combination {pub id:String,pub choices:Vec<ChoiceSelection>}}
 dto! {pub struct MatrixPage {pub total:u128,pub first:u128,pub combinations:Vec<Combination>}}
@@ -58,9 +60,9 @@ dto! {pub enum TargetDeclaration {
     Existing(EventBinding),
     /// Literal original contribution coordinates + optional declared junction edits.
     /// Uses existing independent intent builder, never the reconstructed product.
-    OriginalRegions{junction_edits:Vec<assembly_junction_edit::Edit>},
+    OriginalRegions{junction_edits:Vec<assembly_junction_edit::Edit>,substitutions:Vec<assembly_substitution_intent::Substitution>,edits:Vec<assembly_edit_intent::Edit>},
 }}
-dto! {pub struct PreparationOverride {pub bin_id:String,pub preparation:Option<assembly_recipe::Preparation>,pub treatment:Option<EndTreatment>,#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>}}
+dto! {pub struct PreparationOverride {pub bin_id:String,pub preparation_reverse:bool,pub preparation:Option<assembly_recipe::Preparation>,pub treatment:Option<EndTreatment>,#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::modified_duplex::GenerationAssumptions>}}
 dto! {pub struct ConstructOverrides {pub preparations:Vec<PreparationOverride>,pub method:Option<Method>,pub circular:Option<bool>}}
 dto! {pub struct SelectedConstruct {
     pub id:String,pub name:String,pub choices:Vec<ChoiceSelection>,pub target:TargetDeclaration,
@@ -71,6 +73,8 @@ dto! {pub struct SelectedMatrix {pub design:Design,pub constructs:Vec<SelectedCo
 pub enum IndependentIntent {
     Regions(assembly_intent::Report),
     Junctions(assembly_junction_edit::Intent),
+    Substitutions(assembly_substitution_intent::Report),
+    Edits(assembly_edit_intent::Report),
 }
 #[derive(Clone, Debug)]
 pub enum Recipe {
@@ -102,6 +106,14 @@ pub struct Resolved {
     pub target_binding: Option<EventBinding>,
     pub intent: Option<IndependentIntent>,
     pub recipe: Recipe,
+    preparation_work: usize,
+}
+impl Resolved {
+    /// Actual declared preparation/search cost resolved in the same native
+    /// source context as independent intent. This scalar grants no chemistry.
+    pub fn declared_work(&self) -> usize {
+        self.preparation_work
+    }
 }
 pub struct Compiled {
     pub resolved: Resolved,
@@ -237,19 +249,134 @@ pub fn cartesian_page(
     }
     Ok(rows)
 }
-fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), Error> {
+fn preparation_origin(
+    preparation: &assembly_recipe::Preparation,
+) -> Option<crate::run_material::NativeOriginRef<'_>> {
     match preparation {
-        assembly_recipe::Preparation::FromRun { .. } => {
+        assembly_recipe::Preparation::FromRun { origin, .. } => {
+            Some(crate::run_material::NativeOriginRef::Run(origin))
+        }
+        assembly_recipe::Preparation::FromDerived { origin, .. } => {
+            Some(crate::run_material::NativeOriginRef::Derived(origin))
+        }
+        _ => None,
+    }
+}
+/// Shallow allocation limits only; source/literal/conflict semantics are assessed
+/// per selected row so one invalid row does not suppress the rest of a batch.
+pub(crate) fn declaration_bounds(target: &TargetDeclaration) -> Result<(), Error> {
+    if let TargetDeclaration::OriginalRegions {
+        junction_edits,
+        substitutions,
+        edits,
+    } = target
+    {
+        if junction_edits.len() > MAX_BINS
+            || substitutions.len() > 256
+            || edits.len() > 256
+            || junction_edits.iter().any(|e| e.inserted.len() > 200)
+            || substitutions
+                .iter()
+                .any(|e| e.role.len() > 128 || e.expected.len() > 1 || e.replacement.len() > 1)
+            || edits.iter().any(|e| e.role.len() > 128)
+        {
+            return Err(Error::TooLarge);
+        }
+        let mut bytes = 0usize;
+        for e in edits {
+            bytes = bytes
+                .checked_add(e.expected.len())
+                .and_then(|n| n.checked_add(e.replacement.len()))
+                .filter(|n| *n <= 100_000)
+                .ok_or(Error::TooLarge)?;
+        }
+    }
+    Ok(())
+}
+fn material_binding<'a>(d: &'a Design, event: &EventBinding) -> Option<&'a LibraryMaterialBinding> {
+    d.material_bindings.iter().find(|b| &b.event == event)
+}
+pub(crate) fn preparation_binding(
+    d: &Design,
+    event: &EventBinding,
+    p: &assembly_recipe::Preparation,
+) -> Result<(), Error> {
+    let claimed = match p {
+        assembly_recipe::Preparation::FromRun { origin, .. } => {
+            Some((&origin.selection.event, assembly_recipe::hash(origin)?))
+        }
+        assembly_recipe::Preparation::FromDerived { origin, .. } => {
+            Some((&origin.product, assembly_recipe::hash(origin)?))
+        }
+        _ => None,
+    };
+    if let Some((pin, hash)) = claimed {
+        let actual = material_binding(d, event).ok_or_else(|| {
+            bad("saved preparation requires its explicit material source binding")
+        })?;
+        let actual_hash = match &actual.origin {
+            crate::run_material::MaterialOrigin::Run(o) => assembly_recipe::hash(o)?,
+            crate::run_material::MaterialOrigin::Derived(o) => assembly_recipe::hash(o)?,
+        };
+        if pin != event || hash != actual_hash {
             return Err(bad(
-                "saved-material preparation requires an explicitly bound originating run and is not yet supported by library projection",
+                "saved preparation differs from declared exact material origin",
             ));
         }
+    }
+    Ok(())
+}
+/// Borrowed exact documentary ownership; no material replay or target construction.
+/// Material bounds/state are freshly checked by the shared intent resolver on use.
+pub fn source_preflight(design: &Design, workspace: &Workspace) -> Result<(), Error> {
+    validate_design(design)?;
+    workspace_guard(workspace)?;
+    crate::run_material::validate_native_origins(
+        workspace,
+        design.material_bindings.iter().map(|b| match &b.origin {
+            crate::run_material::MaterialOrigin::Run(o) => {
+                crate::run_material::NativeOriginRef::Run(o)
+            }
+            crate::run_material::MaterialOrigin::Derived(o) => {
+                crate::run_material::NativeOriginRef::Derived(o)
+            }
+        }),
+    )?;
+    for c in design.bins.iter().flat_map(|b| &b.choices) {
+        let m = resolve_event(workspace, &c.source)?;
+        if m.sequence.alphabet() != crate::Alphabet::Dna {
+            return Err(bad("DNA source required"));
+        }
+        if let assembly_intent::Selector::ReferenceRange { start, end, .. } = &c.selector {
+            let n = m.sequence.len();
+            if *start >= n
+                || end.checked_sub(*start).is_none_or(|k| k == 0 || k > n)
+                || (m.topology == Topology::Linear && *end > n)
+            {
+                return Err(bad("original reference contribution outside source"));
+            }
+        }
+    }
+    Ok(())
+}
+fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), Error> {
+    match preparation {
+        assembly_recipe::Preparation::FromRun {
+            origin,
+            preparation,
+        } => assembly_recipe::from_run_shape(origin, preparation)?,
+        assembly_recipe::Preparation::FromDerived {
+            origin,
+            preparation,
+        } => assembly_recipe::from_derived_shape(origin, preparation)?,
         assembly_recipe::Preparation::AnnealedOligos { .. } => {
             return Err(bad(
                 "paired oligo preparation requires separately bound original inputs and is not supported by library projection",
             ));
         }
-        assembly_recipe::Preparation::ExactPcr { forward, reverse }
+        assembly_recipe::Preparation::ExactPcr {
+            forward, reverse, ..
+        }
         | assembly_recipe::Preparation::PcrCatalogDigest {
             forward, reverse, ..
         } => {
@@ -418,8 +545,51 @@ pub fn validate_design(design: &Design) -> Result<(), Error> {
         || !label(&design.name, 256)
         || design.bins.is_empty()
         || design.bins.len() > MAX_BINS
+        || design.material_bindings.len() > MAX_CHOICES
     {
         return Err(bad("invalid design identity or bin count"));
+    }
+    let mut total = 0usize;
+    for bin in &design.bins {
+        if bin.choices.len() > 64 {
+            return Err(Error::TooLarge);
+        }
+        total = total
+            .checked_add(bin.choices.len())
+            .filter(|n| *n <= MAX_CHOICES)
+            .ok_or(Error::TooLarge)?;
+    }
+    crate::run_material::native_origins_preflight(
+        design
+            .bins
+            .iter()
+            .flat_map(|b| &b.choices)
+            .filter_map(|c| c.preparation.as_ref())
+            .filter_map(preparation_origin)
+            .chain(design.material_bindings.iter().map(|b| match &b.origin {
+                crate::run_material::MaterialOrigin::Run(o) => {
+                    crate::run_material::NativeOriginRef::Run(o)
+                }
+                crate::run_material::MaterialOrigin::Derived(o) => {
+                    crate::run_material::NativeOriginRef::Derived(o)
+                }
+            })),
+    )?;
+    let mut sources = BTreeSet::new();
+    for b in &design.material_bindings {
+        binding(&b.event)?;
+        if !sources.insert((&b.event.document_id, &b.event.event_id, &b.event.revision))
+            || b.origin.event() != &b.event
+            || !design
+                .bins
+                .iter()
+                .flat_map(|b| &b.choices)
+                .any(|c| c.source == b.event)
+        {
+            return Err(bad(
+                "duplicate, unused or mismatched exact native material binding",
+            ));
+        }
     }
     let (mut bin_ids, mut choice_ids) = (BTreeSet::new(), BTreeSet::new());
     let mut count_choices = 0usize;
@@ -440,14 +610,35 @@ pub fn validate_design(design: &Design) -> Result<(), Error> {
             if !identifier(&choice.id)
                 || !choice_ids.insert(&choice.id)
                 || !label(&choice.label, 256)
-                || choice.start >= choice.end
-                || choice.end - choice.start > crate::model::MAX_SEQUENCE_LEN
+                || choice.selector.length()? > crate::model::MAX_SEQUENCE_LEN
             {
                 return Err(bad(
                     "invalid/duplicate choice identity or original contribution",
                 ));
             }
             binding(&choice.source)?;
+            if let assembly_intent::Selector::MaterialStrandRange {
+                expected_state_revision,
+                ..
+            } = &choice.selector
+            {
+                if !digest(expected_state_revision)
+                    || material_binding(design, &choice.source).is_none()
+                {
+                    return Err(bad(
+                        "actual material contribution requires exact state and native source binding",
+                    ));
+                }
+            }
+            if material_binding(design, &choice.source).is_some() && choice.generation.is_some() {
+                return Err(bad(
+                    "native source binding cannot receive an original-generation reset",
+                ));
+            }
+            if let Some(p) = &choice.preparation {
+                preparation_binding(design, &choice.source, p)?;
+            }
+
             if let Some(preparation) = &choice.preparation {
                 preparation_shape(preparation)?;
             }
@@ -512,10 +703,29 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
     let (method, circular) = effective(design, construct);
     method_shape(method, design.bins.len(), circular)?;
     pool_bins(method, &design.bins)?;
+    if matches!(
+        method,
+        Method::GoldenGatePool { .. } | Method::MultiSiteReference { .. }
+    ) && selected(design, &construct.choices)?.iter().any(|(b, c)| {
+        preparation_override(construct, &b.id)
+            .map(|o| o.preparation_reverse)
+            .unwrap_or(c.preparation_reverse)
+    }) {
+        return Err(bad(
+            "reaction-pool orientation is selected by its explicit native path, not an ordered preparation reversal",
+        ));
+    }
     if let Some(overrides) = &construct.overrides {
         if overrides.preparations.len() > MAX_BINS {
             return Err(Error::TooLarge);
         }
+        crate::run_material::native_origins_preflight(
+            overrides
+                .preparations
+                .iter()
+                .filter_map(|p| p.preparation.as_ref())
+                .filter_map(preparation_origin),
+        )?;
         let mut bins = BTreeSet::new();
         for p in &overrides.preparations {
             if !bins.insert(&p.bin_id) || !design.bins.iter().any(|b| b.id == p.bin_id) {
@@ -523,6 +733,16 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
             }
             if let Some(preparation) = &p.preparation {
                 preparation_shape(preparation)?;
+                let (_, choice) = selected(design, &construct.choices)?
+                    .into_iter()
+                    .find(|(b, _)| b.id == p.bin_id)
+                    .ok_or_else(|| bad("missing override source"))?;
+                preparation_binding(design, &choice.source, preparation)?;
+                if material_binding(design, &choice.source).is_some() && p.generation.is_some() {
+                    return Err(bad(
+                        "native source cannot receive original-generation reset",
+                    ));
+                }
             }
         }
     }
@@ -541,9 +761,14 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
             }
         }
     }
+    declaration_bounds(&construct.target)?;
     match &construct.target {
         TargetDeclaration::Existing(target) => binding(target)?,
-        TargetDeclaration::OriginalRegions { junction_edits } => {
+        TargetDeclaration::OriginalRegions {
+            junction_edits,
+            substitutions: _,
+            edits: _,
+        } => {
             let count = design.bins.len().saturating_sub(1) + usize::from(circular);
             let mut junctions = BTreeSet::new();
             if junction_edits.len() > MAX_BINS
@@ -563,16 +788,26 @@ pub fn validate_construct(design: &Design, construct: &SelectedConstruct) -> Res
     validate_design(design)?;
     construct_shape(design, construct)
 }
-pub(crate) fn work_charge(
+fn resolved_work(
     design: &Design,
     construct: &SelectedConstruct,
-    workspace: &Workspace,
+    sources: &assembly_intent::Resolved<'_>,
+    identities: &[(String, String)],
 ) -> Result<usize, Error> {
     construct_shape(design, construct)?;
     let (method, _) = effective(design, construct);
     let mut work = 0usize;
-    for (bin, choice) in selected(design, &construct.choices)? {
-        let n = resolve_event(workspace, &choice.source)?.sequence.len();
+    for ((bin, choice), (id, _)) in selected(design, &construct.choices)?
+        .into_iter()
+        .zip(identities)
+    {
+        let source = &sources
+            .inputs
+            .iter()
+            .find(|i| i.id == *id)
+            .ok_or_else(|| bad("resolved source input is absent"))?
+            .molecule;
+        let n = source.sequence.len();
         let preparation = preparation_override(construct, &bin.id)
             .map(|p| &p.preparation)
             .unwrap_or(&choice.preparation)
@@ -584,74 +819,48 @@ pub(crate) fn work_charge(
         } else {
             preparation
         };
-        let mut factor = 1usize;
-        if let Some(preparation) = preparation {
-            match preparation {
-                assembly_recipe::Preparation::MismatchPcr {
-                    forward,
-                    reverse,
-                    options,
-                }
-                | assembly_recipe::Preparation::MismatchPcrCatalogDigest {
-                    forward,
-                    reverse,
-                    options,
-                    ..
-                } => {
-                    work = work
-                        .checked_add(assembly_recipe::mismatch_pcr_work(
-                            n, forward, reverse, options,
-                        )?)
-                        .ok_or(Error::TooLarge)?;
-                }
-                assembly_recipe::Preparation::ExactPcr { forward, reverse }
-                | assembly_recipe::Preparation::PcrCatalogDigest {
-                    forward, reverse, ..
-                } => {
-                    factor = factor
-                        .checked_add(forward.annealing.len())
-                        .and_then(|v| v.checked_add(reverse.annealing.len()))
-                        .ok_or(Error::TooLarge)?;
-                }
-                _ => {}
-            }
-            match preparation {
-                assembly_recipe::Preparation::CatalogDigest { selection, .. }
-                | assembly_recipe::Preparation::PcrCatalogDigest { selection, .. }
-                | assembly_recipe::Preparation::MismatchPcrCatalogDigest { selection, .. } => {
-                    let mut motif = 0usize;
-                    for enzyme in &selection.enzymes {
-                        motif = motif
-                            .checked_add(enzyme.enzyme.recognition.len())
-                            .ok_or(Error::TooLarge)?;
+        // Use the very same native preparation cost as recipe preflight. Saved
+        // Run/Derived wrappers retain their child recipe costs; no origin state
+        // or primer search is replayed merely to reserve batch work.
+        let preparation_units = if let Some(preparation) = preparation {
+            use assembly_recipe::{Preparation as P, RunPreparation as R};
+            let framed = matches!(
+                preparation,
+                P::ExactPcr { .. }
+                    | P::PcrCatalogDigest { .. }
+                    | P::OverlapExtensionPcr { .. }
+                    | P::OverlapExtensionPcrCatalogDigest { .. }
+                    | P::FromRun {
+                        preparation: R::ExactPcr { .. }
+                            | R::PcrCatalogDigest { .. }
+                            | R::OverlapExtensionPcr { .. }
+                            | R::OverlapExtensionPcrCatalogDigest { .. },
+                        ..
                     }
-                    let margin = if matches!(
-                        preparation,
-                        assembly_recipe::Preparation::PcrCatalogDigest { .. }
-                            | assembly_recipe::Preparation::MismatchPcrCatalogDigest { .. }
-                    ) {
-                        400
-                    } else {
-                        0
-                    };
-                    work = work
-                        .checked_add(
-                            n.checked_add(margin)
-                                .and_then(|n| n.checked_mul(motif))
-                                .ok_or(Error::TooLarge)?,
-                        )
-                        .ok_or(Error::TooLarge)?;
-                }
-                assembly_recipe::Preparation::Digest { enzymes, .. } => {
-                    factor = factor
-                        .checked_add(enzymes.len().checked_mul(64).ok_or(Error::TooLarge)?)
-                        .ok_or(Error::TooLarge)?;
-                }
-                _ => {}
+                    | P::FromDerived {
+                        preparation: R::ExactPcr { .. }
+                            | R::PcrCatalogDigest { .. }
+                            | R::OverlapExtensionPcr { .. }
+                            | R::OverlapExtensionPcrCatalogDigest { .. },
+                        ..
+                    }
+            );
+            if let Some(fresh) = sources.material(id).filter(|_| framed) {
+                let frame = crate::pcr_source::Template::fresh(
+                    source,
+                    fresh.tracked(),
+                    crate::chemistry::Strand::Top,
+                )?;
+                assembly_recipe::preparation_work_from_frame(frame, preparation)?
+            } else {
+                assembly_recipe::preparation_work(source, preparation)?
             }
-        }
+        } else {
+            0
+        };
         work = work
-            .checked_add(n.checked_mul(factor).ok_or(Error::TooLarge)?)
+            .checked_add(n)
+            .and_then(|n| n.checked_add(preparation_units))
             .ok_or(Error::TooLarge)?;
         if let Method::GoldenGatePool { options, .. } = method {
             work = work
@@ -807,7 +1016,9 @@ pub fn resolve(
     validate_design(design)?;
     construct_shape(design, construct)?;
     workspace_guard(workspace)?;
-    resolve_validated(design, construct, workspace)
+    let resolved = resolve_validated(design, construct, workspace)?;
+    preflight_resolved(&resolved)?;
+    Ok(resolved)
 }
 pub(crate) fn resolve_validated(
     design: &Design,
@@ -822,9 +1033,8 @@ pub(crate) fn resolve_validated(
         let molecule = resolve_event(workspace, &choice.source)?;
         let n = molecule.sequence.len();
         if molecule.sequence.alphabet() != crate::Alphabet::Dna
-            || choice.start >= n
-            || choice.end - choice.start > n
-            || (molecule.topology == Topology::Linear && choice.end > n)
+            || matches!(&choice.selector,
+            assembly_intent::Selector::ReferenceRange{start,end,..} if *start>=n || end.checked_sub(*start).is_none_or(|k|k==0 || k>n) || (molecule.topology==Topology::Linear && *end>n))
         {
             return Err(bad(
                 "selected contribution is outside its original source or exceeds one turn",
@@ -832,6 +1042,53 @@ pub(crate) fn resolve_validated(
         }
         originals.push(molecule);
     }
+    let preparations = choices
+        .iter()
+        .map(|(bin, choice)| {
+            preparation_override(construct, &bin.id)
+                .map(|p| p.preparation.as_ref())
+                .unwrap_or(choice.preparation.as_ref())
+        })
+        .collect::<Vec<_>>();
+    for (((_, choice), molecule), preparation) in choices.iter().zip(&originals).zip(&preparations)
+    {
+        if let Some(preparation) = preparation {
+            let event = match preparation {
+                assembly_recipe::Preparation::FromRun { origin, .. } => {
+                    Some(&origin.selection.event)
+                }
+                assembly_recipe::Preparation::FromDerived { origin, .. } => Some(&origin.product),
+                _ => None,
+            };
+            if let Some(event) = event {
+                if event != &choice.source || event.revision != molecule.revision() {
+                    return Err(bad(
+                        "saved preparation origin differs from exact selected source event",
+                    ));
+                }
+            }
+        }
+    }
+    crate::run_material::validate_native_origins(
+        workspace,
+        preparations
+            .iter()
+            .filter_map(|p| *p)
+            .filter_map(preparation_origin)
+            .chain(
+                choices
+                    .iter()
+                    .filter_map(|(_, c)| material_binding(design, &c.source))
+                    .map(|b| match &b.origin {
+                        crate::run_material::MaterialOrigin::Run(o) => {
+                            crate::run_material::NativeOriginRef::Run(o)
+                        }
+                        crate::run_material::MaterialOrigin::Derived(o) => {
+                            crate::run_material::NativeOriginRef::Derived(o)
+                        }
+                    }),
+            ),
+    )?;
     if let Method::MultiSiteReference { request, .. } = method {
         crate::multisite_recombination::source_preflight(&originals, request)?;
     }
@@ -869,25 +1126,50 @@ pub(crate) fn resolve_validated(
         .map(|((_, choice), (id, role))| assembly_intent::Contribution {
             role: role.clone(),
             input_id: id.clone(),
-            selector: assembly_intent::Selector::ReferenceRange {
-                start: choice.start,
-                end: choice.end,
-                reverse: choice.reverse,
-            },
+            selector: choice.selector.clone(),
         })
         .collect::<Vec<_>>();
     let request = assembly_intent::Request {
         name: construct.name.clone(),
         fragments,
         circular,
-        material_bindings: vec![],
+        material_bindings: choices
+            .iter()
+            .zip(&ids)
+            .filter_map(|((_, choice), id)| {
+                material_binding(design, &choice.source).map(|b| assembly_intent::MaterialBinding {
+                    input_id: id.clone(),
+                    event: b.event.clone(),
+                    origin: b.origin.clone(),
+                })
+            })
+            .collect(),
     };
     let native = ids
         .iter()
         .zip(&originals)
         .map(|(id, m)| (id.as_str(), *m))
         .collect::<Vec<_>>();
-    assembly_intent::preflight(&native, &request, None)?;
+    let edited_request = match &construct.target {
+        TargetDeclaration::OriginalRegions {
+            junction_edits,
+            substitutions,
+            edits,
+        } => Some(assembly_edit_intent::Request {
+            base: assembly_substitution_intent::Request {
+                base: request.clone(),
+                junction_edits: junction_edits.clone(),
+                substitutions: substitutions.clone(),
+            },
+            edits: edits.clone(),
+        }),
+        _ => None,
+    };
+    if let Some(edited) = &edited_request {
+        assembly_edit_intent::source_preflight(&native, edited, Some(workspace))?;
+    } else {
+        assembly_intent::preflight(&native, &request, Some(workspace))?;
+    }
     let inputs = ids
         .iter()
         .zip(&originals)
@@ -905,23 +1187,68 @@ pub(crate) fn resolve_validated(
             event: choice.source.clone(),
         })
         .collect::<Vec<_>>();
+    let source_context = assembly_intent::resolve(&inputs, &request, Some(workspace))?;
+    let preparation_work = resolved_work(design, construct, &source_context, &identities)?;
     let (target, target_binding, intent) = match &construct.target {
         TargetDeclaration::Existing(event) => (
             existing.expect("resolved existing target").clone(),
             Some(event.clone()),
             None,
         ),
-        TargetDeclaration::OriginalRegions { junction_edits } => {
-            if junction_edits.is_empty() {
-                let intent = assembly_intent::build(&inputs, &request, None)?;
+        TargetDeclaration::OriginalRegions {
+            junction_edits,
+            substitutions,
+            edits,
+        } => {
+            let edited = edited_request
+                .as_ref()
+                .expect("typed independent declaration");
+            if !edits.is_empty() {
+                let intent = assembly_edit_intent::build_resolved(&source_context, edited)?;
+                (
+                    intent.target.clone(),
+                    None,
+                    Some(IndependentIntent::Edits(intent)),
+                )
+            } else if !substitutions.is_empty() {
+                let intent =
+                    assembly_substitution_intent::report_resolved(&source_context, &edited.base)?;
+                (
+                    intent.target.clone(),
+                    None,
+                    Some(IndependentIntent::Substitutions(intent)),
+                )
+            } else if junction_edits.is_empty() {
+                let layout = source_context
+                    .rows
+                    .iter()
+                    .map(|r| (0, r.original_sequence.len()))
+                    .collect::<Vec<_>>();
+                let (target, fragments, warnings) = assembly_intent::build_layout(
+                    &source_context,
+                    &request,
+                    &layout,
+                    &source_context.context,
+                )?;
+                let intent = assembly_intent::Report {
+                    context_revision: source_context.context.clone(),
+                    request: request.clone(),
+                    target,
+                    fragments,
+                    warnings,
+                };
+                intent.validate()?;
                 (
                     intent.target.clone(),
                     None,
                     Some(IndependentIntent::Regions(intent)),
                 )
             } else {
-                let intent =
-                    assembly_junction_edit::build_intent(&inputs, &request, junction_edits, None)?;
+                let intent = assembly_junction_edit::report_resolved(
+                    &source_context,
+                    &request,
+                    junction_edits,
+                )?;
                 (
                     intent.target.clone(),
                     None,
@@ -930,6 +1257,7 @@ pub(crate) fn resolve_validated(
             }
         }
     };
+    drop(source_context);
     let recipe = if let Method::MultiSiteReference { request, selection } = method {
         let sources = identities
             .iter()
@@ -956,9 +1284,8 @@ pub(crate) fn resolve_validated(
                     (
                         &bin.id,
                         &choice.id,
-                        choice.start,
-                        choice.end,
-                        choice.reverse,
+                        &choice.selector,
+                        choice.preparation_reverse,
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -995,12 +1322,7 @@ pub(crate) fn resolve_validated(
                         if treatment.is_some() {
                             return Err(bad("whole-source reaction substrate cannot silently apply a terminal treatment; choose an explicit prepared route"));
                         }
-                        let source_preparation=preparation_override(construct,&bin.id).map(|o|o.preparation.as_ref()).unwrap_or(choice.preparation.as_ref());
-                        let origin=match source_preparation {
-                            Some(assembly_recipe::Preparation::FromRun{origin,..})=>Some(crate::run_material::MaterialOrigin::Run(origin.clone())),
-                            Some(assembly_recipe::Preparation::FromDerived{origin,..})=>Some(crate::run_material::MaterialOrigin::Derived(origin.clone())),
-                            _=>None,
-                        };
+                        let origin=material_binding(design,&choice.source).map(|b|b.origin.clone());
                         crate::golden_gate_reaction::Substrate::WholeSource{origin}
                     }
                     PoolSubstrateKind::Prepared => {
@@ -1025,7 +1347,6 @@ pub(crate) fn resolve_validated(
             rows,
             options: options.clone(),
         };
-        crate::golden_gate_reaction::preflight(&native, &target, &request)?;
         let source_revision = assembly_recipe::hash(&(
             "combinatorial-pool-source-intent-1",
             &design.id,
@@ -1039,9 +1360,8 @@ pub(crate) fn resolve_validated(
                     (
                         &bin.id,
                         &choice.id,
-                        choice.start,
-                        choice.end,
-                        choice.reverse,
+                        &choice.selector,
+                        choice.preparation_reverse,
                     )
                 })
                 .collect::<Vec<_>>(),
@@ -1068,7 +1388,9 @@ pub(crate) fn resolve_validated(
                 role: role.clone(),
                 input_id: id.clone(),
                 preparation,
-                reverse: choice.reverse,
+                reverse: preparation_override(construct, &bin.id)
+                    .map(|o| o.preparation_reverse)
+                    .unwrap_or(choice.preparation_reverse),
             });
         }
         match method {
@@ -1090,7 +1412,6 @@ pub(crate) fn resolve_validated(
                     circular,
                     options: options.clone(),
                 };
-                assembly_recipe::preflight(&inputs, &target, &recipe)?;
                 Recipe::Overlap(recipe)
             }
             Method::Ligation { allow_nicked } | Method::OrderedTypeIis { allow_nicked, .. } => {
@@ -1126,7 +1447,6 @@ pub(crate) fn resolve_validated(
                     circular,
                     allow_nicked: *allow_nicked,
                 };
-                ligation_recipe::source_preflight(&native, &target, &recipe)?;
                 Recipe::Ligation {
                     recipe,
                     cleavage_policy: if matches!(method, Method::OrderedTypeIis { .. }) {
@@ -1155,9 +1475,29 @@ pub(crate) fn resolve_validated(
         target_binding,
         intent,
         recipe,
+        preparation_work,
     })
 }
 
+fn preflight_resolved(resolved: &Resolved) -> Result<(), Error> {
+    let borrowed = resolved
+        .inputs
+        .iter()
+        .map(|i| (i.id.as_str(), &i.molecule))
+        .collect::<Vec<_>>();
+    match &resolved.recipe {
+        Recipe::Overlap(recipe) => {
+            assembly_recipe::preflight(&resolved.inputs, &resolved.target, recipe)
+        }
+        Recipe::Ligation { recipe, .. } => {
+            ligation_recipe::source_preflight(&borrowed, &resolved.target, recipe)
+        }
+        Recipe::GoldenGatePool { request, .. } => {
+            crate::golden_gate_reaction::preflight(&borrowed, &resolved.target, request)
+        }
+        Recipe::MultiSiteReference { .. } => Ok(()),
+    }
+}
 fn multisite_inputs(
     resolved: &Resolved,
 ) -> Result<Vec<crate::recombination::reference::Input>, Error> {
@@ -1240,9 +1580,7 @@ pub fn inspect_multisite_revision(
     for (_, choice) in selected {
         let molecule = resolve_event(workspace, &choice.source)?;
         let n = molecule.sequence.len();
-        if choice.start >= n
-            || choice.end - choice.start > n
-            || (molecule.topology == Topology::Linear && choice.end > n)
+        if matches!(&choice.selector,assembly_intent::Selector::ReferenceRange{start,end,..} if *start>=n || end.checked_sub(*start).is_none_or(|k|k==0 || k>n) || (molecule.topology==Topology::Linear && *end>n))
         {
             return Err(bad(
                 "independent contribution is outside its original parent",
@@ -1421,14 +1759,7 @@ pub fn evaluate(
     let resolved = resolve(design, construct, workspace)?;
     evaluate_resolved(resolved)
 }
-pub(crate) fn evaluate_validated(
-    design: &Design,
-    construct: &SelectedConstruct,
-    workspace: &Workspace,
-) -> Result<Evaluation, Error> {
-    evaluate_resolved(resolve_validated(design, construct, workspace)?)
-}
-fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
+pub(crate) fn evaluate_resolved(resolved: Resolved) -> Result<Evaluation, Error> {
     let preview = match &resolved.recipe {
         Recipe::Overlap(recipe) => Preview::Overlap(assembly_recipe::preview(
             &resolved.inputs,

@@ -84,7 +84,7 @@ records and local remote bookkeeping. The exact App contracts audited are:
 | --- | --- |
 | `assembly-draft-v14` | Current editable assembly declaration; no scientific status or physical authority is restored. |
 | `assembly-design-v1` | `assembly_saved_designs_model.rs` stores named **editable declarations**; no candidate/result authority is restored. Their source pins/capsules belong to unpublished future designs, not dependencies of an existing plasmid event. |
-| `assembly-library-history-v1` | Local draft-edit recovery bytes; not an immutable product producer. |
+| `assembly-library-history-v2` | Local draft-edit recovery bytes; not an immutable product producer. |
 | `primer-pair-draft-v2` | `primer_pair_storage.rs` explicitly describes unfinished editable text, not successful PCR or saved binding. |
 | `annotation-display-v1` | `annotation_visibility.rs` stores hidden feature indices as display preferences, without sequence edits. |
 | `lab-library-bindings-v1`, `lab-library-branches-v1` | `library_bindings.rs`/`library_documents.rs` store per-remote links and retained local branch bookmarks, outside scientific ancestry. |

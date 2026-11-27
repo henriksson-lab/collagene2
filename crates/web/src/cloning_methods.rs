@@ -426,6 +426,7 @@ pub fn CloningMethodsPanel(
                 return;
             };
             let collagene_core::assembly_recipe::Preparation::PcrCatalogDigest {
+                template_strand,
                 forward,
                 reverse,
                 selection,
@@ -443,6 +444,7 @@ pub fn CloningMethodsPanel(
                 status.set("Preparation or orientation changed; nothing applied.".into());
                 return;
             }
+            row.template_strand = *template_strand;
             row.forward_name = forward.name.clone();
             row.forward = forward.annealing.as_str().into();
             row.forward_tail = forward.tail.clone();
@@ -628,8 +630,11 @@ pub fn CloningMethodsPanel(
                     .set("Suggested source order or orientation changed; nothing applied.".into());
                 return;
             }
-            let collagene_core::assembly_recipe::Preparation::ExactPcr { forward, reverse } =
-                &fragment.preparation
+            let collagene_core::assembly_recipe::Preparation::ExactPcr {
+                template_strand,
+                forward,
+                reverse,
+            } = &fragment.preparation
             else {
                 status
                     .set("Suggestion is not an explicit PCR preparation; nothing applied.".into());
@@ -637,6 +642,7 @@ pub fn CloningMethodsPanel(
             };
             let row = &mut updated.rows[i];
             row.preparation = OverlapPreparation::ExactPcr;
+            row.template_strand = *template_strand;
             row.forward_name = forward.name.clone();
             row.forward = forward.annealing.as_str().into();
             row.forward_tail = forward.tail.clone();
@@ -1367,7 +1373,7 @@ fn OverlapFields(
         <Show when=move||config.get().mode==Mode::GoldenGate&&!edited_junctions><label>"Right fusion end (assembly direction, 5′→3′)"<input maxlength="4" aria-label=format!("Golden Gate right fusion {}",index+1) prop:value=move||row().right_fusion on:input=move|e|config.update(|c|if let Some(row)=c.rows.get_mut(index){row.right_fusion=event_target_value(&e)})/></label><p class="helper">{move||format!("Enter {} concrete bases explicitly. The left fusion comes from this oriented source region; enter the next fragment’s first fusion bases explicitly for a matching junction. The right fusion is added design DNA. Existing-site compatibility is checked from its actual ends.",if config.with(|c|c.golden_gate.enzyme)==collagene_core::golden_gate::GoldenGateEnzyme::SapI{3}else{4})}</p></Show>
         <SourceGenerationFields config index/>
         <label>"Prepare fragment"<select aria-label=move||format!("{} preparation {}",preparation_label(config.get().mode),index+1) prop:value=move||match row().preparation{OverlapPreparation::WholeLinear=>"whole",OverlapPreparation::DeclaredDuplex=>"declared",OverlapPreparation::Digest=>"digest",OverlapPreparation::CatalogDigest=>"catalog",OverlapPreparation::ExactPcr=>"pcr",OverlapPreparation::MismatchPcr=>"mismatch_pcr",OverlapPreparation::MismatchPcrCatalogDigest=>"mismatch_pcr_catalog",OverlapPreparation::PcrCatalogDigest=>"pcr_catalog",OverlapPreparation::AnnealedOligos=>"anneal",OverlapPreparation::OverlapExtensionPcr=>"extension_pcr",OverlapPreparation::OverlapExtensionPcrCatalogDigest=>"extension_pcr_catalog"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.preparation=match event_target_value(&e).as_str(){"declared"=>OverlapPreparation::DeclaredDuplex,"digest"=>OverlapPreparation::Digest,"catalog"=>OverlapPreparation::CatalogDigest,"pcr"=>OverlapPreparation::ExactPcr,"mismatch_pcr"=>OverlapPreparation::MismatchPcr,"mismatch_pcr_catalog"=>OverlapPreparation::MismatchPcrCatalogDigest,"pcr_catalog"=>OverlapPreparation::PcrCatalogDigest,"anneal"=>OverlapPreparation::AnnealedOligos,"extension_pcr"=>{r.overlap_extension_pcr.get_or_insert_with(Default::default);OverlapPreparation::OverlapExtensionPcr},"extension_pcr_catalog"=>{r.overlap_extension_pcr.get_or_insert_with(Default::default);OverlapPreparation::OverlapExtensionPcrCatalogDigest},_=>OverlapPreparation::WholeLinear}})><option value="anneal" disabled=move||row().run_origin.is_some()||config.get().mode!=Mode::Ligation||(fixed_sources&&row().anneal_bottom_document.is_none())>"Annealed oligo pair"</option><option value="whole">"Whole linear DNA"</option><option value="declared" disabled=move||row().run_origin.is_some()>"Declare intact linear duplex"</option><option value="digest">"Manual starter-enzyme digest"</option><option value="catalog">"Pinned catalog digest fragment"</option><option value="pcr">"Exact PCR product"</option><option value="mismatch_pcr">"Intentional-mismatch PCR product"</option><option value="extension_pcr">"Overlap-extension PCR"</option><option value="extension_pcr_catalog">"Overlap-extension PCR → pinned catalog digest"</option><option value="pcr_catalog">"Exact PCR → pinned catalog digest"</option><option value="mismatch_pcr_catalog">"Intentional-mismatch PCR → pinned catalog digest"</option></select></label>
-        {get_workspace.map(|snapshot|view!{<Show when=move||row().run_origin.is_some()||!matches!(row().preparation,OverlapPreparation::DeclaredDuplex|OverlapPreparation::AnnealedOligos)><crate::run_origin_view::RunOriginPicker config index source_info epoch get_workspace=snapshot/></Show>})}
+        {get_workspace.map(|snapshot|view!{<Show when=move||!fixed_sources&&(row().run_origin.is_some()||!matches!(row().preparation,OverlapPreparation::DeclaredDuplex|OverlapPreparation::AnnealedOligos))><crate::run_origin_view::RunOriginPicker config index source_info epoch get_workspace=snapshot/></Show>})}
         <Show when=move||row().preparation==OverlapPreparation::WholeLinear><p class="helper">"Use an already linear source. Circular DNA must first be prepared by restriction digest or exact PCR; its origin is not an assumed cut."</p></Show>
         <Show when=move||row().preparation==OverlapPreparation::AnnealedOligos><crate::anneal_preparation_view::AnnealPreparationFields config index query_options get_query source_info epoch fixed_sources/></Show>
         <Show when=move||row().preparation==OverlapPreparation::DeclaredDuplex><p class="helper">"Operator assumption for an original, intact linear duplex: declare its two terminal groups explicitly. This does not measure chemistry, cut or repair DNA, change its reference sequence, or reuse producer metadata. Circular, single-stranded and imported physical/reference-only intermediate sources are rejected by the core."</p><DeclaredEndFields config index left=true/><DeclaredEndFields config index left=false/><p class="helper">"All groups initially remain unknown. Orientation is applied after this declaration; any ligation terminal treatment remains a separate explicit step."</p></Show>
@@ -1378,6 +1384,7 @@ fn OverlapFields(
             <label>"Optional explicit end repair"<select aria-label=move||format!("{} end repair {}",preparation_label(config.get().mode),index+1) prop:value=move||match row().repair{None=>"none",Some(EndRepairMethod::FillFivePrimeOverhangs)=>"fill",Some(EndRepairMethod::RemoveThreePrimeOverhangs)=>"remove",Some(EndRepairMethod::Blunt)=>"blunt"} on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.repair=match event_target_value(&e).as_str(){"fill"=>Some(EndRepairMethod::FillFivePrimeOverhangs),"remove"=>Some(EndRepairMethod::RemoveThreePrimeOverhangs),"blunt"=>Some(EndRepairMethod::Blunt),_=>None}})><option value="none">"None — retain cohesive ends"</option><option value="fill">"Fill 5′ overhangs"</option><option value="remove">"Remove 3′ overhangs"</option><option value="blunt">"Blunt ends"</option></select></label>
             <p class="helper">"Fragments are reconstructed in core digest order using the stated complete-cleavage assumption. This is not evidence of enzyme activity, methylation permission or reagent compatibility."</p>
         </Show>
+        <Show when=move||matches!(row().preparation,OverlapPreparation::ExactPcr|OverlapPreparation::PcrCatalogDigest)><label>"PCR template strand"<select aria-label=format!("Fragment {} PCR template strand",index+1) prop:value=move||match row().template_strand{collagene_core::chemistry::Strand::Top=>"top",collagene_core::chemistry::Strand::Bottom=>"bottom"} on:change=move|event|{let strand=match event_target_value(&event).as_str(){"bottom"=>collagene_core::chemistry::Strand::Bottom,_=>collagene_core::chemistry::Strand::Top};config.update(|c|if let Some(row)=c.rows.get_mut(index){row.template_strand=strand;});}><option value="top">"Top · original 5′→3′ coordinates"</option><option value="bottom" disabled=move||row().run_origin.is_none()>"Bottom · saved strand 5′→3′ coordinates"</option></select></label><p class="helper">"The whole selected strand is checked for competing primer sites. Selecting a contribution does not crop the template; nicked or unsupported source geometry remains a diagnostic."</p></Show>
         <Show when=move||row().is_overlap_extension_pcr()><crate::overlap_extension_preparation_view::OverlapExtensionPreparationFields config index/></Show>
         <Show when=move||row().is_pcr()>
             <crate::primer_picker::PrimerPicker label=format!("Fragment {} forward",index+1) sources=primer_sources list_primers resolve_primer epoch on_copy=Callback::new(move|primer:Primer|config.update(|c|if let Some(r)=c.rows.get_mut(index){r.forward_name=primer.name;r.forward=primer.annealing.as_str().into();r.forward_tail=primer.tail;}))/>

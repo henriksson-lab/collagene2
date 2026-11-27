@@ -6,15 +6,15 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 105;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 27;
+pub const WORKER_SCHEMA_VERSION: u16 = 106;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 28;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 126, 128, 129, 132,
-    133, 145, 146, 147, 148, 149, 153, 156, 159, 161, 166, 167, 168, 169, 170, 171, 172, 173, 174,
-    175, 176, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190,
+    133, 145, 146, 147, 148, 149, 153, 156, 159, 161, 164, 166, 167, 168, 169, 170, 171, 172, 173,
+    174, 175, 176, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -198,6 +198,7 @@ pub enum AnalysisJob {
         molecule: Molecule,
         forward: crate::analysis::Primer,
         reverse: crate::analysis::Primer,
+        template_strand: crate::chemistry::Strand,
     },
     AnalyzePrimer {
         molecule: Molecule,
@@ -941,6 +942,8 @@ pub enum AnalysisJob {
     DesignEditedOverlapPrimers {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_edited_primer_design::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     PreviewHomologyRecipe {
         inputs: Vec<crate::verification::PlanInput>,
@@ -970,6 +973,7 @@ pub enum AnalysisJob {
         origin: crate::run_material::MaterialOrigin,
         forward: crate::analysis::Primer,
         reverse: crate::analysis::Primer,
+        template_strand: crate::chemistry::Strand,
     },
     PrepareMaterialPcrOutputs {
         origin: crate::run_material::MaterialOrigin,
@@ -1368,8 +1372,9 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             origin,
             forward,
             reverse,
+            template_strand,
         } => {
-            crate::material_pcr::revision(molecule, origin, forward, reverse)?;
+            crate::material_pcr::revision(molecule, origin, forward, reverse, *template_strand)?;
         }
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
             crate::material_pcr::outputs_revision(origin, request)?;
@@ -1461,7 +1466,11 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 .collect::<Vec<_>>();
             crate::assembly_recipe::homology_source_preflight(&sources, target, recipe, policy)?;
         }
-        AnalysisJob::DesignEditedOverlapPrimers { inputs, request } => {
+        AnalysisJob::DesignEditedOverlapPrimers {
+            inputs,
+            request,
+            workspace,
+        } => {
             if inputs.len() > 32 {
                 return Err(Error::TooLarge);
             }
@@ -1469,7 +1478,11 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 .iter()
                 .map(|input| (input.id.as_str(), &input.molecule))
                 .collect::<Vec<_>>();
-            crate::assembly_edited_primer_design::source_preflight(&sources, request)?;
+            crate::assembly_edited_primer_design::source_preflight(
+                &sources,
+                request,
+                workspace.as_ref(),
+            )?;
         }
         AnalysisJob::DesignOverlapExtensionPrimers { source, request } => {
             crate::overlap_extension_primer_design::preflight(source, request)?;
@@ -1753,6 +1766,7 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InspectCombinatorialMultiSite { .. }
             | AnalysisJob::InspectRunMaterial { .. }
             | AnalysisJob::PreviewAnnealingRecipe { .. }
+            | AnalysisJob::DesignEditedOverlapPrimers { .. }
             | AnalysisJob::InspectTopoRun { .. }
             | AnalysisJob::InspectMaterialOrigin { .. }
             | AnalysisJob::MaterialPcrDocuments { .. }
@@ -2667,8 +2681,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             forward,
             reverse,
+            template_strand,
         } => {
-            if crate::material_pcr::revision(molecule, origin, forward, reverse)? != r.revision {
+            if crate::material_pcr::revision(molecule, origin, forward, reverse, *template_strand)?
+                != r.revision
+            {
                 return Err(Error::Format("Material PCR source/primers changed".into()));
             }
             None
@@ -2913,8 +2930,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::DesignEditedOverlapPrimers { inputs, request } => {
-            if crate::assembly_edited_primer_design::design_revision(inputs, request)? != r.revision
+        AnalysisJob::DesignEditedOverlapPrimers {
+            inputs,
+            request,
+            workspace,
+        } => {
+            if crate::assembly_edited_primer_design::design_revision(
+                inputs,
+                request,
+                workspace.as_ref(),
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Edited overlap primer original sources, intent, origins or policy changed"
@@ -4167,7 +4192,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             forward,
             reverse,
-        } => crate::material_pcr::simulate(&molecule, &origin, &forward, &reverse)
+            template_strand,
+        } => crate::material_pcr::simulate(&molecule, &origin, &forward, &reverse, template_strand)
             .map(AnalysisResult::MaterialPcrDocuments),
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
             crate::material_pcr::prepare_outputs(&origin, &request)
@@ -4373,10 +4399,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             policy,
         } => crate::assembly_recipe::preview_homology(&inputs, &target, &recipe, &policy)
             .map(AnalysisResult::OverlapRecipePreview),
-        AnalysisJob::DesignEditedOverlapPrimers { inputs, request } => {
-            crate::assembly_edited_primer_design::design(&inputs, &request)
-                .map(AnalysisResult::EditedOverlapPrimersDesigned)
-        }
+        AnalysisJob::DesignEditedOverlapPrimers {
+            inputs,
+            request,
+            workspace,
+        } => crate::assembly_edited_primer_design::design(&inputs, &request, workspace.as_ref())
+            .map(AnalysisResult::EditedOverlapPrimersDesigned),
         AnalysisJob::InspectOverlapExtensionDigest {
             source,
             origin,
@@ -4990,8 +5018,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             forward,
             reverse,
-        } => crate::verification::simulate_pcr_documents(&molecule, &forward, &reverse)
-            .map(AnalysisResult::PcrDocuments),
+            template_strand,
+        } => crate::verification::simulate_pcr_documents(
+            &molecule,
+            &forward,
+            &reverse,
+            template_strand,
+        )
+        .map(AnalysisResult::PcrDocuments),
         AnalysisJob::AnalyzePrimer {
             molecule,
             primer,

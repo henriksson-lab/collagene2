@@ -16,7 +16,13 @@ fn fixture() -> Request {
     });
     let forward = Primer::new("=Forward, retained", "ACGA", "CGT").unwrap();
     let reverse = Primer::new("Reverse named", "GTTA", "GAC").unwrap();
-    let products = simulate_pcr_documents(&source, &forward, &reverse).unwrap();
+    let products = simulate_pcr_documents(
+        &source,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(products.len(), 2);
     assert_eq!(products[1].geometry.forward_start, 8);
     Request {
@@ -30,6 +36,7 @@ fn fixture() -> Request {
             save_product: true,
             save_primers: true,
         },
+        template_strand: collagene_core::chemistry::Strand::Top,
     }
 }
 #[test]
@@ -170,8 +177,13 @@ fn worker_binds_output_selection_and_rejects_forged_old_variant_prefixes() {
 fn iupac_tail_references_and_long_product_only_oligos_keep_existing_model() {
     let mut request = fixture();
     request.forward.tail = "NRYS".into();
-    let previews =
-        simulate_pcr_documents(&request.source, &request.forward, &request.reverse).unwrap();
+    let previews = simulate_pcr_documents(
+        &request.source,
+        &request.forward,
+        &request.reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     request.expected_product_revision = previews[1].molecule.revision();
     let prepared = pcr_outputs::prepare(&request).unwrap();
     assert_eq!(
@@ -187,8 +199,13 @@ fn iupac_tail_references_and_long_product_only_oligos_keep_existing_model() {
     // Long oligos remain order-table evidence even when outside the existing
     // 200-base reusable-primer import profile.
     request.forward.tail = "A".repeat(250);
-    let previews =
-        simulate_pcr_documents(&request.source, &request.forward, &request.reverse).unwrap();
+    let previews = simulate_pcr_documents(
+        &request.source,
+        &request.forward,
+        &request.reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     request.expected_product_revision = previews[1].molecule.revision();
     let table = pcr_outputs::prepare(&request).unwrap().primers.unwrap();
     assert!(table.records[0].primer.is_none());
@@ -199,8 +216,13 @@ fn iupac_tail_references_and_long_product_only_oligos_keep_existing_model() {
     // A table's existing 8192-byte field limit must not become a PCR limit.
     request.forward.tail = "A".repeat(9000);
     request.options.save_primers = false;
-    let previews =
-        simulate_pcr_documents(&request.source, &request.forward, &request.reverse).unwrap();
+    let previews = simulate_pcr_documents(
+        &request.source,
+        &request.forward,
+        &request.reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     request.expected_product_revision = previews[1].molecule.revision();
     assert!(
         pcr_outputs::prepare(&request)

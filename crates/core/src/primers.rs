@@ -187,6 +187,7 @@ pub struct PrimerPair {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DesignReport {
+    pub template_strand: crate::chemistry::Strand,
     pub source_revision: String,
     pub options: DesignOptions,
     pub pairs: Vec<PrimerPair>,
@@ -497,6 +498,27 @@ pub fn find_binding_sites(
 }
 pub fn design_primers(molecule: &Molecule, options: &DesignOptions) -> Result<DesignReport, Error> {
     molecule.validate()?;
+    design_primers_view(
+        crate::analysis::TemplateView::reference(molecule),
+        options,
+        &molecule.revision(),
+    )
+}
+/// Rank oligos against a borrowed actual source frame. The supplied immutable
+/// source revision is documentary identity, never a replacement DNA template.
+pub fn design_primers_view(
+    molecule: crate::analysis::TemplateView<'_>,
+    options: &DesignOptions,
+    source_revision: &str,
+) -> Result<DesignReport, Error> {
+    if source_revision.len() != 64
+        || !source_revision
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        || molecule.sequence.len() > crate::model::MAX_SEQUENCE_LEN
+    {
+        return Err(Error::TooLarge);
+    }
     options.conditions.validate()?;
     if molecule.sequence.alphabet() != Alphabet::Dna {
         return Err(Error::Unsupported("primer selection requires DNA".into()));
@@ -576,7 +598,7 @@ pub fn design_primers(molecule: &Molecule, options: &DesignOptions) -> Result<De
             });
         }
     }
-    let mut report=DesignReport {source_revision:molecule.revision(),options:options.clone(),pairs:vec![],evaluated_pairs:0,rejected_pairs:0,warnings:vec!["Anchored endpoint selection ranks the requested length interval under explicit heuristic filters. It does not establish binding uniqueness; inspect binding hits and independently simulate every PCR alternative before using a pair.".into(),"Ranking is a reproducible heuristic: summed absolute distance from target Tm plus pair Tm difference; no kinetics or empirical success probability is assigned.".into()]};
+    let mut report=DesignReport {template_strand:molecule.template_strand,source_revision:source_revision.into(),options:options.clone(),pairs:vec![],evaluated_pairs:0,rejected_pairs:0,warnings:vec!["Anchored endpoint selection ranks the requested length interval under explicit heuristic filters. It does not establish binding uniqueness; inspect binding hits and independently simulate every PCR alternative before using a pair.".into(),"Ranking is a reproducible heuristic: summed absolute distance from target Tm plus pair Tm difference; no kinetics or empirical success probability is assigned.".into()]};
     let pair_work = forward.iter().try_fold(0usize, |sum, f| {
         reverse.iter().try_fold(sum, |sum, r| {
             sum.checked_add(

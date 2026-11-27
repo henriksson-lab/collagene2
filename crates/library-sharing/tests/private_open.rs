@@ -200,6 +200,7 @@ fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
         template,
         forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
         reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let plan = DesignPlan {
         name: "Actual PCR".into(),

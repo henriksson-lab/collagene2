@@ -267,6 +267,7 @@ fn mismatch_pcr_accepts_an_actual_intact_preceding_pcr_intermediate() {
                 template: Source::Input("template".into()),
                 forward: Primer::new("exact F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("exact R", "TACAGGTC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             mismatch_step(Source::Step(0), pcr_options()),
         ],

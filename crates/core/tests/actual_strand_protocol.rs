@@ -128,7 +128,15 @@ fn documentary_construction_does_not_replay_or_promote_reference_only_history() 
     let reference = &saved.workspace.revisions[&selection.event.revision];
     assert!(origins[0].replay(reference).is_err());
     assert!(run_material::capsule(&saved.workspace, &selection).is_err());
-    let roots = vec![MaterialSelection::Run(selection); 33];
+    let library_roots = vec![MaterialSelection::Run(selection.clone()); 33];
+    assert_eq!(
+        run_material::documentary_origins(&saved.workspace, &library_roots, &[])
+            .unwrap()
+            .materials
+            .len(),
+        33
+    );
+    let roots = vec![MaterialSelection::Run(selection); run_material::MAX_DOCUMENTARY_ORIGINS + 1];
     assert!(matches!(
         run_material::documentary_origins(&saved.workspace, &roots, &[]),
         Err(collagene_core::Error::TooLarge)

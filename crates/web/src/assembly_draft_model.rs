@@ -52,6 +52,8 @@ pub struct Slot {
     pub captured: Option<Arc<CapturedSource>>,
     pub selector: assembly_intent::Selector,
     #[serde(deserialize_with = "required_option")]
+    pub material_origin: Option<crate::run_origin_model::PinnedOrigin>,
+    #[serde(deserialize_with = "required_option")]
     pub digest_geometry: Option<DigestGeometry>,
     #[serde(with = "optional_snapshot")]
     pub anneal_bottom: Option<Arc<CapturedSource>>,
@@ -60,6 +62,7 @@ impl Slot {
     pub(crate) fn empty(label: &str) -> Self {
         Self {
             label: label.into(),
+            material_origin: None,
             captured: None,
             selector: assembly_intent::Selector::ReferenceRange {
                 start: 0,
@@ -487,7 +490,12 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
     }
     validate_preparation_input(row)?;
     validate_slot_link(slot, row, index)?;
-    if let Some(origin) = &row.run_origin {
+    if row.run_origin != slot.material_origin {
+        return Err(
+            "Physical preparation must retain the selected contribution material origin.".into(),
+        );
+    }
+    if let Some(origin) = &slot.material_origin {
         origin.validate_documentary().map_err(|e| e.to_string())?;
         let capture = slot
             .captured
@@ -538,6 +546,12 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
     {
         return Err("Invalid pinned DNA source or one-turn interval".into());
     }
+    let selected_reverse = match &slot.selector {
+        assembly_intent::Selector::ReferenceRange { reverse, .. } => *reverse,
+        assembly_intent::Selector::MaterialStrandRange { strand, .. } => {
+            *strand == collagene_core::chemistry::Strand::Bottom
+        }
+    };
     match &slot.selector {
         assembly_intent::Selector::ReferenceRange { start, end, .. } => {
             if *start >= n
@@ -553,14 +567,14 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
             expected_state_revision,
             ..
         } => {
-            if row.run_origin.is_none() || !hex(expected_state_revision) {
+            if slot.material_origin.is_none() || !hex(expected_state_revision) {
                 return Err("Actual strand intent needs its exact saved material origin".into());
             }
             let geometry = slot
                 .digest_geometry
                 .as_ref()
                 .ok_or("Actual strand intent needs its captured source domain")?;
-            if digest_selector(source, geometry, row.reverse)? != slot.selector {
+            if digest_selector(source, geometry, selected_reverse)? != slot.selector {
                 return Err(
                     "Actual strand selection differs from its pinned digest/source state".into(),
                 );
@@ -568,7 +582,7 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
         }
     }
     if let Some(geometry) = &slot.digest_geometry {
-        if digest_selector(source, geometry, row.reverse)? != slot.selector {
+        if digest_selector(source, geometry, selected_reverse)? != slot.selector {
             return Err("Digest contribution differs from its selected actual strand".into());
         }
     }
@@ -604,69 +618,102 @@ fn validate_oligo_capture(captured: &CapturedSource) -> Result<(), String> {
     }
     Ok(())
 }
+pub(crate) fn validate_internal_declarations(
+    methods: &MethodsState,
+    slots: usize,
+    substitutions: &[collagene_core::assembly_substitution_intent::Substitution],
+    edits: &[collagene_core::assembly_edit_intent::Edit],
+) -> Result<(), String> {
+    if substitutions.len() > 256 {
+        return Err("At most256 explicit substitutions are supported.".into());
+    }
+    if !substitutions.is_empty() {
+        if methods.source_roles.is_none() {
+            return Err("Pin stable source roles before declaring internal substitutions.".into());
+        }
+        let roles = methods.role_ids(slots)?;
+        let mut seen = std::collections::BTreeSet::new();
+        for edit in substitutions {
+            if !roles.iter().any(|role| role.role == edit.role)
+                || !token(&edit.role, 128)
+                || edit.offset >= collagene_core::model::MAX_SEQUENCE_LEN
+                || edit.expected.len() != 1
+                || edit.replacement.len() != 1
+                || !edit
+                    .expected
+                    .bytes()
+                    .chain(edit.replacement.bytes())
+                    .all(|base| b"ACGT".contains(&base))
+                || edit.expected == edit.replacement
+                || !seen.insert((&edit.role, edit.offset))
+            {
+                return Err("Internal substitutions require distinct concrete single-base edits on stable source roles.".into());
+            }
+        }
+    }
+
+    if edits.len() > 256 {
+        return Err("At most256 explicit contribution edits are supported.".into());
+    }
+    if edits.is_empty() {
+        return Ok(());
+    }
+    if methods.source_roles.is_none() {
+        return Err("Internal contribution edits require stable source roles.".into());
+    }
+    let roles = methods.role_ids(slots)?;
+    let mut total = 0usize;
+    for (index, edit) in edits.iter().enumerate() {
+        let length = edit
+            .end
+            .checked_sub(edit.start)
+            .ok_or("Contribution edit end precedes its start.")?;
+        total = total
+            .checked_add(length)
+            .and_then(|n| n.checked_add(edit.replacement.len()))
+            .filter(|n| *n <= 100_000)
+            .ok_or("Contribution edits exceed100000 affected/inserted bases.")?;
+        if !token(&edit.role, 128)
+            || !roles.iter().any(|r| r.role == edit.role)
+            || edit.end > collagene_core::model::MAX_SEQUENCE_LEN
+            || edit.expected.len() != length
+            || edit.expected == edit.replacement
+            || !edit
+                .expected
+                .bytes()
+                .chain(edit.replacement.bytes())
+                .all(|b| b"ACGTRYSWKMBDHVN".contains(&b))
+        {
+            return Err("Contribution edits require original-role coordinates and distinct uppercase DNA literals.".into());
+        }
+        // Insertions sharing a boundary with another edit are intentionally
+        // rejected: their relative order is not declared by these literals.
+        let conflict = |a: usize, b: usize, c: usize, d: usize| {
+            if a == b {
+                c <= a && a <= d
+            } else if c == d {
+                a <= c && c <= b
+            } else {
+                a < d && c < b
+            }
+        };
+        if edits[..index].iter().any(|other| {
+            other.role == edit.role && conflict(edit.start, edit.end, other.start, other.end)
+        }) || substitutions.iter().any(|other| {
+            other.role == edit.role
+                && conflict(edit.start, edit.end, other.offset, other.offset + 1)
+        }) {
+            return Err("Contribution edits must not overlap each other or substitutions, or share insertion boundaries.".into());
+        }
+    }
+    Ok(())
+}
 impl Draft {
     pub(crate) fn clear_slot_substitutions(&mut self, index: usize) -> Result<(), String> {
         let roles = self.methods.role_ids(self.slots.len())?;
         let role = roles.get(index).ok_or("The source slot is unavailable.")?;
         self.substitutions.retain(|edit| edit.role != role.role);
         self.edits.retain(|edit| edit.role != role.role);
-        Ok(())
-    }
-    fn validate_internal_edits(&self) -> Result<(), String> {
-        if self.edits.len() > 256 {
-            return Err("At most256 explicit contribution edits are supported.".into());
-        }
-        if self.edits.is_empty() {
-            return Ok(());
-        }
-        if self.alternatives.is_some() || self.methods.source_roles.is_none() {
-            return Err("Internal contribution edits require an ordinary construct and stable source roles.".into());
-        }
-        let roles = self.methods.role_ids(self.slots.len())?;
-        let mut total = 0usize;
-        for (index, edit) in self.edits.iter().enumerate() {
-            let length = edit
-                .end
-                .checked_sub(edit.start)
-                .ok_or("Contribution edit end precedes its start.")?;
-            total = total
-                .checked_add(length)
-                .and_then(|n| n.checked_add(edit.replacement.len()))
-                .filter(|n| *n <= 100_000)
-                .ok_or("Contribution edits exceed100000 affected/inserted bases.")?;
-            if !token(&edit.role, 128)
-                || !roles.iter().any(|r| r.role == edit.role)
-                || edit.end > collagene_core::model::MAX_SEQUENCE_LEN
-                || edit.expected.len() != length
-                || edit.expected == edit.replacement
-                || !edit
-                    .expected
-                    .bytes()
-                    .chain(edit.replacement.bytes())
-                    .all(|b| b"ACGTRYSWKMBDHVN".contains(&b))
-            {
-                return Err("Contribution edits require original-role coordinates and distinct uppercase DNA literals.".into());
-            }
-            // Insertions sharing a boundary with another edit are intentionally
-            // rejected: their relative order is not declared by these literals.
-            let conflict = |a: usize, b: usize, c: usize, d: usize| {
-                if a == b {
-                    c <= a && a <= d
-                } else if c == d {
-                    a <= c && c <= b
-                } else {
-                    a < d && c < b
-                }
-            };
-            if self.edits[..index].iter().any(|other| {
-                other.role == edit.role && conflict(edit.start, edit.end, other.start, other.end)
-            }) || self.substitutions.iter().any(|other| {
-                other.role == edit.role
-                    && conflict(edit.start, edit.end, other.offset, other.offset + 1)
-            }) {
-                return Err("Contribution edits must not overlap each other or substitutions, or share insertion boundaries.".into());
-            }
-        }
         Ok(())
     }
     /// Explicitly reverse the declared pair by swapping its ordered originals.
@@ -801,64 +848,12 @@ impl Draft {
         if self.version != CURRENT_VERSION {
             return Err("Unsupported assembly draft version.".into());
         }
-        if self.substitutions.len() > 256 {
-            return Err("At most256 explicit substitutions are supported.".into());
-        }
-        if !self.substitutions.is_empty() {
-            if self.alternatives.is_some() {
-                return Err(
-                    "Internal substitutions are currently supported only in ordinary assemblies."
-                        .into(),
-                );
-            }
-            if self.methods.source_roles.is_none() {
-                return Err(
-                    "Pin stable source roles before declaring internal substitutions.".into(),
-                );
-            }
-            let roles = self.methods.role_ids(self.slots.len())?;
-            let mut seen = std::collections::BTreeSet::new();
-            for edit in &self.substitutions {
-                if !roles.iter().any(|role| role.role == edit.role)
-                    || !token(&edit.role, 128)
-                    || edit.offset >= collagene_core::model::MAX_SEQUENCE_LEN
-                    || edit.expected.len() != 1
-                    || edit.replacement.len() != 1
-                    || !edit
-                        .expected
-                        .bytes()
-                        .chain(edit.replacement.bytes())
-                        .all(|base| b"ACGT".contains(&base))
-                    || edit.expected == edit.replacement
-                    || !seen.insert((&edit.role, edit.offset))
-                {
-                    return Err("Internal substitutions require distinct concrete single-base edits on stable source roles.".into());
-                }
-            }
-        }
-        self.validate_internal_edits()?;
-
-        let has_origin = self.methods.rows.iter().any(|row| row.run_origin.is_some());
-
-        if self.alternatives.as_ref().is_some_and(|library| {
-            has_origin
-                || library
-                    .bins
-                    .iter()
-                    .flat_map(|bin| &bin.choices)
-                    .any(|choice| choice.row.run_origin.is_some())
-                || library.rows.iter().any(|row| {
-                    row.edits
-                        .methods
-                        .rows
-                        .iter()
-                        .any(|row| row.run_origin.is_some())
-                })
-        }) {
-            return Err(
-                "Saved-run material is currently supported only in ordinary assemblies.".into(),
-            );
-        }
+        validate_internal_declarations(
+            &self.methods,
+            self.slots.len(),
+            &self.substitutions,
+            &self.edits,
+        )?;
 
         if self.alternatives.is_some() && self.uses_paired_fields() {
             return Err(
@@ -935,7 +930,19 @@ impl Draft {
         self.methods
             .rows
             .resize_with(self.slots.len(), OverlapInput::default);
-        for (i, (slot, row)) in self.slots.iter().zip(&mut self.methods.rows).enumerate() {
+        for (i, (slot, row)) in self
+            .slots
+            .iter_mut()
+            .zip(&mut self.methods.rows)
+            .enumerate()
+        {
+            if slot.material_origin.as_ref().is_some_and(|origin| {
+                slot.captured
+                    .as_ref()
+                    .is_none_or(|capture| *origin.event() != capture.source.binding)
+            }) {
+                slot.material_origin = None;
+            }
             if row.run_origin.as_ref().is_some_and(|origin| {
                 slot.captured.as_ref().is_none_or(|capture| {
                     *origin.event() != capture.source.binding
@@ -1914,6 +1921,7 @@ mod run_origin_tests {
                 molecule: source,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("original".into()),
                 forward: Primer::new("Original forward", "ACGACCCC", "").unwrap(),
                 reverse: Primer::new("Original reverse", "GTTACCCC", "").unwrap(),
@@ -1978,6 +1986,7 @@ mod run_origin_tests {
             )
             .unwrap(),
         );
+        draft.slots[0].material_origin = draft.methods.rows[0].run_origin.clone();
         draft.sync_rows();
         draft.validate().unwrap();
         (draft, commit.workspace)
@@ -2003,6 +2012,7 @@ mod run_origin_tests {
         ));
         let mut original = restored;
         original.methods.rows[0].run_origin = None;
+        original.slots[0].material_origin = original.methods.rows[0].run_origin.clone();
         assert!(crate::cloning_preparations::prepared_rows(&original.methods, 1).is_err());
     }
 
@@ -2104,6 +2114,7 @@ mod run_origin_tests {
             *value = 8;
         }
         draft.methods.rows[0].run_origin = Some(pin);
+        draft.slots[0].material_origin = draft.methods.rows[0].run_origin.clone();
         draft.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
         draft.methods.rows[0].forward = "ACGACCCC".into();
         draft.methods.rows[0].reverse_primer = "GGGGTCGT".into();
@@ -2155,14 +2166,19 @@ mod run_origin_tests {
         let source = &workspace.revisions[&source_event.revision];
         let forward = Primer::new("F", "ACGACCCC", "").unwrap();
         let reverse = Primer::new("R", "GTTACCCC", "").unwrap();
-        let preview =
-            collagene_core::verification::simulate_pcr_documents(source, &forward, &reverse)
-                .unwrap()
-                .remove(0);
+        let preview = collagene_core::verification::simulate_pcr_documents(
+            source,
+            &forward,
+            &reverse,
+            collagene_core::chemistry::Strand::Top,
+        )
+        .unwrap()
+        .remove(0);
         let request = collagene_core::material_derivation::Request {
             source: source_event,
             origin: collagene_core::material_derivation::SourceOrigin::OriginalReference,
             derivation: collagene_core::material_derivation::Derivation::ExactPcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 forward,
                 reverse,
                 selection: collagene_core::material_derivation::PcrSelection {
@@ -2197,6 +2213,7 @@ mod run_origin_tests {
             )
             .unwrap(),
         );
+        draft.slots[0].material_origin = draft.methods.rows[0].run_origin.clone();
         draft.sync_rows();
         assert_eq!(draft.version, CURRENT_VERSION);
         let bytes = encode_raw(&draft).unwrap();
@@ -2413,7 +2430,11 @@ pub fn set_digest_fragment(
     let selector = digest_selector(
         &fragment.source,
         &geometry,
-        draft.methods.rows[index].reverse,
+        if geometry.material.is_some() {
+            false
+        } else {
+            draft.methods.rows[index].reverse
+        },
     )?;
     let mut borrowed = draft
         .slots
@@ -2442,6 +2463,7 @@ pub fn set_digest_fragment(
         molecule: fragment.molecule.as_ref().clone(),
     }));
     next.slots[index].selector = selector;
+    next.slots[index].material_origin = fragment.origin.clone();
     next.slots[index].digest_geometry = Some(geometry);
     next.junction_edits.clear();
     next.methods.rows[index] = OverlapInput {
@@ -2527,7 +2549,8 @@ mod substitution_tests {
         draft.active_slot = 1;
         draft.sync_rows();
         assert!(decode(&encode_raw(&draft).unwrap()).unwrap() == draft);
-        assert!(crate::assembly_alternatives::enable(&draft, "patch-library").is_err());
+        let library = crate::assembly_alternatives::enable(&draft, "patch-library").unwrap();
+        assert!(decode(&encode_raw(&library).unwrap()).unwrap() == library);
         let mut old = draft.clone();
         old.version = CURRENT_VERSION - 1;
         assert!(old.validate().is_err());
@@ -2858,25 +2881,38 @@ pub(crate) fn inputs_request(
             })?);
         }
     }
+    collagene_core::run_material::material_capsules_preflight(
+        draft
+            .slots
+            .iter()
+            .filter_map(|slot| slot.material_origin.as_ref())
+            .map(|origin| match origin.as_ref() {
+                collagene_core::run_material::MaterialOrigin::Run(c) => {
+                    collagene_core::run_material::MaterialOriginRef::Run(c)
+                }
+                collagene_core::run_material::MaterialOrigin::Derived(c) => {
+                    collagene_core::run_material::MaterialOriginRef::Derived(c)
+                }
+            }),
+    )
+    .map_err(|e| e.to_string())?;
     let mut material_bindings = Vec::new();
     let fragments = draft
         .slots
         .iter()
         .enumerate()
         .map(|(i, slot)| {
-            if matches!(
-                &slot.selector,
-                assembly_intent::Selector::MaterialStrandRange { .. }
-            ) {
-                let origin = draft.methods.rows[i]
-                    .run_origin
-                    .as_ref()
-                    .ok_or("Actual strand needs its saved source origin")?;
+            if let Some(origin) = &slot.material_origin {
                 material_bindings.push(assembly_intent::MaterialBinding {
                     input_id: ids[i].clone(),
                     event: captures[i].source.binding.clone(),
                     origin: origin.as_ref().clone(),
                 });
+            } else if matches!(
+                &slot.selector,
+                assembly_intent::Selector::MaterialStrandRange { .. }
+            ) {
+                return Err("Actual strand needs its selected source origin".into());
             }
             Ok(assembly_intent::Contribution {
                 role: roles[i].role.clone(),
@@ -2977,6 +3013,8 @@ mod current_codec_tests {
             "/methods/source_roles",
             "/methods/homology",
             "/methods/annealing",
+            "/slots/0/material_origin",
+            "/methods/rows/0/template_strand",
             "/methods/rows/0/run_origin",
             "/methods/rows/0/source_generation",
             "/methods/rows/0/overlap_extension_pcr",
@@ -3062,8 +3100,48 @@ pub(crate) fn orient_fragment(draft: &Draft, index: usize, reverse: bool) -> Res
     };
     next.clear_slot_substitutions(index)?;
     next.slots[index].selector = selector;
-    next.methods.rows[index].reverse = reverse;
+    if matches!(
+        &next.slots[index].selector,
+        assembly_intent::Selector::ReferenceRange { .. }
+    ) {
+        next.methods.rows[index].reverse = reverse;
+    }
     next.junction_edits.clear();
+    next.sync_rows();
+    next.validate()?;
+    Ok(next)
+}
+pub(crate) fn set_material_origin(
+    draft: &Draft,
+    index: usize,
+    pin: Option<crate::run_origin_model::PinnedOrigin>,
+) -> Result<Draft, String> {
+    let slot = draft
+        .slots
+        .get(index)
+        .ok_or("The source contribution is unavailable")?;
+    let capture = slot
+        .captured
+        .as_ref()
+        .ok_or("Pin the source contribution first")?;
+    if let Some(pin) = &pin {
+        pin.validate_documentary()?;
+        if pin.event() != &capture.source.binding {
+            return Err("Saved material belongs to another exact source event".into());
+        }
+    }
+    if matches!(
+        &slot.selector,
+        assembly_intent::Selector::MaterialStrandRange { .. }
+    ) && pin != slot.material_origin
+    {
+        return Err(
+            "Select a fresh digest fragment before changing an actual-strand origin".into(),
+        );
+    }
+    let mut next = draft.clone();
+    next.slots[index].material_origin = pin.clone();
+    next.methods.rows[index].run_origin = pin;
     next.sync_rows();
     next.validate()?;
     Ok(next)
@@ -3075,7 +3153,7 @@ pub(crate) fn require_reference_selectors(draft: &Draft) -> Result<(), String> {
             assembly_intent::Selector::MaterialStrandRange { .. }
         )
     }) {
-        return Err("This primer/library workflow requires original reference ranges. Actual-strand contributions remain available for direct assembly.".into());
+        return Err("This single-contribution primer workflow requires original reference ranges. Use the whole-construct primer proposal for actual-strand contributions.".into());
     }
     Ok(())
 }

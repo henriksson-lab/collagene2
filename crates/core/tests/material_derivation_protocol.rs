@@ -53,7 +53,13 @@ fn installed() -> (Workspace, EventBinding) {
     let w = Workspace::from_documents("PCR source", vec![source.clone()], 0).unwrap();
     let forward = Primer::new("F", "ACGAC", "").unwrap();
     let reverse = Primer::new("R", "TACGG", "").unwrap();
-    let mut previews = verification::simulate_pcr_documents(&source, &forward, &reverse).unwrap();
+    let mut previews = verification::simulate_pcr_documents(
+        &source,
+        &forward,
+        &reverse,
+        collagene_core::chemistry::Strand::Top,
+    )
+    .unwrap();
     assert_eq!(previews.len(), 1);
     let p = previews.remove(0);
     let request = native::Request {
@@ -67,6 +73,7 @@ fn installed() -> (Workspace, EventBinding) {
                 expected_preview_revision: p.molecule.revision(),
                 geometry: p.geometry,
             },
+            template_strand: collagene_core::chemistry::Strand::Top,
         },
         name: "Reusable amplicon".into(),
         save_primers: true,
@@ -192,7 +199,8 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
             &source,
             &native::SourceOrigin::OriginalReference,
             &Primer::new("F", "ACGAC", "").unwrap(),
-            &Primer::new("R", "TACGG", "").unwrap()
+            &Primer::new("R", "TACGG", "").unwrap(),
+            collagene_core::chemistry::Strand::Top
         )
         .is_err()
     );
@@ -209,6 +217,7 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
         &origin,
         &Primer::new("F", "ACGAC", "").unwrap(),
         &Primer::new("R", "TACGG", "").unwrap(),
+        collagene_core::chemistry::Strand::Top,
     )
     .unwrap()
     .remove(0)
@@ -224,7 +233,8 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
             &reference,
             &native::SourceOrigin::OriginalReference,
             &Primer::new("F", "ACGAC", "").unwrap(),
-            &Primer::new("R", "TACGG", "").unwrap()
+            &Primer::new("R", "TACGG", "").unwrap(),
+            collagene_core::chemistry::Strand::Top
         )
         .is_err()
     );
@@ -267,6 +277,7 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
                     preparation: RunPreparation::ExactPcr {
                         forward: Primer::new("New F", "ACGAC", "").unwrap(),
                         reverse: Primer::new("New R", "TACGG", "").unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                 },
             },
@@ -278,6 +289,7 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
                 preparation: Preparation::ExactPcr {
                     forward: Primer::new("Other F", "CGTA", "").unwrap(),
                     reverse: Primer::new("Other R", "CGTT", "").unwrap(),
+                    template_strand: collagene_core::chemistry::Strand::Top,
                 },
             },
         ],

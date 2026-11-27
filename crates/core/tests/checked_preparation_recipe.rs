@@ -112,6 +112,7 @@ fn original_modified_template_then_new_pcr_is_unmodified_before_checked_cutting(
         selection: selection("SmaI"),
         fragment_index: 1,
         repair: None,
+        template_strand: collagene_core::chemistry::Strand::Top,
     });
     let compiled = l::compile(&inputs, &target, &r, CleavagePolicy::PositionalChecked).unwrap();
     assert!(matches!(

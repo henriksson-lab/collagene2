@@ -131,7 +131,7 @@ async fn exact_event_finalization_saved_primers_native_history_and_replay_are_at
     let base_bytes = workspace::save_workspace(&w).unwrap();
     let imported = upload(&c, &w).await;
     let wr = workspace_ref(&imported);
-    let recipe = json!({"name":"Actual prepared overlap","fragments":[{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","AGGTCGCTAACGGAT").unwrap()}},"reverse":false},{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false}],"overlaps":[15],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100}});
+    let recipe = json!({"name":"Actual prepared overlap","fragments":[{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","AGGTCGCTAACGGAT").unwrap()}},"reverse":false},{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false}],"overlaps":[15],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100}});
     let inputs = json!([{"id":"l","document":doc(&left)},{"id":"r","document":doc(&right)}]);
     let plan = call(
         &c,

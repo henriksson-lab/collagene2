@@ -67,20 +67,24 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
                 id: format!("{id}-choice"),
                 label: (*id).into(),
                 source: binding(&w, i),
-                start: if i == 0 { 11 } else { 0 },
-                end: if i == 0 {
-                    11 + A.len()
-                } else if i == 1 {
-                    B.len()
-                } else {
-                    12
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: if i == 0 { 11 } else { 0 },
+                    end: if i == 0 {
+                        11 + A.len()
+                    } else if i == 1 {
+                        B.len()
+                    } else {
+                        12
+                    },
+                    reverse: false,
                 },
-                reverse: false,
+                preparation_reverse: false,
                 preparation: if i == 1 {
                     Some(Preparation::ExactPcr {
                         forward: Primer::new("manual forward", "ATGAGTTA", "ATGCGGTCTCA").unwrap(),
                         reverse: Primer::new("manual reverse", "TTCCAAGG", "ATGCGGTCTCATCAT")
                             .unwrap(),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     })
                 } else {
                     None
@@ -90,6 +94,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         })
         .collect();
     let d = Design {
+        material_bindings: vec![],
         id: "reaction-library".into(),
         name: "Whole-material library".into(),
         circular: true,
@@ -303,7 +308,12 @@ fn equal_dna_event_rebinding_and_changed_original_geometry_require_new_consent()
         "equal letters do not authorize a new source event"
     );
     d = original;
-    d.bins[0].choices[0].start += 1;
+    let collagene_core::assembly_intent::Selector::ReferenceRange { start, .. } =
+        &mut d.bins[0].choices[0].selector
+    else {
+        unreachable!()
+    };
+    *start += 1;
     assert!(
         design::compile(&d, &row, &w).is_err(),
         "reaction substrate is unchanged but original design intent changed"

@@ -31,8 +31,32 @@ pub struct Match {
     pub certain: bool,
 }
 
+/// Borrowed coordinates of a real selected source strand. This is neither a
+/// replacement document nor a serialized material authority.
+#[derive(Clone, Copy)]
+pub struct TemplateView<'a> {
+    pub sequence: &'a Sequence,
+    pub topology: Topology,
+    pub template_strand: crate::chemistry::Strand,
+}
+impl<'a> TemplateView<'a> {
+    pub fn reference(source: &'a Molecule) -> Self {
+        Self {
+            sequence: &source.sequence,
+            topology: source.topology,
+            template_strand: crate::chemistry::Strand::Top,
+        }
+    }
+}
 /// Ambiguous template bases give possible matches, never definitive binding evidence.
 pub fn find_matches(mol: &Molecule, query: &str, both_strands: bool) -> Result<Vec<Match>, Error> {
+    find_matches_view(TemplateView::reference(mol), query, both_strands)
+}
+pub fn find_matches_view(
+    mol: TemplateView<'_>,
+    query: &str,
+    both_strands: bool,
+) -> Result<Vec<Match>, Error> {
     if mol.sequence.alphabet() == Alphabet::Protein {
         return Err(Error::Unsupported("nucleotide search on protein".into()));
     }
@@ -252,6 +276,7 @@ impl Primer {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrProduct {
+    pub template_strand: crate::chemistry::Strand,
     pub sequence: Sequence,
     pub forward_start: usize,
     pub reverse_start: usize,
@@ -262,7 +287,7 @@ pub struct PcrProduct {
 
 /// Enumerate exact, non-overlapping binding geometries for both oligos in both roles.
 /// Includes possible single-oligo amplification; primer names do not restrict binding.
-/// Geometry retained separately so legacy sequence-result wire schemas remain readable.
+/// Geometry retains complete selected-frame coordinates and synthesized tails.
 #[derive(Debug, Clone)]
 pub struct PcrGeometryProduct {
     pub product: PcrProduct,
@@ -296,6 +321,13 @@ pub fn simulate_pcr_geometry(
     forward: &Primer,
     reverse: &Primer,
 ) -> Result<Vec<PcrGeometryProduct>, Error> {
+    simulate_pcr_geometry_view(TemplateView::reference(mol), forward, reverse)
+}
+pub fn simulate_pcr_geometry_view(
+    mol: TemplateView<'_>,
+    forward: &Primer,
+    reverse: &Primer,
+) -> Result<Vec<PcrGeometryProduct>, Error> {
     if mol.sequence.alphabet() != Alphabet::Dna
         || forward.annealing.alphabet() != Alphabet::Dna
         || reverse.annealing.alphabet() != Alphabet::Dna
@@ -322,9 +354,9 @@ pub fn simulate_pcr_geometry(
     let bindings = primers
         .iter()
         .map(|primer| {
-            let forward = find_matches(mol, primer.annealing.as_str(), false)?;
+            let forward = find_matches_view(mol, primer.annealing.as_str(), false)?;
             let reverse =
-                find_matches(mol, primer.annealing.reverse_complement()?.as_str(), false)?;
+                find_matches_view(mol, primer.annealing.reverse_complement()?.as_str(), false)?;
             if forward.iter().chain(&reverse).any(|h| !h.certain) {
                 return Err(Error::Unsupported(
                     "ambiguous template binding prevents complete PCR enumeration".into(),
@@ -401,6 +433,7 @@ pub fn simulate_pcr_geometry(
                             forward_tail_length: forward.tail.len(),
                             reverse_tail_length: reverse_tail.len(),
                             product: PcrProduct {
+                                template_strand: mol.template_strand,
                                 sequence,
                                 forward_start: f.start,
                                 reverse_start: r.start,

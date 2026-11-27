@@ -230,6 +230,7 @@ mod tests {
                 molecule: source,
             }],
             steps: vec![Operation::Pcr {
+                template_strand: collagene_core::chemistry::Strand::Top,
                 template: Source::Input("original rôle 1".into()),
                 forward: Primer::new("Forward", "ACGACCCC", "").unwrap(),
                 reverse: Primer::new("Reverse", "GTTACCCC", "").unwrap(),

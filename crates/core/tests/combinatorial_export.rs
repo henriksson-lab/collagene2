@@ -40,6 +40,7 @@ fn released() -> release::Commit {
     )
     .unwrap();
     let d = Design {
+        material_bindings: vec![],
         id: "archive-design".into(),
         name: "Bulk design β".into(),
         circular: false,
@@ -61,12 +62,16 @@ fn released() -> release::Commit {
                         id: format!("choice-{i}"),
                         label: format!("Choice {i}"),
                         source: binding(&w, i),
-                        start: 0,
-                        end: 20,
-                        reverse: false,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: 0,
+                            end: 20,
+                            reverse: false,
+                        },
+                        preparation_reverse: false,
                         preparation: Some(Preparation::ExactPcr {
                             forward: Primer::new(format!("F α{i}"), f, "").unwrap(),
                             reverse: Primer::new(format!("R β{i}"), r, "").unwrap(),
+                            template_strand: collagene_core::chemistry::Strand::Top,
                         }),
                         treatment: Some(EndTreatment::Phosphorylate),
                     }],
@@ -89,6 +94,8 @@ fn released() -> release::Commit {
                 name: format!("Cloning Ω construct{i}"),
                 choices: choices.clone(),
                 target: TargetDeclaration::OriginalRegions {
+                    substitutions: vec![],
+                    edits: vec![],
                     junction_edits: vec![],
                 },
                 overrides: None,

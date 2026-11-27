@@ -34,11 +34,13 @@ fn fixture() -> (DesignPlan, Molecule) {
                 template: Source::Input("original".into()),
                 forward: Primer::new("Left outer", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Left mutagenic", "TACGTAGC", "GGTCTGAAAA").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::Pcr {
                 template: Source::Input("original".into()),
                 forward: Primer::new("Right mutagenic", "TTCAGACC", "GCTACGTATT").unwrap(),
                 reverse: Primer::new("Right outer", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::OverlapExtension {
                 left: OrientedSource {
@@ -59,6 +61,7 @@ fn fixture() -> (DesignPlan, Molecule) {
                 template: Source::Step(2),
                 forward: Primer::new("Outer forward", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Outer reverse", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ],
     };
@@ -367,6 +370,7 @@ fn competing_terminal_pairings_remain_incomplete_after_outer_pcr() {
                 template: Source::Step(2),
                 forward: Primer::new("Outer forward", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Outer reverse", "TGACGATC", "").unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         ],
     };

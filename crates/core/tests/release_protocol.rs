@@ -39,9 +39,12 @@ fn fixture() -> (Workspace, String) {
         id: id.into(),
         label: id.into(),
         source: binding(&frame, index),
-        start: 0,
-        end: 4,
-        reverse: false,
+        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+            start: 0,
+            end: 4,
+            reverse: false,
+        },
+        preparation_reverse: false,
         preparation: Some(Preparation::DeclaredDuplex {
             left: Terminus::CLEAVED,
             right: Terminus::CLEAVED,
@@ -49,6 +52,7 @@ fn fixture() -> (Workspace, String) {
         treatment: None,
     };
     let design = Design {
+        material_bindings: vec![],
         id: "wire-release".into(),
         name: "Release fixture".into(),
         circular: false,
@@ -93,6 +97,8 @@ fn fixture() -> (Workspace, String) {
                 "construct-a",
                 "insert-a",
                 TargetDeclaration::OriginalRegions {
+                    substitutions: vec![],
+                    edits: vec![],
                     junction_edits: vec![],
                 },
             ),
@@ -100,6 +106,8 @@ fn fixture() -> (Workspace, String) {
                 "construct-b",
                 "insert-b",
                 TargetDeclaration::OriginalRegions {
+                    substitutions: vec![],
+                    edits: vec![],
                     junction_edits: vec![],
                 },
             ),
@@ -523,11 +531,11 @@ fn progress_and_inspection_keep_ordinary_limits_and_only_explicit_workspace_vari
     wire[4..6].copy_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
     for (magic, selector, is_response) in [
-        (b"CGQ\0", 132u32, false),
-        (b"CGQ\0", 133, false),
+        (b"CGQ\0", 130u32, false),
+        (b"CGQ\0", 131, false),
+        (b"CGR\0", 121, true),
+        (b"CGR\0", 122, true),
         (b"CGR\0", 123, true),
-        (b"CGR\0", 124, true),
-        (b"CGR\0", 125, true),
     ] {
         wire[..4].copy_from_slice(magic);
         let body = postcard::to_allocvec(&(1u32, "context", selector)).unwrap();
@@ -542,11 +550,11 @@ fn progress_and_inspection_keep_ordinary_limits_and_only_explicit_workspace_vari
         assert!(matches!(rejected, Err(Error::TooLarge)));
     }
     for (magic, selector, is_response) in [
-        (b"CGQ\0", 131u32, false),
-        (b"CGQ\0", 134, false),
-        (b"CGQ\0", 135, false),
-        (b"CGR\0", 126, true),
-        (b"CGR\0", 127, true),
+        (b"CGQ\0", 129u32, false),
+        (b"CGQ\0", 132, false),
+        (b"CGQ\0", 133, false),
+        (b"CGR\0", 124, true),
+        (b"CGR\0", 125, true),
     ] {
         wire[..4].copy_from_slice(magic);
         let body = postcard::to_allocvec(&(1u32, "context", selector)).unwrap();

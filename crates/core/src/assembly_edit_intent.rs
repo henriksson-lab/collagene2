@@ -226,7 +226,7 @@ fn request_json(r: &Request) -> Result<String, Error> {
 pub(crate) fn build_resolved(
     resolved: &assembly_intent::Resolved<'_>,
     r: &Request,
-) -> Result<assembly_intent::Built, Error> {
+) -> Result<Report, Error> {
     shape(r)?;
     let context_revision = context(&resolved.context, r)?;
     let applied = applied(&resolved.rows, r)?;
@@ -310,11 +310,17 @@ pub(crate) fn build_resolved(
     ] {
         target.metadata.insert(format!("{PREFIX}{key}"), value);
     }
-    Ok(assembly_intent::Built {
+    let report = Report {
+        context_revision,
+        source_context_revision: resolved.context.clone(),
+        request: r.clone(),
         target,
         fragments,
+        applied,
         warnings,
-    })
+    };
+    report.validate_binding(&report.context_revision)?;
+    Ok(report)
 }
 pub fn build(inputs: &[PlanInput], r: &Request, w: Option<&Workspace>) -> Result<Report, Error> {
     source_preflight(
@@ -326,18 +332,7 @@ pub fn build(inputs: &[PlanInput], r: &Request, w: Option<&Workspace>) -> Result
         w,
     )?;
     let resolved = assembly_intent::resolve(inputs, &r.base.base, w)?;
-    let built = build_resolved(&resolved, r)?;
-    let report = Report {
-        context_revision: context(&resolved.context, r)?,
-        source_context_revision: resolved.context.clone(),
-        request: r.clone(),
-        target: built.target,
-        fragments: built.fragments,
-        applied: applied(&resolved.rows, r)?,
-        warnings: built.warnings,
-    };
-    report.validate_binding(&report.context_revision)?;
-    Ok(report)
+    build_resolved(&resolved, r)
 }
 impl Report {
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {

@@ -29,6 +29,7 @@ fn fixture(options: Options, nicked: bool) -> (DesignPlan, Molecule) {
         template: Source::Input(id.into()),
         forward: Primer::new("F", f, "").unwrap(),
         reverse: Primer::new("R", r, "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     };
     let treatment = if nicked {
         EndTreatment::Dephosphorylate

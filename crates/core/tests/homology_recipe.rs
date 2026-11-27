@@ -44,6 +44,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
                 forward: Primer::new("Left F", "AGTCCGAT", "").unwrap(),
                 reverse: Primer::new("Left R + downstream homology", "GTCCTACG", "GGTCTGAA")
                     .unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         },
         FragmentSpec {
@@ -59,6 +60,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
                     if circular { "ATCGGACT" } else { "" },
                 )
                 .unwrap(),
+                template_strand: collagene_core::chemistry::Strand::Top,
             },
         },
     ];
@@ -216,6 +218,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
                         selection,
                         fragment_index: 1,
                         repair: Some(EndRepairMethod::FillFivePrimeOverhangs),
+                        template_strand: collagene_core::chemistry::Strand::Top,
                     },
                 },
             },
@@ -287,6 +290,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
         template: Source::Step(2),
         forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
         reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+        template_strand: collagene_core::chemistry::Strand::Top,
     });
     let linear = Molecule::dna("Independent PCR40", CIRCLE, Topology::Linear).unwrap();
     plan.target_revision = linear.revision();
@@ -313,6 +317,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
             template: Source::Input("copied".into()),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
     let imported = verification::verify(&forged, &linear);
@@ -534,6 +539,7 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
             template: Source::Step(2),
             forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
+            template_strand: collagene_core::chemistry::Strand::Top,
         });
         let unavailable = verification::verify(&downstream, &expected);
         assert_eq!(unavailable.status, Status::Incomplete);

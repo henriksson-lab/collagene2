@@ -392,8 +392,11 @@ async fn derived_template_is_hydrated_from_exact_native_selection_and_never_clie
     let installed = native::prepare_install(
         &w,
         &native::Request {
-            source: binding(&w, 0),
-            origin: SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: binding(&w, 0),
+                origin: SourceOrigin::OriginalReference,
+            }],
             derivation: Derivation::ExactPcr {
                 forward,
                 reverse,

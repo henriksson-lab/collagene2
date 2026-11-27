@@ -43,15 +43,37 @@ web CI passes. Linux native CI found one outdated nested-method
 enum tag; its scientific assertions are unchanged and the corrected case passes
 in the terminal-processing batch. [Contract](OE_REUSABLE_MATERIAL.md).
 
-Working source advances worker112 to retain target-free terminal treatments and
+Published3f5ad10 uses worker112 to retain target-free terminal treatments and
 single-base 3′ tails through the existing material derivation lifecycle. Native
 chemistry, explicit source/origin guards, modification mappings and inherited
 limitations remain authoritative. All48 distinct selected native/SDK/worker/web-model cases and the integrated
 web/worker WASM check pass. These include real PCR → tails → phosphorylation
 → native restart → ligation with retained alternatives and HTML instructions;
 source markers, positional modifications, internal nick behavior and inherited
-limitations are checked independently. Exact-source CI for this increment
-remains open. [Contract](TERMINAL_PROCESSING_MATERIAL.md).
+limitations are checked independently. Exact-source scientific CI passes on
+Windows, macOS and Linux, and web CI passes for3f5ad10.
+[Contract](TERMINAL_PROCESSING_MATERIAL.md).
+
+Working source advances worker113, candidate31, native plan29, editor draft19
+and science32 for reusable annealed-oligo material. Native material records and
+capsules use schema2 with complete role-bound sources/snapshots and plural
+receipts. Template methods retain one role; annealing retains both oligos,
+including two legitimate uses of one self-complementary event. Source history,
+the mixed ancestry ledger, selected sharing, MCP and native archive installation
+are updated directly. All239 distinct selected native/SDK/worker/web-model
+cases and the integrated web/worker WASM check pass. Fixtures cover literal sticky
+adapters, same-event role reuse, reverse-strand annotation mapping, archive replay,
+public/private source closure, later independent-target ligation and retained
+alternatives/incompleteness. Only failed or initially uncompiled cases were
+rerun after fixture repairs. Exact-source cross-platform CI remains open.
+[Contract](ANNEALED_OLIGO_MATERIAL.md).
+
+README documentation was published separately as9da73ad, with two current
+screenshots, compact feature/method/format/platform tables and detailed operating
+instructions moved to APPLICATION_GUIDE.md. Browser use was restricted to the
+user-requested screenshots; general browser/application acceptance remains deferred.
+Public8082 was restored using the successful3f5ad10 CI frontend (worker112).
+
 
 Published19a1a1c (worker108/candidate29/plan27/science30/draft18) passed118 focused
 native cases and the integrated WASM check. Exact-source web CI and all three
@@ -67,13 +89,13 @@ binary selector/size-lane fixture expectations, corrected in f66deff without
 relaxing bounds. Its web and all three desktop build jobs passed. Full graphical
 and installed-desktop acceptance remain open.
 
-Port8082 serves the immutable successful CI frontend for `c06cdeb` (worker110),
-including saved-material domestication, TA/GC libraries, ordered TOPO continuation
-and staged WebMCP design changes. Its14 assets,
+Port8082 serves the immutable successful CI frontend for `3f5ad10` (worker112),
+including reusable OE PCR, terminal treatment/tailing, saved-material
+domestication, TA/GC libraries, ordered TOPO continuation and staged WebMCP changes. Its14 assets,
 SRI references, WASM headers, worker namespace and listening socket were checked
 without executing the application. Private library assets/storage are untouched.
 Browser and application HTTP acceptance remains deferred until in-scope code is
-complete. The worker111 OE material increment is not yet published there.
+complete. The worker113 plural-source/annealed-material increment is not yet published there.
 
 Saved-run review now explicitly opens a separate candidate in the existing DAG
 editor, preserving original source and target events after document heads advance.

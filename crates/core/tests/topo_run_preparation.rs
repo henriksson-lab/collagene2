@@ -1085,8 +1085,11 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     let installed = d::prepare_install(
         &w,
         &d::Request {
-            source,
-            origin: declaration,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source,
+                origin: declaration,
+            }],
             derivation: d::Derivation::ExactPcr {
                 forward,
                 reverse,

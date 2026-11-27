@@ -42,11 +42,16 @@ impl<'a> Index<'a> {
                 .ok_or(Error::Unresolved("material derivation product event"))?;
             // No producer-label substring or sequence matching establishes an
             // owner. Both the exact native label and complete pins are required.
+            let mut parent_ids = Vec::new();
+            for source in &record.request.sources {
+                if !parent_ids.contains(&source.event.event_id) {
+                    parent_ids.push(source.event.event_id.clone());
+                }
+            }
             if event.operation != native::EVENT_OPERATION
                 || event.document_id != record.product.document_id
                 || event.revision != record.product.revision
-                || event.parents.len() != 1
-                || event.parents.first() != Some(&record.request.source.event_id)
+                || event.parents != parent_ids
                 || source.revisions.get(&record.product.revision).is_none()
                 || owners
                     .insert(

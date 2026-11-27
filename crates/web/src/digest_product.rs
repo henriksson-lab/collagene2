@@ -50,13 +50,16 @@ pub fn DigestOpenPanel(
 ) -> impl IntoView {
     let request = MaterialOpenRequest {
         request: material_derivation::Request {
-            source: request.source,
-            origin: request
-                .origin
-                .as_ref()
-                .map_or(SourceOrigin::OriginalReference, |origin| {
-                    SourceOrigin::Saved(origin.as_ref().clone())
-                }),
+            sources: vec![material_derivation::BoundSource {
+                role: material_derivation::SourceRole::Template,
+                event: request.source,
+                origin: request
+                    .origin
+                    .as_ref()
+                    .map_or(SourceOrigin::OriginalReference, |origin| {
+                        SourceOrigin::Saved(origin.as_ref().clone())
+                    }),
+            }],
             derivation: Derivation::CatalogDigest {
                 selection: request.selection,
                 options: request.options,
@@ -192,7 +195,7 @@ pub fn MaterialOpenPanel(
                         .await?;
                     if response.id != u32::MAX - 60 || response.revision != revision {
                         return Err(
-                            "Digest installation response belongs to another request.".into()
+                            "Material installation response belongs to another request.".into()
                         );
                     }
                     let installed = match response.result {
@@ -203,8 +206,11 @@ pub fn MaterialOpenPanel(
                     installed
                         .validate_binding(&revision)
                         .map_err(|e| e.to_string())?;
-                    if installed.receipt.source != input.request.source {
-                        return Err("Material derivation receipt source changed.".into());
+                    if installed.receipt.sources != input.request.source_bindings() {
+                        return Err(
+                            "Material derivation receipt source roles or exact events changed."
+                                .into(),
+                        );
                     }
                     let archive = installed.archive.clone();
                     let guard = || -> Result<(), String> {

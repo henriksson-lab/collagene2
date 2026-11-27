@@ -100,8 +100,11 @@ fn literal_outer_product_installs_without_a_target_then_replays_from_worker_arch
     assert!(preview.reusable());
     assert_eq!(preview.product.as_ref().unwrap().sequence.as_str(), PRODUCT);
     let request = native::Request {
-        source: event,
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event,
+            origin: origin,
+        }],
         derivation: native::Derivation::OverlapExtensionPcr {
             preparation: prep,
             selection: preview.selection().unwrap(),
@@ -176,8 +179,11 @@ fn stale_context_foreign_event_and_forged_reply_are_refused_before_material_inst
     let mut selection = preview.selection().unwrap();
     selection.expected_product_revision = "0".repeat(64);
     let request = native::Request {
-        source: event,
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event,
+            origin: origin,
+        }],
         derivation: native::Derivation::OverlapExtensionPcr {
             preparation: prep,
             selection,

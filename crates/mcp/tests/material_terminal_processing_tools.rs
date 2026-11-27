@@ -110,7 +110,7 @@ async fn pcr(c: &Client, w: &Value, source: &EventBinding, f: &str, r: &str) -> 
     let r = Primer::new("Historical stock R", r, "").unwrap();
     let preview=call(c,"material_derivation",json!({"workspace":w,"task":{"PreviewPcr":{"source":source,"origin":"OriginalReference","forward":f,"reverse":r,"template_strand":"Top"}}})).await;
     assert_eq!(preview["count"], 1);
-    call(c,"material_derivation",json!({"workspace":w,"task":{"Install":{"request":{"source":source,"origin":"OriginalReference","derivation":{"ExactPcr":{"forward":f,"reverse":r,"template_strand":"Top","selection":{"selected_index":0,"expected_preview_revision":preview["previews"][0]["preview_revision"]}}},"name":"Actual native PCR stock","save_primers":true}}}})).await
+    call(c,"material_derivation",json!({"workspace":w,"task":{"Install":{"request":{"sources":[{"role":"template","event":source,"origin":"OriginalReference"}],"derivation":{"ExactPcr":{"forward":f,"reverse":r,"template_strand":"Top","selection":{"selected_index":0,"expected_preview_revision":preview["previews"][0]["preview_revision"]}}},"name":"Actual native PCR stock","save_primers":true}}}})).await
 }
 async fn terminal(c: &Client, w: &Value, source: &EventBinding, action: Value) -> Value {
     let preview=call(c,"material_derivation",json!({"workspace":w,"task":{"PreviewTerminalProcessing":{"source":source,"origin":saved(source),"action":action}}})).await;
@@ -122,7 +122,7 @@ async fn terminal(c: &Client, w: &Value, source: &EventBinding, action: Value) -
     report
         .validate_binding(preview["context_revision"].as_str().unwrap())
         .unwrap();
-    let installed=call(c,"material_derivation",json!({"workspace":w,"task":{"Install":{"request":{"source":source,"origin":saved(source),"derivation":{"TerminalProcessing":{"action":action}},"name":"Explicit terminal preparation","save_primers":false}}}})).await;
+    let installed=call(c,"material_derivation",json!({"workspace":w,"task":{"Install":{"request":{"sources":[{"role":"template","event":source,"origin":saved(source)}],"derivation":{"TerminalProcessing":{"action":action}},"name":"Explicit terminal preparation","save_primers":false}}}})).await;
     let receipt: native::Receipt = serde_json::from_value(installed["receipt"].clone()).unwrap();
     assert!(receipt.primer_attachment.is_none());
     let archive = archive(c, &installed).await;
@@ -241,7 +241,7 @@ async fn saved_pcr_tails_and_phosphates_reopen_into_ordinary_ligation_with_extra
     stale["revision"] = json!("0".repeat(64));
     reject(&c,json!({"workspace":stale,"task":{"PreviewTerminalProcessing":{"source":vt,"origin":saved(&vt),"action":{"TreatEnds":{"treatment":"Phosphorylate"}}}}})).await;
     reject(&c,json!({"workspace":original,"task":{"PreviewTerminalProcessing":{"source":vt,"origin":saved(&vt),"action":{"TreatEnds":{"treatment":"Phosphorylate"}}}}})).await;
-    reject(&c,json!({"workspace":reference(&itail),"task":{"Install":{"request":{"source":vt,"origin":saved(&vt),"derivation":{"TerminalProcessing":{"action":{"TreatEnds":{"treatment":"Phosphorylate"}}}},"name":"No oligos are synthesized","save_primers":true}}}})).await;
+    reject(&c,json!({"workspace":reference(&itail),"task":{"Install":{"request":{"sources":[{"role":"template","event":vt,"origin":saved(&vt)}],"derivation":{"TerminalProcessing":{"action":{"TreatEnds":{"treatment":"Phosphorylate"}}}},"name":"No oligos are synthesized","save_primers":true}}}})).await;
     assert_eq!(call(&c, "list_documents", json!({})).await["total"], before);
     let vphos = terminal(
         &c,
@@ -362,8 +362,11 @@ fn conditional_oe_stock() -> (Workspace, EventBinding) {
     let result = native::prepare_install(
         &w,
         &native::Request {
-            source,
-            origin,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source,
+                origin: origin,
+            }],
             derivation: native::Derivation::OverlapExtensionPcr {
                 preparation: prep,
                 selection: preview.selection().unwrap(),
@@ -396,7 +399,7 @@ async fn terminal_processing_preserves_conditional_origins_and_does_not_repair_u
     let before = call(&c, "list_documents", json!({})).await["total"].clone();
     reject(&c,json!({"workspace":original_ref,"task":{"PreviewTerminalProcessing":{"source":source,"origin":"OriginalReference","action":{"Tail3Prime":{"base":"A"}}}}})).await;
     assert_eq!(call(&c, "list_documents", json!({})).await["total"], before);
-    let installed=call(&c,"material_derivation",json!({"workspace":original_ref,"task":{"Install":{"request":{"source":source,"origin":"OriginalReference","derivation":{"TerminalProcessing":{"action":{"TreatEnds":{"treatment":"Phosphorylate"}}}},"name":"Explicit5P only","save_primers":false}}}})).await;
+    let installed=call(&c,"material_derivation",json!({"workspace":original_ref,"task":{"Install":{"request":{"sources":[{"role":"template","event":source,"origin":"OriginalReference"}],"derivation":{"TerminalProcessing":{"action":{"TreatEnds":{"treatment":"Phosphorylate"}}}},"name":"Explicit5P only","save_primers":false}}}})).await;
     let receipt = receipt_of(&installed);
     assert!(receipt.primer_attachment.is_none());
     let original_phos = archive(&c, &installed).await;

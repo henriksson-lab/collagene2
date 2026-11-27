@@ -586,10 +586,13 @@ mod tests {
         let derived = collagene_core::material_derivation::install(
             &frame,
             &collagene_core::material_derivation::Request {
-                source: chosen.source.binding.clone(),
-                origin: collagene_core::material_derivation::SourceOrigin::Saved(
-                    chosen.origin.as_ref().unwrap().as_ref().clone(),
-                ),
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: chosen.source.binding.clone(),
+                    origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                        chosen.origin.as_ref().unwrap().as_ref().clone(),
+                    ),
+                }],
                 derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
                     selection: chosen.selection.clone(),
                     options: chosen.options.clone(),

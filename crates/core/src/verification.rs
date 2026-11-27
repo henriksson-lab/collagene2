@@ -457,7 +457,7 @@ pub struct ReferenceStepReport {
     pub evidence: ReferenceStepEvidence,
 }
 
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-31");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-32");
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PcrDocument {
@@ -2053,6 +2053,7 @@ pub fn simulate_tailing(
     Ok(preview)
 }
 pub(crate) fn declared_oligo(source: &Molecule) -> Result<(), Error> {
+    crate::format_fidelity::declared_oligo_guard(source)?;
     source.validate()?;
     if source.sequence.alphabet() != Alphabet::Dna || source.topology != Topology::Linear {
         return Err(Error::Unsupported(
@@ -2112,7 +2113,7 @@ pub fn simulate_oligo_annealing(
     bounded_physical_preview(&preview)?;
     Ok(preview)
 }
-fn annealed_document_inner(
+pub(crate) fn annealed_document_inner(
     top: &Molecule,
     bottom: &Molecule,
     report: &chemistry::AnnealReport,

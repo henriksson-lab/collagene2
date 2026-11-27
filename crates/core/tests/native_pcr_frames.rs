@@ -6,7 +6,7 @@ use collagene_core::{
     cloning_outputs, material_derivation as d, material_pcr, modified_duplex,
     run_lineage::{EventBinding, InputEventBinding},
     run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
+    verification::{DesignPlan, Operation, PlanInput, Source},
     workspace::{self, Workspace},
 };
 const TOP: &str = "AGTCCGATGCTAC";
@@ -172,8 +172,11 @@ fn bottom_seventeen_seeds_native_pcr_and_maps_only_real_original_top_annotations
     let prepared = d::prepare_install(
         &reopened,
         &d::Request {
-            source: event.clone(),
-            origin: d::SourceOrigin::Saved(origin.clone()),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: event.clone(),
+                origin: d::SourceOrigin::Saved(origin.clone()),
+            }],
             derivation: d::Derivation::ExactPcr {
                 forward: f,
                 reverse: r,
@@ -230,8 +233,11 @@ fn full_native_source_enumerates_both_thirteen_and_seventeen_without_target_sele
         d::prepare_install(
             &w,
             &d::Request {
-                source: event,
-                origin: d::SourceOrigin::Saved(origin.clone()),
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: event,
+                    origin: d::SourceOrigin::Saved(origin.clone())
+                }],
                 derivation: d::Derivation::ExactPcr {
                     forward: f.clone(),
                     reverse: r.clone(),

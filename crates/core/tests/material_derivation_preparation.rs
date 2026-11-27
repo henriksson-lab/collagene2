@@ -211,10 +211,13 @@ fn fixture(incomplete: bool) -> Fixture {
     let derived = digest::prepare_install(
         &saved.workspace,
         &digest::Request {
-            source: saved.receipt.construct,
-            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
-                origin,
-            )),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: saved.receipt.construct,
+                origin: digest::SourceOrigin::Saved(
+                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                ),
+            }],
             derivation: digest::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),
@@ -480,10 +483,13 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
     let derived = digest::prepare_install(
         &saved.workspace,
         &digest::Request {
-            source: saved.receipt.construct,
-            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
-                origin,
-            )),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: saved.receipt.construct,
+                origin: digest::SourceOrigin::Saved(
+                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                ),
+            }],
             derivation: digest::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),

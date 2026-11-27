@@ -149,10 +149,13 @@ fn cut(incomplete: bool) -> (Molecule, MaterialOrigin) {
     let installed = digest::prepare_install(
         &w,
         &digest::Request {
-            source: origin.selection.event.clone(),
-            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
-                origin,
-            )),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: origin.selection.event.clone(),
+                origin: digest::SourceOrigin::Saved(
+                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                ),
+            }],
             derivation: digest::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),

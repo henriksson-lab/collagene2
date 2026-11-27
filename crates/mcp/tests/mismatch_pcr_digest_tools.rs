@@ -223,8 +223,11 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
     let prepared = d::prepare_install(
         &commit.workspace,
         &d::Request {
-            source: selection.event.clone(),
-            origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: selection.event.clone(),
+                origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
+            }],
             derivation: d::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[eco_rv]).unwrap(),
                 options: Default::default(),

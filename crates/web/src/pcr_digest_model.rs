@@ -276,8 +276,11 @@ mod tests {
         let prepared = d::prepare_install(
             &w,
             &d::Request {
-                source: event,
-                origin: original.clone(),
+                sources: vec![d::BoundSource {
+                    role: d::SourceRole::Template,
+                    event: event,
+                    origin: original.clone(),
+                }],
                 derivation: d::Derivation::ExactPcr {
                     selection: d::PcrSelection {
                         selected_index: 0,
@@ -862,8 +865,11 @@ mod mismatch_digest_tests {
         let prepared = d::prepare_install(
             &w,
             &d::Request {
-                source: event,
-                origin: original.clone(),
+                sources: vec![d::BoundSource {
+                    role: d::SourceRole::Template,
+                    event: event,
+                    origin: original.clone(),
+                }],
                 derivation: d::Derivation::ExactPcr {
                     selection: d::PcrSelection {
                         selected_index: 0,

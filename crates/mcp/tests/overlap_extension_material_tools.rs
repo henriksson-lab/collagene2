@@ -154,7 +154,7 @@ fn install_request(
     preparation: &Preparation,
     selection: &native::OverlapExtensionSelection,
 ) -> Value {
-    json!({"source":source,"origin":origin,"derivation":{"OverlapExtensionPcr":{"preparation":preparation,"selection":selection}},"name":"Reusable edited OE material","save_primers":true})
+    json!({"sources":[{"role":"template","event":source,"origin":origin}],"derivation":{"OverlapExtensionPcr":{"preparation":preparation,"selection":selection}},"name":"Reusable edited OE material","save_primers":true})
 }
 async fn install(c: &Client, w: &Value, request: Value) -> Value {
     call(
@@ -284,7 +284,7 @@ async fn original_oe_material_installs_six_new_primers_reopens_and_redigests_wit
     let digest = call(&c, "material_derivation", json!({"workspace":restarted,"task":{"PreviewDigest":{"source":receipt.product,"origin":origin,"selection":choice,"options":collagene_core::restriction_inspection::InspectionOptions::default()}}})).await;
     assert_eq!(digest["products_determined"], true);
     assert_eq!(digest["fragment_count"], 3);
-    let cut = install(&c, &restarted, json!({"source":receipt.product,"origin":origin,"derivation":{"CatalogDigest":{"selection":choice,"options":collagene_core::restriction_inspection::InspectionOptions::default(),"fragment_index":2}},"name":"Literal right EcoRI tail fragment","save_primers":false})).await;
+    let cut = install(&c, &restarted, json!({"sources":[{"role":"template","event":receipt.product,"origin":origin}],"derivation":{"CatalogDigest":{"selection":choice,"options":collagene_core::restriction_inspection::InspectionOptions::default(),"fragment_index":2}},"name":"Literal right EcoRI tail fragment","save_primers":false})).await;
     let cut_receipt: native::Receipt = serde_json::from_value(cut["receipt"].clone()).unwrap();
     let cut_w = archive(&c, &cut).await;
     let cut_material = native::reconstruct(&cut_w, &cut_receipt.product).unwrap();
@@ -313,8 +313,11 @@ fn saved_source(run: bool) -> (Workspace, EventBinding, Origin) {
         let installed = native::prepare_install(
             &w,
             &native::Request {
-                source: event(&w, 0),
-                origin: native::SourceOrigin::OriginalReference,
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: event(&w, 0),
+                    origin: native::SourceOrigin::OriginalReference,
+                }],
                 derivation: native::Derivation::ExactPcr {
                     forward: f,
                     reverse: r,

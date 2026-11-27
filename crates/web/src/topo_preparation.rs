@@ -788,8 +788,11 @@ mod generic_material_tests {
         let installed = derivation::prepare_install(
             &workspace,
             &derivation::Request {
-                source: event,
-                origin: derivation::SourceOrigin::OriginalReference,
+                sources: vec![derivation::BoundSource {
+                    role: derivation::SourceRole::Template,
+                    event: event,
+                    origin: derivation::SourceOrigin::OriginalReference,
+                }],
                 derivation: derivation::Derivation::ExactPcr {
                     template_strand: collagene_core::chemistry::Strand::Top,
                     forward,

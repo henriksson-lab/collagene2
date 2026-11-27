@@ -270,8 +270,11 @@ fn cut_free_derived_circle_survives_archive_and_is_replayed_before_new_pcr() {
     assert!(preview.inspection.products_determined);
     assert_eq!(preview.inspection.fragments.len(), 1);
     let request = derived::Request {
-        source: run.event().clone(),
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: run.event().clone(),
+            origin: origin,
+        }],
         derivation: derived::Derivation::CatalogDigest {
             selection,
             options: Default::default(),

@@ -1158,8 +1158,13 @@ mod tests {
         let derived = collagene_core::material_derivation::install(
             &saved,
             &collagene_core::material_derivation::Request {
-                source: event.clone(),
-                origin: collagene_core::material_derivation::SourceOrigin::Saved(origin.clone()),
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: event.clone(),
+                    origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                        origin.clone(),
+                    ),
+                }],
                 name: "Derived uncut circle".into(),
                 save_primers: false,
                 derivation: collagene_core::material_derivation::Derivation::CatalogDigest {

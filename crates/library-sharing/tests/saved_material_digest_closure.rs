@@ -94,8 +94,11 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
     let installed = material::prepare_install(
         &run.workspace,
         &material::Request {
-            source,
-            origin: material::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)),
+            sources: vec![material::BoundSource {
+                role: material::SourceRole::Template,
+                event: source,
+                origin: material::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)),
+            }],
             derivation: material::Derivation::CatalogDigest {
                 selection,
                 options: collagene_core::restriction_inspection::InspectionOptions::default(),

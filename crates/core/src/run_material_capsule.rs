@@ -393,7 +393,7 @@ fn walk<'a>(
     mut visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
     mut derived_visit: impl FnMut(
         &crate::material_derivation::Record,
-        Option<&Molecule>,
+        Option<&[crate::material_derivation::SourceSnapshot]>,
     ) -> Result<(), Error>,
     mut graph_visit: impl FnMut(
         &crate::topo_graph_history::Record,
@@ -451,24 +451,28 @@ fn walk<'a>(
                     origin.as_ref(),
                     crate::material_derivation::MAX_CAPSULE_BYTES,
                 )?;
-                if origin.schema_version != 1 {
+                if origin.schema_version != 2 {
                     return Err(bad("unsupported material capsule schema"));
                 }
                 run_material::event_shape(&origin.product)?;
-                budget.model(&origin.source_snapshot)?;
                 let record = crate::material_derivation::load_record_shallow(&origin.record_bytes)?;
                 record.validate_shallow()?;
-                if origin.product != record.product
-                    || origin.source_snapshot.revision() != record.request.source.revision
-                {
+                crate::material_derivation::validate_source_snapshots(
+                    &record.request,
+                    &origin.source_snapshots,
+                )?;
+                if origin.product != record.product {
                     return Err(bad("material capsule source/product snapshot changed"));
                 }
+                for source in &origin.source_snapshots {
+                    budget.model(&source.molecule)?;
+                }
                 add(&mut budget.steps, 1, MAX_STEPS)?;
-                derived_visit(&record, Some(&origin.source_snapshot))?;
-                if let crate::material_derivation::SourceOrigin::Saved(saved) =
-                    record.request.origin
-                {
-                    stack.push((depth + 1, material_owned(saved)));
+                derived_visit(&record, Some(&origin.source_snapshots))?;
+                for source in record.request.sources {
+                    if let crate::material_derivation::SourceOrigin::Saved(saved) = source.origin {
+                        stack.push((depth + 1, material_owned(saved)));
+                    }
                 }
             }
             Pending::TopoGraph(origin) => {
@@ -547,17 +551,21 @@ fn walk<'a>(
                 derived_visit(&record, None)?;
                 match record {
                     std::borrow::Cow::Borrowed(record) => {
-                        if let crate::material_derivation::SourceOrigin::Saved(saved) =
-                            &record.request.origin
-                        {
-                            stack.push((depth + 1, material_node(saved)));
+                        for source in &record.request.sources {
+                            if let crate::material_derivation::SourceOrigin::Saved(saved) =
+                                &source.origin
+                            {
+                                stack.push((depth + 1, material_node(saved)));
+                            }
                         }
                     }
                     std::borrow::Cow::Owned(record) => {
-                        if let crate::material_derivation::SourceOrigin::Saved(saved) =
-                            record.request.origin
-                        {
-                            stack.push((depth + 1, material_owned(saved)));
+                        for source in record.request.sources {
+                            if let crate::material_derivation::SourceOrigin::Saved(saved) =
+                                source.origin
+                            {
+                                stack.push((depth + 1, material_owned(saved)));
+                            }
                         }
                     }
                 }
@@ -734,7 +742,7 @@ pub(crate) fn derived_ancestry_walk(
 
     derived_visit: impl FnMut(
         &crate::material_derivation::Record,
-        Option<&Molecule>,
+        Option<&[crate::material_derivation::SourceSnapshot]>,
     ) -> Result<(), Error>,
     graph_visit: impl FnMut(
         &crate::topo_graph_history::Record,
@@ -760,7 +768,7 @@ pub(crate) fn graph_ancestry_walk(
     run_visit: impl FnMut(&Capsule, &Candidate) -> Result<(), Error>,
     derived_visit: impl FnMut(
         &crate::material_derivation::Record,
-        Option<&Molecule>,
+        Option<&[crate::material_derivation::SourceSnapshot]>,
     ) -> Result<(), Error>,
     graph_visit: impl FnMut(
         &crate::topo_graph_history::Record,
@@ -946,10 +954,9 @@ pub fn documentary_origins(
                 );
             }
             Root::Derived { record, hash, .. } => {
-                let source = run_material::resolve(workspace, &record.request.source)?;
                 let bytes = &workspace.attachments[hash].bytes;
-                // Opaque record wrapper uses bounded base64 in human-readable
-                // recipes; account it before cloning, plus the actual source model.
+                // Charge every role-bound snapshot and descendant under the one
+                // enclosing ledger BEFORE cloning any source or closed child.
                 add(
                     &mut budget.bytes,
                     bytes.len().div_ceil(3) * 4,
@@ -957,16 +964,23 @@ pub fn documentary_origins(
                 )?;
                 charge_serialized_bounded(
                     &mut budget,
-                    &(1u16, &record.product, source),
+                    &(2u16, &record.product),
                     MAX_AGGREGATE_ORIGIN_BYTES,
                 )?;
                 add(&mut budget.bytes, 1024, MAX_AGGREGATE_ORIGIN_BYTES)?;
-                budget.model(source)?;
                 add(&mut budget.steps, 1, MAX_STEPS)?;
-                if let crate::material_derivation::SourceOrigin::Saved(origin) =
-                    &record.request.origin
-                {
-                    nodes.push((2, material_node(origin)));
+                for binding in &record.request.sources {
+                    let source = run_material::resolve(workspace, &binding.event)?;
+                    charge_serialized_bounded(
+                        &mut budget,
+                        &(binding.role, source),
+                        MAX_AGGREGATE_ORIGIN_BYTES,
+                    )?;
+                    budget.model(source)?;
+                    if let crate::material_derivation::SourceOrigin::Saved(origin) = &binding.origin
+                    {
+                        nodes.push((2, material_node(origin)));
+                    }
                 }
             }
         }
@@ -999,11 +1013,20 @@ pub fn documentary_origins(
                     return Err(bad("root kind differs"));
                 };
                 run_material::MaterialOrigin::Derived(crate::material_derivation::Capsule {
-                    schema_version: 1,
+                    schema_version: 2,
                     product: product.clone(),
                     record_bytes: workspace.attachments[&hash].bytes.clone(),
-                    source_snapshot: run_material::resolve(workspace, &record.request.source)?
-                        .clone(),
+                    source_snapshots: record
+                        .request
+                        .sources
+                        .iter()
+                        .map(|source| {
+                            Ok(crate::material_derivation::SourceSnapshot {
+                                role: source.role,
+                                molecule: run_material::resolve(workspace, &source.event)?.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, Error>>()?,
                 })
             }
         };
@@ -1199,21 +1222,22 @@ pub(crate) fn validate_derived_request_origins(
     workspace: &Workspace,
     request: &crate::material_derivation::Request,
 ) -> Result<(), Error> {
-    let source = run_material::resolve(workspace, &request.source)?;
+    request.validate_shallow()?;
     let mut budget = Budget::default();
     charge_serialized(&mut budget, request)?;
-    budget.model(source)?;
-    let nodes = match &request.origin {
-        crate::material_derivation::SourceOrigin::OriginalReference => vec![],
-        crate::material_derivation::SourceOrigin::Saved(origin) => {
-            if origin.event() != &request.source {
+    let mut nodes = vec![];
+    for binding in &request.sources {
+        let source = run_material::resolve(workspace, &binding.event)?;
+        budget.model(source)?;
+        if let crate::material_derivation::SourceOrigin::Saved(origin) = &binding.origin {
+            if origin.event() != &binding.event {
                 return Err(bad(
                     "derived request origin names another exact source event",
                 ));
             }
-            vec![(2, material_node(origin))]
+            nodes.push((2, material_node(origin)));
         }
-    };
+    }
     workspace_walk(workspace, nodes, budget)
 }
 pub(crate) fn validate_derived_capsule_origins(

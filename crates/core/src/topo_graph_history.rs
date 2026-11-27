@@ -352,7 +352,7 @@ pub fn source_bindings(r: &Record) -> Result<Vec<EventBinding>, Error> {
             Ok(())
         },
         |d, _| {
-            derived.push(d.request.source.clone());
+            derived.extend(d.request.sources.iter().map(|source| source.event.clone()));
             derived.push(d.product.clone());
             Ok(())
         },

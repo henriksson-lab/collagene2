@@ -80,8 +80,11 @@ fn fixture(saved: bool) -> (Workspace, design::Design, design::SelectedConstruct
         let installed = material::prepare_install(
             &w,
             &material::Request {
-                source: left_source,
-                origin: material::SourceOrigin::OriginalReference,
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: left_source,
+                    origin: material::SourceOrigin::OriginalReference,
+                }],
                 derivation: material::Derivation::ExactPcr {
                     forward: left_f.clone(),
                     reverse,

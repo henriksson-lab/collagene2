@@ -204,8 +204,11 @@ fn derived_source_remains_a_native_recipe_and_never_becomes_an_original_bottom_s
     let next = material_derivation::prepare_install(
         &w,
         &material_derivation::Request {
-            source: event,
-            origin: material_derivation::SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: event,
+                origin: material_derivation::SourceOrigin::Saved(origin),
+            }],
             derivation: material_derivation::Derivation::EndRepair {
                 method: EndRepairMethod::FillFivePrimeOverhangs,
             },

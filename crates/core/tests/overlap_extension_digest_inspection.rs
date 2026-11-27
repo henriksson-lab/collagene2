@@ -331,8 +331,11 @@ fn derived_origin_owns_its_exact_event_and_inherits_limits_without_a_target_verd
     let next = d::prepare_install(
         &w,
         &d::Request {
-            source: origin.event().clone(),
-            origin: d::SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: origin.event().clone(),
+                origin: d::SourceOrigin::Saved(origin),
+            }],
             derivation: d::Derivation::EndRepair {
                 method: chemistry::EndRepairMethod::Blunt,
             },

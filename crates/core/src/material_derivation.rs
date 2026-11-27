@@ -19,24 +19,30 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
-pub const ENGINE_VERSION: &str = "material-derivation-1";
-pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v1";
+pub const ENGINE_VERSION: &str = "material-derivation-2";
+pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v2";
 pub const MEDIA_TYPE: &str = "application/vnd.collagene.material-derivation";
-pub const EVENT_OPERATION: &str = "Target-free native material derivation v1";
+pub const EVENT_OPERATION: &str = "Target-free native material derivation v2";
 pub const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_CAPSULE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
-const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x01";
+pub const MAX_SOURCES: usize = 2;
+const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x02";
 const HEADER: usize = 44;
 const CONTEXT_KEY: &str = "source:material_derivation:context";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
+dto! {#[derive(Copy,PartialEq,Eq,PartialOrd,Ord)]#[serde(rename_all="snake_case")]pub enum SourceRole{Template,TopOligo,BottomOligo}}
+dto! {pub struct BoundSource{pub role:SourceRole,pub event:EventBinding,pub origin:SourceOrigin}}
+dto! {#[derive(PartialEq,Eq)]pub struct SourceBinding{pub role:SourceRole,pub event:EventBinding}}
+dto! {pub struct SourceSnapshot{pub role:SourceRole,pub molecule:Molecule}}
 dto! {pub enum SourceOrigin{OriginalReference,Saved(MaterialOrigin)}}
 dto! {pub struct PcrSelection{pub selected_index:usize,pub expected_preview_revision:String,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub geometry:analysis::PcrProduct}}
 dto! {pub struct MismatchPcrSelection{pub selected_index:usize,pub expected_preview_revision:String,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub geometry:crate::mutagenesis::MutantPcrProduct}}
 dto! {pub struct OverlapExtensionSelection{pub expected_preview_revision:String,pub expected_product_revision:String}}
 dto! {#[derive(Copy,PartialEq,Eq)]pub enum TerminalAction{TreatEnds{treatment:chemistry::EndTreatment},Tail3Prime{base:crate::tailing::TailingBase}}}
-dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,template_strand:chemistry::Strand,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:MismatchPcrSelection},EndRepair{method:chemistry::EndRepairMethod},OverlapExtensionPcr{preparation:crate::overlap_extension_pcr::Request,selection:OverlapExtensionSelection},TerminalProcessing{action:TerminalAction}}}
-dto! {pub struct Request{pub source:EventBinding,pub origin:SourceOrigin,pub derivation:Derivation,pub name:String,pub save_primers:bool}}
+dto! {pub struct AnnealSelection{pub expected_preview_revision:String,pub candidate_id:String,pub expected_product_revision:String}}
+dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,template_strand:chemistry::Strand,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize},MismatchPcr{forward:Primer,reverse:Primer,options:crate::mutagenesis::PcrOptions,selection:MismatchPcrSelection},EndRepair{method:chemistry::EndRepairMethod},OverlapExtensionPcr{preparation:crate::overlap_extension_pcr::Request,selection:OverlapExtensionSelection},TerminalProcessing{action:TerminalAction},AnnealedOligos{options:chemistry::AnnealOptions,selection:AnnealSelection}}}
+dto! {pub struct Request{pub sources:Vec<BoundSource>,pub derivation:Derivation,pub name:String,pub save_primers:bool}}
 dto! {pub struct Record{pub schema_version:u32,pub engine_version:String,pub scientific_engine:String,pub source_workspace_fingerprint:String,pub context_revision:String,pub request:Request,pub product:EventBinding,pub product_state_revision:String,pub incomplete:bool}}
 mod record_bytes {
     use super::*;
@@ -95,8 +101,8 @@ mod record_bytes {
         }
     }
 }
-dto! {pub struct Capsule{pub schema_version:u16,pub product:EventBinding,#[serde(with="record_bytes")]#[cfg_attr(feature="json-schema",schemars(with="String"))]pub record_bytes:Vec<u8>,pub source_snapshot:Molecule}}
-dto! {pub struct Receipt{pub engine_version:String,pub context_revision:String,pub record_hash:String,pub primer_attachment:Option<String>,pub source:EventBinding,pub product:EventBinding,pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool,pub duplex:chemistry::DuplexSummary,pub modifications:ModificationSummary}}
+dto! {pub struct Capsule{pub schema_version:u16,pub product:EventBinding,#[serde(with="record_bytes")]#[cfg_attr(feature="json-schema",schemars(with="String"))]pub record_bytes:Vec<u8>,pub source_snapshots:Vec<SourceSnapshot>}}
+dto! {pub struct Receipt{pub engine_version:String,pub context_revision:String,pub record_hash:String,pub primer_attachment:Option<String>,pub sources:Vec<SourceBinding>,pub product:EventBinding,pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool,pub duplex:chemistry::DuplexSummary,pub modifications:ModificationSummary}}
 pub struct PreparedInstallation {
     pub workspace: Workspace,
     pub receipt: Receipt,
@@ -198,12 +204,74 @@ impl SourceOrigin {
     }
 }
 impl Request {
+    pub fn template(&self) -> Result<&BoundSource, Error> {
+        if self.sources.len() != 1 || self.sources[0].role != SourceRole::Template {
+            return Err(bad(
+                "this derivation requires exactly the Template source role",
+            ));
+        }
+        Ok(&self.sources[0])
+    }
+    pub fn source_bindings(&self) -> Vec<SourceBinding> {
+        self.sources
+            .iter()
+            .map(|s| SourceBinding {
+                role: s.role,
+                event: s.event.clone(),
+            })
+            .collect()
+    }
+    fn validate_sources(&self) -> Result<(), Error> {
+        let expected: &[SourceRole] =
+            if matches!(self.derivation, Derivation::AnnealedOligos { .. }) {
+                &[SourceRole::TopOligo, SourceRole::BottomOligo]
+            } else {
+                &[SourceRole::Template]
+            };
+        if self.sources.len() != expected.len() {
+            return Err(bad(
+                "native source roles/count differ from the declared derivation",
+            ));
+        }
+        for (source, role) in self.sources.iter().zip(expected) {
+            if source.role != *role {
+                return Err(bad(
+                    "native source roles must be unique and in canonical method order",
+                ));
+            }
+            source.origin.validate_shallow_for(&source.event)?;
+            if matches!(self.derivation, Derivation::AnnealedOligos { .. })
+                && !matches!(source.origin, SourceOrigin::OriginalReference)
+            {
+                return Err(bad(
+                    "Annealing requires independently declared standard oligos; saved duplexes are not denatured or reinterpreted as single strands",
+                ));
+            }
+        }
+        Ok(())
+    }
+
     /// One level only. The common mixed walker validates saved descendants under
     /// one ledger before calling this method; never recurse through serde here.
     pub(crate) fn validate_shallow(&self) -> Result<(), Error> {
         name(&self.name)?;
-        self.origin.validate_shallow_for(&self.source)?;
+        self.validate_sources()?;
         match &self.derivation {
+            Derivation::AnnealedOligos { options, selection } => {
+                if self.save_primers {
+                    return Err(bad(
+                        "Annealing uses the declared oligo inputs and creates no new primer order",
+                    ));
+                }
+                anneal_options_shape(options)?;
+                if !hex(&selection.expected_preview_revision)
+                    || !hex(&selection.expected_product_revision)
+                    || !candidate_id_shape(&selection.candidate_id)
+                {
+                    return Err(bad("invalid bound annealing candidate selection"));
+                }
+            }
+
             Derivation::ExactPcr {
                 forward,
                 reverse,
@@ -273,13 +341,17 @@ impl Request {
                 preparation.validate_shape()?;
                 if !hex(&selection.expected_product_revision)
                     || selection.expected_preview_revision
-                        != overlap_extension_context(&self.source, &self.origin, preparation)?
+                        != overlap_extension_context(
+                            &self.template()?.event,
+                            &self.template()?.origin,
+                            preparation,
+                        )?
                 {
                     return Err(bad(
                         "stale or invalid exact-source overlap-extension selection",
                     ));
                 }
-                if matches!(self.origin, SourceOrigin::OriginalReference)
+                if matches!(self.template()?.origin, SourceOrigin::OriginalReference)
                     && [&preparation.left, &preparation.right]
                         .iter()
                         .any(|pair| pair.template_strand != chemistry::Strand::Top)
@@ -331,7 +403,7 @@ impl Record {
         crate::run_material_capsule::derived_record_preflight(self)
     }
     pub(crate) fn validate_shallow(&self) -> Result<(), Error> {
-        if self.schema_version != 1
+        if self.schema_version != 2
             || self.engine_version != ENGINE_VERSION
             || self.scientific_engine.is_empty()
             || self.scientific_engine.len() > 128
@@ -345,7 +417,11 @@ impl Record {
         }
         self.request.validate_shallow()?;
         run_material::event_shape(&self.product)?;
-        if self.product.event_id == self.request.source.event_id
+        if self
+            .request
+            .sources
+            .iter()
+            .any(|s| self.product.event_id == s.event.event_id)
             || context(
                 &self.source_workspace_fingerprint,
                 &self.request,
@@ -395,13 +471,17 @@ pub fn load_record(bytes: &[u8]) -> Result<Record, Error> {
     record.validate_documentary()?;
     Ok(record)
 }
-fn original_source(source: &Molecule) -> Result<TrackedDuplex, Error> {
+fn original_reference_admission(source: &Molecule) -> Result<(), Error> {
     crate::model::bounds::model_preflight(&[source])?;
     source.validate()?;
     crate::format_fidelity::reference_export_guard(source)?;
     if source.sequence.alphabet() != Alphabet::Dna {
         return Err(bad("PCR/digest material requires DNA"));
     }
+    Ok(())
+}
+fn original_source(source: &Molecule) -> Result<TrackedDuplex, Error> {
+    original_reference_admission(source)?;
     // Plain originals are an explicit intact-reference hypothesis, never an
     // imported chemical state. Unknown source modifications are not set to zero.
     TrackedDuplex::from_unknown_duplex(&chemistry::Duplex::from_molecule(source)?)
@@ -450,10 +530,11 @@ pub(crate) fn fresh_source(
     })
 }
 fn request_source(source: &Molecule, request: &Request) -> Result<(), Error> {
+    let template = request.template()?;
     crate::model::bounds::model_preflight(&[source])?;
     source.validate()?;
     request.validate_shallow()?;
-    if source.revision() != request.source.revision {
+    if source.revision() != template.event.revision {
         return Err(bad("source snapshot differs from exact request event"));
     }
     if let Derivation::MismatchPcr {
@@ -476,7 +557,7 @@ fn request_source(source: &Molecule, request: &Request) -> Result<(), Error> {
     if let Derivation::OverlapExtensionPcr { preparation, .. } = &request.derivation {
         crate::overlap_extension_execution::preflight(source, preparation)?;
     }
-    if let SourceOrigin::OriginalReference = &request.origin {
+    if let SourceOrigin::OriginalReference = &template.origin {
         original_source(source)?;
     }
     Ok(())
@@ -485,17 +566,23 @@ pub fn preflight(w: &Workspace, request: &Request) -> Result<(), Error> {
     request.validate_shallow()?;
     w.validate()?;
     crate::run_material_capsule::validate_derived_request_origins(w, request)?;
-    let source = run_material::resolve(w, &request.source)?;
-    request_source(source, request)?;
-    let doc = w
-        .documents
-        .iter()
-        .find(|d| d.id == request.source.document_id)
-        .ok_or_else(|| bad("source document absent"))?;
-    if doc.head != request.source.revision
-        || doc.head_event.as_deref() != Some(request.source.event_id.as_str())
-    {
-        return Err(bad("source head changed; recapture the selected document"));
+    for source in &request.sources {
+        let molecule = run_material::resolve(w, &source.event)?;
+        if matches!(request.derivation, Derivation::AnnealedOligos { .. }) {
+            declared_oligo_source(molecule)?;
+        } else {
+            request_source(molecule, request)?;
+        }
+        let doc = w
+            .documents
+            .iter()
+            .find(|d| d.id == source.event.document_id)
+            .ok_or_else(|| bad("source document absent"))?;
+        if doc.head != source.event.revision
+            || doc.head_event.as_deref() != Some(source.event.event_id.as_str())
+        {
+            return Err(bad("source head changed; recapture the selected document"));
+        }
     }
     if w.attachments.len() >= crate::workspace::MAX_ATTACHMENTS
         || w.attachments
@@ -516,17 +603,25 @@ pub fn revision(w: &Workspace, request: &Request) -> Result<String, Error> {
         verification::ENGINE_VERSION,
     )
 }
-fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMaterial, Error> {
+fn fresh_template(
+    source: &Molecule,
+    request: &Request,
+    revision: &str,
+) -> Result<FreshMaterial, Error> {
+    let template = request.template()?;
     request_source(source, request)?;
-    let mut inherited = fresh_source(source, &request.origin)?;
+    let mut inherited = fresh_source(source, &template.origin)?;
     let (mut reference, tracked, local) = match &request.derivation {
+        Derivation::AnnealedOligos { .. } => {
+            return Err(bad("annealing requires the plural oligo source path"));
+        }
         Derivation::ExactPcr {
             forward,
             reverse,
             template_strand,
             selection,
         } => {
-            let previews = match &request.origin {
+            let previews = match &template.origin {
                 SourceOrigin::OriginalReference => verification::simulate_pcr_documents(
                     source,
                     forward,
@@ -585,7 +680,7 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
         } => {
             let preview = mismatch_from_fresh(
                 source,
-                &request.origin,
+                &template.origin,
                 &inherited,
                 forward,
                 reverse,
@@ -668,7 +763,7 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
             let catalog = catalog_digest::builtin_catalog()?;
             selection.validate_for(&catalog)?;
             let enzymes = selection.resolved_enzymes(&catalog)?;
-            let role = crate::restriction_history::source_role(&request.source)?;
+            let role = crate::restriction_history::source_role(&template.event)?;
             let mut selected = None;
             let inspection = restriction_inspection::inspect_with_digest_for_source(
                 &role,
@@ -745,13 +840,20 @@ fn fresh(source: &Molecule, request: &Request, revision: &str) -> Result<FreshMa
 pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInstallation, Error> {
     let context_revision = revision(w, request)?;
     let fingerprint = run_lineage::workspace_fingerprint(w)?;
-    let source = run_material::resolve(w, &request.source)?;
-    let fresh = fresh(source, request, &context_revision)?;
+    let snapshots = workspace_snapshots(w, request)?;
+    let fresh = fresh(&snapshots, request, &context_revision)?;
     let histories = DocumentHistory::restore_all(w)?;
-    let history = histories
+    let parent_histories = request
+        .sources
         .iter()
-        .find(|h| h.id == request.source.document_id)
-        .ok_or_else(|| bad("source history absent"))?;
+        .map(|s| {
+            let history = histories
+                .iter()
+                .find(|h| h.id == s.event.document_id)
+                .ok_or_else(|| bad("source history absent"))?;
+            Ok((history, s.event.event_id.as_str()))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
     let prefix = match request.derivation {
         Derivation::ExactPcr { .. } => "pcr",
         Derivation::CatalogDigest { .. } => "material-digest",
@@ -759,6 +861,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
         Derivation::EndRepair { .. } => "material-repair",
         Derivation::OverlapExtensionPcr { .. } => "oe-pcr",
         Derivation::TerminalProcessing { .. } => "terminal-processing",
+        Derivation::AnnealedOligos { .. } => "annealed-oligos",
     };
     let prefix = format!("{prefix}-{}", &fresh.reference.revision()[..24]);
     let mut id = prefix.clone();
@@ -767,8 +870,8 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
         id = format!("{prefix}-{suffix}");
         suffix = suffix.checked_add(1).ok_or(Error::TooLarge)?
     }
-    let derived = history.derive_event(
-        &request.source.event_id,
+    let derived = DocumentHistory::derive_from_events(
+        &parent_histories,
         id.clone(),
         fresh.reference.clone(),
         EVENT_OPERATION,
@@ -780,7 +883,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
     };
     let modifications = modified_duplex::summary(&fresh.tracked)?;
     let record = Record {
-        schema_version: 1,
+        schema_version: 2,
         engine_version: ENGINE_VERSION.into(),
         scientific_engine: verification::ENGINE_VERSION.into(),
         source_workspace_fingerprint: fingerprint,
@@ -846,7 +949,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
         context_revision,
         record_hash,
         primer_attachment,
-        source: request.source.clone(),
+        sources: request.source_bindings(),
         product,
         incomplete: fresh.incomplete,
         findings: fresh.findings,
@@ -900,20 +1003,27 @@ fn record_for(w: &Workspace, product: &EventBinding) -> Result<(String, Record),
 pub(crate) fn attest_record_shallow(
     w: &Workspace,
     record: &Record,
-    source: Option<&Molecule>,
+    source: Option<&[SourceSnapshot]>,
 ) -> Result<(), Error> {
     let (_, retained) = record_for(w, &record.product)?;
     if save_record_shallow(&retained)? != save_record_shallow(record)? {
         return Err(bad("closed record differs from exact retained bytes"));
     }
-    let actual = run_material::resolve(w, &record.request.source)?;
-    if source.is_some_and(|s| s != actual) {
-        return Err(bad(
-            "closed source snapshot differs from exact native event",
-        ));
+    if let Some(snapshots) = source {
+        validate_source_snapshots(&record.request, snapshots)?;
     }
-    if matches!(record.request.origin, SourceOrigin::OriginalReference) {
-        original_source(actual)?;
+    for (i, bound) in record.request.sources.iter().enumerate() {
+        let actual = run_material::resolve(w, &bound.event)?;
+        if source.is_some_and(|snapshots| &snapshots[i].molecule != actual) {
+            return Err(bad(
+                "closed source snapshot differs from exact native event",
+            ));
+        }
+        if matches!(record.request.derivation, Derivation::AnnealedOligos { .. }) {
+            declared_oligo_source(actual)?;
+        } else if matches!(bound.origin, SourceOrigin::OriginalReference) {
+            original_reference_admission(actual)?;
+        }
     }
     let product = run_material::resolve(w, &record.product)?;
     let event = w
@@ -922,7 +1032,7 @@ pub(crate) fn attest_record_shallow(
         .find(|e| e.id == record.product.event_id)
         .ok_or_else(|| bad("product event absent"))?;
     if event.operation != EVENT_OPERATION
-        || event.parents != vec![record.request.source.event_id.clone()]
+        || event.parents != distinct_parent_events(&record.request)
         || product.metadata.get(CONTEXT_KEY) != Some(&record.context_revision)
         || !product.metadata.contains_key("duplex_model")
     {
@@ -976,8 +1086,9 @@ pub(crate) fn documentary_capsule_parts(
     product: &EventBinding,
 ) -> Result<(String, Record), Error> {
     let (hash, record) = record_for(w, product)?;
-    let source = run_material::resolve(w, &record.request.source)?;
-    crate::model::bounds::model_preflight(&[source])?;
+    for source in &record.request.sources {
+        crate::model::bounds::model_preflight(&[run_material::resolve(w, &source.event)?])?;
+    }
     run_material::resolve(w, product)?;
     Ok((hash, record))
 }
@@ -1007,11 +1118,11 @@ pub fn validate_capsule_for_workspace(
 pub fn replay(capsule: &Capsule, reference: &Molecule) -> Result<FreshMaterial, Error> {
     capsule.validate_documentary()?;
     let record = load_record_shallow(&capsule.record_bytes)?;
-    replay_fields(&record, &capsule.source_snapshot, reference)
+    replay_fields(&record, &capsule.source_snapshots, reference)
 }
 fn replay_fields(
     record: &Record,
-    source: &Molecule,
+    source: &[SourceSnapshot],
     reference: &Molecule,
 ) -> Result<FreshMaterial, Error> {
     crate::model::bounds::model_preflight(&[reference])?;
@@ -1036,9 +1147,9 @@ fn replay_fields(
 pub fn reconstruct(w: &Workspace, product: &EventBinding) -> Result<FreshMaterial, Error> {
     w.validate()?;
     let (_, record) = record_for(w, product)?;
-    let source = run_material::resolve(w, &record.request.source)?;
+    let source = workspace_snapshots(w, &record.request)?;
     let reference = run_material::resolve(w, product)?;
-    replay_fields(&record, source, reference)
+    replay_fields(&record, &source, reference)
 }
 fn summary_shape(summary: &ModificationSummary) -> Result<(), Error> {
     let total = summary
@@ -1084,7 +1195,7 @@ impl Receipt {
         {
             return Err(bad("receipt context/bounds differ"));
         }
-        run_material::event_shape(&self.source)?;
+        validate_source_bindings(&self.sources)?;
         run_material::event_shape(&self.product)?;
         summary_shape(&self.modifications)?;
         encoded(self, MAX_RECORD_BYTES)?;
@@ -1096,7 +1207,7 @@ impl Receipt {
         let (hash, record) = record_for(w, &self.product)?;
         if hash != self.record_hash
             || record.context_revision != self.context_revision
-            || record.request.source != self.source
+            || record.request.source_bindings() != self.sources
             || record.incomplete != self.incomplete
             || record.product_state_revision != self.modifications.state_revision
         {
@@ -1175,7 +1286,9 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
             e.clone(),
         );
     };
-    add(&record.request.source);
+    for source in &record.request.sources {
+        add(&source.event);
+    }
     // Collect callback results separately so only one closure mutably borrows the map.
     let mut runs = Vec::new();
     let mut derived = Vec::new();
@@ -1194,7 +1307,7 @@ pub fn source_bindings(record: &Record) -> Result<Vec<EventBinding>, Error> {
             Ok(())
         },
         |r, _| {
-            derived.push(r.request.source.clone());
+            derived.extend(r.request.sources.iter().map(|s| s.event.clone()));
             if r.product != record.product {
                 derived.push(r.product.clone())
             }
@@ -2305,5 +2418,312 @@ impl TerminalProcessingPreview {
         }
         encoded(self, crate::run_lineage::MAX_RUN_BYTES)?;
         Ok(())
+    }
+}
+
+fn validate_source_bindings(sources: &[SourceBinding]) -> Result<(), Error> {
+    let expected: &[SourceRole] = match sources.len() {
+        1 => &[SourceRole::Template],
+        2 => &[SourceRole::TopOligo, SourceRole::BottomOligo],
+        _ => return Err(bad("unsupported source count")),
+    };
+    for (source, role) in sources.iter().zip(expected) {
+        if source.role != *role {
+            return Err(bad("source roles changed canonical order"));
+        }
+        run_material::event_shape(&source.event)?;
+    }
+    Ok(())
+}
+fn distinct_parent_events(request: &Request) -> Vec<String> {
+    let mut parents = Vec::new();
+    for source in &request.sources {
+        if !parents.contains(&source.event.event_id) {
+            parents.push(source.event.event_id.clone())
+        }
+    }
+    parents
+}
+fn declared_oligo_source(molecule: &Molecule) -> Result<(), Error> {
+    crate::model::bounds::model_preflight(&[molecule])?;
+    verification::declared_oligo(molecule)?;
+    if molecule.sequence.is_empty() || molecule.sequence.len() > chemistry::MAX_ANNEAL_OLIGO_BASES {
+        return Err(Error::TooLarge);
+    }
+    if !molecule
+        .sequence
+        .as_str()
+        .bytes()
+        .all(|b| b"ACGT".contains(&b))
+    {
+        return Err(bad("standard annealing oligos require concrete DNA"));
+    }
+    Ok(())
+}
+pub(crate) fn validate_source_snapshots(
+    request: &Request,
+    snapshots: &[SourceSnapshot],
+) -> Result<(), Error> {
+    request.validate_shallow()?;
+    if snapshots.len() != request.sources.len() {
+        return Err(bad("source snapshot count differs from retained roles"));
+    }
+    for (snapshot, source) in snapshots.iter().zip(&request.sources) {
+        if snapshot.role != source.role || snapshot.molecule.revision() != source.event.revision {
+            return Err(bad(
+                "source snapshot role/order or revision differs from exact source event",
+            ));
+        }
+        crate::model::bounds::model_preflight(&[&snapshot.molecule])?;
+        snapshot.molecule.validate()?;
+        if matches!(request.derivation, Derivation::AnnealedOligos { .. }) {
+            declared_oligo_source(&snapshot.molecule)?;
+        } else if matches!(source.origin, SourceOrigin::OriginalReference) {
+            original_reference_admission(&snapshot.molecule)?;
+        }
+    }
+    Ok(())
+}
+fn workspace_snapshots(w: &Workspace, request: &Request) -> Result<Vec<SourceSnapshot>, Error> {
+    request
+        .sources
+        .iter()
+        .map(|source| {
+            Ok(SourceSnapshot {
+                role: source.role,
+                molecule: run_material::resolve(w, &source.event)?.clone(),
+            })
+        })
+        .collect()
+}
+fn anneal_options_shape(options: &chemistry::AnnealOptions) -> Result<(), Error> {
+    crate::assembly_recipe::anneal_shape("bottom", options, 0)
+}
+fn candidate_id_shape(id: &str) -> bool {
+    id.strip_prefix("anneal-").is_some_and(hex)
+}
+fn anneal_context(
+    sources: &[SourceBinding],
+    options: &chemistry::AnnealOptions,
+) -> Result<String, Error> {
+    crate::assembly_recipe::hash(&(
+        ENGINE_VERSION,
+        "annealed-oligo-preview",
+        verification::ENGINE_VERSION,
+        sources,
+        options,
+    ))
+}
+fn fresh(
+    snapshots: &[SourceSnapshot],
+    request: &Request,
+    revision: &str,
+) -> Result<FreshMaterial, Error> {
+    validate_source_snapshots(request, snapshots)?;
+    if let Derivation::AnnealedOligos { options, selection } = &request.derivation {
+        let mut findings = Vec::new();
+        let preview = verification::simulate_oligo_annealing(
+            &snapshots[0].molecule,
+            &snapshots[1].molecule,
+            options,
+        )?;
+        if anneal_context(&request.source_bindings(), options)?
+            != selection.expected_preview_revision
+        {
+            return Err(bad("stale exact-source annealing preview selection"));
+        }
+        let index = preview
+            .annealing
+            .candidates
+            .iter()
+            .position(|c| c.id == selection.candidate_id)
+            .ok_or_else(|| bad("selected native annealing candidate is unavailable"))?;
+        let mut reference = verification::annealed_document_inner(
+            &snapshots[0].molecule,
+            &snapshots[1].molecule,
+            &preview.annealing,
+            index,
+            &mut findings,
+        )?;
+        protect_anneal_preview(&mut reference)?;
+        if reference.revision() != selection.expected_product_revision {
+            return Err(bad("selected native annealed product changed"));
+        }
+        let tracked =
+            TrackedDuplex::annealed_unmodified(&preview.annealing.candidates[index].duplex)?;
+        let incomplete = !preview.annealing.complete || !preview.annealing.unique;
+        reference.name = request.name.clone();
+        reference
+            .metadata
+            .insert(CONTEXT_KEY.into(), revision.into());
+        reference.metadata.insert("source:material_derivation:scope".into(),"Target-free native standard-oligo annealing. Retain both exact role-bound sources and recipe; no intended target or experimental isolation was assessed.".into());
+        findings.extend(preview.annealing.warnings);
+        findings.push("Both inputs are explicitly declared independently supplied, standard unmodified ssDNA oligos. End groups are the recorded chemistry hypotheses. No saved duplex was denatured, and no primer order, experimental isolation or intended target was inferred.".into());
+        if incomplete {
+            findings.push("Selected annealed material remains conditional: alternative geometries or incomplete offset enumeration remain unresolved by candidate selection.".into());
+        }
+        let total = findings.len();
+        let (findings, findings_total, findings_truncated) = limitations(findings, total, false);
+        reference.validate()?;
+        tracked.validate()?;
+        Ok(FreshMaterial {
+            reference,
+            tracked,
+            incomplete,
+            findings,
+            findings_total,
+            findings_truncated,
+        })
+    } else {
+        fresh_template(&snapshots[0].molecule, request, revision)
+    }
+}
+fn protect_anneal_preview(product: &mut Molecule) -> Result<(), Error> {
+    product.metadata.insert("source:material_derivation:scope".into(),"Source-backed standard-oligo annealing reference preview. Both exact native source events and the selected geometry recipe are required for reusable material.".into());
+    product.validate()
+}
+dto! {pub struct AnnealedOligosPreview{
+pub engine_version:String,pub context_revision:String,pub sources:Vec<SourceBinding>,pub options:chemistry::AnnealOptions,
+#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub preview:verification::AnnealPreview,
+pub products:Vec<Molecule>,pub incomplete:bool,pub findings:Vec<String>}}
+pub fn annealed_oligos_preview_revision(
+    w: &Workspace,
+    top: &EventBinding,
+    bottom: &EventBinding,
+    options: &chemistry::AnnealOptions,
+) -> Result<String, Error> {
+    anneal_options_shape(options)?;
+    run_material::event_shape(top)?;
+    run_material::event_shape(bottom)?;
+    w.validate()?;
+    for event in [top, bottom] {
+        declared_oligo_source(run_material::resolve(w, event)?)?;
+    }
+    anneal_context(
+        &[
+            SourceBinding {
+                role: SourceRole::TopOligo,
+                event: top.clone(),
+            },
+            SourceBinding {
+                role: SourceRole::BottomOligo,
+                event: bottom.clone(),
+            },
+        ],
+        options,
+    )
+}
+pub fn preview_annealed_oligos(
+    w: &Workspace,
+    top: &EventBinding,
+    bottom: &EventBinding,
+    options: &chemistry::AnnealOptions,
+) -> Result<AnnealedOligosPreview, Error> {
+    let context_revision = annealed_oligos_preview_revision(w, top, bottom, options)?;
+    let a = run_material::resolve(w, top)?;
+    let b = run_material::resolve(w, bottom)?;
+    let preview = verification::simulate_oligo_annealing(a, b, options)?;
+    let mut findings = preview.annealing.warnings.clone();
+    let mut products = Vec::new();
+    for index in 0..preview.annealing.candidates.len() {
+        let mut product =
+            verification::annealed_document_inner(a, b, &preview.annealing, index, &mut findings)?;
+        protect_anneal_preview(&mut product)?;
+        products.push(product);
+    }
+    let result = AnnealedOligosPreview {
+        engine_version: ENGINE_VERSION.into(),
+        context_revision,
+        sources: vec![
+            SourceBinding {
+                role: SourceRole::TopOligo,
+                event: top.clone(),
+            },
+            SourceBinding {
+                role: SourceRole::BottomOligo,
+                event: bottom.clone(),
+            },
+        ],
+        options: options.clone(),
+        incomplete: !preview.annealing.complete || !preview.annealing.unique,
+        preview,
+        products,
+        findings,
+    };
+    result.validate_binding(&result.context_revision)?;
+    Ok(result)
+}
+impl AnnealedOligosPreview {
+    /// Documentary binding only: does not rerun annealing or establish private state.
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        validate_source_bindings(&self.sources)?;
+        anneal_options_shape(&self.options)?;
+        if self.sources.len() != 2
+            || self.engine_version != ENGINE_VERSION
+            || !hex(expected)
+            || self.context_revision != expected
+            || self.context_revision != anneal_context(&self.sources, &self.options)?
+            || self.preview.top_revision != self.sources[0].event.revision
+            || self.preview.bottom_revision != self.sources[1].event.revision
+            || self.preview.annealing.options != self.options
+            || self.preview.annealing.engine_version != chemistry::ANNEAL_ENGINE_VERSION
+            || self.products.len() != self.preview.annealing.candidates.len()
+            || self.products.len() > self.options.max_candidates
+            || self.preview.annealing.comparisons > self.options.max_comparisons
+            || self.preview.annealing.unique
+                != (self.preview.annealing.complete && self.products.len() == 1)
+            || self.incomplete
+                != (!self.preview.annealing.complete || !self.preview.annealing.unique)
+            || self.findings.len() > 1000
+            || self.findings.iter().any(|s| s.len() > 8192)
+        {
+            return Err(bad(
+                "Annealed preview changed source roles, candidate evidence or context",
+            ));
+        }
+        let mut ids = BTreeSet::new();
+        for (candidate, product) in self.preview.annealing.candidates.iter().zip(&self.products) {
+            candidate.duplex.validate()?;
+            product.validate()?;
+            if !candidate_id_shape(&candidate.id)
+                || !ids.insert(&candidate.id)
+                || product.sequence != candidate.duplex.top
+                || product.topology != crate::Topology::Linear
+                || product.metadata.get("anneal:top_revision")
+                    != Some(&self.sources[0].event.revision)
+                || product.metadata.get("anneal:bottom_revision")
+                    != Some(&self.sources[1].event.revision)
+                || product.metadata.get("anneal:candidate_id") != Some(&candidate.id)
+                || product.metadata.get("duplex_model")
+                    != Some(
+                        &serde_json::to_string(&candidate.duplex.summary()?)
+                            .map_err(|_| Error::TooLarge)?,
+                    )
+                || !product
+                    .metadata
+                    .contains_key("source:material_derivation:scope")
+            {
+                return Err(bad(
+                    "Annealed product differs from its retained candidate/source geometry",
+                ));
+            }
+        }
+        encoded(self, crate::run_lineage::MAX_RUN_BYTES)?;
+        Ok(())
+    }
+    pub fn selection(&self, candidate_id: &str) -> Result<AnnealSelection, Error> {
+        self.validate_binding(&self.context_revision)?;
+        let index = self
+            .preview
+            .annealing
+            .candidates
+            .iter()
+            .position(|c| c.id == candidate_id)
+            .ok_or_else(|| bad("choose a retained native annealing candidate ID"))?;
+        Ok(AnnealSelection {
+            expected_preview_revision: self.context_revision.clone(),
+            candidate_id: candidate_id.into(),
+            expected_product_revision: self.products[index].revision(),
+        })
     }
 }

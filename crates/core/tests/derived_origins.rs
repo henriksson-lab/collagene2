@@ -42,8 +42,11 @@ fn pcr(w: &Workspace) -> native::PreparedInstallation {
     native::prepare_install(
         w,
         &native::Request {
-            source: event(w, 0),
-            origin: SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: event(w, 0),
+                origin: SourceOrigin::OriginalReference,
+            }],
             derivation: Derivation::ExactPcr {
                 forward,
                 reverse,
@@ -71,8 +74,11 @@ fn digest_request(source: EventBinding, origin: MaterialOrigin, index: usize) ->
         .id
         .clone();
     native::Request {
-        source,
-        origin: SourceOrigin::Saved(origin),
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: source,
+            origin: SourceOrigin::Saved(origin),
+        }],
         derivation: Derivation::CatalogDigest {
             selection: catalog_digest::select(&c, &[id]).unwrap(),
             options: Default::default(),

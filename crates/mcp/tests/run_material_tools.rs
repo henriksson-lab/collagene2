@@ -299,8 +299,11 @@ async fn derived_bottom_pcr_digest_keeps_native_extra_calls_through_sdk() {
     let prepared = derived::prepare_install(
         &workspace,
         &derived::Request {
-            source: event,
-            origin: derived::SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: event,
+                origin: derived::SourceOrigin::Saved(origin),
+            }],
             derivation: derived::Derivation::CatalogDigest {
                 selection: selection("SmaI"),
                 options: Default::default(),

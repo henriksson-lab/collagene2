@@ -82,8 +82,11 @@ fn digest_fixture() -> (Workspace, native::Capsule, EventBinding) {
     let prepared = native::prepare_install(
         &saved.workspace,
         &native::Request {
-            source: selected.event,
-            origin: native::SourceOrigin::Saved(MaterialOrigin::Run(origin)),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: selected.event,
+                origin: native::SourceOrigin::Saved(MaterialOrigin::Run(origin)),
+            }],
             derivation: native::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
                 options: Default::default(),
@@ -300,8 +303,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 30);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 28);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 31);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 29);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 26);
@@ -381,11 +384,9 @@ fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
 #[test]
 fn current_encoding_retains_documentary_producer_stamps_without_granting_authority() {
     let (_, cap, _) = digest_fixture();
+    let record = native::load_record(&cap.record_bytes).unwrap();
     let native::SourceOrigin::Saved(MaterialOrigin::Run(origin)) =
-        native::load_record(&cap.record_bytes)
-            .unwrap()
-            .request
-            .origin
+        record.request.sources.into_iter().next().unwrap().origin
     else {
         panic!("the digest must retain its actual saved PCR run source")
     };

@@ -290,8 +290,11 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
     let prepared = d::prepare_install(
         &committed.workspace,
         &d::Request {
-            source: origin.selection.event.clone(),
-            origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: origin.selection.event.clone(),
+                origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
+            }],
             derivation: d::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: Default::default(),

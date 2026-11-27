@@ -70,8 +70,11 @@ fn pcr(
     };
     assert_eq!(previews.len(), 1);
     d::Request {
-        source: pin.clone(),
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: pin.clone(),
+            origin: origin,
+        }],
         derivation: d::Derivation::ExactPcr {
             forward,
             reverse,
@@ -144,8 +147,11 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
     assert_eq!(preview.inspection.fragments.len(), 2);
     assert_eq!(preview.fragment_modifications.len(), 2);
     let make = |index, name: &str| d::Request {
-        source: pcr_pin.clone(),
-        origin: origin.clone(),
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: pcr_pin.clone(),
+            origin: origin.clone(),
+        }],
         derivation: d::Derivation::CatalogDigest {
             selection: enzyme(),
             options: Default::default(),
@@ -355,10 +361,13 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
     let digested = d::prepare_install(
         &saved.workspace,
         &d::Request {
-            source: selection.event,
-            origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
-                origin,
-            )),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: selection.event,
+                origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                    origin,
+                )),
+            }],
             derivation: d::Derivation::CatalogDigest {
                 selection: enzyme(),
                 options: Default::default(),
@@ -423,7 +432,7 @@ fn geometry_source_event_and_opaque_record_forgery_are_rejected_without_mutating
     *cap.record_bytes.last_mut().unwrap() ^= 1;
     assert!(d::load_record(&cap.record_bytes).is_err());
     cap.record_bytes = original;
-    cap.source_snapshot.name = "Tampered source".into();
+    cap.source_snapshots[0].molecule.name = "Tampered source".into();
     assert!(cap.validate_documentary().is_err());
     let reference = source(&installed.workspace, &product);
     let mut w = installed.workspace;
@@ -470,8 +479,11 @@ fn saved_primer_table_is_atomic_presentation_and_omission_does_not_break_materia
     );
     let cap = d::capsule(&w, &pin).unwrap();
     let request = d::Request {
-        source: pin.clone(),
-        origin: d::SourceOrigin::Saved(MaterialOrigin::Derived(cap)),
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: pin.clone(),
+            origin: d::SourceOrigin::Saved(MaterialOrigin::Derived(cap)),
+        }],
         derivation: d::Derivation::CatalogDigest {
             selection: enzyme(),
             options: Default::default(),
@@ -630,8 +642,11 @@ fn multiple_pcr_geometries_and_detached_chemical_summaries_never_become_implicit
     .unwrap();
     assert!(previews.len() > 1);
     let request = d::Request {
-        source: event(&w, 0),
-        origin: d::SourceOrigin::OriginalReference,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event(&w, 0),
+            origin: d::SourceOrigin::OriginalReference,
+        }],
         derivation: d::Derivation::ExactPcr {
             forward: f,
             reverse: r,
@@ -659,7 +674,7 @@ fn multiple_pcr_geometries_and_detached_chemical_summaries_never_become_implicit
         r,
         "Exact material replay required",
     );
-    request.origin = d::SourceOrigin::OriginalReference;
+    request.sources[0].origin = d::SourceOrigin::OriginalReference;
     assert!(
         d::prepare_install(&w, &request).is_err(),
         "Dropping the origin must not clear a physical source restriction"

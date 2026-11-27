@@ -169,8 +169,11 @@ impl PcrChoice {
     ) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
         let request = native::Request {
-            source: self.source.event.clone(),
-            origin: self.source.native_origin(),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: self.source.event.clone(),
+                origin: self.source.native_origin(),
+            }],
             name: name.into(),
             save_primers,
             derivation: Derivation::ExactPcr {
@@ -260,8 +263,11 @@ impl MismatchChoice {
     ) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
         let request = native::Request {
-            source: self.source.event.clone(),
-            origin: self.source.native_origin(),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: self.source.event.clone(),
+                origin: self.source.native_origin(),
+            }],
             derivation: Derivation::MismatchPcr {
                 forward: self.forward.clone(),
                 reverse: self.reverse.clone(),
@@ -324,14 +330,145 @@ impl OverlapExtensionChoice {
     ) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
         let request = native::Request {
-            source: self.source.event.clone(),
-            origin: self.source.native_origin(),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: self.source.event.clone(),
+                origin: self.source.native_origin(),
+            }],
             derivation: Derivation::OverlapExtensionPcr {
                 preparation: self.preparation.clone(),
                 selection: self.selection.clone(),
             },
             name: name.into(),
             save_primers,
+        };
+        native::preflight(workspace, &request).map_err(|e| e.to_string())?;
+        Ok(request)
+    }
+}
+
+/// One two-role source review for supplied single-strand oligos. Exact event
+/// identities remain separate even when both roles intentionally use one event.
+#[derive(Debug, Clone)]
+pub struct AnnealedReview {
+    top: SourcePin,
+    bottom: SourcePin,
+    fingerprint: String,
+    preview: native::AnnealedOligosPreview,
+}
+impl AnnealedReview {
+    pub fn capture(
+        workspace: &Workspace,
+        top: SourcePin,
+        bottom: SourcePin,
+        options: &collagene_core::chemistry::AnnealOptions,
+        confirmed_supplied_ssdna: bool,
+        preview: native::AnnealedOligosPreview,
+    ) -> Result<Self, String> {
+        if !confirmed_supplied_ssdna || top.origin().is_some() || bottom.origin().is_some() {
+            return Err("Explicitly declare both supplied strands as standard unmodified single-strand oligos with the selected termini. Saved duplex material cannot be reinterpreted as a supplied oligo.".into());
+        }
+        if top.epoch() != bottom.epoch() {
+            return Err("Both supplied oligos must belong to the same workspace review.".into());
+        }
+        top.attest(workspace)?;
+        bottom.attest(workspace)?;
+        let revision = native::annealed_oligos_preview_revision(
+            workspace,
+            top.event(),
+            bottom.event(),
+            options,
+        )
+        .map_err(|e| e.to_string())?;
+        preview
+            .validate_binding(&revision)
+            .map_err(|e| e.to_string())?;
+        let sources = vec![
+            native::SourceBinding {
+                role: native::SourceRole::TopOligo,
+                event: top.event().clone(),
+            },
+            native::SourceBinding {
+                role: native::SourceRole::BottomOligo,
+                event: bottom.event().clone(),
+            },
+        ];
+        if preview.sources != sources || hash(&preview.options)? != hash(options)? {
+            return Err("The annealing preview differs from its two exact source roles or declared termini/search settings.".into());
+        }
+        let fingerprint = collagene_core::run_lineage::workspace_fingerprint(workspace)
+            .map_err(|e| e.to_string())?;
+        Ok(Self {
+            top,
+            bottom,
+            fingerprint,
+            preview,
+        })
+    }
+    pub fn preview(&self) -> &native::AnnealedOligosPreview {
+        &self.preview
+    }
+    pub fn epoch(&self) -> u64 {
+        self.top.epoch()
+    }
+    pub fn validate_current(
+        &self,
+        workspace: &Workspace,
+        top_event: &EventBinding,
+        bottom_event: &EventBinding,
+        epoch: u64,
+        top: &Molecule,
+        bottom: &Molecule,
+        options: &collagene_core::chemistry::AnnealOptions,
+        confirmed_supplied_ssdna: bool,
+    ) -> Result<(), String> {
+        if !confirmed_supplied_ssdna || hash(options)? != hash(&self.preview.options)? {
+            return Err("The supplied-oligo declaration, termini or annealing settings changed; preview again.".into());
+        }
+        self.top.validate_current(top_event, epoch, top, None)?;
+        self.bottom
+            .validate_current(bottom_event, epoch, bottom, None)?;
+        self.validate_workspace(workspace)
+    }
+    fn validate_workspace(&self, workspace: &Workspace) -> Result<(), String> {
+        if collagene_core::run_lineage::workspace_fingerprint(workspace)
+            .map_err(|e| e.to_string())?
+            != self.fingerprint
+        {
+            return Err("The workspace changed after the two-source oligo review.".into());
+        }
+        self.top.attest(workspace)?;
+        self.bottom.attest(workspace)
+    }
+    pub fn request(
+        &self,
+        workspace: &Workspace,
+        candidate_id: &str,
+        name: &str,
+    ) -> Result<native::Request, String> {
+        self.validate_workspace(workspace)?;
+        let request = native::Request {
+            sources: vec![
+                native::BoundSource {
+                    role: native::SourceRole::TopOligo,
+                    event: self.top.event().clone(),
+                    origin: native::SourceOrigin::OriginalReference,
+                },
+                native::BoundSource {
+                    role: native::SourceRole::BottomOligo,
+                    event: self.bottom.event().clone(),
+                    origin: native::SourceOrigin::OriginalReference,
+                },
+            ],
+            derivation: native::Derivation::AnnealedOligos {
+                options: self.preview.options.clone(),
+                selection: self
+                    .preview
+                    .selection(candidate_id)
+                    .map_err(|e| e.to_string())?,
+            },
+            name: name.into(),
+            save_primers: false,
         };
         native::preflight(workspace, &request).map_err(|e| e.to_string())?;
         Ok(request)
@@ -376,8 +513,11 @@ impl TerminalChoice {
     pub fn request(&self, workspace: &Workspace, name: &str) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
         let request = native::Request {
-            source: self.source.event.clone(),
-            origin: self.source.native_origin(),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: self.source.event.clone(),
+                origin: self.source.native_origin(),
+            }],
             derivation: Derivation::TerminalProcessing {
                 action: self.action,
             },
@@ -417,8 +557,11 @@ impl RepairChoice {
     pub fn request(&self, workspace: &Workspace, name: &str) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
         let request = native::Request {
-            source: self.source.event.clone(),
-            origin: self.source.native_origin(),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: self.source.event.clone(),
+                origin: self.source.native_origin(),
+            }],
             derivation: Derivation::EndRepair {
                 method: self.method,
             },
@@ -609,8 +752,11 @@ mod tests {
         .unwrap();
         assert!(preview.validate_binding(&changed_context).is_err());
         let request = native::Request {
-            source: event.clone(),
-            origin: SourceOrigin::OriginalReference,
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: event.clone(),
+                origin: SourceOrigin::OriginalReference,
+            }],
             name: "Reusable digest fragment".into(),
             save_primers: false,
             derivation: Derivation::CatalogDigest {
@@ -625,7 +771,13 @@ mod tests {
             .unwrap();
         let decoded = collagene_core::workspace::load_workspace(&installed.archive).unwrap();
         installed.receipt.validate_archive(&decoded).unwrap();
-        assert_eq!(installed.receipt.source, event);
+        assert_eq!(
+            installed.receipt.sources,
+            vec![native::SourceBinding {
+                role: native::SourceRole::Template,
+                event
+            }]
+        );
     }
     #[test]
     fn repeated_digest_uses_derived_origin_and_actual_generic_inspection() {
@@ -672,8 +824,11 @@ mod tests {
             )
             .unwrap();
         let request = native::Request {
-            source: original_event,
-            origin: SourceOrigin::OriginalReference,
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: original_event,
+                origin: SourceOrigin::OriginalReference,
+            }],
             name: "Opened EcoRI circle".into(),
             save_primers: false,
             derivation: Derivation::CatalogDigest {
@@ -717,8 +872,11 @@ mod tests {
             )
             .unwrap();
         let request = native::Request {
-            source: product,
-            origin: SourceOrigin::Saved(origin.as_ref().clone()),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: product,
+                origin: SourceOrigin::Saved(origin.as_ref().clone()),
+            }],
             name: "Sequential SmaI fragment".into(),
             save_primers: false,
             derivation: Derivation::CatalogDigest {
@@ -727,7 +885,7 @@ mod tests {
                 fragment_index: preview.inspection.fragments[0].index,
             },
         };
-        assert!(matches!(&request.origin, SourceOrigin::Saved(_)));
+        assert!(matches!(&request.sources[0].origin, SourceOrigin::Saved(_)));
         let installed = native::install(&next, &request).unwrap();
         let final_workspace =
             collagene_core::workspace::load_workspace(&installed.archive).unwrap();
@@ -738,7 +896,10 @@ mod tests {
             .receipt
             .validate_archive(&final_workspace)
             .unwrap();
-        assert_ne!(installed.receipt.source, installed.receipt.product);
+        assert_ne!(
+            installed.receipt.sources[0].event,
+            installed.receipt.product
+        );
     }
 }
 
@@ -852,8 +1013,11 @@ mod mismatch_repair_tests {
         let cut = native::prepare_install(
             &frame,
             &native::Request {
-                source: binding(&frame),
-                origin: SourceOrigin::OriginalReference,
+                sources: vec![native::BoundSource {
+                    role: native::SourceRole::Template,
+                    event: binding(&frame),
+                    origin: SourceOrigin::OriginalReference,
+                }],
                 derivation: Derivation::CatalogDigest {
                     selection,
                     options: Default::default(),
@@ -1018,7 +1182,7 @@ mod overlap_extension_tests {
             .request(&reopened, "Second OE material", true)
             .unwrap();
         assert!(matches!(
-            &again.origin,
+            &again.sources[0].origin,
             SourceOrigin::Saved(MaterialOrigin::Derived(_))
         ));
         assert!(
@@ -1320,5 +1484,86 @@ mod terminal_processing_tests {
         assert!(choice.request(&frame, "").is_err());
         assert_eq!(serde_json::to_vec(&frame).unwrap(), before);
         assert_eq!(molecule.sequence.as_str(), DNA);
+    }
+}
+
+#[cfg(test)]
+mod annealed_material_tests {
+    use super::*;
+    use collagene_core::{Topology, chemistry::AnnealOptions, workspace};
+    fn event(w: &Workspace, i: usize) -> EventBinding {
+        let d = &w.documents[i];
+        EventBinding {
+            document_id: d.id.clone(),
+            event_id: d.head_event.clone().unwrap(),
+            revision: d.head.clone(),
+        }
+    }
+    #[test]
+    fn two_source_review_preserves_exact_roles_and_requires_new_review_after_source_epoch_or_options_change()
+     {
+        let w = Workspace::from_documents(
+            "Supplied adapter oligos",
+            vec![
+                Molecule::dna("Top", "AATTCGTACT", Topology::Linear).unwrap(),
+                Molecule::dna("Bottom", "AGTACG", Topology::Linear).unwrap(),
+            ],
+            0,
+        )
+        .unwrap();
+        let before = workspace::save_workspace(&w).unwrap();
+        let top = event(&w, 0);
+        let bottom = event(&w, 1);
+        let a = &w.revisions[&top.revision];
+        let b = &w.revisions[&bottom.revision];
+        let o = AnnealOptions {
+            min_paired_bases: 6,
+            ..Default::default()
+        };
+        let preview = native::preview_annealed_oligos(&w, &top, &bottom, &o).unwrap();
+        let id = preview.preview.annealing.candidates[0].id.clone();
+        let p = SourcePin::capture(top.clone(), 7, a, None).unwrap();
+        let q = SourcePin::capture(bottom.clone(), 7, b, None).unwrap();
+        assert!(
+            AnnealedReview::capture(&w, p.clone(), q.clone(), &o, false, preview.clone()).is_err()
+        );
+        let review = AnnealedReview::capture(&w, p, q, &o, true, preview).unwrap();
+        review
+            .validate_current(&w, &top, &bottom, 7, a, b, &o, true)
+            .unwrap();
+        assert!(
+            review
+                .validate_current(&w, &top, &bottom, 8, a, b, &o, true)
+                .is_err()
+        );
+        assert!(
+            review
+                .validate_current(&w, &bottom, &top, 7, b, a, &o, true)
+                .is_err()
+        );
+        let changed = AnnealOptions {
+            min_paired_bases: 5,
+            ..o.clone()
+        };
+        assert!(
+            review
+                .validate_current(&w, &top, &bottom, 7, a, b, &changed, true)
+                .is_err()
+        );
+        let request = review.request(&w, &id, "Reviewed adapter").unwrap();
+        assert_eq!(request.sources.len(), 2);
+        assert!(!request.save_primers);
+        let installed = native::install(&w, &request).unwrap();
+        let frame = workspace::load_workspace(&installed.archive).unwrap();
+        assert_eq!(
+            native::reconstruct(&frame, &installed.receipt.product)
+                .unwrap()
+                .tracked()
+                .duplex
+                .bottom
+                .as_str(),
+            "AGTACG"
+        );
+        assert_eq!(workspace::save_workspace(&w).unwrap(), before);
     }
 }

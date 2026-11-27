@@ -88,8 +88,11 @@ fn fixture() -> Fixture {
     let first = native::prepare_install(
         &w,
         &native::Request {
-            source: event(&w, 0),
-            origin: SourceOrigin::OriginalReference,
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: event(&w, 0),
+                origin: SourceOrigin::OriginalReference,
+            }],
             derivation: Derivation::ExactPcr {
                 forward,
                 reverse,
@@ -119,10 +122,13 @@ fn fixture() -> Fixture {
     let second = native::prepare_install(
         &first.workspace,
         &native::Request {
-            source: first.receipt.product.clone(),
-            origin: SourceOrigin::Saved(MaterialOrigin::Derived(
-                native::capsule(&first.workspace, &first.receipt.product).unwrap(),
-            )),
+            sources: vec![native::BoundSource {
+                role: native::SourceRole::Template,
+                event: first.receipt.product.clone(),
+                origin: SourceOrigin::Saved(MaterialOrigin::Derived(
+                    native::capsule(&first.workspace, &first.receipt.product).unwrap(),
+                )),
+            }],
             derivation: Derivation::CatalogDigest {
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),

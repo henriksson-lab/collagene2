@@ -1031,3 +1031,20 @@ limitations, with a full documentary artifact. Processing creates no new
 primers, target, ligation, nick sealing or experimentally established stock.
 Later cloning consumes the exact installed Derived event and independently
 checks the intended path and alternative products.
+
+### Role-bound material sources and annealed adapters
+
+`material_derivation` installation uses `sources: [{ role, event, origin }]`.
+Existing PCR, digest and processing methods require exactly one `template` role.
+`AnnealedOligos { options, selection }` requires `top_oligo` and `bottom_oligo`
+with `OriginalReference` declarations for independently supplied, standard
+unmodified ssDNA; saved duplexes cannot be implicitly denatured. Roles may refer
+to the same self-complementary source event. Native receipts retain all roles
+and exact events. The former singular `source`/`origin` install shape is absent.
+
+`PreviewAnnealedOligos { top, bottom, options }` returns bounded candidate summaries
+and full documentary evidence. Stable native candidate IDs and exact preview/
+product revisions bind explicit selection. Installation replays both sources
+and keeps conditional alternatives, native end geometry and complete source
+closure across archive restart and sharing. No new MCP tool or filesystem
+authority is added.

@@ -1,8 +1,8 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **112**,
-candidate **30** and native workspace plan **28**; the verifier is **science-31**.
+same deterministic scientific engines. Current schemas are worker **113**,
+candidate **31** and native workspace plan **29**; the verifier is **science-32**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
 
@@ -238,6 +238,7 @@ when an internal enum layout changes.
 | 187 | `InspectTopoGraph` |
 | 188 | `InspectMaterialOverlapExtension` |
 | 189 | `InspectMaterialTerminalProcessing` |
+| 190 | `InspectMaterialAnnealedOligos` |
 
 ## Current result tags
 
@@ -426,6 +427,7 @@ when an internal enum layout changes.
 | 177 | `TopoGraphInspected` |
 | 178 | `MaterialOverlapExtensionPreview` |
 | 179 | `MaterialTerminalProcessingPreview` |
+| 180 | `MaterialAnnealedOligosPreview` |
 
 ## Current source and evidence contracts
 
@@ -514,3 +516,21 @@ summaries; it does not supply material state. The current generic derivation
 install lane independently repeats processing and rejects requests for new
 primers. No automatic end repair, nick sealing, complement choice or independent
 target is inserted.
+
+## Role-bound reusable material
+
+Current native material records and capsules use schema2, with explicit source
+roles and complete role-bound source snapshots. Template operations require one
+`template` source; supplied-oligo annealing requires `top_oligo`, then
+`bottom_oligo`. The roles can refer to one self-complementary event. History
+parents deduplicate the exact event identities; source roles retain both uses.
+The shared ancestry/resource ledger and sharing closure visit every source.
+There is no previous-format reader or singular-source fallback.
+
+`InspectMaterialAnnealedOligos` (request190/result180) binds the owning workspace,
+exact top/bottom events and explicit standard-oligo termini/search options. Its
+selection retains a stable native candidate ID, preview context and actual
+product revision. Preview and installation reuse native annealing and annotation
+projection; installation independently repeats science and creates no primer
+orders or invented assembly target. Alternatives and incomplete searches remain
+conditional after selection and archive restart.

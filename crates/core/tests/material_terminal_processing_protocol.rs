@@ -37,8 +37,11 @@ fn actual_pcr() -> (Workspace, EventBinding, native::SourceOrigin) {
     .unwrap()
     .remove(0);
     let request = native::Request {
-        source: event(&w),
-        origin: native::SourceOrigin::OriginalReference,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event(&w),
+            origin: native::SourceOrigin::OriginalReference,
+        }],
         derivation: native::Derivation::ExactPcr {
             forward: f,
             reverse: r,
@@ -122,8 +125,11 @@ fn actual_pcr_tail_then_phosphorylation_replay_through_current_binary_without_ta
         assert_eq!(preview.product.sequence.as_str(), "AAACCCT");
         assert!(!preview.incomplete);
         let request = native::Request {
-            source,
-            origin,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source,
+                origin: origin,
+            }],
             derivation: native::Derivation::TerminalProcessing { action },
             name: "Explicit terminal descendant".into(),
             save_primers: false,
@@ -208,8 +214,11 @@ fn changed_action_source_and_documentary_hash_refuse_without_any_installation() 
     report.source_sequence_blake3 = "0".repeat(64);
     assert!(protocol::decode_response(&wire(&response)).is_err());
     let request = native::Request {
-        source,
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: source,
+            origin: origin,
+        }],
         derivation: native::Derivation::TerminalProcessing { action },
         name: "No invented primer order".into(),
         save_primers: true,

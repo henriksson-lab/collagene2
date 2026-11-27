@@ -60,14 +60,9 @@ async fn artifact(c: &Client, id: &Value) -> (Vec<u8>, String) {
 #[tokio::test]
 async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_primers() {
     use collagene_core::{
-        Feature, Location, Sequence,
-        analysis::Primer,
-        chemistry::Strand,
-        domestication as design, domestication_preparation as physical,
-        history::DocumentHistory,
-        material_derivation as derivation,
-        run_lineage::EventBinding,
-        run_material::{self, MaterialOrigin},
+        Feature, Location, Sequence, analysis::Primer, chemistry::Strand, domestication as design,
+        domestication_preparation as physical, history::DocumentHistory,
+        material_derivation as derivation, run_lineage::EventBinding, run_material::MaterialOrigin,
     };
     let (mut original, mut request) = fixture::fixture(Topology::Linear);
     original.molecule.features.push(Feature {
@@ -110,8 +105,11 @@ async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_p
         &w,
         &derivation::Request {
             name: "Actual PCR stock".into(),
-            source: seed,
-            origin: source_origin.clone(),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: seed,
+                origin: source_origin.clone(),
+            }],
             save_primers: true,
             derivation: derivation::Derivation::ExactPcr {
                 template_strand: Strand::Top,

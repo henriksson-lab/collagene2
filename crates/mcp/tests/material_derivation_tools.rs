@@ -172,8 +172,11 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     );
     assert_eq!(preview["previews"][0]["reusable"], true);
     let request = InstallRequest {
-        source: pin.clone(),
-        origin: Origin::OriginalReference,
+        sources: vec![collagene_mcp::MaterialDerivationSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: pin.clone(),
+            origin: Origin::OriginalReference,
+        }],
         derivation: Derivation::ExactPcr {
             forward: forward.clone(),
             reverse: reverse.clone(),
@@ -288,8 +291,11 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
         .unwrap();
     assert_eq!(report.fragment_modifications.len(), 2);
     let request = InstallRequest {
-        source: receipt.product.clone(),
-        origin: Origin::Saved(origin.clone()),
+        sources: vec![collagene_mcp::MaterialDerivationSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: receipt.product.clone(),
+            origin: Origin::Saved(origin.clone()),
+        }],
         derivation: Derivation::CatalogDigest {
             selection,
             options: Default::default(),
@@ -364,8 +370,11 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
         "CCAGTTCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCACC"
     );
     let request = InstallRequest {
-        source: pin.clone(),
-        origin: Origin::OriginalReference,
+        sources: vec![collagene_mcp::MaterialDerivationSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: pin.clone(),
+            origin: Origin::OriginalReference,
+        }],
         derivation: Derivation::MismatchPcr {
             forward: forward.clone(),
             reverse: reverse.clone(),
@@ -451,8 +460,11 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
         .find(|e| e.name == "EcoRI")
         .unwrap();
     let request = InstallRequest {
-        source: receipt.product.clone(),
-        origin: Origin::Saved(run_material::MaterialSelection::Derived(receipt.product)),
+        sources: vec![collagene_mcp::MaterialDerivationSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: receipt.product.clone(),
+            origin: Origin::Saved(run_material::MaterialSelection::Derived(receipt.product)),
+        }],
         derivation: Derivation::CatalogDigest {
             selection: catalog_digest::select(&catalog, &[eco.id.clone()]).unwrap(),
             options: Default::default(),
@@ -482,8 +494,11 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
         .unwrap();
     reject(&c,json!({"workspace":reference(&cut),"task":{"PreviewRepair":{"source":receipt.product,"origin":"OriginalReference","method":"Blunt"}}})).await;
     let request = InstallRequest {
-        source: receipt.product,
-        origin,
+        sources: vec![collagene_mcp::MaterialDerivationSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: receipt.product,
+            origin: origin,
+        }],
         derivation: Derivation::EndRepair {
             method: EndRepairMethod::FillFivePrimeOverhangs,
         },

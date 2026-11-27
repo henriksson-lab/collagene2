@@ -177,8 +177,11 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
     let derived = native::prepare_install(
         &commit.workspace,
         &native::Request {
-            source: run_selection.event.clone(),
-            origin,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: run_selection.event.clone(),
+                origin: origin,
+            }],
             derivation: native::Derivation::ExactPcr {
                 forward,
                 reverse,

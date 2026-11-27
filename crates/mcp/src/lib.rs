@@ -1013,6 +1013,10 @@ pub struct MaterialPcrChoice {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub enum MaterialDerivationOperation {
+    AnnealedOligos {
+        options: collagene_core::chemistry::AnnealOptions,
+        selection: collagene_core::material_derivation::AnnealSelection,
+    },
     TerminalProcessing {
         action: collagene_core::material_derivation::TerminalAction,
     },
@@ -1043,9 +1047,15 @@ pub enum MaterialDerivationOperation {
 }
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct MaterialDerivationInstallRequest {
-    pub source: collagene_core::run_lineage::EventBinding,
+pub struct MaterialDerivationSource {
+    pub role: collagene_core::material_derivation::SourceRole,
+    pub event: collagene_core::run_lineage::EventBinding,
     pub origin: MaterialDerivationOrigin,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MaterialDerivationInstallRequest {
+    pub sources: Vec<MaterialDerivationSource>,
     pub derivation: MaterialDerivationOperation,
     pub name: String,
     pub save_primers: bool,
@@ -1053,6 +1063,11 @@ pub struct MaterialDerivationInstallRequest {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub enum MaterialDerivationTask {
+    PreviewAnnealedOligos {
+        top: collagene_core::run_lineage::EventBinding,
+        bottom: collagene_core::run_lineage::EventBinding,
+        options: collagene_core::chemistry::AnnealOptions,
+    },
     PreviewTerminalProcessing {
         source: collagene_core::run_lineage::EventBinding,
         origin: MaterialDerivationOrigin,
@@ -6501,7 +6516,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Preview or install target-free native exact PCR, intentional-mismatch PCR, overlap-extension PCR, catalog digestion, end treatment, single-base 3′ tailing or saved-material end repair from an exact current source event in an immutable workspace. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision or OE context/product revisions only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
+        description = "Preview or install target-free native annealed oligo adapters, exact PCR, intentional-mismatch PCR, overlap-extension PCR, catalog digestion, end treatment, single-base 3′ tailing or saved-material end repair from exact current source events in an immutable workspace. Template methods require one template role; annealed adapters require explicit top_oligo and bottom_oligo roles, which may refer to the same self-complementary event. Preview tasks return bounded metadata plus complete reference/geometry artifacts; they create no material documents. Install freshly reconstructs actual source strands, validates the literal selected PCR geometry or actual digest fragment and atomically returns a NEW session workspace, receipt and native archive, with optional newly performed PCR primers. No independent target, isolation, yield, experimental success, database write or filesystem authority is fabricated. Pass saved-origin MaterialSelection handles and explicit PCR preview index/revision or OE context/product revisions only; closed capsules and whole amplicon geometry are resolved natively, never copied into requests. Saved Run/Derived handles must match their exact retained source events; marked reference-only documents cannot bypass replay as plain originals."
     )]
     async fn material_derivation(
         &self,
@@ -6514,6 +6529,21 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             struct MaterialPreviewEvidence<'a,T:Serialize,P:Serialize>{workspace:&'a WorkspaceRef,source:&'a collagene_core::run_lineage::EventBinding,parameters:P,preview:&'a T}
             let mut workspace=server.restore_workspace(&args.workspace)?;
             match args.task {
+                MaterialDerivationTask::PreviewAnnealedOligos{top,bottom,options}=>{
+                    for event in [&top,&bottom] {
+                        server.material_derivation_source(&workspace,event,&native::SourceOrigin::OriginalReference)?;
+                    }
+                    let context=native::annealed_oligos_preview_revision(&workspace,&top,&bottom,&options).map_err(bad)?;
+                    let preview=native::preview_annealed_oligos(&workspace,&top,&bottom,&options).map_err(bad)?;
+                    preview.validate_binding(&context).map_err(bad)?;
+                    #[derive(Serialize)]
+                    struct AnnealedMaterialEvidence<'a>{workspace:&'a WorkspaceRef,preview:&'a native::AnnealedOligosPreview}
+                    let artifact=server.text_artifact(bounded_json_limit(&AnnealedMaterialEvidence{workspace:&args.workspace,preview:&preview},32*1024*1024)?,"application/json","material-annealed-oligos-preview.json")?;
+                    let candidates=preview.preview.annealing.candidates.iter().zip(&preview.products).take(100).map(|(candidate,product)|{
+                        Ok(json!({"candidate_id":candidate.id,"paired_bases":candidate.paired_bases,"duplex":candidate.duplex.summary().map_err(bad)?,"product_revision":product.revision(),"selection":native::AnnealSelection{expected_preview_revision:context.clone(),candidate_id:candidate.id.clone(),expected_product_revision:product.revision()}}))
+                    }).collect::<Result<Vec<_>,ErrorData>>()?;
+                    output(json!({"workspace":args.workspace,"sources":preview.sources,"context_revision":context,"complete":preview.preview.annealing.complete,"unique":preview.preview.annealing.unique,"count":preview.products.len(),"candidates":candidates,"candidates_truncated":preview.products.len()>100,"incomplete":preview.incomplete,"findings":preview.findings,"artifact_id":artifact,"authority":"Explicit standard-unmodified single-strand oligo hypotheses bound to both exact source events. Native annealing retains the selected geometry, alternatives and search limitations. Preview creates no material, isolation or covalent sealing. Installation independently replays both sources and the selected native candidate; no intended assembly target is invented."}))
+                },
                 MaterialDerivationTask::PreviewTerminalProcessing{source,origin,action}=>{
                     let origin=server.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     server.material_derivation_source(&workspace,&source,&origin)?;
@@ -6577,10 +6607,24 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                 },
                 MaterialDerivationTask::Install{request}=>{
                     if request.name.trim().is_empty()||request.name.trim()!=request.name||request.name.len()>256||request.name.chars().any(char::is_control){return Err(bad("Declare a bounded nonempty material product name."));}
-                    let origin=server.resolve_material_derivation_origin(&workspace,&request.source,&request.origin)?;
-                    let molecule=server.material_derivation_source(&workspace,&request.source,&origin)?;
+                    use native::SourceRole;
+                    let expected_roles=if matches!(&request.derivation,MaterialDerivationOperation::AnnealedOligos{..}) {vec![SourceRole::TopOligo,SourceRole::BottomOligo]} else {vec![SourceRole::Template]};
+                    if request.sources.len()!=expected_roles.len()||request.sources.iter().zip(&expected_roles).any(|(source,role)|source.role!=*role){return Err(bad("Declare the exact canonical source roles for the selected material operation."));}
+                    if matches!(&request.derivation,MaterialDerivationOperation::AnnealedOligos{..})&&request.sources.iter().any(|source|!matches!(&source.origin,MaterialDerivationOrigin::OriginalReference)){return Err(bad("Annealing requires explicit original single-strand oligo declarations; saved duplex material is not implicitly denatured."));}
+                    let mut sources=Vec::with_capacity(request.sources.len());
+                    for source in request.sources {
+                        let origin=server.resolve_material_derivation_origin(&workspace,&source.event,&source.origin)?;
+                        server.material_derivation_source(&workspace,&source.event,&origin)?;
+                        sources.push(native::BoundSource{role:source.role,event:source.event,origin});
+                    }
+                    let template_context=||{
+                        let source=sources.first().filter(|source|source.role==SourceRole::Template).ok_or_else(||bad("This operation requires the exact template source role."))?;
+                        let molecule=server.material_derivation_source(&workspace,&source.event,&source.origin)?;
+                        Ok::<_,ErrorData>((molecule,&source.origin))
+                    };
                     let derivation=match request.derivation {
                         MaterialDerivationOperation::ExactPcr{forward,reverse,selection,template_strand}=>{
+                            let (molecule,origin)=template_context()?;
                             if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit PCR preview index/revision."));}
                             let previews=native::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
                             let chosen=previews.into_iter().nth(selection.selected_index).ok_or_else(||bad("The explicitly selected PCR preview no longer exists."))?;
@@ -6588,6 +6632,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                             native::Derivation::ExactPcr{forward,reverse,template_strand,selection:native::PcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry:chosen.geometry}}
                         },
                         MaterialDerivationOperation::MismatchPcr{forward,reverse,options,selection}=>{
+                            let (molecule,origin)=template_context()?;
                             if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit mismatch-PCR preview index/revision."));}
                             let preview=native::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
                             let chosen=preview.preview.documents.get(selection.selected_index).ok_or_else(||bad("The explicitly selected mismatch-PCR preview no longer exists."))?;
@@ -6597,13 +6642,14 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                         },
                         MaterialDerivationOperation::OverlapExtensionPcr{preparation,selection}=>native::Derivation::OverlapExtensionPcr{preparation,selection},
                         MaterialDerivationOperation::TerminalProcessing{action}=>native::Derivation::TerminalProcessing{action},
+                        MaterialDerivationOperation::AnnealedOligos{options,selection}=>native::Derivation::AnnealedOligos{options,selection},
                         MaterialDerivationOperation::EndRepair{method}=>native::Derivation::EndRepair{method},
                         MaterialDerivationOperation::CatalogDigest{selection,options,fragment_index}=>native::Derivation::CatalogDigest{selection,options,fragment_index},
                     };
-                    let request=native::Request{source:request.source,origin,derivation,name:request.name,save_primers:request.save_primers};
+                    let request=native::Request{sources,derivation,name:request.name,save_primers:request.save_primers};
                     // Selecting the requested retained source in this local copy
                     // changes presentation only; the stored input is immutable.
-                    workspace.active_document=request.source.document_id.clone();
+                    workspace.active_document=request.sources[0].event.document_id.clone();
                     let expected=native::revision(&workspace,&request).map_err(bad)?;
                     let installed=native::prepare_install(&workspace,&request).map_err(bad)?;
                     installed.receipt.validate_binding(&expected).map_err(bad)?;

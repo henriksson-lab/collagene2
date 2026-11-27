@@ -83,10 +83,13 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
     let prepared = digest::prepare_install(
         &saved.workspace,
         &digest::Request {
-            source: selected.event,
-            origin: digest::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
-                origin,
-            )),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: selected.event,
+                origin: digest::SourceOrigin::Saved(
+                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                ),
+            }],
             derivation: digest::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
                 options: Default::default(),
@@ -236,7 +239,7 @@ fn equal_content_alias_and_detached_record_cannot_attest_the_selected_digest_eve
             .is_err()
     );
     let mut changed = cap.clone();
-    changed.source_snapshot.name = "Different source snapshot".into();
+    changed.source_snapshots[0].molecule.name = "Different source snapshot".into();
     assert!(changed.validate_documentary().is_err());
     let key = w
         .attachments
@@ -256,7 +259,9 @@ fn equal_content_alias_and_detached_record_cannot_attest_the_selected_digest_eve
 fn one_aggregate_ledger_charges_mixed_descendants_instead_of_resetting_each_child() {
     let (mut w, cap, pin) = digest_fixture();
     let record = digest::load_record(&cap.record_bytes).unwrap();
-    let digest::SourceOrigin::Saved(MaterialOrigin::Run(parent)) = &record.request.origin else {
+    let digest::SourceOrigin::Saved(MaterialOrigin::Run(parent)) =
+        &record.request.sources[0].origin
+    else {
         panic!("explicit run parent")
     };
     run_material::material_capsules_preflight([

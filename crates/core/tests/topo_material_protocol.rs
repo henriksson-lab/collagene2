@@ -11,7 +11,7 @@ use collagene_core::{
         physical::{Enzyme, FivePrime, ThreePrime},
     },
     topo_preparation as prep, topo_run_preparation as saved, verification,
-    workspace::{self, Workspace},
+    workspace::Workspace,
 };
 fn strand(role: &str, length: usize) -> t::PreparedStrand {
     t::PreparedStrand {
@@ -52,8 +52,11 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     let prepared = native::prepare_install(
         &w,
         &native::Request {
-            source: event,
-            origin: native::SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: event,
+                origin: native::SourceOrigin::OriginalReference,
+            }],
             derivation: native::Derivation::ExactPcr {
                 forward,
                 reverse,

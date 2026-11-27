@@ -122,8 +122,11 @@ fn source(family: usize) -> (Workspace, EventBinding, Preparation) {
             .unwrap();
             assert_eq!(previews.len(), 1);
             let request = derivation::Request {
-                source: event(&w, 0),
-                origin: derivation::SourceOrigin::OriginalReference,
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: event(&w, 0),
+                    origin: derivation::SourceOrigin::OriginalReference,
+                }],
                 derivation: derivation::Derivation::ExactPcr {
                     forward,
                     reverse,

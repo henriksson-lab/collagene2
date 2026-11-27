@@ -427,8 +427,11 @@ fn literal_trims_substitutions_and_indels_keep_original_actual_strand_receipt() 
 fn derived_catalog_fragment_uses_actual_new_native_source_domain_after_restart() {
     let (w, pin, origin) = annealed(TOP, BOTTOM, 17, false);
     let requested = derivation::Request {
-        source: pin,
-        origin: derivation::SourceOrigin::Saved(origin),
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: pin,
+            origin: derivation::SourceOrigin::Saved(origin),
+        }],
         derivation: derivation::Derivation::CatalogDigest {
             selection: eco(),
             options: Default::default(),

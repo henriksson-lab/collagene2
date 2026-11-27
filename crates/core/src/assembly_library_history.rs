@@ -11,7 +11,7 @@ use std::collections::BTreeSet;
 
 pub const SCHEMA_VERSION: u16 = 2;
 pub const KIND: &str = "assembly-library-history-v2";
-pub const ACTIVE_DRAFT_VERSION: u32 = 18;
+pub const ACTIVE_DRAFT_VERSION: u32 = 19;
 pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v18";
 pub const MEDIA_TYPE: &str = "application/x-collagene-assembly-library-history+postcard";
 pub const MAX_RECORD_BYTES: usize = 32 << 20;

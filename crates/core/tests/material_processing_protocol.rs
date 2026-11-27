@@ -106,8 +106,11 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
         .is_err()
     );
     let request = native::Request {
-        source: event(&w),
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event(&w),
+            origin: origin,
+        }],
         derivation: native::Derivation::MismatchPcr {
             forward,
             reverse,
@@ -153,10 +156,13 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
         .find(|e| e.name == "EcoRI")
         .unwrap();
     let request = native::Request {
-        source: installed.receipt.product.clone(),
-        origin: native::SourceOrigin::Saved(MaterialOrigin::Derived(
-            native::capsule(&pcr, &installed.receipt.product).unwrap(),
-        )),
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: installed.receipt.product.clone(),
+            origin: native::SourceOrigin::Saved(MaterialOrigin::Derived(
+                native::capsule(&pcr, &installed.receipt.product).unwrap(),
+            )),
+        }],
         derivation: native::Derivation::CatalogDigest {
             selection: catalog_digest::select(&catalog, &[eco.id.clone()]).unwrap(),
             options: Default::default(),
@@ -202,8 +208,11 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
     report.context_revision = "0".repeat(64);
     assert!(protocol::decode_response(&wire(b"CGR\0", &forged)).is_err());
     let request = native::Request {
-        source: cut.receipt.product.clone(),
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: cut.receipt.product.clone(),
+            origin: origin,
+        }],
         derivation: native::Derivation::EndRepair {
             method: EndRepairMethod::FillFivePrimeOverhangs,
         },

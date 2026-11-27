@@ -2042,10 +2042,13 @@ mod run_origin_tests {
         let installed = collagene_core::material_derivation::prepare_install(
             &workspace,
             &collagene_core::material_derivation::Request {
-                source: source.clone(),
-                origin: collagene_core::material_derivation::SourceOrigin::Saved(
-                    collagene_core::run_material::MaterialOrigin::Run(run),
-                ),
+                sources: vec![collagene_core::material_derivation::BoundSource {
+                    role: collagene_core::material_derivation::SourceRole::Template,
+                    event: source.clone(),
+                    origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                        collagene_core::run_material::MaterialOrigin::Run(run),
+                    ),
+                }],
                 derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
                     selection,
                     options: Default::default(),
@@ -2056,7 +2059,13 @@ mod run_origin_tests {
             },
         )
         .unwrap();
-        assert_eq!(installed.receipt.source, source);
+        assert_eq!(
+            installed.receipt.sources,
+            vec![collagene_core::material_derivation::SourceBinding {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source.clone()
+            }]
+        );
         assert_eq!(
             (
                 installed.receipt.duplex.top_length,
@@ -2077,9 +2086,9 @@ mod run_origin_tests {
         let before = serde_json::to_vec(&installed.workspace).unwrap();
         let record =
             collagene_core::material_derivation::load_record(&capsule.record_bytes).unwrap();
-        assert_eq!(record.request.source, source);
+        assert_eq!(record.request.sources[0].event, source);
         assert!(matches!(
-            record.request.origin,
+            record.request.sources[0].origin,
             collagene_core::material_derivation::SourceOrigin::Saved(
                 collagene_core::run_material::MaterialOrigin::Run(_)
             )
@@ -2177,8 +2186,11 @@ mod run_origin_tests {
         .unwrap()
         .remove(0);
         let request = collagene_core::material_derivation::Request {
-            source: source_event,
-            origin: collagene_core::material_derivation::SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source_event,
+                origin: collagene_core::material_derivation::SourceOrigin::OriginalReference,
+            }],
             derivation: collagene_core::material_derivation::Derivation::ExactPcr {
                 template_strand: collagene_core::chemistry::Strand::Top,
                 forward,

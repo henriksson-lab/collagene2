@@ -27,8 +27,11 @@ fn fixture() -> (workspace::Workspace, MaterialOrigin, inspection::Request) {
     let prepared = derivation::prepare_install(
         &w,
         &derivation::Request {
-            source: event,
-            origin: derivation::SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: event,
+                origin: derivation::SourceOrigin::Saved(origin),
+            }],
             derivation: derivation::Derivation::CatalogDigest {
                 selection: selection("SmaI"),
                 options: Default::default(),

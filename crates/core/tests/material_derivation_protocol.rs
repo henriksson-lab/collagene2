@@ -63,8 +63,11 @@ fn installed() -> (Workspace, EventBinding) {
     assert_eq!(previews.len(), 1);
     let p = previews.remove(0);
     let request = native::Request {
-        source: event(&w, 0),
-        origin: native::SourceOrigin::OriginalReference,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event(&w, 0),
+            origin: native::SourceOrigin::OriginalReference,
+        }],
         derivation: native::Derivation::ExactPcr {
             forward,
             reverse,
@@ -165,15 +168,15 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 26);
-    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 30);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 28);
+    assert_eq!(protocol::CANDIDATE_SCHEMA_VERSION, 31);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 29);
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],
         &protocol::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     let mut old = bytes.clone();
-    old[4..6].copy_from_slice(&21u16.to_le_bytes());
+    old[4..6].copy_from_slice(&(protocol::CANDIDATE_SCHEMA_VERSION - 1).to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);
     assert!(transfer::load_candidate(&old).is_err());
     let report = verification::verify(&plan, &target);

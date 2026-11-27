@@ -79,10 +79,13 @@ fn finalize(
     (
         commit.workspace,
         d::Request {
-            source: source,
-            origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
-                origin,
-            )),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source,
+                origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                    origin,
+                )),
+            }],
             derivation: d::Derivation::CatalogDigest {
                 selection: enzyme(),
                 options: Default::default(),
@@ -128,7 +131,9 @@ fn pcr() -> (Workspace, d::Request) {
 fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and_replays_after_archive()
  {
     let (w, request) = pcr();
-    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) = &request.origin else {
+    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) =
+        &request.sources[0].origin
+    else {
         unreachable!()
     };
     let before = workspace::save_workspace(&w).unwrap();
@@ -180,7 +185,7 @@ fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and
     assert!(
         d::source_bindings(&record)
             .unwrap()
-            .contains(&request.source)
+            .contains(&request.sources[0].event)
     );
     assert!(
         d::source_bindings(&record)
@@ -314,7 +319,9 @@ fn declared_original_modifications_survive_actual_full_circle_cleavage_and_capsu
     };
     let w = Workspace::from_documents("Original declared source", vec![source, target], 1).unwrap();
     let (w, request) = finalize(w, plan, 1, vec![("stock", 0)], false);
-    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) = &request.origin else {
+    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) =
+        &request.sources[0].origin
+    else {
         unreachable!()
     };
     let original = run_material::reconstruct(&w, &origin.selection).unwrap();
@@ -340,7 +347,7 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
     let (w, request) = pcr();
     let before = workspace::save_workspace(&w).unwrap();
     let mut bad = request.clone();
-    bad.source = event(&w, 0);
+    bad.sources[0].event = event(&w, 0);
     assert!(d::prepare_install(&w, &bad).is_err());
     let mut bad = request.clone();
     let d::Derivation::CatalogDigest { fragment_index, .. } = &mut bad.derivation else {
@@ -363,7 +370,9 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
     // A bounded, internally consistent recipe with the same DNA is still not
     // the exact retained originating run and cannot attest an installation.
     let mut bad = request.clone();
-    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) = &mut bad.origin else {
+    let d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)) =
+        &mut bad.sources[0].origin
+    else {
         unreachable!()
     };
     let mut candidate = transfer::load_candidate(&origin.candidate).unwrap();
@@ -374,7 +383,7 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
     let mut histories = collagene_core::history::DocumentHistory::restore_all(&changed).unwrap();
     let source = histories
         .iter_mut()
-        .find(|history| history.id == request.source.document_id)
+        .find(|history| history.id == request.sources[0].event.document_id)
         .unwrap();
     let mut renamed = source.molecule.clone();
     renamed.name = "A later saved source head".into();

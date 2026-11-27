@@ -64,8 +64,11 @@ fn request(
 ) -> native::Request {
     let preview = native::preview_overlap_extension(w, &source, &origin, &preparation).unwrap();
     native::Request {
-        source,
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: source,
+            origin: origin,
+        }],
         derivation: native::Derivation::OverlapExtensionPcr {
             preparation,
             selection: preview.selection().unwrap(),
@@ -398,7 +401,8 @@ fn inherited_origin_and_terminal_search_limits_remain_conditional_after_selectio
         preparation(),
     );
     let preview =
-        native::preview_overlap_extension(&w, &source, &req.origin, &preparation()).unwrap();
+        native::preview_overlap_extension(&w, &source, &req.sources[0].origin, &preparation())
+            .unwrap();
     assert!(preview.origin_incomplete);
     assert!(preview.incomplete);
     assert!(preview.reusable());

@@ -128,8 +128,11 @@ fn derived(w: &Workspace, origin: &MaterialOrigin) -> (Workspace, MaterialOrigin
     let p = derivation::prepare_install(
         w,
         &derivation::Request {
-            source: origin.event().clone(),
-            origin: derivation::SourceOrigin::Saved(origin.clone()),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: origin.event().clone(),
+                origin: derivation::SourceOrigin::Saved(origin.clone()),
+            }],
             derivation: derivation::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: Default::default(),

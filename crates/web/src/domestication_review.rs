@@ -791,8 +791,11 @@ mod tests {
         let installed = native::prepare_install(
             &frame,
             &native::Request {
-                source: seed,
-                origin: source_origin.clone(),
+                sources: vec![native::BoundSource {
+                    role: native::SourceRole::Template,
+                    event: seed,
+                    origin: source_origin.clone(),
+                }],
                 name: "Saved PCR stock".into(),
                 save_primers: true,
                 derivation: native::Derivation::ExactPcr {

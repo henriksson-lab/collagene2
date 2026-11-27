@@ -111,8 +111,11 @@ pub fn fixture(derived: bool) -> (Workspace, MaterialOrigin, EventBinding, Molec
             .id
             .clone();
         let r = derive::Request {
-            source: e,
-            origin: derive::SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: e,
+                origin: derive::SourceOrigin::Saved(origin),
+            }],
             derivation: derive::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: collagene_core::modified_duplex::checked_inspection_options(),

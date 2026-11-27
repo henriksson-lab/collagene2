@@ -36,8 +36,11 @@ fn request(
     action: native::TerminalAction,
 ) -> native::Request {
     native::Request {
-        source,
-        origin,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: source,
+            origin: origin,
+        }],
         derivation: native::Derivation::TerminalProcessing { action },
         name: "Explicit terminal product".into(),
         save_primers: false,
@@ -60,8 +63,11 @@ fn pcr(w: &Workspace, index: usize, f: &str, r: &str) -> native::PreparedInstall
     native::prepare_install(
         w,
         &native::Request {
-            source,
-            origin: native::SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source,
+                origin: native::SourceOrigin::OriginalReference,
+            }],
             derivation: native::Derivation::ExactPcr {
                 forward,
                 reverse,
@@ -695,8 +701,11 @@ fn conditionally_capped_upstream_pcr_does_not_become_complete_after_terminal_pro
     let seed = native::prepare_install(
         &w,
         &native::Request {
-            source: pin(&w, 0),
-            origin: native::SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: pin(&w, 0),
+                origin: native::SourceOrigin::OriginalReference,
+            }],
             derivation: native::Derivation::MismatchPcr {
                 forward,
                 reverse,

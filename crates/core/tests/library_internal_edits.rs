@@ -61,8 +61,11 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
     .unwrap();
     assert_eq!(documents.len(), 1);
     let request = derivation::Request {
-        source: event(&w, 1),
-        origin: derivation::SourceOrigin::OriginalReference,
+        sources: vec![collagene_core::material_derivation::BoundSource {
+            role: collagene_core::material_derivation::SourceRole::Template,
+            event: event(&w, 1),
+            origin: derivation::SourceOrigin::OriginalReference,
+        }],
         derivation: derivation::Derivation::ExactPcr {
             forward: forward.clone(),
             reverse: reverse.clone(),

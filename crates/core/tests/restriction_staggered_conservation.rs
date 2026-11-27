@@ -138,8 +138,11 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     let first = native::prepare_install(
         &saved.workspace,
         &native::Request {
-            source: original,
-            origin: SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: original,
+                origin: SourceOrigin::Saved(origin),
+            }],
             derivation: Derivation::CatalogDigest {
                 selection: selection.clone(),
                 options: options.clone(),
@@ -155,8 +158,11 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     let second = native::prepare_install(
         &first.workspace,
         &native::Request {
-            source: first.receipt.product.clone(),
-            origin: SourceOrigin::Saved(origin),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: first.receipt.product.clone(),
+                origin: SourceOrigin::Saved(origin),
+            }],
             derivation: Derivation::CatalogDigest {
                 selection,
                 options,

@@ -157,10 +157,13 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
     let installed = collagene_core::material_derivation::prepare_install(
         &commit.workspace,
         &collagene_core::material_derivation::Request {
-            source,
-            origin: collagene_core::material_derivation::SourceOrigin::Saved(
-                run_material::MaterialOrigin::Run(origin),
-            ),
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: source,
+                origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                    run_material::MaterialOrigin::Run(origin),
+                ),
+            }],
             derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
                 selection,
                 options: Default::default(),

@@ -1,7 +1,7 @@
 //! Shared restrictions for reference-only exchange profiles which cannot carry
 //! native physical evidence. This does not restrict reference alphabets/topology.
 use crate::{Alphabet, Error, Molecule, chemistry};
-pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
+fn restricted_markers(m: &Molecule) -> bool {
     let producer = m.original_genbank.as_ref().is_some_and(|raw| {
         raw.lines()
             .filter_map(|s| {
@@ -45,8 +45,26 @@ pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
                 || k.eq_ignore_ascii_case("protein:modified")
                 || k.eq_ignore_ascii_case("modifications")
         });
-    if producer || marked || protein_state || chemistry::has_unmapped_physical_evidence(m) {
+    producer || marked || protein_state
+}
+pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
+    if restricted_markers(m) || chemistry::has_unmapped_physical_evidence(m) {
         return Err(Error::Unsupported("Physical, damaged, single/mixed-strand, modified or reference-only evidence cannot be preserved by this reference export profile. Retain a native archive; accepting omissions cannot erase this restriction.".into()));
+    }
+    Ok(())
+}
+/// Borrowed shared marker admission for explicitly declared standard oligos.
+/// Legitimate ssDNA labels are retained, never stripped to invent a duplex.
+pub(crate) fn declared_oligo_guard(m: &Molecule) -> Result<(), Error> {
+    if restricted_markers(m)
+        || m.metadata.contains_key("duplex_model")
+        || m.metadata.keys().any(|k| {
+            k.eq_ignore_ascii_case("modifications")
+                || k.eq_ignore_ascii_case("dna:modifications")
+                || k.eq_ignore_ascii_case("modified")
+        })
+    {
+        return Err(Error::Unsupported("Native, modified, mixed or reference-only physical evidence cannot be reinterpreted as an independently declared standard ssDNA oligo".into()));
     }
     Ok(())
 }

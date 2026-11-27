@@ -311,8 +311,11 @@ fn saved_run_keep_and_derived_add_use_exact_owned_material_after_archive_restart
     let prepared = derived::prepare_install(
         &w,
         &derived::Request {
-            source: right,
-            origin: derived::SourceOrigin::OriginalReference,
+            sources: vec![collagene_core::material_derivation::BoundSource {
+                role: collagene_core::material_derivation::SourceRole::Template,
+                event: right,
+                origin: derived::SourceOrigin::OriginalReference,
+            }],
             derivation: derived::Derivation::ExactPcr {
                 forward: f,
                 reverse: r,

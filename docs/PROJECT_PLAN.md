@@ -3973,3 +3973,24 @@ Required evidence includes sticky-adapter literal strands, exact multi-parent
 archive/replay/sharing, two-role self-complementary oligos, source swap/alias/
 tamper refusal, conditional alternatives, new-only order provenance and later
 ligation against a separately declared target.
+
+### Reusable annealed-oligo material — plural-source integration
+
+The current implementation batch replaces unary native derivation sources with
+role-bound source rows and complete role-bound capsule snapshots. Template
+operations require one `template` role; annealing requires `top_oligo` followed
+by `bottom_oligo`. Both roles may reference the same self-complementary oligo
+event. Product parent events are deduplicated without dropping role uses.
+The shared ancestry ledger, selected sharing closure, native replay, MCP and web
+callers are updated directly; no prior-schema reader is retained.
+
+Current stamps advance to material record/capsule2, worker113, candidate31,
+native plan29, editor draft19 and science32. Native annealing candidate IDs are
+stable strings and are retained with the exact preview/product revisions.
+All239 distinct selected native/SDK/worker/web-model cases pass, including
+sticky-adapter literals, self-complementary same-event roles, reverse-strand
+annotations, complete selected source sharing, native restart and subsequent
+independent-target ligation. The integrated web/worker WASM check passes. Only
+failed or initially uncompiled cases were rerun after fixture repairs. Exact-
+source cross-platform CI and publication of this source remain open. Browser use is limited to the separately requested
+README screenshots; general GUI acceptance remains deferred.

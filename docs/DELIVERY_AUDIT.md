@@ -37,3 +37,9 @@ dipeptide definitions in Lu et al.; the exact profile and limitations are docume
 in [protein liabilities](PROTEIN_LIABILITIES.md). Worker, Biology and native MCP integration are implemented. Automatic numbering
 and CDR derivation remain unimplemented. Existing external-tool,
 MIT-implementation and provenance requirements remain unchanged.
+
+
+The [numbering primitive](ANTIBODY_NUMBERING.md) now provides exact insertion labels
+and the published conditional IMGT CDR3 allocation rule. It does not establish
+variable-domain detection or full numbering. Automatic scheme assignments,
+reference profiles, region derivation and application tracks remain required.

@@ -749,6 +749,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-antibody-numbering"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-model",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "collagene-core"
 version = "0.1.0"
 dependencies = [

@@ -4319,3 +4319,21 @@ check pass. No browser/application HTTP checks were run. Automatic
 antibody domain detection/numbering/CDR derivation and the existing whole-product
 interoperability, GUI/performance and installed-platform gates remain required;
 this checkpoint does not complete F34 or the full goal.
+
+### F34 exact numbering labels and IMGT CDR3 rule
+
+The independent MIT `collagene-antibody-numbering` crate represents explicit
+integer/letter/decimal insertion labels, keeping e.g. 111.1 and 111.10 distinct
+without inventing a generic biological sort order. The published IMGT CDR3
+central-gap and alternating-insertion rule is encoded separately from domain
+detection and from CDR1/2 placement. Conditional allocation checks actual source
+letters under provided Cys/J anchors and retains exact source/provenance binding;
+anchor matches alone never establish antibody identity or actual IMGT positions.
+
+Four native fixture groups and the optional-schema WASM check pass, including
+published length cases, long insertion labels, coordinate/resource refusal and
+an all-length uniqueness/boundary sweep. Current engine is antibody-numbering-1.
+No third-party code, sequences or trained models are bundled. Reference-data
+strategy uses explicit schemes/provenance; raw PDB residue IDs cannot be assumed
+to carry a scheme. Full automatic domain/numbering/CDR work, application tracks and
+whole-product acceptance remain required. [Contract and sources](ANTIBODY_NUMBERING.md).

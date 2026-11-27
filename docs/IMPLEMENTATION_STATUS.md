@@ -2060,3 +2060,20 @@ borrow error was corrected together with the current batch; passing cases were
 not reexecuted. No browser/application HTTP checks were run. The public preview
 remains the previously published `d2904e5` artifact until a newer CI frontend is
 available. Automatic numbering and full GUI/platform/delivery acceptance remain.
+
+### Conditional IMGT CDR3 numbering primitive
+
+The new MIT `collagene-antibody-numbering` module supplies exact structured
+position labels and the published IMGT CDR3 gap/insertion allocation rule.
+Conditional source-bound allocation validates supplied anchor letters, coordinates,
+stop-free loop and provenance; it never proves biological anchor identity or a
+variable domain. Decimal insertion indices are not floats and right-side IMGT
+insertions retain their reversed source order. General cross-scheme conversion,
+CDR1/2 placement and Kabat/Chothia/domain classification are not guessed.
+
+All four authored native fixture groups and optional-schema WASM checks pass.
+A sweep covers every supported loop length 2–2,048, with independent literal
+published cases and binding/anchor/resource failures. No third-party code,
+sequences, datasets or trained models ship in this batch. Full automatic antibody
+numbering, application integration and the full delivery gates remain open.
+[Numbering contract](ANTIBODY_NUMBERING.md).

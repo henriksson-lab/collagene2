@@ -19,8 +19,8 @@ fn fixture() -> (Vec<PlanInput>, fusion::Request) {
         .collect();
     let request = serde_json::from_value(json!({
         "base":{"base":{"name":"Fixed independent AB","fragments":[
-            {"role":"left","input_id":"a","start":0,"end":20,"reverse":false},
-            {"role":"right","input_id":"b","start":0,"end":20,"reverse":false}],"circular":true},
+            {"role":"left","input_id":"a","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},
+            {"role":"right","input_id":"b","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}}],"circular":true,"material_bindings":[]},
             "edits":[],"rows":[
                 {"DesignPcr":{"role":"left","input_id":"a","reverse":false,"forward_length":8,"reverse_length":8}},
                 {"DesignPcr":{"role":"right","input_id":"b","reverse":false,"forward_length":8,"reverse_length":8}}],

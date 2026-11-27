@@ -103,8 +103,8 @@ async fn sdk_search_materialization_and_condition_bound_scores_remain_advisory()
         .zip(["a", "b"])
         .map(|(row, id)| json!({"id":id,"document":{"id":row["id"],"revision":row["revision"]}}))
         .collect::<Vec<_>>();
-    let request = json!({"base":{"base":{"name":"Independent original AB","circular":true,"fragments":[
-        {"role":"left","input_id":"a","start":0,"end":20,"reverse":false},{"role":"right","input_id":"b","start":0,"end":20,"reverse":false}]},
+    let request = json!({"base":{"base":{"name":"Independent original AB","circular":true,"material_bindings":[],"fragments":[
+        {"role":"left","input_id":"a","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},{"role":"right","input_id":"b","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}}]},
         "edits":[],"rows":[{"DesignPcr":{"role":"left","input_id":"a","reverse":false,"forward_length":8,"reverse_length":8}},{"DesignPcr":{"role":"right","input_id":"b","reverse":false,"forward_length":8,"reverse_length":8}}],
         "enzyme":"BsaI","clamp":"ATGC","spacer":"A","terminal_right_overhang":null,"allow_nicked":false},
         "windows":[{"junction":0,"min_shift":-1,"max_shift":1}],

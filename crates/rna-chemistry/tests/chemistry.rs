@@ -19,7 +19,7 @@ fn evidence() -> Provenance {
 }
 fn declaration(m: &Molecule) -> Declaration {
     Declaration {
-        version: 1,
+        version: DECLARATION_VERSION,
         source_revision: source_revision(m).unwrap(),
         coverage: Coverage::ClosedModel,
         ends: if m.topology == Topology::Circular {
@@ -32,6 +32,7 @@ fn declaration(m: &Molecule) -> Declaration {
         },
         sites: vec![],
         links: vec![],
+        annotation_reviews: vec![],
         provenance: evidence(),
     }
 }
@@ -340,7 +341,7 @@ fn invalid_parents_indices_versions_topologies_and_budgets_are_refused_before_mo
         provenance: evidence(),
     });
     assert!(analyze(&m, &d).is_err());
-    for version in [0, 2] {
+    for version in [0, 1, 3] {
         let mut d = declaration(&m);
         d.version = version;
         assert!(analyze(&m, &d).is_err());
@@ -387,4 +388,187 @@ fn report_validation_reconstructs_source_declarations_catalog_formula_and_quanti
     assert!(r.validate_for(&m, &changed).is_err());
     let changed = source("AGGU", Topology::Linear);
     assert!(r.validate_for(&changed, &d).is_err());
+}
+
+fn annotated(base: &str, code: &str) -> Molecule {
+    let mut m = source(base, Topology::Linear);
+    m.features.push(Feature {
+        kind: "modified_base".into(),
+        location: Location::range(0, 1),
+        qualifiers: vec![("mod_base".into(), Some(code.into()))],
+        needs_review: false,
+    });
+    m
+}
+fn reviewed(m: &Molecule) -> Declaration {
+    let c = annotation_candidates(m).unwrap().remove(0);
+    let mut d = declaration(m);
+    d.sites.push(c.suggested_site.unwrap());
+    d.annotation_reviews.push(FeatureReview {
+        feature_index: c.feature_index,
+        expected_feature_revision: c.feature_revision,
+        site_entry: 0,
+    });
+    d
+}
+#[test]
+fn insdc_annotation_review_constrains_chemistry_without_erasing_original_evidence() {
+    // INSDC 11.4 codes, checked against independently specified monomer formulas.
+    for (base, code, formula) in [
+        ("A", "m6a", "C11H15N5O4"),
+        ("C", "m5c", "C10H15N3O5"),
+        ("U", "m5u", "C10H14N2O6"),
+        ("U", "p", "C9H12N2O6"),
+        ("A", "i", "C10H12N4O5"),
+        ("C", "cm", "C10H15N3O5"),
+        ("G", "gm", "C11H15N5O5"),
+        ("U", "um", "C10H14N2O6"),
+        ("U", "fm", "C10H14N2O6"),
+        ("U", "tm", "C11H16N2O6"),
+    ] {
+        let m = annotated(base, code);
+        let before = m.clone();
+        assert!(analyze(&m, &declaration(&m)).unwrap().mass.is_none());
+        let d = reviewed(&m);
+        let r = analyze(&m, &d).unwrap();
+        assert_eq!(r.formula.unwrap().hill(), formula, "{code}");
+        assert_eq!(
+            r.retained_evidence,
+            vec![RetainedEvidence::Feature { index: 0 }]
+        );
+        assert!(r.unreviewed_evidence.is_empty());
+        r.validate_for(&m, &d).unwrap();
+        assert_eq!(m, before);
+    }
+    // A base-only annotation permits explicitly declared extra sugar chemistry.
+    let m = annotated("A", "m6a");
+    let mut d = reviewed(&m);
+    d.sites[0].sugar = Sugar::TwoPrimeOMethyl;
+    assert_eq!(
+        analyze(&m, &d).unwrap().formula.unwrap().hill(),
+        "C12H17N5O4"
+    );
+    // A sugar-only annotation permits an explicitly declared base modification.
+    let m = annotated("C", "cm");
+    let mut d = reviewed(&m);
+    d.sites[0].nucleoside = Nucleoside::FiveMethylcytidine;
+    assert_eq!(
+        analyze(&m, &d).unwrap().formula.unwrap().hill(),
+        "C11H17N3O5"
+    );
+}
+#[test]
+fn review_cannot_hide_unknown_metadata_uncertain_locations_or_conflicting_chemistry() {
+    for (base, code) in [("A", "OTHER"), ("U", "t"), ("U", "m1f"), ("C", "m6a")] {
+        let m = annotated(base, code);
+        let c = annotation_candidates(&m).unwrap().remove(0);
+        assert!(c.suggested_site.is_none() && c.unsupported_reason.is_some());
+        assert_eq!(c.raw_code.as_deref(), Some(code));
+        let mut d = declaration(&m);
+        d.sites.push(site(0, Nucleoside::Canonical, Sugar::Ribose));
+        d.annotation_reviews.push(FeatureReview {
+            feature_index: 0,
+            expected_feature_revision: c.feature_revision,
+            site_entry: 0,
+        });
+        assert!(analyze(&m, &d).is_err());
+    }
+    let mut m = annotated("A", "m6a");
+    m.metadata
+        .insert("rna:modifications".into(), "unresolved cap".into());
+    let r = analyze(&m, &reviewed(&m)).unwrap();
+    assert!(r.mass.is_none());
+    assert_eq!(r.retained_evidence.len(), 2);
+    assert_eq!(
+        r.unreviewed_evidence,
+        vec![RetainedEvidence::Metadata {
+            key: "rna:modifications".into()
+        }]
+    );
+    for location in [
+        Location::Complement(Box::new(Location::range(0, 1))),
+        Location::Range {
+            start: 0,
+            end: 1,
+            before: true,
+            after: false,
+        },
+        Location::Join(vec![Location::range(0, 1), Location::range(1, 2)]),
+    ] {
+        let mut m = annotated("AA", "m6a");
+        m.features[0].location = location;
+        assert!(
+            annotation_candidates(&m).unwrap()[0]
+                .suggested_site
+                .is_none()
+        );
+    }
+    let mut m = annotated("A", "m6a");
+    m.features[0].needs_review = true;
+    assert!(
+        annotation_candidates(&m).unwrap()[0]
+            .suggested_site
+            .is_none()
+    );
+    for code in ["cm", "fm", "tm"] {
+        let m = annotated(if code == "cm" { "C" } else { "U" }, code);
+        let mut d = reviewed(&m);
+        d.sites[0].sugar = Sugar::Ribose;
+        assert!(analyze(&m, &d).is_err());
+    }
+    let m = annotated("U", "fm");
+    let mut d = reviewed(&m);
+    d.sites[0].nucleoside = Nucleoside::Canonical;
+    assert!(analyze(&m, &d).is_err());
+}
+#[test]
+fn review_is_bound_to_exact_feature_and_declared_site_and_is_never_implicit() {
+    let m = annotated("AA", "m6a");
+    let d = reviewed(&m);
+    let mut variants = vec![];
+    let mut changed = d.clone();
+    changed.annotation_reviews[0].feature_index = 1;
+    variants.push(changed);
+    let mut changed = d.clone();
+    changed.annotation_reviews[0].site_entry = 1;
+    variants.push(changed);
+    let mut changed = d.clone();
+    changed.annotation_reviews[0].expected_feature_revision = "f".repeat(64);
+    variants.push(changed);
+    let mut changed = d.clone();
+    changed
+        .annotation_reviews
+        .push(changed.annotation_reviews[0].clone());
+    variants.push(changed);
+    let mut changed = d.clone();
+    changed.sites[0].index = 1;
+    variants.push(changed);
+    let mut changed = d.clone();
+    changed.sites[0].nucleoside = Nucleoside::Canonical;
+    variants.push(changed);
+    for changed in variants {
+        assert!(analyze(&m, &changed).is_err());
+    }
+    let mut changed = m.clone();
+    changed.features[0]
+        .qualifiers
+        .push(("note".into(), Some("source corrected".into())));
+    let mut rebound = d.clone();
+    rebound.source_revision = source_revision(&changed).unwrap();
+    assert!(analyze(&changed, &rebound).is_err()); // Source rebinding cannot repair a stale feature review.
+    let mut no_review = d.clone();
+    no_review.annotation_reviews.clear();
+    assert!(analyze(&m, &no_review).unwrap().mass.is_none());
+    let mut partial = d.clone();
+    partial.coverage = Coverage::Partial;
+    assert!(analyze(&m, &partial).unwrap().mass.is_none());
+    let mut duplicated = m.clone();
+    duplicated.features.push(duplicated.features[0].clone());
+    let only_first = reviewed(&duplicated);
+    let r = analyze(&duplicated, &only_first).unwrap();
+    assert!(r.mass.is_none());
+    assert_eq!(
+        r.unreviewed_evidence,
+        vec![RetainedEvidence::Feature { index: 1 }]
+    );
 }

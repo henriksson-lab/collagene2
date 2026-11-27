@@ -4204,3 +4204,19 @@ fixture groups and the final optional-schema WASM check pass; CI includes the ne
 crate on all three native platforms and WASM. Worker, UI, MCP, imported annotation
 review and exact-event persistence remain required integration work, followed by
 the rest of F34 and the existing delivery/acceptance gates. [RNA contract](RNA_MODIFICATIONS.md).
+
+### F34 imported RNA modification review
+
+The current RNA declaration is version 2 with engine `rna-chemistry-2`; unsupported
+internal versions refuse. Exact source-feature fingerprints and explicit mappings
+to declared residues allow review of a bounded INSDC `modified_base` profile.
+Positions, canonical parents and every positively specified base/sugar constraint
+must agree. Unknown codes, uncertain/compound/complement locations, edited features
+and opaque metadata cannot be accepted away. Reports preserve every original
+modification evidence entry and separately list what remains unreviewed. Reviews
+do not supply closed coverage, material authority or experimental confirmation.
+
+Native fixtures cover the ten supported codes, independent monomer formulas,
+component combinations, conflicting/stale/duplicate reviews and unresolved source
+evidence. Worker/MCP/UI and exact-event persistence remain integration work; this
+checkpoint does not complete F34 or the full delivery goal.

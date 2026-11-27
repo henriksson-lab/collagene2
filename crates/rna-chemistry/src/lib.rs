@@ -4,8 +4,8 @@ use collagene_model::{Alphabet, Molecule, Topology};
 pub use formula::{Formula, MASS_MODEL, Mass};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-pub const ENGINE: &str = "rna-chemistry-1";
-pub const DECLARATION_VERSION: u16 = 1;
+pub const ENGINE: &str = "rna-chemistry-2";
+pub const DECLARATION_VERSION: u16 = 2;
 pub const MAX_BASES: usize = 1_000_000;
 pub const MAX_SITES: usize = 100_000;
 pub const MAX_LINKS: usize = 100_000;
@@ -28,6 +28,11 @@ macro_rules! data {($($t:tt)*)=>{
     #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]
     #[serde(deny_unknown_fields)] $($t)*
 };}
+mod annotations;
+pub use annotations::{
+    AnnotationCandidate, AnnotationProfile, FeatureReview, annotation_candidates,
+    annotation_profiles,
+};
 data! {pub struct Provenance {pub statement:String,pub reference:Option<String>}}
 data! {pub enum Coverage {
     /// Omitted sites/bonds may contain other chemistry; quantities stay unavailable.
@@ -47,7 +52,7 @@ data! {pub struct Link {/// Stored-strand zero-based upstream residue; last posi
 pub after:usize,pub linkage:Linkage,pub provenance:Provenance}}
 data! {pub struct Declaration {
     pub version:u16,pub source_revision:String,pub coverage:Coverage,pub ends:Ends,
-    pub sites:Vec<Site>,pub links:Vec<Link>,pub provenance:Provenance,
+    pub sites:Vec<Site>,pub links:Vec<Link>,pub annotation_reviews:Vec<FeatureReview>,pub provenance:Provenance,
 }}
 data! {pub enum IssueKind {PartialCoverage,AmbiguousReference,UnknownNucleoside,UnknownSugar,UnknownLinkage,UnknownFivePrime,UnknownThreePrime,RetainedSourceEvidence}}
 data! {pub struct Issue {pub kind:IssueKind,pub count:usize,pub positions:Vec<usize>,pub positions_truncated:bool}}
@@ -71,6 +76,7 @@ pub struct Report {
     pub identity_complete: bool,
     pub unspecified_stereocenters: Vec<usize>,
     pub retained_evidence: Vec<RetainedEvidence>,
+    pub unreviewed_evidence: Vec<RetainedEvidence>,
     pub issues: Vec<Issue>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -194,6 +200,7 @@ pub fn catalog_revision() -> String {
         b"collagene-rna-catalog-1\0",
         &(
             profiles(),
+            annotation_profiles(),
             formula::NUCLEOSIDES,
             formula::MONO,
             formula::AVERAGE,
@@ -237,6 +244,7 @@ pub fn declaration_revision(source: &Molecule, d: &Declaration) -> Result<String
     if d.sites.len() > MAX_SITES || d.links.len() > MAX_LINKS {
         return Err(Error::Limit("sites/links"));
     }
+    annotations::validate_reviews(source, d)?;
     provenance(&d.provenance)?;
     if !matches!(
         (&d.ends, source.topology),
@@ -310,12 +318,12 @@ pub fn declaration_revision(source: &Molecule, d: &Declaration) -> Result<String
             }
         }
     }
-    hash(b"collagene-rna-declaration-1\0", d, MAX_DECLARATION_BYTES)
+    hash(b"collagene-rna-declaration-2\0", d, MAX_DECLARATION_BYTES)
 }
 pub fn request_revision(source: &Molecule, d: &Declaration) -> Result<String> {
     let declaration = declaration_revision(source, d)?;
     hash(
-        b"collagene-rna-request-1\0",
+        b"collagene-rna-request-2\0",
         &(ENGINE, &d.source_revision, declaration, catalog_revision()),
         65536,
     )
@@ -371,7 +379,7 @@ pub fn analyze(source: &Molecule, d: &Declaration) -> Result<Report> {
     let declaration_revision = declaration_revision(source, d)?;
     let catalog_revision = catalog_revision();
     let context_revision = hash(
-        b"collagene-rna-request-1\0",
+        b"collagene-rna-request-2\0",
         &(
             ENGINE,
             &d.source_revision,
@@ -442,10 +450,23 @@ pub fn analyze(source: &Molecule, d: &Declaration) -> Result<Report> {
         }
     }
     let retained_evidence = retained_evidence(source);
-    if !retained_evidence.is_empty() {
+    let reviewed = d
+        .annotation_reviews
+        .iter()
+        .map(|r| r.feature_index)
+        .collect::<BTreeSet<_>>();
+    let unreviewed_evidence = retained_evidence
+        .iter()
+        .filter(|e| match e {
+            RetainedEvidence::Feature { index } => !reviewed.contains(index),
+            RetainedEvidence::Metadata { .. } => true,
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if !unreviewed_evidence.is_empty() {
         issues.push(Issue {
             kind: IssueKind::RetainedSourceEvidence,
-            count: retained_evidence.len(),
+            count: unreviewed_evidence.len(),
             positions: vec![],
             positions_truncated: false,
         });
@@ -536,6 +557,7 @@ pub fn analyze(source: &Molecule, d: &Declaration) -> Result<Report> {
         identity_complete,
         unspecified_stereocenters,
         retained_evidence,
+        unreviewed_evidence,
         issues,
     })
 }

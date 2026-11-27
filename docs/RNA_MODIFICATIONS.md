@@ -3,7 +3,7 @@
 `collagene-rna-chemistry` provides an independent MIT Rust analysis core for
 source-bound RNA base, sugar, backbone and terminal declarations. It is portable
 to native and WASM targets and has optional JSON schemas. This batch supplies the
-scientific core; worker, UI, annotation review, workspace capture and MCP access
+scientific core and imported-annotation review; worker, UI, workspace capture and MCP access
 remain to be integrated. It does not complete F34 or change existing RNA documents.
 
 ## Representation and scope
@@ -66,7 +66,32 @@ and retained unreviewed source modification evidence make aggregate formula and
 mass unavailable. Reasons include counts and at most 100 positional examples;
 full declarations remain intact. Known modification annotations and metadata are
 listed as retained evidence, not silently erased by an empty closed declaration.
-Review/mapping of those imported records is still required for quantitative use.
+Review/mapping of those imported records is required for quantitative use.
+
+## Imported annotation review
+
+`annotation_candidates` inspects retained modification features without changing
+an imported molecule. Supported exact, single-residue stored-strand
+`modified_base` features use the [INSDC feature table, version 11.4](https://www.insdc.org/submitting-standards/feature-table/)
+`mod_base` codes: `m6a`, `m5c`, `m5u`, `p`, `i`, `cm`, `gm`, `um`, `fm` and `tm`.
+Normalization of external code case/whitespace preserves the original qualifier.
+Unsupported codes (including `OTHER`), other feature kinds, uncertain/compound or
+complement locations, features flagged after editing and mismatched reference
+parents remain unresolved. No unsupported label is guessed into a known profile.
+
+Each explicit `FeatureReview` references the feature index, its exact content
+fingerprint and a residue entry in the declaration. A review succeeds only when
+the declared position and every chemistry component specified by that annotation
+agree. For example, `fm` requires both pseudouridine and 2′-O-methyl sugar; `cm`
+constrains the sugar while permitting an explicitly declared additional base
+modification. Source edits, changed feature contents, missing entries, conflicting
+chemistry and repeated reviews refuse. Reviews never imply closed coverage.
+
+Reports retain all source evidence and separately identify the unreviewed subset.
+One reviewed feature cannot clear another feature or opaque modification metadata;
+the latter remains unresolved. Review records are documentary constraints, not
+experimental confirmation. At most 4,096 feature reviews are accepted, within the
+declaration byte bound. The complete imported source remains independently bound.
 
 ## Binding and limits
 
@@ -77,7 +102,7 @@ Changing a sequence or source annotation invalidates its old declaration. Saving
 declarations alongside exact history events is the intended integration boundary;
 embedding a self-referential full source hash into its own molecule is avoided.
 
-The current declaration version is 1 and analysis engine is `rna-chemistry-1`.
+The current declaration version is 2 and analysis engine is `rna-chemistry-2`.
 Unsupported versions refuse directly. `Report::validate_for` recomputes all results
 from independently supplied source and declaration; a saved hash/report alone is
 not a chemical-state or material certificate.
@@ -118,5 +143,5 @@ Authored fixtures compare published monomer quantities, AMP/ATP formulas and
 an independent nucleotide-condensation oracle across all 340 canonical sequences
 of lengths 1–4 in both linear and circular form. Other fixtures check isobaric
 identities, sugar/backbone substitutions, terminal/seam chemistry, unknown and
-retained evidence, budgets and report/source tampering. Native/WASM checks do not
+retained evidence, budgets, report/source tampering and exact-feature annotation review. Native/WASM checks do not
 establish UI, vendor-notation or experimental acceptance.

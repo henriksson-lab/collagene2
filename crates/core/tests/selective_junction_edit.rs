@@ -2,10 +2,10 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     assembly_intent,
+    assembly_intent::{Contribution, Selector},
     assembly_junction_edit::Edit,
     assembly_recipe::{self, FragmentSpec, Preparation},
     catalog_digest,
-    overlap_primer_design::Fragment,
     primers::DesignOptions,
     selective_junction_edit::*,
     verification::{self, PlanInput, Status},
@@ -24,28 +24,35 @@ fn input(id: &str, dna: &str) -> PlanInput {
 fn fixture() -> (Vec<PlanInput>, Request) {
     let inputs = vec![input("a", A), input("b", B), input("c", C)];
     let base = assembly_intent::Request {
+        material_bindings: vec![],
         name: "Selective mixed preparation".into(),
         fragments: vec![
-            Fragment {
+            Contribution {
                 role: "first".into(),
                 input_id: "a".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
-            Fragment {
+            Contribution {
                 role: "manual".into(),
                 input_id: "b".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
-            Fragment {
+            Contribution {
                 role: "cut".into(),
                 input_id: "c".into(),
-                start: 3,
-                end: 29,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 3,
+                    end: 29,
+                    reverse: false,
+                },
             },
         ],
         circular: false,
@@ -200,7 +207,14 @@ fn incompatible_manual_row_is_kept_literal_and_only_fresh_full_reconstruction_re
 #[test]
 fn reverse_and_circular_variable_homologies_change_only_explicitly_selected_originals() {
     let (inputs, mut r) = fixture();
-    r.base.fragments[0].reverse = true;
+    let Selector::ReferenceRange {
+        reverse: selected_reverse,
+        ..
+    } = &mut r.base.fragments[0].selector
+    else {
+        panic!("reference selector")
+    };
+    *selected_reverse = true;
     r.rows[0] = Row::DesignPcr {
         role: "first".into(),
         input_id: "a".into(),

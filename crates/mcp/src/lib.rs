@@ -1274,13 +1274,145 @@ pub struct Proposal {
     /// Typed operations refer to input IDs or earlier steps. OverlapExtension explicitly denatures/reanneals two intact linear tracked duplexes and extends their selected terminal pairing; use actual PCR oligos before and after it. Reference overlap assemblies cannot substitute for physical PCR templates.
     pub steps: Vec<Operation>,
 }
+/// MCP accepts small exact native selections, never a caller's closed capsule.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct IntentMaterialBinding {
+    pub input_id: String,
+    pub event: collagene_core::run_lineage::EventBinding,
+    pub selection: collagene_core::run_material::MaterialSelection,
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AssemblyIntentRequest {
+    pub name: String,
+    pub fragments: Vec<collagene_core::assembly_intent::Contribution>,
+    pub circular: bool,
+    pub material_bindings: Vec<IntentMaterialBinding>,
+}
+impl AssemblyIntentRequest {
+    fn native(
+        &self,
+        workspace: Option<&collagene_core::workspace::Workspace>,
+    ) -> Result<collagene_core::assembly_intent::Request, ErrorData> {
+        bounded_json_limit(self, 2 * 1024 * 1024)?;
+        for f in &self.fragments {
+            if f.role.trim().is_empty()
+                || f.role.len() > 128
+                || f.input_id.trim().is_empty()
+                || f.input_id.len() > 128
+            {
+                return Err(bad("bounded source contribution role/input required"));
+            }
+        }
+        if self.fragments.is_empty()
+            || self.fragments.len() > 32
+            || self.material_bindings.len() > 32
+            || self.name.len() > 1024
+        {
+            return Err(bad(
+                "bounded explicit contributions and material bindings required",
+            ));
+        }
+        let mut ids = BTreeSet::new();
+        for b in &self.material_bindings {
+            if b.input_id.trim().is_empty()
+                || b.input_id.len() > 128
+                || !ids.insert(b.input_id.as_str())
+                || b.selection.event() != &b.event
+            {
+                return Err(bad(
+                    "material selection must name its exact unique input/event",
+                ));
+            }
+            b.selection.validate().map_err(bad)?;
+        }
+        let origins = if self.material_bindings.is_empty() {
+            vec![]
+        } else {
+            let workspace = workspace
+                .ok_or_else(|| bad("native material selection requires origin_workspace"))?;
+            let selections = self
+                .material_bindings
+                .iter()
+                .map(|b| b.selection.clone())
+                .collect::<Vec<_>>();
+            collagene_core::run_material::documentary_material_origins(workspace, &selections)
+                .map_err(bad)?
+        };
+        Ok(collagene_core::assembly_intent::Request {
+            name: self.name.clone(),
+            fragments: self.fragments.clone(),
+            circular: self.circular,
+            material_bindings: self
+                .material_bindings
+                .iter()
+                .zip(origins)
+                .map(
+                    |(binding, origin)| collagene_core::assembly_intent::MaterialBinding {
+                        input_id: binding.input_id.clone(),
+                        event: binding.event.clone(),
+                        origin,
+                    },
+                )
+                .collect(),
+        })
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SubstitutedIntentRequest {
+    pub base: AssemblyIntentRequest,
+    pub junction_edits: Vec<collagene_core::assembly_junction_edit::Edit>,
+    pub substitutions: Vec<collagene_core::assembly_substitution_intent::Substitution>,
+}
+impl SubstitutedIntentRequest {
+    fn native(
+        &self,
+        w: Option<&collagene_core::workspace::Workspace>,
+    ) -> Result<collagene_core::assembly_substitution_intent::Request, ErrorData> {
+        bounded_json_limit(self, 2 * 1024 * 1024)?;
+        if self.junction_edits.len() > 32 || self.substitutions.len() > 256 {
+            return Err(bad("intent edit bound"));
+        }
+        Ok(collagene_core::assembly_substitution_intent::Request {
+            base: self.base.native(w)?,
+            junction_edits: self.junction_edits.clone(),
+            substitutions: self.substitutions.clone(),
+        })
+    }
+}
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ContributionEditIntentRequest {
+    pub base: SubstitutedIntentRequest,
+    pub edits: Vec<collagene_core::assembly_edit_intent::Edit>,
+}
+impl ContributionEditIntentRequest {
+    fn native(
+        &self,
+        w: Option<&collagene_core::workspace::Workspace>,
+    ) -> Result<collagene_core::assembly_edit_intent::Request, ErrorData> {
+        bounded_json_limit(self, 2 * 1024 * 1024)?;
+        if self.edits.len() > 256 {
+            return Err(bad("intent edit bound"));
+        }
+        Ok(collagene_core::assembly_edit_intent::Request {
+            base: self.base.native(w)?,
+            edits: self.edits.clone(),
+        })
+    }
+}
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AssemblyIntentQuery {
     /// Exact original source snapshots; local IDs match request fragments.
     pub inputs: Vec<BoundInput>,
     /// Declared source regions, order and orientation only. No simulator-derived target.
-    pub request: collagene_core::assembly_intent::Request,
+    pub request: AssemblyIntentRequest,
+    /// Pinned native archive owning all exact material selections; null for references.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1379,7 +1511,10 @@ pub struct SubstitutedAssemblyIntentQuery {
     /// Exact immutable MCP source snapshots, including retained historical revisions.
     pub inputs: Vec<BoundInput>,
     /// Independent regions, junction edits and expected-base substitutions; never primer-derived.
-    pub request: collagene_core::assembly_substitution_intent::Request,
+    pub request: SubstitutedIntentRequest,
+    /// Pinned native archive owning all exact material selections; null for references.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -1387,14 +1522,20 @@ pub struct ContributionEditIntentQuery {
     /// Exact immutable original source snapshots, never products or guessed native parents.
     pub inputs: Vec<BoundInput>,
     /// Independent construct-oriented original contribution intervals and literal edits.
-    pub request: collagene_core::assembly_edit_intent::Request,
+    pub request: ContributionEditIntentRequest,
+    /// Pinned native archive owning all exact material selections; null for references.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EditedAssemblyIntentQuery {
     pub inputs: Vec<BoundInput>,
-    pub base: collagene_core::assembly_intent::Request,
+    pub base: AssemblyIntentRequest,
     pub edits: Vec<collagene_core::assembly_junction_edit::Edit>,
+    /// Pinned native archive owning all exact material selections; null for references.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub origin_workspace: Option<WorkspaceRef>,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -6645,24 +6786,27 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }
         let server = self.clone();
         self.compute(move || {
+            let origin_workspace=args.origin_workspace.as_ref().map(|r|server.restore_workspace(r)).transpose()?;
+            let native=args.request.native(origin_workspace.as_ref())?;
+
             let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
                 for bound in &args.inputs {
                     if bound.id.trim().is_empty()||bound.id.len()>128||!seen.insert(bound.id.as_str()) {return Err(bad("empty, oversized or duplicate intent source ID"));}
                     sources.push((bound.id.as_str(),store.document(&bound.document)?));
                 }
-                collagene_core::assembly_intent::preflight(&sources,&args.request).map_err(bad)?;
+                collagene_core::assembly_intent::preflight(&sources,&native,origin_workspace.as_ref()).map_err(bad)?;
                 sources.into_iter().map(|(id,molecule)|PlanInput{id:id.into(),revision:molecule.revision(),molecule:molecule.clone()}).collect::<Vec<_>>()};
-            let report=collagene_core::assembly_intent::build(&inputs,&args.request).map_err(bad)?;
-            let expected=collagene_core::assembly_intent::intent_revision(&inputs,&args.request).map_err(bad)?;
+            let report=collagene_core::assembly_intent::build(&inputs,&native,origin_workspace.as_ref()).map_err(bad)?;
+            let expected=collagene_core::assembly_intent::intent_revision(&inputs,&native,origin_workspace.as_ref()).map_err(bad)?;
             report.validate_binding(&expected).map_err(bad)?;
             #[derive(Serialize)]
-            struct Evidence<'a>{inputs:&'a [BoundInput],report:&'a collagene_core::assembly_intent::Report,interpretation:&'static str}
-            let evidence=Evidence{inputs:&args.inputs,report:&report,
-                interpretation:"Declared source-region/order/orientation intent only, constructed before any preparation simulator. This target is not prepared material, an observed sequence or an independently reconstructed cloning product. Verify actual molecular steps separately against this frozen intent."};
+            struct Evidence<'a>{origin_workspace:&'a Option<WorkspaceRef>,inputs:&'a [BoundInput],report:&'a collagene_core::assembly_intent::Report,interpretation:&'static str}
+            let evidence=Evidence{origin_workspace:&args.origin_workspace,inputs:&args.inputs,report:&report,
+                interpretation:"Declared source-region/order/orientation intent. Saved source strands are freshly reconstructed from exact native origins; the requested new preparation is never simulated to choose expected DNA. This target is not prepared material, an observed sequence or an independently reconstructed cloning product. Verify actual molecular steps separately against this frozen intent."};
             let (artifact,target_document)=server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"assembly-intent.json",32*1024*1024)?;
             let target_document=target_document.ok_or_else(||bad("intended-reference document was not retained"))?;
             output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,
-                "inputs":args.inputs,"context_revision":report.context_revision,"request":report.request,
+                "inputs":args.inputs,"context_revision":report.context_revision,"request":args.request,
                 "target":{"id":target_document["id"],"revision":target_document["revision"]},
                 "target_summary":target_document,"intended_length":report.target.sequence.len(),"topology":report.target.topology,
                 "fragment_count":report.fragments.len(),"fragments":report.fragments,
@@ -6673,7 +6817,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }).await
     }
     #[tool(
-        description = "Build an independently declared assembly reference from exact immutable source snapshots, explicit region/order/orientation, junction trims/inserts and expected-base role-relative substitutions. Mutation intent comes from the declaration, never primers or simulated products. Checks original expected bases before copying/building and atomically retains an unverified intended-reference session document plus complete mapping JSON. Repeated source contributions retain distinct roles. Original/historical source snapshots remain unchanged. Binding scope is MCP document roles/revisions, not native workspace event ancestry; native parents require separate explicit adoption. No preparation, material or successful verification is created."
+        description = "Build an independently declared assembly reference from exact immutable source snapshots, explicit region/order/orientation, junction trims/inserts and expected-base role-relative substitutions. Mutation intent comes from the declaration, never primers or simulated products. Checks original expected bases before copying/building and atomically retains an unverified intended-reference session document plus complete mapping JSON. Repeated source contributions retain distinct roles. Original/historical source snapshots remain unchanged. Material selectors are resolved from explicit native event/state bindings in origin_workspace; reference-only rows remain independent source-document declarations. No new preparation, material or successful verification is created."
     )]
     async fn build_substituted_assembly_intent(
         &self,
@@ -6686,26 +6830,29 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }
         let server = self.clone();
         self.compute(move||{
+            let origin_workspace=args.origin_workspace.as_ref().map(|r|server.restore_workspace(r)).transpose()?;
+            let native=args.request.native(origin_workspace.as_ref())?;
+
             let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
                 for bound in &args.inputs{if bound.id.trim().is_empty()||bound.id.len()>128||!seen.insert(bound.id.as_str()){return Err(bad("invalid or duplicate original substitution source ID"));}sources.push((bound.id.as_str(),store.document(&bound.document)?));}
-                collagene_core::assembly_substitution_intent::source_preflight(&sources,&args.request).map_err(bad)?;
+                collagene_core::assembly_substitution_intent::source_preflight(&sources,&native,origin_workspace.as_ref()).map_err(bad)?;
                 sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>()};
-            let report=collagene_core::assembly_substitution_intent::build(&inputs,&args.request).map_err(bad)?;
-            let expected=collagene_core::assembly_substitution_intent::intent_revision(&inputs,&args.request).map_err(bad)?;
+            let report=collagene_core::assembly_substitution_intent::build(&inputs,&native,origin_workspace.as_ref()).map_err(bad)?;
+            let expected=collagene_core::assembly_substitution_intent::intent_revision(&inputs,&native,origin_workspace.as_ref()).map_err(bad)?;
             report.validate_binding(&expected).map_err(bad)?;
-            #[derive(Serialize)]struct Evidence<'a>{inputs:&'a[BoundInput],report:&'a collagene_core::assembly_substitution_intent::Report,binding_scope:&'static str}
-            let scope="Exact immutable MCP source roles/document revisions only. Native event parents are established separately through explicit workspace adoption, never guessed by equal DNA or current heads.";
-            let evidence=Evidence{inputs:&args.inputs,report:&report,binding_scope:scope};
+            #[derive(Serialize)]struct Evidence<'a>{origin_workspace:&'a Option<WorkspaceRef>,inputs:&'a[BoundInput],report:&'a collagene_core::assembly_substitution_intent::Report,binding_scope:&'static str}
+            let scope="Exact immutable source roles/revisions; material rows additionally attest explicit native events/state through the pinned origin_workspace. Reference-only rows declare correspondence, never material ancestry.";
+            let evidence=Evidence{origin_workspace:&args.origin_workspace,inputs:&args.inputs,report:&report,binding_scope:scope};
             let(artifact,target)=server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"substituted-assembly-intent.json",32*1024*1024)?;
             let target=target.ok_or_else(||bad("substituted intended reference was not retained"))?;
-            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,"context_revision":report.context_revision,"request":report.request,
+            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,"context_revision":report.context_revision,"request":args.request,
                 "target":{"id":target["id"],"revision":target["revision"]},"target_summary":target,"intended_length":report.target.sequence.len(),"topology":report.target.topology,
                 "fragments":report.fragments,"applied":report.applied,"warnings":report.warnings,"artifact_id":artifact,"binding_scope":scope,
                 "authority":"Independent source-bound design requirement only; original sources are unchanged. No primer-derived target, physical preparation, experimental success or native event ancestry is inferred."}))
         }).await
     }
     #[tool(
-        description = "Build an independently declared assembly reference from exact immutable source snapshots, explicit region/order/orientation, junction trims/inserts, expected-base substitutions and literal contribution insertions/deletions/replacements. Mutation intent comes from the declaration, never primers or simulated products. Checks original expected literal bases before copying/building and atomically retains an unverified intended-reference session document plus complete mapping JSON. Repeated source contributions retain distinct roles. Original/historical source snapshots remain unchanged. Binding scope is MCP document roles/revisions, not native workspace event ancestry; native parents require separate explicit adoption. No preparation, material or successful verification is created."
+        description = "Build an independently declared assembly reference from exact immutable source snapshots, explicit region/order/orientation, junction trims/inserts, expected-base substitutions and literal contribution insertions/deletions/replacements. Mutation intent comes from the declaration, never primers or simulated products. Checks original expected literal bases before copying/building and atomically retains an unverified intended-reference session document plus complete mapping JSON. Repeated source contributions retain distinct roles. Original/historical source snapshots remain unchanged. Material selectors are resolved from explicit native event/state bindings in origin_workspace; reference-only rows remain independent source-document declarations. No new preparation, material or successful verification is created."
     )]
     async fn build_contribution_edit_intent(
         &self,
@@ -6718,19 +6865,22 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }
         let server = self.clone();
         self.compute(move||{
+            let origin_workspace=args.origin_workspace.as_ref().map(|r|server.restore_workspace(r)).transpose()?;
+            let native=args.request.native(origin_workspace.as_ref())?;
+
             let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
                 for bound in &args.inputs{if bound.id.trim().is_empty()||bound.id.len()>128||!seen.insert(bound.id.as_str()){return Err(bad("invalid or duplicate original contribution edit source ID"));}sources.push((bound.id.as_str(),store.document(&bound.document)?));}
-                collagene_core::assembly_edit_intent::source_preflight(&sources,&args.request).map_err(bad)?;
+                collagene_core::assembly_edit_intent::source_preflight(&sources,&native,origin_workspace.as_ref()).map_err(bad)?;
                 sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>()};
-            let report=collagene_core::assembly_edit_intent::build(&inputs,&args.request).map_err(bad)?;
-            let expected=collagene_core::assembly_edit_intent::intent_revision(&inputs,&args.request).map_err(bad)?;
-            report.validate_sources(&inputs,&expected).map_err(bad)?;
-            #[derive(Serialize)]struct Evidence<'a>{inputs:&'a[BoundInput],report:&'a collagene_core::assembly_edit_intent::Report,binding_scope:&'static str}
-            let scope="Exact immutable MCP source roles/document revisions only. Native event parents are established separately through explicit workspace adoption, never guessed by equal DNA or current heads.";
-            let evidence=Evidence{inputs:&args.inputs,report:&report,binding_scope:scope};
+            let report=collagene_core::assembly_edit_intent::build(&inputs,&native,origin_workspace.as_ref()).map_err(bad)?;
+            let expected=collagene_core::assembly_edit_intent::intent_revision(&inputs,&native,origin_workspace.as_ref()).map_err(bad)?;
+            report.validate_sources(&inputs,&expected,origin_workspace.as_ref()).map_err(bad)?;
+            #[derive(Serialize)]struct Evidence<'a>{origin_workspace:&'a Option<WorkspaceRef>,inputs:&'a[BoundInput],report:&'a collagene_core::assembly_edit_intent::Report,binding_scope:&'static str}
+            let scope="Exact immutable source roles/revisions; material rows additionally attest explicit native events/state through the pinned origin_workspace. Reference-only rows declare correspondence, never material ancestry.";
+            let evidence=Evidence{origin_workspace:&args.origin_workspace,inputs:&args.inputs,report:&report,binding_scope:scope};
             let(artifact,target)=server.candidate_document_artifact_bounded(&evidence,Some(report.target.clone()),"contribution-edit-intent.json",32*1024*1024)?;
             let target=target.ok_or_else(||bad("contribution-edited intended reference was not retained"))?;
-            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,"context_revision":report.context_revision,"request":report.request,
+            output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,"context_revision":report.context_revision,"request":args.request,
                 "target":{"id":target["id"],"revision":target["revision"]},"target_summary":target,"intended_length":report.target.sequence.len(),"topology":report.target.topology,
                 "fragments":report.fragments,"applied":report.applied,"warnings":report.warnings,"artifact_id":artifact,"binding_scope":scope,
                 "authority":"Independent source-bound design requirement only; original sources are unchanged. No primer-derived target, physical preparation, experimental success or native event ancestry is inferred."}))
@@ -6748,17 +6898,20 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         }
         let server = self.clone();
         self.compute(move||{
+            let origin_workspace=args.origin_workspace.as_ref().map(|r|server.restore_workspace(r)).transpose()?;
+            let native=args.base.native(origin_workspace.as_ref())?;
+
             let inputs={let store=server.store.lock().unwrap();let mut seen=BTreeSet::new();let mut sources=Vec::with_capacity(args.inputs.len());
                 for input in &args.inputs{if input.id.trim().is_empty()||input.id.len()>128||!seen.insert(input.id.as_str()){return Err(bad("invalid or duplicate original source ID"));}sources.push((input.id.as_str(),store.document(&input.document)?));}
-                collagene_core::assembly_junction_edit::intent_preflight(&sources,&args.base,&args.edits).map_err(bad)?;
+                collagene_core::assembly_junction_edit::intent_preflight(&sources,&native,&args.edits,origin_workspace.as_ref()).map_err(bad)?;
                 sources.into_iter().map(|(id,m)|PlanInput{id:id.into(),revision:m.revision(),molecule:m.clone()}).collect::<Vec<_>>()};
-            let intent=collagene_core::assembly_junction_edit::build_intent(&inputs,&args.base,&args.edits).map_err(bad)?;
-            let expected=collagene_core::assembly_junction_edit::intent_revision(&inputs,&args.base,&args.edits).map_err(bad)?;intent.validate_binding(&expected).map_err(bad)?;
-            let evidence=json!({"inputs":args.inputs,"intent":intent});
+            let intent=collagene_core::assembly_junction_edit::build_intent(&inputs,&native,&args.edits,origin_workspace.as_ref()).map_err(bad)?;
+            let expected=collagene_core::assembly_junction_edit::intent_revision(&inputs,&native,&args.edits,origin_workspace.as_ref()).map_err(bad)?;intent.validate_binding(&expected).map_err(bad)?;
+            let evidence=json!({"inputs":args.inputs,"origin_workspace":args.origin_workspace,"intent":intent});
             let (artifact,target)=server.candidate_document_artifact_bounded(&evidence,Some(intent.target.clone()),"edited-assembly-intent.json",32*1024*1024)?;
             let target=target.ok_or_else(||bad("edited intended reference was not retained"))?;
             output(json!({"state":"intended-reference","verified":false,"preparation_simulated":false,"inputs":args.inputs,
-                "context_revision":intent.context_revision,"base":intent.base_request,"edits":intent.edits,"adjusted_request":intent.adjusted_request,
+                "context_revision":intent.context_revision,"base":args.base,"edits":intent.edits,
                 "target":{"id":target["id"],"revision":target["revision"]},"target_summary":target,"fragments":intent.fragments,
                 "warnings":intent.warnings,"artifact_id":artifact,"authority":"Declared source-region edits only. Original sources are unchanged; primer production, assembly outcome and experimental success remain separate evidence."}))
         }).await

@@ -87,9 +87,9 @@ async fn declared_regions_build_frozen_unverified_target_before_actual_primer_de
     let original = call(&client, "export_document", left.clone()).await;
     let inputs = json!([{"id":"l","document":left},{"id":"r","document":right}]);
     let fragments = json!([{"role":"left","input_id":"l","start":0,"end":20,"reverse":false},{"role":"right","input_id":"r","start":0,"end":20,"reverse":false}]);
-    let request =
-        json!({"name":"Declared intended construct","fragments":fragments,"circular":false});
-    let args = json!({"inputs":inputs,"request":request});
+    let intent_fragments = json!([{"role":"left","input_id":"l","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},{"role":"right","input_id":"r","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}}]);
+    let request = json!({"name":"Declared intended construct","fragments":intent_fragments,"circular":false,"material_bindings":[]});
+    let args = json!({"origin_workspace":null,"inputs":inputs,"request":request});
     let intent = call(&client, "build_assembly_intent", args.clone()).await;
     assert_eq!(intent["state"], "intended-reference");
     assert_eq!(intent["verified"], false);
@@ -182,9 +182,9 @@ async fn declared_regions_build_frozen_unverified_target_before_actual_primer_de
     assert_eq!(wrong["verification"]["status"], "Invalid");
     let mut reversed = args.clone();
     reversed["request"]["name"] = json!("Reverse selected region intent");
-    reversed["request"]["fragments"][0]["end"] = json!(4);
-    reversed["request"]["fragments"][1]["end"] = json!(4);
-    reversed["request"]["fragments"][1]["reverse"] = json!(true);
+    reversed["request"]["fragments"][0]["selector"]["ReferenceRange"]["end"] = json!(4);
+    reversed["request"]["fragments"][1]["selector"]["ReferenceRange"]["end"] = json!(4);
+    reversed["request"]["fragments"][1]["selector"]["ReferenceRange"]["reverse"] = json!(true);
     let reversed_intent = call(&client, "build_assembly_intent", reversed.clone()).await;
     assert_eq!(
         call(
@@ -204,7 +204,7 @@ async fn declared_regions_build_frozen_unverified_target_before_actual_primer_de
     stale["inputs"][0]["document"]["revision"] = json!("stale");
     reject(&client, "build_assembly_intent", stale).await;
     let mut invalid = args.clone();
-    invalid["request"]["fragments"][0]["end"] = json!(21);
+    invalid["request"]["fragments"][0]["selector"]["ReferenceRange"]["end"] = json!(21);
     reject(&client, "build_assembly_intent", invalid).await;
     let mut missing = args.clone();
     missing["request"]["fragments"][0]["input_id"] = json!("missing");

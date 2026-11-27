@@ -1,6 +1,7 @@
 use collagene_core::{
-    Molecule, Topology, assembly_intent, assembly_junction_edit as edit,
-    overlap_primer_design::Fragment,
+    Molecule, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
+    assembly_junction_edit as edit,
     primers::DesignOptions,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     selective_junction_edit as selective,
@@ -21,22 +22,27 @@ fn fixture() -> (Vec<PlanInput>, selective::Request) {
     let base = assembly_intent::Request {
         name: "declared edited assembly".into(),
         fragments: vec![
-            Fragment {
+            Contribution {
                 role: "left".into(),
                 input_id: "l".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
-            Fragment {
+            Contribution {
                 role: "right".into(),
                 input_id: "r".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
         ],
         circular: false,
+        material_bindings: vec![],
     };
     let mut options = DesignOptions::default();
     options.min_length = 8;
@@ -63,7 +69,7 @@ fn fixture() -> (Vec<PlanInput>, selective::Request) {
                 .map(|f| selective::Row::DesignPcr {
                     role: f.role.clone(),
                     input_id: f.input_id.clone(),
-                    reverse: f.reverse,
+                    reverse: false,
                 })
                 .collect(),
             overlaps: vec![15],

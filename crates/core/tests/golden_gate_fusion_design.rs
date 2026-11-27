@@ -1,12 +1,12 @@
 //! Independent signed partitions and actual PCR/digest/ligation oracles.
 use collagene_core::{
     Molecule, Sequence, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
     assembly_junction_edit::Edit,
     golden_gate::GoldenGateEnzyme,
     golden_gate_fusion_design::{self as fusion, Constraints, Limits, Request, Selection, Window},
     golden_gate_junction_edit::{self as gate, Row},
     ligation_recipe,
-    overlap_primer_design::Fragment,
     verification::{PlanInput, Status},
 };
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -34,19 +34,23 @@ fn fixture(a: &str, b: &str, reverse_b: bool, circular: bool) -> (Vec<PlanInput>
         })
         .collect();
     let fragments = vec![
-        Fragment {
+        Contribution {
             role: "left".into(),
             input_id: "a".into(),
-            start: 0,
-            end: a.len(),
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: a.len(),
+                reverse: false,
+            },
         },
-        Fragment {
+        Contribution {
             role: "right".into(),
             input_id: "b".into(),
-            start: 0,
-            end: b.len(),
-            reverse: reverse_b,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: b.len(),
+                reverse: reverse_b,
+            },
         },
     ];
     let rows = fragments
@@ -54,7 +58,7 @@ fn fixture(a: &str, b: &str, reverse_b: bool, circular: bool) -> (Vec<PlanInput>
         .map(|f| Row::DesignPcr {
             role: f.role.clone(),
             input_id: f.input_id.clone(),
-            reverse: f.reverse,
+            reverse: f.selector.reference_interval().unwrap().2,
             forward_length: 8,
             reverse_length: 8,
         })
@@ -64,6 +68,7 @@ fn fixture(a: &str, b: &str, reverse_b: bool, circular: bool) -> (Vec<PlanInput>
         Request {
             base: gate::Request {
                 base: assembly_intent::Request {
+                    material_bindings: vec![],
                     name: "independent literal AB".into(),
                     fragments,
                     circular,

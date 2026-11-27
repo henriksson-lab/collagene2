@@ -710,6 +710,15 @@ pub fn DigestPanel(
             return;
         }
         let payload = AssemblyFragment {
+            material_domain: data.origin_inspection.as_ref().map(|preview| {
+                crate::assembly_draft_model::MaterialDomain {
+                    top_length: preview.source_duplex.top_length,
+                    bottom_start: preview.source_duplex.bottom_start,
+                    bottom_length: preview.source_duplex.bottom_length,
+                    topology: preview.source_duplex.topology,
+                    state_revision: preview.source_modifications.state_revision.clone(),
+                }
+            }),
             origin: data.origin.clone(),
             source: data.source.clone(),
             molecule: data.molecule.clone(),
@@ -801,6 +810,15 @@ pub fn DigestPanel(
                 }
             };
             let payload = AssemblyFragment {
+                material_domain: data.origin_inspection.as_ref().map(|preview| {
+                    crate::assembly_draft_model::MaterialDomain {
+                        top_length: preview.source_duplex.top_length,
+                        bottom_start: preview.source_duplex.bottom_start,
+                        bottom_length: preview.source_duplex.bottom_length,
+                        topology: preview.source_duplex.topology,
+                        state_revision: preview.source_modifications.state_revision.clone(),
+                    }
+                }),
                 origin: data.origin.clone(),
                 source: data.source.clone(),
                 molecule: data.molecule.clone(),
@@ -967,6 +985,15 @@ pub fn DigestPanel(
                 return;
             }
             let payload = AssemblyFragment {
+                material_domain: data.origin_inspection.as_ref().map(|preview| {
+                    crate::assembly_draft_model::MaterialDomain {
+                        top_length: preview.source_duplex.top_length,
+                        bottom_start: preview.source_duplex.bottom_start,
+                        bottom_length: preview.source_duplex.bottom_length,
+                        topology: preview.source_duplex.topology,
+                        state_revision: preview.source_modifications.state_revision.clone(),
+                    }
+                }),
                 origin: data.origin.clone(),
                 source: data.source.clone(),
                 molecule: data.molecule.clone(),

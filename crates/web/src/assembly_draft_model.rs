@@ -40,16 +40,17 @@ pub struct DigestGeometry {
     pub top_length: usize,
     pub bottom_start: i64,
     pub bottom_length: usize,
+    #[serde(deserialize_with = "required_option")]
+    pub material: Option<MaterialDomain>,
 }
+pub use collagene_core::assembly_intent::MaterialDomain;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Slot {
     pub label: String,
     #[serde(with = "optional_snapshot")]
     pub captured: Option<Arc<CapturedSource>>,
-    pub start: usize,
-    pub end: usize,
-    pub reverse: bool,
+    pub selector: assembly_intent::Selector,
     #[serde(deserialize_with = "required_option")]
     pub digest_geometry: Option<DigestGeometry>,
     #[serde(with = "optional_snapshot")]
@@ -60,9 +61,11 @@ impl Slot {
         Self {
             label: label.into(),
             captured: None,
-            start: 0,
-            end: 0,
-            reverse: false,
+            selector: assembly_intent::Selector::ReferenceRange {
+                start: 0,
+                end: 0,
+                reverse: false,
+            },
             digest_geometry: None,
             anneal_bottom: None,
         }
@@ -448,16 +451,31 @@ pub(crate) fn validate_slot_link(
     row: &OverlapInput,
     index: usize,
 ) -> Result<(), String> {
-    if row.document != index
-        || row.reverse != slot.reverse
-        || slot.start.checked_add(1).map(|n| n.to_string()).as_deref()
-            != Some(row.interval_start.as_str())
-        || row.interval_end
-            != if slot.captured.is_some() {
-                slot.end.to_string()
+    let (start, end, reverse) = match &slot.selector {
+        assembly_intent::Selector::ReferenceRange {
+            start,
+            end,
+            reverse,
+        } => (
+            start
+                .checked_add(1)
+                .ok_or("Reference interval coordinate overflow")?
+                .to_string(),
+            if slot.captured.is_some() {
+                end.to_string()
             } else {
                 String::new()
-            }
+            },
+            Some(*reverse),
+        ),
+        assembly_intent::Selector::MaterialStrandRange { .. } => {
+            (String::new(), String::new(), None)
+        }
+    };
+    if row.document != index
+        || reverse.is_some_and(|reverse| row.reverse != reverse)
+        || row.interval_start != start
+        || row.interval_end != end
     {
         return Err("Draft preparation source/order differs from its pinned slots".into());
     }
@@ -491,7 +509,15 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
         validate_oligo_capture(bottom)?;
     }
     let Some(captured) = slot.captured.as_deref() else {
-        if slot.start != 0 || slot.end != 0 || slot.digest_geometry.is_some() {
+        if !matches!(
+            &slot.selector,
+            assembly_intent::Selector::ReferenceRange {
+                start: 0,
+                end: 0,
+                ..
+            }
+        ) || slot.digest_geometry.is_some()
+        {
             return Err("An empty slot cannot retain a source interval".into());
         }
         return Ok(());
@@ -509,18 +535,42 @@ pub(crate) fn validate_slot(slot: &Slot, row: &OverlapInput, index: usize) -> Re
         || source.length != n
         || source.name != molecule.name
         || n == 0
-        || slot.start >= n
-        || slot.end <= slot.start
-        || slot
-            .end
-            .checked_sub(slot.start)
-            .is_none_or(|length| length > n)
-        || (molecule.topology == Topology::Linear && slot.end > n)
     {
         return Err("Invalid pinned DNA source or one-turn interval".into());
     }
+    match &slot.selector {
+        assembly_intent::Selector::ReferenceRange { start, end, .. } => {
+            if *start >= n
+                || end
+                    .checked_sub(*start)
+                    .is_none_or(|length| length == 0 || length > n)
+                || (molecule.topology == Topology::Linear && *end > n)
+            {
+                return Err("Invalid pinned reference interval".into());
+            }
+        }
+        assembly_intent::Selector::MaterialStrandRange {
+            expected_state_revision,
+            ..
+        } => {
+            if row.run_origin.is_none() || !hex(expected_state_revision) {
+                return Err("Actual strand intent needs its exact saved material origin".into());
+            }
+            let geometry = slot
+                .digest_geometry
+                .as_ref()
+                .ok_or("Actual strand intent needs its captured source domain")?;
+            if digest_selector(source, geometry, row.reverse)? != slot.selector {
+                return Err(
+                    "Actual strand selection differs from its pinned digest/source state".into(),
+                );
+            }
+        }
+    }
     if let Some(geometry) = &slot.digest_geometry {
-        validate_digest_geometry(source, geometry, slot.reverse, row.run_origin.is_some())?;
+        if digest_selector(source, geometry, row.reverse)? != slot.selector {
+            return Err("Digest contribution differs from its selected actual strand".into());
+        }
     }
     if molecule.revision() != source.binding.revision {
         return Err("Pinned source content differs from its captured revision".into());
@@ -649,15 +699,17 @@ impl Draft {
         next.clear_slot_substitutions(index)?;
         let slot = &mut next.slots[index];
         std::mem::swap(&mut slot.captured, &mut slot.anneal_bottom);
-        slot.start = 0;
-        slot.end = slot
-            .captured
-            .as_ref()
-            .ok_or("The new top oligo is unavailable.")?
-            .molecule
-            .sequence
-            .len();
-        slot.reverse = false;
+        slot.selector = assembly_intent::Selector::ReferenceRange {
+            start: 0,
+            end: slot
+                .captured
+                .as_ref()
+                .ok_or("The new top oligo is unavailable.")?
+                .molecule
+                .sequence
+                .len(),
+            reverse: false,
+        };
         slot.digest_geometry = None;
         let row = &mut next.methods.rows[index];
         std::mem::swap(
@@ -893,13 +945,25 @@ impl Draft {
                 row.run_origin = None;
             }
             row.document = i;
-            row.reverse = slot.reverse;
-            row.interval_start = slot.start.saturating_add(1).to_string();
-            row.interval_end = if slot.captured.is_some() {
-                slot.end.to_string()
-            } else {
-                String::new()
-            };
+            match &slot.selector {
+                assembly_intent::Selector::ReferenceRange {
+                    start,
+                    end,
+                    reverse,
+                } => {
+                    row.reverse = *reverse;
+                    row.interval_start = start.saturating_add(1).to_string();
+                    row.interval_end = if slot.captured.is_some() {
+                        end.to_string()
+                    } else {
+                        String::new()
+                    };
+                }
+                assembly_intent::Selector::MaterialStrandRange { .. } => {
+                    row.interval_start.clear();
+                    row.interval_end.clear();
+                }
+            }
         }
 
         let mut next_bottom = self.slots.len();
@@ -948,77 +1012,58 @@ pub fn decode(bytes: &[u8]) -> Result<Draft, String> {
     Ok(draft)
 }
 
-pub(crate) fn digest_interval(
+pub(crate) fn digest_selector(
     source: &SourceInfo,
     geometry: &DigestGeometry,
     reverse: bool,
-) -> Result<(usize, usize), String> {
-    let n = source.length;
-    if n == 0 {
+) -> Result<assembly_intent::Selector, String> {
+    let top_length = source.length;
+    if top_length == 0 {
         return Err("Digest source is empty".into());
     }
-    let (start, length) = if reverse {
-        geometry
-            .bottom_start
-            .checked_add(
-                i64::try_from(geometry.bottom_length)
-                    .map_err(|_| "Bottom interval length overflow")?,
-            )
-            .ok_or("Bottom interval coordinate overflow")?;
-        if geometry.bottom_length == 0 || geometry.bottom_length > n {
-            return Err("Digest bottom-strand interval is empty or exceeds one source turn".into());
+    if let Some(domain) = &geometry.material {
+        if domain.top_length != source.length || domain.topology != source.topology {
+            return Err("Actual source domain differs from the pinned reference".into());
         }
+        return assembly_intent::digest_material_selector(
+            domain,
+            &assembly_intent::DigestGeometry {
+                top_start: geometry.top_start,
+                top_length: geometry.top_length,
+                bottom_start: geometry.bottom_start,
+                bottom_length: geometry.bottom_length,
+            },
+            reverse,
+        )
+        .map_err(|e| e.to_string());
+    }
+    let (start, length) = if reverse {
         let start = if source.topology == Topology::Circular {
-            let size =
-                i64::try_from(n).map_err(|_| "Source length exceeds signed coordinate range")?;
-            usize::try_from(geometry.bottom_start.rem_euclid(size))
-                .map_err(|_| "Invalid bottom-strand coordinate")?
+            usize::try_from(geometry.bottom_start.rem_euclid(top_length as i64))
+                .map_err(|_| "Invalid circular coordinate")?
         } else {
             usize::try_from(geometry.bottom_start)
-                .map_err(|_| "Linear digest bottom interval starts outside its source")?
+                .map_err(|_| "Bottom interval starts outside reference")?
         };
         (start, geometry.bottom_length)
     } else {
         (geometry.top_start, geometry.top_length)
     };
-    if start >= n || length == 0 || length > n {
-        return Err("Digest interval is outside its original source".into());
-    }
     let end = start
         .checked_add(length)
-        .ok_or("Digest interval overflow")?;
-    if source.topology == Topology::Linear && end > n {
-        return Err("Linear digest interval extends beyond its source".into());
-    }
-    Ok((start, end))
-}
-
-fn validate_digest_geometry(
-    source: &SourceInfo,
-    geometry: &DigestGeometry,
-    reverse: bool,
-    from_run: bool,
-) -> Result<(), String> {
-    digest_interval(source, geometry, false)?;
-    if !from_run {
-        digest_interval(source, geometry, true)?;
-        return Ok(());
-    }
-    let limit = collagene_core::model::MAX_SEQUENCE_LEN;
-    if geometry.bottom_length == 0
-        || geometry.bottom_length > limit
-        || geometry.bottom_start.unsigned_abs() > 2 * limit as u64
-        || i64::try_from(geometry.bottom_length)
-            .ok()
-            .and_then(|n| geometry.bottom_start.checked_add(n))
-            .is_none()
+        .ok_or("Reference interval overflow")?;
+    if start >= top_length
+        || length == 0
+        || length > top_length
+        || (source.topology == Topology::Linear && end > top_length)
     {
-        return Err("Saved fragment has invalid bottom-strand geometry".into());
+        return Err("Digest interval is outside the reference".into());
     }
-    if reverse {
-        digest_interval(source,geometry,true).map_err(|_|"That orientation includes bases outside the saved sequence’s displayed reference and needs an explicit intended sequence.".to_string())?;
-    }
-    Ok(())
+    Ok(assembly_intent::Selector::ReferenceRange {
+        start,
+        end,
+        reverse,
+    })
 }
 
 #[cfg(test)]
@@ -1063,7 +1108,15 @@ mod tailing_tests {
             captured("Original vector", "AACC"),
             captured("Original insert", "GGTT"),
         ]) {
-            slot.end = source.molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = source.molecule.sequence.len();
+            }
             slot.captured = Some(source);
         }
         draft.sync_rows();
@@ -1073,7 +1126,15 @@ mod tailing_tests {
     #[test]
     fn two_source_tailing_roundtrip_preserves_pins_roles_preparations_and_literal_intent() {
         let mut draft = draft();
-        draft.slots[1].reverse = true;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange {
+                reverse: value, ..
+            } = &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = true;
+        }
         draft.methods.rows[0].preparation = OverlapPreparation::Digest;
         draft.methods.rows[0].enzymes = "EcoRV".into();
         draft.methods.rows[0].fragment = "2".into();
@@ -1129,7 +1190,15 @@ mod tailing_tests {
     #[test]
     fn moving_tailing_sources_keeps_each_sources_tail_chemistry_and_preparation() {
         let mut draft = draft();
-        draft.slots[0].reverse = true;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange {
+                reverse: value, ..
+            } = &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = true;
+        }
         draft.methods.rows[0].preparation = OverlapPreparation::Digest;
         draft.methods.rows[0].enzymes = "EcoRV".into();
         draft.methods.rows[1].forward = "GG".into();
@@ -1267,6 +1336,7 @@ mod tailing_tests {
             })
             .collect::<Vec<_>>();
         let base = collagene_core::assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: draft.name.clone(),
             circular: true,
             fragments: draft
@@ -1274,18 +1344,21 @@ mod tailing_tests {
                 .iter()
                 .zip(&roles)
                 .map(
-                    |(slot, role)| collagene_core::overlap_primer_design::Fragment {
+                    |(slot, role)| collagene_core::assembly_intent::Contribution {
                         role: role.role.clone(),
                         input_id: role.input_id.clone(),
-                        start: slot.start,
-                        end: slot.end,
-                        reverse: slot.reverse,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: slot.selector.reference_interval().unwrap().0,
+                            end: slot.selector.reference_interval().unwrap().1,
+                            reverse: slot.selector.reference_interval().unwrap().2,
+                        },
                     },
                 )
                 .collect(),
         };
         let target =
-            assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits).unwrap();
+            assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits, None)
+                .unwrap();
         assert_eq!(target.target.sequence.as_str(), "AACCTGGTTA");
         draft.methods.tailing_profile = collagene_core::tailing_recipe::Profile::Gc;
         draft.methods.vector.action = collagene_core::tailing_recipe::Action::AddTail {
@@ -1296,7 +1369,8 @@ mod tailing_tests {
         };
         draft.sync_rows();
         let unchanged =
-            assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits).unwrap();
+            assembly_junction_edit::build_intent(&inputs, &base, &draft.junction_edits, None)
+                .unwrap();
         assert_eq!(target.context_revision, unchanged.context_revision);
         assert_eq!(target.target, unchanged.target);
     }
@@ -1347,7 +1421,15 @@ mod paired_oligo_tests {
             captured("Backbone", "AAACCC"),
             captured("Top oligo", "AAGGCC"),
         ]) {
-            slot.end = source.molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = source.molecule.sequence.len();
+            }
             slot.captured = Some(source);
         }
         draft.methods.rows[1].preparation = OverlapPreparation::AnnealedOligos;
@@ -1402,14 +1484,51 @@ mod paired_oligo_tests {
             "GGAATTCTTACG",
             Topology::Circular,
         ));
-        draft.slots[0].start = 2;
-        draft.slots[0].end = 14;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 2;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 14;
+        }
         draft.slots[1].captured = Some(captured("Top", "AATTGCTACG"));
         draft.slots[1].anneal_bottom = Some(captured("Bottom", "AATTCGTAGC"));
-        draft.slots[1].start = 1;
-        draft.slots[1].end = 9;
-        draft.slots[1].reverse = true;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 1;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 9;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange {
+                reverse: value, ..
+            } = &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = true;
+        }
         draft.slots[1].digest_geometry = Some(DigestGeometry {
+            material: None,
             top_start: 1,
             top_length: 8,
             bottom_start: 1,
@@ -1438,9 +1557,9 @@ mod paired_oligo_tests {
         assert!(swapped.slots[1].anneal_bottom == before.slots[1].captured);
         assert_eq!(
             (
-                swapped.slots[1].start,
-                swapped.slots[1].end,
-                swapped.slots[1].reverse
+                swapped.slots[1].selector.reference_interval().unwrap().0,
+                swapped.slots[1].selector.reference_interval().unwrap().1,
+                swapped.slots[1].selector.reference_interval().unwrap().2
             ),
             (0, 10, false)
         );
@@ -1479,6 +1598,7 @@ mod paired_oligo_tests {
             .collect::<Vec<_>>();
         let roles = swapped.methods.role_ids(2).unwrap();
         let request = collagene_core::assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: "Independently reversed adaptor".into(),
             circular: true,
             fragments: swapped
@@ -1486,17 +1606,19 @@ mod paired_oligo_tests {
                 .iter()
                 .zip(&roles)
                 .map(
-                    |(slot, role)| collagene_core::overlap_primer_design::Fragment {
+                    |(slot, role)| collagene_core::assembly_intent::Contribution {
                         role: role.role.clone(),
                         input_id: role.input_id.clone(),
-                        start: slot.start,
-                        end: slot.end,
-                        reverse: slot.reverse,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: slot.selector.reference_interval().unwrap().0,
+                            end: slot.selector.reference_interval().unwrap().1,
+                            reverse: slot.selector.reference_interval().unwrap().2,
+                        },
                     },
                 )
                 .collect(),
         };
-        let intent = collagene_core::assembly_intent::build(&inputs, &request).unwrap();
+        let intent = collagene_core::assembly_intent::build(&inputs, &request, None).unwrap();
         assert_eq!(intent.target.sequence.as_str(), "AATTCTTACGGGAATTCGTAGC");
     }
 
@@ -1509,7 +1631,15 @@ mod paired_oligo_tests {
         ] {
             let source = captured(label, dna);
             let mut slot = Slot::empty(label);
-            slot.end = source.molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = source.molecule.sequence.len();
+            }
             slot.captured = Some(source);
             draft.slots.push(slot);
             draft.methods.rows.push(OverlapInput::default());
@@ -1576,7 +1706,14 @@ mod paired_oligo_tests {
         use collagene_core::chemistry::{self, FivePrime, Terminus, ThreePrime};
         let mut draft = paired();
         draft.slots[1].captured = Some(captured("Top", "AAGCTACG"));
-        draft.slots[1].end = 8;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 8;
+        }
         draft.slots[1].anneal_bottom = Some(captured("Bottom", "TTTCGTAGC"));
         draft.methods.rows[1].anneal_options.min_paired_bases = 6;
         draft.methods.rows[1].anneal_options.top_chemistry = Terminus {
@@ -1822,7 +1959,14 @@ mod run_origin_tests {
         draft.methods.mode = Mode::Ligation;
         draft.circular = false;
         draft.slots.truncate(1);
-        draft.slots[0].end = captured.molecule.sequence.len();
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = captured.molecule.sequence.len();
+        }
         draft.slots[0].captured = Some(captured);
         draft.methods.rows.truncate(1);
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
@@ -1949,7 +2093,14 @@ mod run_origin_tests {
             },
             molecule,
         }));
-        draft.slots[0].end = 8;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 8;
+        }
         draft.methods.rows[0].run_origin = Some(pin);
         draft.methods.rows[0].preparation = OverlapPreparation::ExactPcr;
         draft.methods.rows[0].forward = "ACGACCCC".into();
@@ -2122,8 +2273,22 @@ mod run_origin_tests {
     #[test]
     fn mismatched_persisted_origin_is_refused_while_explicit_source_edit_clears_it() {
         let mut draft = saved_pcr();
-        draft.slots[0].start = 2;
-        draft.slots[0].end = 14;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 2;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 14;
+        }
         draft.methods.rows[0].treatment = crate::cloning_methods_model::Treatment::Phosphorylate;
         draft.sync_rows();
         let mut changed = draft.clone();
@@ -2134,7 +2299,13 @@ mod run_origin_tests {
         assert!(decode(&serde_json::to_vec(&changed).unwrap()).is_err());
         changed.sync_rows();
         assert!(changed.methods.rows[0].run_origin.is_none());
-        assert_eq!((changed.slots[0].start, changed.slots[0].end), (2, 14));
+        assert_eq!(
+            (
+                changed.slots[0].selector.reference_interval().unwrap().0,
+                changed.slots[0].selector.reference_interval().unwrap().1
+            ),
+            (2, 14)
+        );
         assert!(changed.methods.rows[0].treatment == draft.methods.rows[0].treatment);
         assert_eq!(changed.name, draft.name);
         assert_eq!(changed.circular, draft.circular);
@@ -2228,18 +2399,20 @@ pub fn set_digest_fragment(
         return Err("Digest selection/source/options changed; run the digest again".into());
     }
     let geometry = DigestGeometry {
+        material: fragment.material_domain.clone(),
         top_start: fragment.top_start,
         top_length: fragment.top_length,
         bottom_start: fragment.bottom_start,
         bottom_length: fragment.bottom_length,
     };
-    validate_digest_geometry(
+    if geometry.material.is_some() != fragment.origin.is_some() {
+        return Err("Actual source geometry and origin must be pinned together".into());
+    }
+    let selector = digest_selector(
         &fragment.source,
         &geometry,
-        draft.slots[index].reverse,
-        fragment.origin.is_some(),
+        draft.methods.rows[index].reverse,
     )?;
-    let (start, end) = digest_interval(&fragment.source, &geometry, draft.slots[index].reverse)?;
     let mut borrowed = draft
         .slots
         .iter()
@@ -2266,8 +2439,7 @@ pub fn set_digest_fragment(
         source: fragment.source,
         molecule: fragment.molecule.as_ref().clone(),
     }));
-    next.slots[index].start = start;
-    next.slots[index].end = end;
+    next.slots[index].selector = selector;
     next.slots[index].digest_geometry = Some(geometry);
     next.junction_edits.clear();
     next.methods.rows[index] = OverlapInput {
@@ -2276,7 +2448,7 @@ pub fn set_digest_fragment(
         catalog_selection: Some(fragment.selection),
         fragment: display_index.to_string(),
         repair: None,
-        reverse: next.slots[index].reverse,
+        reverse: next.methods.rows[index].reverse,
         ..Default::default()
     };
     next.sync_rows();
@@ -2649,6 +2821,7 @@ mod extension_draft_tests {
 // Both callers use the same borrowed preflights before copying source records.
 pub(crate) fn inputs_request(
     draft: &Draft,
+    workspace: Option<&collagene_core::workspace::Workspace>,
 ) -> Result<
     (
         Vec<PlanInput>,
@@ -2683,31 +2856,53 @@ pub(crate) fn inputs_request(
             })?);
         }
     }
+    let mut material_bindings = Vec::new();
+    let fragments = draft
+        .slots
+        .iter()
+        .enumerate()
+        .map(|(i, slot)| {
+            if matches!(
+                &slot.selector,
+                assembly_intent::Selector::MaterialStrandRange { .. }
+            ) {
+                let origin = draft.methods.rows[i]
+                    .run_origin
+                    .as_ref()
+                    .ok_or("Actual strand needs its saved source origin")?;
+                material_bindings.push(assembly_intent::MaterialBinding {
+                    input_id: ids[i].clone(),
+                    event: captures[i].source.binding.clone(),
+                    origin: origin.as_ref().clone(),
+                });
+            }
+            Ok(assembly_intent::Contribution {
+                role: roles[i].role.clone(),
+                input_id: ids[i].clone(),
+                selector: slot.selector.clone(),
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     let request = assembly_intent::Request {
         name: draft.name.clone(),
         circular: draft.circular,
-        fragments: draft
-            .slots
-            .iter()
-            .enumerate()
-            .map(|(i, s)| collagene_core::overlap_primer_design::Fragment {
-                role: roles[i].role.clone(),
-                input_id: ids[i].clone(),
-                start: s.start,
-                end: s.end,
-                reverse: s.reverse,
-            })
-            .collect(),
+        fragments,
+        material_bindings,
     };
     let borrowed = ids
         .iter()
         .zip(&captures)
         .map(|(id, c)| (id.as_str(), &c.molecule))
         .collect::<Vec<_>>();
-    assembly_intent::preflight(&borrowed, &request).map_err(|e| e.to_string())?;
+    assembly_intent::preflight(&borrowed, &request, workspace).map_err(|e| e.to_string())?;
     if !draft.junction_edits.is_empty() {
-        assembly_junction_edit::intent_preflight(&borrowed, &request, &draft.junction_edits)
-            .map_err(|e| e.to_string())?;
+        assembly_junction_edit::intent_preflight(
+            &borrowed,
+            &request,
+            &draft.junction_edits,
+            workspace,
+        )
+        .map_err(|e| e.to_string())?;
     }
     if !draft.substitutions.is_empty() {
         assembly_substitution_intent::source_preflight(
@@ -2717,12 +2912,17 @@ pub(crate) fn inputs_request(
                 junction_edits: draft.junction_edits.clone(),
                 substitutions: draft.substitutions.clone(),
             },
+            workspace,
         )
         .map_err(|e| e.to_string())?;
     }
     if !draft.edits.is_empty() {
-        assembly_edit_intent::source_preflight(&borrowed, &edit_request(draft, request.clone()))
-            .map_err(|e| e.to_string())?;
+        assembly_edit_intent::source_preflight(
+            &borrowed,
+            &edit_request(draft, request.clone()),
+            workspace,
+        )
+        .map_err(|e| e.to_string())?;
     }
     let inputs = ids
         .into_iter()
@@ -2763,6 +2963,7 @@ mod current_codec_tests {
             "/substitutions",
             "/edits",
             "/alternatives",
+            "/slots/0/selector",
             "/slots/0/captured",
             "/slots/0/digest_geometry",
             "/slots/0/anneal_bottom",
@@ -2806,4 +3007,73 @@ mod current_codec_tests {
         unknown["methods"]["obsolete_control"] = true.into();
         assert!(decode(&serde_json::to_vec(&unknown).unwrap()).is_err());
     }
+}
+
+pub(crate) fn selector_label(selector: &assembly_intent::Selector) -> String {
+    match selector {
+        assembly_intent::Selector::ReferenceRange {
+            start,
+            end,
+            reverse,
+        } => format!(
+            "Reference {}–{} · {}",
+            start.saturating_add(1),
+            end,
+            if *reverse { "reverse" } else { "forward" }
+        ),
+        assembly_intent::Selector::MaterialStrandRange {
+            strand, start, end, ..
+        } => format!(
+            "Actual {} strand {}–{} · 5′→3′",
+            match strand {
+                collagene_core::chemistry::Strand::Top => "top",
+                collagene_core::chemistry::Strand::Bottom => "bottom",
+            },
+            start + 1,
+            end
+        ),
+    }
+}
+pub(crate) fn orient_fragment(draft: &Draft, index: usize, reverse: bool) -> Result<Draft, String> {
+    let mut next = draft.clone();
+    let slot = next
+        .slots
+        .get(index)
+        .ok_or("Choose a source contribution first")?;
+    let selector = if let Some((capture, geometry)) =
+        slot.captured.as_ref().zip(slot.digest_geometry.as_ref())
+    {
+        digest_selector(&capture.source, geometry, reverse)?
+    } else {
+        match &slot.selector {
+            assembly_intent::Selector::ReferenceRange { start, end, .. } => {
+                assembly_intent::Selector::ReferenceRange {
+                    start: *start,
+                    end: *end,
+                    reverse,
+                }
+            }
+            assembly_intent::Selector::MaterialStrandRange { .. } => {
+                return Err("Actual strand orientation needs its pinned fragment geometry".into());
+            }
+        }
+    };
+    next.clear_slot_substitutions(index)?;
+    next.slots[index].selector = selector;
+    next.methods.rows[index].reverse = reverse;
+    next.junction_edits.clear();
+    next.sync_rows();
+    next.validate()?;
+    Ok(next)
+}
+pub(crate) fn require_reference_selectors(draft: &Draft) -> Result<(), String> {
+    if draft.slots.iter().any(|slot| {
+        matches!(
+            &slot.selector,
+            assembly_intent::Selector::MaterialStrandRange { .. }
+        )
+    }) {
+        return Err("This primer/library workflow requires original reference ranges. Actual-strand contributions remain available for direct assembly.".into());
+    }
+    Ok(())
 }

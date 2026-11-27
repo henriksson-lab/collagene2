@@ -78,7 +78,7 @@ fn options() -> DesignOptions {
     }
 }
 fn base(reverse: bool, circular: bool) -> Value {
-    json!({"name":"Explicit edited assembly","fragments":[{"role":"left","input_id":"l","start":0,"end":20,"reverse":false},{"role":"right","input_id":"r","start":0,"end":20,"reverse":reverse}],"circular":circular})
+    json!({"name":"Explicit edited assembly","fragments":[{"role":"left","input_id":"l","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},{"role":"right","input_id":"r","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":reverse}}}],"circular":circular,"material_bindings":[]})
 }
 fn edits() -> Value {
     json!([{"junction":0,"remove_left":2,"remove_right":2,"inserted":"GGA"}])
@@ -125,7 +125,7 @@ async fn declared_junction_trim_insert_targets_precede_primer_proposals_and_actu
         ),
     ] {
         let base = base(reverse, circular);
-        let args = json!({"inputs":inputs,"base":base,"edits":edits()});
+        let args = json!({"origin_workspace":null,"inputs":inputs,"base":base,"edits":edits()});
         let intent = call(&c, "build_edited_assembly_intent", args.clone()).await;
         assert_eq!(intent["state"], "intended-reference");
         assert_eq!(intent["verified"], false);
@@ -143,8 +143,8 @@ async fn declared_junction_trim_insert_targets_precede_primer_proposals_and_actu
         assert_eq!(built["inputs"], inputs);
         assert_eq!(built["intent"]["base_request"], base);
         assert_eq!(built["intent"]["edits"], edits());
-        assert_eq!(built["intent"]["fragments"][0]["start"], 0);
-        assert_eq!(built["intent"]["fragments"][0]["end"], 18);
+        assert_eq!(built["intent"]["fragments"][0]["retained_start"], 0);
+        assert_eq!(built["intent"]["fragments"][0]["retained_end"], 18);
         assert_eq!(built["intent"]["fragments"][0]["output_start"], 0);
         assert_eq!(built["intent"]["fragments"][0]["output_end"], 21);
         assert_eq!(built["intent"]["fragments"][1]["output_start"], 21);
@@ -195,7 +195,7 @@ async fn declared_junction_trim_insert_targets_precede_primer_proposals_and_actu
         let plain = call(
             &c,
             "build_assembly_intent",
-            json!({"inputs":inputs,"request":base}),
+            json!({"origin_workspace":null,"inputs":inputs,"request":base}),
         )
         .await;
         let wrong = call(
@@ -232,7 +232,7 @@ async fn stale_source_bindings_invalid_junctions_and_oversized_trim_never_publis
     reject(
         &c,
         "build_edited_assembly_intent",
-        json!({"inputs":stale,"base":base(false,false),"edits":edits()}),
+        json!({"origin_workspace":null,"inputs":stale,"base":base(false,false),"edits":edits()}),
     )
     .await;
     reject(
@@ -249,7 +249,7 @@ async fn stale_source_bindings_invalid_junctions_and_oversized_trim_never_publis
         reject(
             &c,
             "build_edited_assembly_intent",
-            json!({"inputs":inputs,"base":base(false,false),"edits":invalid}),
+            json!({"origin_workspace":null,"inputs":inputs,"base":base(false,false),"edits":invalid}),
         )
         .await;
     }
@@ -258,7 +258,7 @@ async fn stale_source_bindings_invalid_junctions_and_oversized_trim_never_publis
     reject(
         &c,
         "build_edited_assembly_intent",
-        json!({"inputs":inputs,"base":wrong_source,"edits":edits()}),
+        json!({"origin_workspace":null,"inputs":inputs,"base":wrong_source,"edits":edits()}),
     )
     .await;
     assert_eq!(

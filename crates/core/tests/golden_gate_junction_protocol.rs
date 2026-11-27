@@ -1,9 +1,9 @@
 use collagene_core::{
     Molecule, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
     assembly_junction_edit::Edit,
     golden_gate::GoldenGateEnzyme,
     golden_gate_junction_edit as edit,
-    overlap_primer_design::Fragment,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     verification::PlanInput,
 };
@@ -24,15 +24,18 @@ fn fixture() -> (Vec<PlanInput>, edit::Request) {
         name: "source-declared edited circle".into(),
         fragments: inputs
             .iter()
-            .map(|input| Fragment {
+            .map(|input| Contribution {
                 role: input.id.clone(),
                 input_id: input.id.clone(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             })
             .collect(),
         circular: true,
+        material_bindings: vec![],
     };
     let rows = base
         .fragments
@@ -40,7 +43,7 @@ fn fixture() -> (Vec<PlanInput>, edit::Request) {
         .map(|f| edit::Row::DesignPcr {
             role: f.role.clone(),
             input_id: f.input_id.clone(),
-            reverse: f.reverse,
+            reverse: false,
             forward_length: 8,
             reverse_length: 8,
         })

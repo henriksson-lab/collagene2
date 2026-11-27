@@ -779,7 +779,15 @@ mod tests {
             let workspace =
                 Workspace::from_documents("fixture", vec![molecule.clone()], 0).unwrap();
             let doc = &workspace.documents[0];
-            slot.end = molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = molecule.sequence.len();
+            }
             slot.captured = Some(Arc::new(CapturedSource {
                 source: SourceInfo {
                     binding: EventBinding {
@@ -1060,7 +1068,14 @@ mod tests {
             .is_err()
         );
         let mut pending = draft.clone();
-        pending.slots[0].start = 1;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut pending.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 1;
+        }
         pending.sync_rows();
         assert!(
             propose(
@@ -1072,7 +1087,7 @@ mod tests {
             .is_err()
         );
         assert!(draft == original);
-        assert_eq!(pending.slots[0].start, 1);
+        assert_eq!(pending.slots[0].selector.reference_interval().unwrap().0, 1);
     }
 
     #[test]
@@ -1165,7 +1180,14 @@ mod tests {
         let mut recovered = original.clone();
         recovered.name = "Unsaved recovery name".into();
         recovered.methods.rows[0].forward_tail = "RAW RECOVERY TEXT".into();
-        recovered.slots[0].start = 1;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut recovered.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 1;
+        }
         recovered.sync_rows();
         // Recovery may contain a working/saved discrepancy and a stale candidate
         // declaration. Both are raw intent; no save_active normalization occurs.

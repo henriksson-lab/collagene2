@@ -90,9 +90,12 @@ pub fn InversePcrPreparationView(
                 && d.junction_edits.is_empty()
                 && d.slots[0].captured.as_ref().is_some_and(|c| {
                     c.molecule.topology == collagene_core::Topology::Circular
-                        && d.slots[0].start == 0
-                        && d.slots[0].end == c.molecule.sequence.len()
-                        && !d.slots[0].reverse
+                        && d.slots[0].selector
+                            == (collagene_core::assembly_intent::Selector::ReferenceRange {
+                                start: 0,
+                                end: c.molecule.sequence.len(),
+                                reverse: false,
+                            })
                         && d.slots[0].digest_geometry.is_none()
                         && d.slots[0].anneal_bottom.is_none()
                 })

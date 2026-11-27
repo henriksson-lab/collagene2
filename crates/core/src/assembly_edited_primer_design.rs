@@ -85,6 +85,11 @@ fn size(value: &impl Serialize) -> Result<(), Error> {
 }
 fn shape(r: &Request) -> Result<(), Error> {
     let base = &r.intent.base.base;
+    if !base.material_bindings.is_empty() {
+        return Err(bad(
+            "primer proposals require reference ranges; material-strand primer templates are unsupported",
+        ));
+    }
     if base.fragments.is_empty()
         || base.fragments.len() > MAX_ROWS
         || base.name.len() > 1024
@@ -116,7 +121,11 @@ fn shape(r: &Request) -> Result<(), Error> {
     r.profile_options.validate()?;
     overlap_primer_design::options(&overlap_primer_design::Request {
         name: base.name.clone(),
-        fragments: base.fragments.clone(),
+        fragments: base
+            .fragments
+            .iter()
+            .map(crate::assembly_intent::Contribution::reference_fragment)
+            .collect::<Result<Vec<_>, _>>()?,
         overlap: r.overlap,
         circular: base.circular,
         primer_options: r.options.primer_options.clone(),
@@ -192,7 +201,7 @@ fn geometry(
     r: &Request,
 ) -> Result<(Vec<RowGeometry>, Vec<TailDeclaration>), Error> {
     shape(r)?;
-    assembly_edit_intent::source_preflight(inputs, &r.intent)?;
+    assembly_edit_intent::source_preflight(inputs, &r.intent, None)?;
     let base = &r.intent.base.base;
     let sources = inputs.iter().copied().collect::<BTreeMap<_, _>>();
     let lengths = base
@@ -227,7 +236,9 @@ fn geometry(
         }
         inserts[j.junction] = text;
     }
-    for (original, f) in base.fragments.iter().zip(adjusted.fragments) {
+    for (original, f) in base.fragments.iter().zip(adjusted) {
+        let original = original.reference_fragment()?;
+        let f = f.reference_fragment()?;
         let source = sources[f.input_id.as_str()];
         let turn = if source.topology == Topology::Circular && f.start < original.start {
             source.sequence.len()
@@ -701,7 +712,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         materialized: material,
     };
     // Intent is a separate source/literal construction before molecular proposals.
-    let intent = assembly_edit_intent::build(inputs, &r.intent)?;
+    let intent = assembly_edit_intent::build(inputs, &r.intent, None)?;
     let mut rows = Vec::with_capacity(geometry.len());
     let mut fragments = Vec::with_capacity(geometry.len());
     for (row, tail) in geometry.iter().zip(&tails) {
@@ -1083,6 +1094,7 @@ impl Report {
             .validate_binding(&assembly_edit_intent::intent_revision(
                 inputs,
                 &self.request.intent,
+                None,
             )?)?;
         let borrowed = inputs
             .iter()

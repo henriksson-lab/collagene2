@@ -866,27 +866,28 @@ pub(crate) fn resolve_validated(
     let fragments = choices
         .iter()
         .zip(&identities)
-        .map(
-            |((_, choice), (id, role))| crate::overlap_primer_design::Fragment {
-                role: role.clone(),
-                input_id: id.clone(),
+        .map(|((_, choice), (id, role))| assembly_intent::Contribution {
+            role: role.clone(),
+            input_id: id.clone(),
+            selector: assembly_intent::Selector::ReferenceRange {
                 start: choice.start,
                 end: choice.end,
                 reverse: choice.reverse,
             },
-        )
+        })
         .collect::<Vec<_>>();
     let request = assembly_intent::Request {
         name: construct.name.clone(),
         fragments,
         circular,
+        material_bindings: vec![],
     };
     let native = ids
         .iter()
         .zip(&originals)
         .map(|(id, m)| (id.as_str(), *m))
         .collect::<Vec<_>>();
-    assembly_intent::preflight(&native, &request)?;
+    assembly_intent::preflight(&native, &request, None)?;
     let inputs = ids
         .iter()
         .zip(&originals)
@@ -912,7 +913,7 @@ pub(crate) fn resolve_validated(
         ),
         TargetDeclaration::OriginalRegions { junction_edits } => {
             if junction_edits.is_empty() {
-                let intent = assembly_intent::build(&inputs, &request)?;
+                let intent = assembly_intent::build(&inputs, &request, None)?;
                 (
                     intent.target.clone(),
                     None,
@@ -920,7 +921,7 @@ pub(crate) fn resolve_validated(
                 )
             } else {
                 let intent =
-                    assembly_junction_edit::build_intent(&inputs, &request, junction_edits)?;
+                    assembly_junction_edit::build_intent(&inputs, &request, junction_edits, None)?;
                 (
                     intent.target.clone(),
                     None,

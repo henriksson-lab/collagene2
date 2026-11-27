@@ -47,6 +47,11 @@ fn rc(s: &str) -> Result<String, Error> {
     }
 }
 pub(crate) fn dimensions(r: &Request) -> Result<usize, Error> {
+    if !r.base.material_bindings.is_empty() {
+        return Err(bad(
+            "primer proposals require reference ranges; material-strand primer templates are unsupported",
+        ));
+    }
     let p = r.enzyme.profile();
     let k = usize::try_from(p.bottom_cut - p.top_cut).map_err(|_| Error::TooLarge)?;
     let spacer = usize::try_from(p.top_cut)
@@ -77,6 +82,7 @@ pub(crate) fn dimensions(r: &Request) -> Result<usize, Error> {
         }
     }
     for (row, f) in r.rows.iter().zip(&r.base.fragments) {
+        let f = f.reference_fragment()?;
         let (role, input, reverse) = match row {
             Row::Retain(retained) => {
                 retained_raw(retained)?;
@@ -172,12 +178,12 @@ fn lengths(inputs: &[(&str, &Molecule)], r: &Request) -> Result<Vec<usize>, Erro
 fn right_fusion(
     inputs: &[(&str, &Molecule)],
     r: &Request,
-    adjusted: &assembly_intent::Request,
+    adjusted: &[crate::overlap_primer_design::Fragment],
     i: usize,
     k: usize,
 ) -> Result<String, Error> {
     if i + 1 < r.rows.len() || r.base.circular {
-        let next = &adjusted.fragments[(i + 1) % r.rows.len()];
+        let next = &adjusted[(i + 1) % r.rows.len()];
         if next.end - next.start < k {
             return Err(bad(
                 "downstream adjusted core is shorter than the required fusion",
@@ -204,8 +210,11 @@ fn right_fusion(
 /// Borrowed model/catalog/work guards before source copies and scientific scans.
 pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
     let k = dimensions(r)?;
-    junction::intent_preflight(inputs, &r.base, &r.edits)?;
-    let adjusted = junction::adjustment(&r.base, &r.edits, &lengths(inputs, r)?)?;
+    junction::intent_preflight(inputs, &r.base, &r.edits, None)?;
+    let adjusted = junction::adjustment(&r.base, &r.edits, &lengths(inputs, r)?)?
+        .iter()
+        .map(assembly_intent::Contribution::reference_fragment)
+        .collect::<Result<Vec<_>, _>>()?;
     let inserted = junction::inserts(&r.base, &r.edits)?;
     let catalog = catalog_digest::builtin_catalog()?;
     let mut retained = Vec::new();
@@ -222,7 +231,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
     let tail = r.clamp.len() + p.recognition.len() + r.spacer.len();
     let mut work = 0usize;
     let mut output = 0usize;
-    for (i, (row, f)) in r.rows.iter().zip(&adjusted.fragments).enumerate() {
+    for (i, (row, f)) in r.rows.iter().zip(&adjusted).enumerate() {
         let Row::DesignPcr {
             forward_length,
             reverse_length,
@@ -273,7 +282,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
     }
     // Whole-original uniqueness is the existing Type IIS preparation profile,
     // and applies only to explicitly selected rows.
-    for (row, f) in r.rows.iter().zip(&adjusted.fragments) {
+    for (row, f) in r.rows.iter().zip(&adjusted) {
         if matches!(row, Row::DesignPcr { .. }) {
             let source = inputs
                 .iter()
@@ -331,7 +340,12 @@ fn segments(r: &Request, fusion: String, inserted: String) -> TailSegments {
 }
 pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
     let context_revision = design_revision(inputs, r)?;
-    let intent = junction::build_intent(inputs, &r.base, &r.edits)?;
+    let intent = junction::build_intent(inputs, &r.base, &r.edits, None)?;
+    let adjusted = intent
+        .adjusted_fragments
+        .iter()
+        .map(assembly_intent::Contribution::reference_fragment)
+        .collect::<Result<Vec<_>, _>>()?;
     let insert = junction::inserts(&r.base, &r.edits)?;
     let k = dimensions(r)?;
     let catalog = catalog_digest::builtin_catalog()?;
@@ -348,12 +362,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         .map(|i| (i.id.as_str(), &i.molecule))
         .collect::<Vec<_>>();
     let mut specs = Vec::new();
-    for (i, (row, f)) in r
-        .rows
-        .iter()
-        .zip(&intent.adjusted_request.fragments)
-        .enumerate()
-    {
+    for (i, (row, f)) in r.rows.iter().zip(&adjusted).enumerate() {
         if let Row::DesignPcr {
             forward_length,
             reverse_length,
@@ -368,7 +377,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
                 reverse: f.reverse,
                 forward_length: *forward_length,
                 reverse_length: *reverse_length,
-                right_overhang: right_fusion(&borrowed, r, &intent.adjusted_request, i, k)?,
+                right_overhang: right_fusion(&borrowed, r, &adjusted, i, k)?,
             });
         }
     }
@@ -382,12 +391,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
     let mut recipe_rows = Vec::with_capacity(r.rows.len());
     let mut designs = Vec::with_capacity(r.rows.len());
     let mut retained_rows = Vec::new();
-    for (i, (row, f)) in r
-        .rows
-        .iter()
-        .zip(&intent.adjusted_request.fragments)
-        .enumerate()
-    {
+    for (i, (row, f)) in r.rows.iter().zip(&adjusted).enumerate() {
         match row {
             Row::Retain(row) => {
                 recipe_rows.push(row.clone());
@@ -537,6 +541,7 @@ impl Report {
                     ..
                 } => {
                     let f = &self.intent.fragments[i];
+                    let geometry = self.intent.adjusted_fragments[i].reference_fragment()?;
                     let evidence = design
                         .as_ref()
                         .ok_or_else(|| bad("selected design missing"))?;
@@ -555,9 +560,9 @@ impl Report {
                             .clone()
                             .ok_or_else(|| bad("missing terminal fusion"))?
                     };
-                    let core_length = f.end - f.start;
+                    let core_length = geometry.end - geometry.start;
                     if core_length <= k
-                        || core_length - (if f.reverse { k } else { 0 })
+                        || core_length - (if geometry.reverse { k } else { 0 })
                             < *forward_length + *reverse_length
                     {
                         return Err(bad(
@@ -576,7 +581,7 @@ impl Report {
                             != assembly_recipe::hash(&expected_selection)?
                         || row.source.role != f.role
                         || row.source.input_id != f.input_id
-                        || row.source.reverse != f.reverse
+                        || row.source.reverse != geometry.reverse
                         || row.treatment.is_some()
                     {
                         return Err(bad(
@@ -585,12 +590,12 @@ impl Report {
                     }
                     let ft = segments(
                         &self.request,
-                        if f.reverse {
+                        if geometry.reverse {
                             rc(&fusion)?
                         } else {
                             String::new()
                         },
-                        if f.reverse {
+                        if geometry.reverse {
                             rc(&inserted[i])?
                         } else {
                             String::new()
@@ -598,12 +603,12 @@ impl Report {
                     );
                     let rt = segments(
                         &self.request,
-                        if f.reverse {
+                        if geometry.reverse {
                             wanted[..k].into()
                         } else {
                             rc(&fusion)?
                         },
-                        if f.reverse {
+                        if geometry.reverse {
                             String::new()
                         } else {
                             rc(&inserted[i])?

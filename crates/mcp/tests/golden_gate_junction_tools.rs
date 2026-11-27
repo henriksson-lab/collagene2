@@ -68,7 +68,7 @@ const A: &str = "ATGACCCCGGGGTTTCCAGA";
 const B: &str = "ATCCGTTAGCGACCTTGGAA";
 const TARGET: &str = "ATGACCCCGGGGTTTCCAGAGCATCCGTTAGCGACCTTGGAA";
 fn base() -> Value {
-    json!({"name":"Selective circular Type IIS junction","fragments":[{"role":"left","input_id":"a","start":0,"end":20,"reverse":false},{"role":"manual","input_id":"b","start":0,"end":20,"reverse":false}],"circular":true})
+    json!({"name":"Selective circular Type IIS junction","fragments":[{"role":"left","input_id":"a","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},{"role":"manual","input_id":"b","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}}],"circular":true,"material_bindings":[]})
 }
 fn edits() -> Value {
     json!([{"junction":0,"remove_left":0,"remove_right":0,"inserted":"GC"}])
@@ -108,7 +108,7 @@ async fn inserted_junction_replans_only_selected_type_iis_pcr_and_preserves_manu
     let expected = call(
         &c,
         "build_edited_assembly_intent",
-        json!({"inputs":inputs,"base":base(),"edits":edits()}),
+        json!({"origin_workspace":null,"inputs":inputs,"base":base(),"edits":edits()}),
     )
     .await;
     assert_eq!(expected["state"], "intended-reference");
@@ -208,7 +208,7 @@ async fn inserted_junction_replans_only_selected_type_iis_pcr_and_preserves_manu
     let wrong_target = call(
         &c,
         "build_assembly_intent",
-        json!({"inputs":inputs,"request":base()}),
+        json!({"origin_workspace":null,"inputs":inputs,"request":base()}),
     )
     .await;
     let wrong = call(

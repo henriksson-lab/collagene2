@@ -5,9 +5,10 @@ use collagene_core::{
     analysis::Primer,
     assembly_edit_intent::{self, Edit},
     assembly_edited_primer_design::{Report, Request, RoleOrigin},
-    assembly_intent, assembly_junction_edit, assembly_substitution_intent, cloning_outputs,
+    assembly_intent,
+    assembly_intent::{Contribution, Selector},
+    assembly_junction_edit, assembly_substitution_intent, cloning_outputs,
     overlap_extension_primer_design::Options,
-    overlap_primer_design::Fragment,
     primers::DesignOptions,
     run_lineage::{EventBinding, InputEventBinding},
     run_material::{self, Selection},
@@ -28,22 +29,27 @@ fn request() -> Request {
                 base: assembly_intent::Request {
                     name: "Independent whole edited assembly".into(),
                     fragments: vec![
-                        Fragment {
+                        Contribution {
                             role: "insert".into(),
                             input_id: "original".into(),
-                            start: 0,
-                            end: 40,
-                            reverse: false,
+                            selector: Selector::ReferenceRange {
+                                start: 0,
+                                end: 40,
+                                reverse: false,
+                            },
                         },
-                        Fragment {
+                        Contribution {
                             role: "vector".into(),
                             input_id: "vector".into(),
-                            start: 0,
-                            end: 32,
-                            reverse: false,
+                            selector: Selector::ReferenceRange {
+                                start: 0,
+                                end: 32,
+                                reverse: false,
+                            },
                         },
                     ],
                     circular: false,
+                    material_bindings: vec![],
                 },
                 junction_edits: vec![assembly_junction_edit::Edit {
                     junction: 0,
@@ -205,7 +211,7 @@ async fn whole_proposal_uses_literal_junction_and_native_oe_then_separate_intent
     let intended = call(
         &client,
         "build_contribution_edit_intent",
-        json!({"inputs":inputs,"request":request().intent}),
+        json!({"origin_workspace":null,"inputs":inputs,"request":request().intent}),
     )
     .await;
     assert_eq!(

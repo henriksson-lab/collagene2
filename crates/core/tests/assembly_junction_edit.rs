@@ -1,8 +1,8 @@
 use collagene_core::{
     Feature, Location, Molecule, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
     assembly_junction_edit::*,
     assembly_recipe::{self, Preparation},
-    overlap_primer_design::Fragment,
     primers::DesignOptions,
     verification::{self, PlanInput, Status},
 };
@@ -19,21 +19,26 @@ fn input(id: &str, dna: &str) -> PlanInput {
 fn fixture() -> (Vec<PlanInput>, Request) {
     let inputs = vec![input("l", L), input("r", R)];
     let base = assembly_intent::Request {
+        material_bindings: vec![],
         name: "Explicit edited assembly".into(),
         fragments: vec![
-            Fragment {
+            Contribution {
                 role: "left".into(),
                 input_id: "l".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
-            Fragment {
+            Contribution {
                 role: "right".into(),
                 input_id: "r".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
         ],
         circular: false,
@@ -76,16 +81,19 @@ fn literal_linear_terminal_intent_maps_last_suffix_without_extending_source_anno
     }
     let before = serde_json::to_value(&inputs).unwrap();
     let base = assembly_intent::Request {
+        material_bindings: vec![],
         name: "Independently declared linear target".into(),
         circular: false,
         fragments: inputs
             .iter()
-            .map(|source| Fragment {
+            .map(|source| Contribution {
                 role: source.id.clone(),
                 input_id: source.id.clone(),
-                start: 0,
-                end: 6,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 6,
+                    reverse: false,
+                },
             })
             .collect(),
     };
@@ -110,9 +118,10 @@ fn literal_linear_terminal_intent_maps_last_suffix_without_extending_source_anno
             .collect::<Vec<_>>(),
         &base,
         &edits,
+        None,
     )
     .unwrap();
-    let intent = build_intent(&inputs, &base, &edits).unwrap();
+    let intent = build_intent(&inputs, &base, &edits, None).unwrap();
     assert_eq!(intent.target.sequence.as_str(), "AAACCCTGGGTTTA");
     assert_eq!(intent.target.topology, Topology::Linear);
     assert_eq!(
@@ -149,13 +158,13 @@ fn literal_linear_terminal_intent_maps_last_suffix_without_extending_source_anno
             .any(|feature| feature.needs_review && feature.location == Location::range(13, 14))
     );
     intent
-        .validate_binding(&intent_revision(&inputs, &base, &edits).unwrap())
+        .validate_binding(&intent_revision(&inputs, &base, &edits, None).unwrap())
         .unwrap();
     let mut other = edits.clone();
     other[1].inserted = "G".into();
     assert!(
         intent
-            .validate_binding(&intent_revision(&inputs, &base, &other).unwrap())
+            .validate_binding(&intent_revision(&inputs, &base, &other, None).unwrap())
             .is_err()
     );
     assert_eq!(serde_json::to_value(&inputs).unwrap(), before);
@@ -177,22 +186,27 @@ fn terminal_trim_respects_reverse_origin_spanning_core_without_wrapping_into_fir
     });
     inputs[1].revision = inputs[1].molecule.revision();
     let base = assembly_intent::Request {
+        material_bindings: vec![],
         name: "Original digest origins retained".into(),
         circular: false,
         fragments: vec![
-            Fragment {
+            Contribution {
                 role: "first".into(),
                 input_id: "first".into(),
-                start: 6,
-                end: 12,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 6,
+                    end: 12,
+                    reverse: false,
+                },
             },
-            Fragment {
+            Contribution {
                 role: "last".into(),
                 input_id: "last".into(),
-                start: 6,
-                end: 12,
-                reverse: true,
+                selector: Selector::ReferenceRange {
+                    start: 6,
+                    end: 12,
+                    reverse: true,
+                },
             },
         ],
     };
@@ -210,20 +224,36 @@ fn terminal_trim_respects_reverse_origin_spanning_core_without_wrapping_into_fir
             inserted: "C".into(),
         },
     ];
-    let intent = build_intent(&inputs, &base, &edits).unwrap();
+    let intent = build_intent(&inputs, &base, &edits, None).unwrap();
     // First unrolled core TTAACC, literal G, reverse trimmed core GGTT, literal C.
     assert_eq!(intent.target.sequence.as_str(), "TTAACCGGGTTC");
     assert_eq!(
         (
-            intent.adjusted_request.fragments[0].start,
-            intent.adjusted_request.fragments[0].end
+            intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .0,
+            intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .1
         ),
         (6, 12)
     );
     assert_eq!(
         (
-            intent.adjusted_request.fragments[1].start,
-            intent.adjusted_request.fragments[1].end
+            intent.adjusted_fragments[1]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .0,
+            intent.adjusted_fragments[1]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .1
         ),
         (0, 4)
     );
@@ -236,10 +266,10 @@ fn terminal_trim_respects_reverse_origin_spanning_core_without_wrapping_into_fir
     assert_eq!(feature.location.spans(), vec![(7, 11, true)]);
     let mut downstream = edits.clone();
     downstream[1].remove_right = 1;
-    assert!(build_intent(&inputs, &base, &downstream).is_err());
+    assert!(build_intent(&inputs, &base, &downstream, None).is_err());
     let mut empty_core = edits;
     empty_core[1].remove_left = 6;
-    assert!(build_intent(&inputs, &base, &empty_core).is_err());
+    assert!(build_intent(&inputs, &base, &empty_core, None).is_err());
 }
 
 #[test]
@@ -251,7 +281,7 @@ fn terminal_literal_is_intent_only_and_not_a_silent_overlap_primer_tail() {
         remove_right: 0,
         inserted: "A".into(),
     });
-    assert!(build_intent(&inputs, &request.base, &request.edits).is_ok());
+    assert!(build_intent(&inputs, &request.base, &request.edits, None).is_ok());
     assert!(
         preflight(
             &inputs
@@ -265,7 +295,7 @@ fn terminal_literal_is_intent_only_and_not_a_silent_overlap_primer_tail() {
     assert!(design_revision(&inputs, &request).is_err());
     assert!(design(&inputs, &request).is_err());
     request.edits[1].remove_right = 1;
-    assert!(intent_revision(&inputs, &request.base, &request.edits).is_err());
+    assert!(intent_revision(&inputs, &request.base, &request.edits, None).is_err());
 }
 fn verify(inputs: &[PlanInput], r: &Report) {
     let compiled = assembly_recipe::compile(inputs, &r.intent.target, &r.recipe).unwrap();
@@ -292,15 +322,31 @@ fn literal_linear_trim_and_insert_updates_independent_intent_and_full_tail_metri
     );
     assert_eq!(
         (
-            proposed.intent.adjusted_request.fragments[0].start,
-            proposed.intent.adjusted_request.fragments[0].end
+            proposed.intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .0,
+            proposed.intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .1
         ),
         (0, 18)
     );
     assert_eq!(
         (
-            proposed.intent.adjusted_request.fragments[1].start,
-            proposed.intent.adjusted_request.fragments[1].end
+            proposed.intent.adjusted_fragments[1]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .0,
+            proposed.intent.adjusted_fragments[1]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .1
         ),
         (2, 20)
     );
@@ -349,7 +395,14 @@ fn literal_linear_trim_and_insert_updates_independent_intent_and_full_tail_metri
 #[test]
 fn reverse_row_uses_adjusted_original_coordinates_and_original_forward_tail() {
     let (inputs, mut r) = fixture();
-    r.base.fragments[0].reverse = true;
+    let Selector::ReferenceRange {
+        reverse: selected_reverse,
+        ..
+    } = &mut r.base.fragments[0].selector
+    else {
+        panic!("reference selector")
+    };
+    *selected_reverse = true;
     let p = design(&inputs, &r).unwrap();
     assert_eq!(
         p.intent.target.sequence.as_str(),
@@ -357,8 +410,16 @@ fn reverse_row_uses_adjusted_original_coordinates_and_original_forward_tail() {
     );
     assert_eq!(
         (
-            p.intent.adjusted_request.fragments[0].start,
-            p.intent.adjusted_request.fragments[0].end
+            p.intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .0,
+            p.intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .1
         ),
         (2, 20)
     );
@@ -392,13 +453,16 @@ fn circle_closure_suffix_preserves_the_first_adjusted_core_origin() {
     original.molecule.topology = Topology::Circular;
     original.revision = original.molecule.revision();
     let base = assembly_intent::Request {
+        material_bindings: vec![],
         name: "Trim beyond original origin".into(),
-        fragments: vec![Fragment {
+        fragments: vec![Contribution {
             role: "wrap".into(),
             input_id: "wrap".into(),
-            start: 6,
-            end: 12,
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 6,
+                end: 12,
+                reverse: false,
+            },
         }],
         circular: true,
     };
@@ -411,13 +475,22 @@ fn circle_closure_suffix_preserves_the_first_adjusted_core_origin() {
             remove_right: 3,
             inserted: "G".into(),
         }],
+        None,
     )
     .unwrap();
     assert_eq!(intent.target.sequence.as_str(), "ACG");
     assert_eq!(
         (
-            intent.adjusted_request.fragments[0].start,
-            intent.adjusted_request.fragments[0].end
+            intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .0,
+            intent.adjusted_fragments[0]
+                .selector
+                .reference_interval()
+                .unwrap()
+                .1
         ),
         (1, 3)
     );
@@ -439,7 +512,7 @@ fn trimmed_annotations_are_reviewed_and_inserted_calls_are_explicitly_synthetic(
     });
     inputs[0].revision = inputs[0].molecule.revision();
     let before = serde_json::to_value(&inputs).unwrap();
-    let intent = build_intent(&inputs, &r.base, &r.edits).unwrap();
+    let intent = build_intent(&inputs, &r.base, &r.edits, None).unwrap();
     assert!(
         intent
             .target
@@ -465,16 +538,18 @@ fn trimmed_annotations_are_reviewed_and_inserted_calls_are_explicitly_synthetic(
 #[test]
 fn stale_context_duplicate_overtrim_ambiguity_and_full_tail_work_profiles_fail_honestly() {
     let (inputs, r) = fixture();
-    let intent = build_intent(&inputs, &r.base, &r.edits).unwrap();
+    let intent = build_intent(&inputs, &r.base, &r.edits, None).unwrap();
     let mut changed = r.clone();
     changed.edits[0].inserted = "GGT".into();
     assert_ne!(
         intent.context_revision,
-        intent_revision(&inputs, &changed.base, &changed.edits).unwrap()
+        intent_revision(&inputs, &changed.base, &changed.edits, None).unwrap()
     );
     assert!(
         intent
-            .validate_binding(&intent_revision(&inputs, &changed.base, &changed.edits).unwrap())
+            .validate_binding(
+                &intent_revision(&inputs, &changed.base, &changed.edits, None).unwrap()
+            )
             .is_err()
     );
     let mut stale = inputs.clone();
@@ -489,16 +564,17 @@ fn stale_context_duplicate_overtrim_ambiguity_and_full_tail_work_profiles_fail_h
                 .map(|i| (i.id.as_str(), &i.molecule))
                 .collect::<Vec<_>>(),
             &duplicate.base,
-            &duplicate.edits
+            &duplicate.edits,
+            None
         )
         .is_err()
     );
     let mut over = r.clone();
     over.edits[0].remove_left = 20;
-    assert!(build_intent(&inputs, &over.base, &over.edits).is_err());
+    assert!(build_intent(&inputs, &over.base, &over.edits, None).is_err());
     let mut ambiguous = r.clone();
     ambiguous.edits[0].inserted = "N".into();
-    assert!(build_intent(&inputs, &ambiguous.base, &ambiguous.edits).is_ok());
+    assert!(build_intent(&inputs, &ambiguous.base, &ambiguous.edits, None).is_ok());
     assert!(design(&inputs, &ambiguous).is_err());
     let mut wide = r.clone();
     wide.primer_options.max_length = 71;
@@ -514,7 +590,7 @@ fn stale_context_duplicate_overtrim_ambiguity_and_full_tail_work_profiles_fail_h
     );
     let mut long = r.clone();
     long.edits[0].inserted = "A".repeat(201);
-    assert!(build_intent(&inputs, &long.base, &long.edits).is_err());
+    assert!(build_intent(&inputs, &long.base, &long.edits, None).is_err());
     let mut tails = r;
     tails.primer_options.forward_tail = "AC".into();
     assert!(design(&inputs, &tails).is_err());

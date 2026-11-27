@@ -181,7 +181,15 @@ mod tests {
         let mut draft = Draft::default();
         draft.circular = false;
         draft.methods.mode = Mode::GoldenGate;
-        draft.slots[1].reverse = true;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange {
+                reverse: value, ..
+            } = &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = true;
+        }
         draft.sync_rows();
         draft.methods.source_roles = Some(vec![
             Role {
@@ -206,6 +214,7 @@ mod tests {
         }
         draft.methods.rows[1].right_fusion = "CGTA".into();
         let base = assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: "Independent original intent".into(),
             circular: false,
             fragments: draft
@@ -216,12 +225,14 @@ mod tests {
                 .iter()
                 .enumerate()
                 .map(
-                    |(index, role)| collagene_core::overlap_primer_design::Fragment {
+                    |(index, role)| collagene_core::assembly_intent::Contribution {
                         role: role.role.clone(),
                         input_id: role.input_id.clone(),
-                        start: 0,
-                        end: 80,
-                        reverse: index == 1,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: 0,
+                            end: 80,
+                            reverse: index == 1,
+                        },
                     },
                 )
                 .collect(),
@@ -376,6 +387,7 @@ pub fn base_request(
     edits: Vec<collagene_core::assembly_junction_edit::Edit>,
     regenerate: &[bool],
 ) -> Result<collagene_core::golden_gate_junction_edit::Request, String> {
+    crate::assembly_draft_model::require_reference_selectors(before)?;
     use crate::cloning_methods_model::{Mode, OverlapInput};
     use collagene_core::golden_gate_junction_edit::{Request, Row};
     if before.methods.mode != Mode::GoldenGate
@@ -393,7 +405,7 @@ pub fn base_request(
         if *selected {
             retained.rows[index] = OverlapInput {
                 document: index,
-                reverse: before.slots[index].reverse,
+                reverse: before.methods.rows[index].reverse,
                 ..Default::default()
             };
         }

@@ -1,7 +1,7 @@
 use collagene_core::{
     Molecule, Topology,
     assembly_intent::{self, Request as IntentRequest},
-    overlap_primer_design::Fragment,
+    assembly_intent::{Contribution, Selector},
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     verification::PlanInput,
 };
@@ -15,22 +15,26 @@ fn declared_reference_transport_binds_source_and_regions_and_requires_its_new_he
     }];
     let intent = IntentRequest {
         name: "selected prefix".into(),
-        fragments: vec![Fragment {
+        fragments: vec![Contribution {
             role: "backbone".into(),
             input_id: "source-1".into(),
-            start: 0,
-            end: 4,
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: 4,
+                reverse: false,
+            },
         }],
         circular: false,
+        material_bindings: vec![],
     };
-    let revision = assembly_intent::intent_revision(&inputs, &intent).unwrap();
+    let revision = assembly_intent::intent_revision(&inputs, &intent, None).unwrap();
     let request = Request {
         id: 998,
         revision: revision.clone(),
         job: AnalysisJob::BuildAssemblyIntent {
             inputs: inputs.clone(),
             request: intent.clone(),
+            workspace: None,
         },
     };
     let bytes = protocol::encode_request(&request).unwrap();
@@ -57,13 +61,18 @@ fn declared_reference_transport_binds_source_and_regions_and_requires_its_new_he
         assert!(protocol::decode_response(&downgraded).is_err());
     }
     let mut changed = intent;
-    changed.fragments[0].end = 5;
+    if let Selector::ReferenceRange { end, .. } = &mut changed.fragments[0].selector {
+        *end = 5;
+    } else {
+        panic!("reference selector required by fixture");
+    }
     let bytes = protocol::encode_request(&Request {
         id: 998,
         revision,
         job: AnalysisJob::BuildAssemblyIntent {
             inputs,
             request: changed,
+            workspace: None,
         },
     })
     .unwrap();

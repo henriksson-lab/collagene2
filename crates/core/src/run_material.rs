@@ -14,8 +14,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub use crate::run_material_capsule::{
     Capsule, MAX_AGGREGATE_ORIGIN_BYTES, MaterialOriginRef, ReplayEvidence, capsule,
-    capsules_preflight, material_capsules_preflight, material_origins_preflight, plan_preflight,
-    validate_input_origins, validate_plan_origins, visit_candidate_plans,
+    capsules_preflight, documentary_material_origins, material_capsules_preflight,
+    material_origins_preflight, plan_preflight, validate_input_origins, validate_plan_origins,
+    visit_candidate_plans,
 };
 
 pub const ENGINE_VERSION: &str = "run-material-1";
@@ -573,14 +574,17 @@ pub fn originating_products(
     Ok(choices)
 }
 
-/// Reconstruct the complete originating run against its original independent
-/// target. All original exact input events are checked by `load_run`; every
-/// recorded output must match this pass. Neither recorded status nor imported
-/// duplex/modification summaries grant material authority.
-pub fn reconstruct(workspace: &Workspace, selection: &Selection) -> Result<FreshProduct, Error> {
+/// Exact documentary selected-event attestation shared by construction/replay.
+/// No verifier or material state is evaluated here.
+pub(crate) fn selected_reference<'a>(
+    workspace: &'a Workspace,
+    selection: &Selection,
+    run: &run_lineage::RunRecord,
+) -> Result<&'a Molecule, Error> {
     shape(selection)?;
-    let fingerprint = run_lineage::workspace_fingerprint(workspace)?;
-    let run = run_lineage::load_run(workspace, &selection.run_id)?;
+    if run.run_id != selection.run_id {
+        return Err(bad("selected run differs"));
+    }
     let binding = run
         .products
         .get(selection.step_index)
@@ -598,6 +602,18 @@ pub fn reconstruct(workspace: &Workspace, selection: &Selection) -> Result<Fresh
             "selected event is not an unambiguous name-only descendant of this run product; intervening edits cannot restore material authority",
         ));
     }
+    Ok(reference)
+}
+
+/// Reconstruct the complete originating run against its original independent
+/// target. All original exact input events are checked by `load_run`; every
+/// recorded output must match this pass. Neither recorded status nor imported
+/// duplex/modification summaries grant material authority.
+pub fn reconstruct(workspace: &Workspace, selection: &Selection) -> Result<FreshProduct, Error> {
+    shape(selection)?;
+    let fingerprint = run_lineage::workspace_fingerprint(workspace)?;
+    let run = run_lineage::load_run(workspace, &selection.run_id)?;
+    let reference = selected_reference(workspace, selection, &run)?;
     let target = resolve(workspace, &run.target)?;
     let (report, mut states) = verification::verify_with_tracked(&run.plan, target);
     if report.status == Status::Invalid

@@ -80,7 +80,7 @@ async fn declared_substitutions_keep_distinct_repeated_roles_and_reject_stale_so
     let source = json!({"id":d["id"],"revision":d["revision"]});
     // Two independent copies of the same selected source bases have different
     // roles. Their position1 requirements differ without mutating the original.
-    let args = json!({"inputs":[{"id":"source","document":source}],"request":{"base":{"name":"Independent two-copy mutant requirement","fragments":[{"role":"left","input_id":"source","start":0,"end":4,"reverse":false},{"role":"right","input_id":"source","start":0,"end":4,"reverse":false}],"circular":false},"junction_edits":[],"substitutions":[{"role":"left","offset":1,"expected":"A","replacement":"T"},{"role":"right","offset":1,"expected":"A","replacement":"G"}]}});
+    let args = json!({"origin_workspace":null,"inputs":[{"id":"source","document":source}],"request":{"base":{"name":"Independent two-copy mutant requirement","fragments":[{"role":"left","input_id":"source","selector":{"ReferenceRange":{"start":0,"end":4,"reverse":false}}},{"role":"right","input_id":"source","selector":{"ReferenceRange":{"start":0,"end":4,"reverse":false}}}],"circular":false,"material_bindings":[]},"junction_edits":[],"substitutions":[{"role":"left","offset":1,"expected":"A","replacement":"T"},{"role":"right","offset":1,"expected":"A","replacement":"G"}]}});
     let result = call(&c, "build_substituted_assembly_intent", args.clone()).await;
     assert_eq!(result["state"], "intended-reference");
     assert_eq!(result["verified"], false);
@@ -96,8 +96,20 @@ async fn declared_substitutions_keep_distinct_repeated_roles_and_reject_stale_so
     assert_eq!(report.applied.len(), 2);
     assert_eq!(report.applied[0].role, "left");
     assert_eq!(report.applied[1].role, "right");
-    assert_eq!(report.applied[0].source_position, 1);
-    assert_eq!(report.applied[1].source_position, 1);
+    assert_eq!(
+        report.applied[0].source_position,
+        collagene_core::assembly_intent::ContributionPosition::Reference {
+            position: 1,
+            reverse: false
+        }
+    );
+    assert_eq!(
+        report.applied[1].source_position,
+        collagene_core::assembly_intent::ContributionPosition::Reference {
+            position: 1,
+            reverse: false
+        }
+    );
     assert_eq!(report.applied[0].output_position, 1);
     assert_eq!(report.applied[1].output_position, 5);
     for change in &report.applied {

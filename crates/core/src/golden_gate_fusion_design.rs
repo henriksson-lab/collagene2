@@ -138,7 +138,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
     shape(r)?;
     // Fusion preparation does not model independently declared outer termini.
     junction::inserts(&r.base.base, &r.base.edits)?;
-    junction::intent_preflight(inputs, &r.base.base, &r.base.edits)?;
+    junction::intent_preflight(inputs, &r.base.base, &r.base.edits, None)?;
     let catalog = catalog_digest::builtin_catalog()?;
     let mut retained = Vec::new();
     let mut work = 0usize;
@@ -262,12 +262,12 @@ fn geometries(
     }
     let mut result = Vec::with_capacity(n);
     for (i, (f, row)) in intent
-        .adjusted_request
-        .fragments
+        .adjusted_fragments
         .iter()
         .zip(&r.base.rows)
         .enumerate()
     {
+        let f = f.reference_fragment()?;
         let old = &intent.fragments[i];
         let s = old.output_start as i64;
         let e = old.output_end as i64;
@@ -495,7 +495,7 @@ fn advance(values: &mut [usize], domains: &[Vec<i32>]) -> bool {
 pub fn inspect(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
     let context_revision = inspect_revision(inputs, r)?;
     let k = shape(r)?;
-    let intent = junction::build_intent(inputs, &r.base.base, &r.base.edits)?;
+    let intent = junction::build_intent(inputs, &r.base.base, &r.base.edits, None)?;
     if !dna(intent.target.sequence.as_str()) {
         return Err(bad(
             "fusion proposals require concrete independent intended DNA",
@@ -612,12 +612,12 @@ fn placements(
     let geometry = geometries(intent, r, shifts, k)?
         .ok_or_else(|| bad("placement no longer preserves its original source cores"))?;
     intent
-        .adjusted_request
-        .fragments
+        .adjusted_fragments
         .iter()
         .zip(geometry)
         .enumerate()
         .map(|(i, (original, g))| {
+            let original = original.reference_fragment()?;
             let old = &intent.fragments[i];
             let left = (g.core_start - old.output_start as i64) as usize;
             let right = (old.output_start + (original.end - original.start)) as i64 - g.core_end;
@@ -633,15 +633,7 @@ fn placements(
                 } else {
                     right as usize
                 };
-            // Existing independent intent stores original lengths in bounded metadata.
-            let raw = intent
-                .target
-                .metadata
-                .get("assembly_junction_edit:source_lengths")
-                .ok_or_else(|| bad("missing original source lengths"))?;
-            let lengths: Vec<usize> =
-                serde_json::from_str(raw).map_err(|_| bad("invalid source lengths"))?;
-            let n = *lengths.get(i).ok_or_else(|| bad("missing source length"))?;
+            let n = old.source_length;
             if start >= n {
                 start -= n;
                 end -= n;

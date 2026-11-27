@@ -1,6 +1,7 @@
 use collagene_core::{
-    Molecule, Topology, assembly_intent, assembly_junction_edit as edit,
-    overlap_primer_design::Fragment,
+    Molecule, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
+    assembly_junction_edit as edit,
     primers::DesignOptions,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     verification::PlanInput,
@@ -20,22 +21,27 @@ fn fixture() -> (Vec<PlanInput>, edit::Request) {
     let base = assembly_intent::Request {
         name: "declared edited assembly".into(),
         fragments: vec![
-            Fragment {
+            Contribution {
                 role: "left".into(),
                 input_id: "l".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
-            Fragment {
+            Contribution {
                 role: "right".into(),
                 input_id: "r".into(),
-                start: 0,
-                end: 20,
-                reverse: false,
+                selector: Selector::ReferenceRange {
+                    start: 0,
+                    end: 20,
+                    reverse: false,
+                },
             },
         ],
         circular: false,
+        material_bindings: vec![],
     };
     let mut options = DesignOptions::default();
     options.min_length = 8;
@@ -65,7 +71,7 @@ fn fixture() -> (Vec<PlanInput>, edit::Request) {
 #[test]
 fn edited_intent_and_primer_proposal_have_stable_tags_and_reject_pre_44_headers() {
     let (inputs, request) = fixture();
-    let revision = edit::intent_revision(&inputs, &request.base, &request.edits).unwrap();
+    let revision = edit::intent_revision(&inputs, &request.base, &request.edits, None).unwrap();
     let job = Request {
         id: 440,
         revision: revision.clone(),
@@ -73,6 +79,7 @@ fn edited_intent_and_primer_proposal_have_stable_tags_and_reject_pre_44_headers(
             inputs: inputs.clone(),
             base: request.base.clone(),
             edits: request.edits.clone(),
+            workspace: None,
         },
     };
     let bytes = protocol::encode_request(&job).unwrap();
@@ -121,7 +128,7 @@ fn edited_intent_and_primer_proposal_have_stable_tags_and_reject_pre_44_headers(
 #[test]
 fn changing_a_declared_junction_cannot_reuse_the_old_intent_context() {
     let (inputs, mut request) = fixture();
-    let revision = edit::intent_revision(&inputs, &request.base, &request.edits).unwrap();
+    let revision = edit::intent_revision(&inputs, &request.base, &request.edits, None).unwrap();
     request.edits[0].inserted = "TT".into();
     let bytes = protocol::encode_request(&Request {
         id: 442,
@@ -130,6 +137,7 @@ fn changing_a_declared_junction_cannot_reuse_the_old_intent_context() {
             inputs,
             base: request.base,
             edits: request.edits,
+            workspace: None,
         },
     })
     .unwrap();

@@ -1,36 +1,22 @@
-//! Literal internal contribution edits declared independently of preparation or products.
-//! Offsets refer to original construct-oriented contributions, before junction trims.
+//! Original oriented-contribution indels, independent of preparation/assembly products.
 use crate::{
-    Alphabet, Error, Molecule, Topology, assembly_intent::PlacedFragment, assembly_junction_edit,
-    assembly_recipe, assembly_substitution_intent, verification::PlanInput,
+    Alphabet, Error, Molecule, Topology,
+    assembly_intent::{self, PlacedFragment, Selector},
+    assembly_junction_edit, assembly_recipe, assembly_substitution_intent,
+    verification::PlanInput,
+    workspace::Workspace,
 };
 use serde::{Deserialize, Serialize};
-use std::{collections::BTreeMap, io::Write};
-pub const ENGINE_VERSION: &str = "assembly-edit-intent-1";
+pub const ENGINE_VERSION: &str = "assembly-edit-intent-2";
 pub const MAX_EDITS: usize = 256;
-const MAX_EDIT_BASES: usize = 100_000;
-const MAX_BASES: usize = 8 << 20;
-const MAX_COPY_WORK: usize = 128 << 20;
 const PREFIX: &str = "assembly_edit_intent:";
-macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {#[derive(PartialEq,Eq)] pub struct Edit {pub role:String,pub start:usize,pub end:usize,pub expected:String,pub replacement:String}}
-dto! {pub struct Request {pub base:assembly_substitution_intent::Request,pub edits:Vec<Edit>}}
-dto! {#[derive(PartialEq,Eq)] pub struct AppliedEdit {pub role:String,pub input_id:String,pub input_revision:String,pub start:usize,pub end:usize,pub reverse:bool,pub original_output_start:usize,pub original_output_end:usize,pub output_start:usize,pub output_end:usize,pub expected:String,pub replacement:String}}
-dto! {pub struct Report {pub context_revision:String,pub request:Request,pub target:Molecule,pub fragments:Vec<PlacedFragment>,pub applied:Vec<AppliedEdit>,pub warnings:Vec<String>}}
-dto! {struct Pin {input_id:String,revision:String,length:usize,topology:Topology}}
-fn pins(inputs: &[(&str, &Molecule)]) -> Vec<Pin> {
-    inputs
-        .iter()
-        .map(|(id, m)| Pin {
-            input_id: (*id).into(),
-            revision: m.revision(),
-            length: m.sequence.len(),
-            topology: m.topology,
-        })
-        .collect()
-}
-fn bad(message: &str) -> Error {
-    Error::Unsupported(format!("assembly edit intent: {message}"))
+macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
+dto! {#[derive(PartialEq,Eq)]pub struct Edit{pub role:String,pub start:usize,pub end:usize,pub expected:String,pub replacement:String}}
+dto! {pub struct Request{pub base:assembly_substitution_intent::Request,pub edits:Vec<Edit>}}
+dto! {#[derive(PartialEq,Eq)]pub struct AppliedEdit{pub role:String,pub input_id:String,pub input_revision:String,pub start:usize,pub end:usize,pub selector:Selector,pub original_output_start:usize,pub original_output_end:usize,pub output_start:usize,pub output_end:usize,pub expected:String,pub replacement:String}}
+dto! {pub struct Report{pub context_revision:String,pub source_context_revision:String,pub request:Request,pub target:Molecule,pub fragments:Vec<PlacedFragment>,pub applied:Vec<AppliedEdit>,pub warnings:Vec<String>}}
+fn bad(s: &str) -> Error {
+    Error::Unsupported(format!("assembly edit intent: {s}"))
 }
 fn literal(s: &str) -> bool {
     s.bytes().all(|b| b"ACGTRYSWKMBDHVN".contains(&b))
@@ -45,176 +31,152 @@ fn conflicts(a: usize, b: usize, c: usize, d: usize) -> bool {
     }
 }
 fn shape(r: &Request) -> Result<(), Error> {
-    if r.edits.len() > MAX_EDITS
-        || r.base.substitutions.len() > 256
-        || r.base.base.fragments.len() > 32
-        || r.base.junction_edits.len() > 32
-    {
+    assembly_substitution_intent::shape(&r.base)?;
+    if r.edits.len() > MAX_EDITS {
         return Err(Error::TooLarge);
     }
-    let name = &r.base.base.name;
-    if name.trim().is_empty() || name.len() > 1024 || name.chars().any(char::is_control) {
-        return Err(bad("invalid bounded intended name"));
-    }
-    let mut roles = std::collections::BTreeSet::new();
-    for f in &r.base.base.fragments {
-        if f.role.trim().is_empty()
-            || f.role.len() > 128
-            || f.role.chars().any(char::is_control)
-            || f.input_id.trim().is_empty()
-            || f.input_id.len() > 128
-            || f.input_id.chars().any(char::is_control)
-            || !roles.insert(f.role.as_str())
-        {
-            return Err(bad("invalid or duplicate source role"));
-        }
-    }
-    let mut positions = std::collections::BTreeSet::new();
-    for e in &r.base.substitutions {
-        if !roles.contains(e.role.as_str())
-            || e.expected.len() != 1
-            || e.replacement.len() != 1
-            || !e.expected.bytes().all(|b| b"ACGT".contains(&b))
-            || !e.replacement.bytes().all(|b| b"ACGT".contains(&b))
-            || e.expected == e.replacement
-            || !positions.insert((e.role.as_str(), e.offset))
-        {
-            return Err(bad("invalid or duplicate substitution declaration"));
-        }
+    let mut total = 0usize;
+    for (i, e) in r.edits.iter().enumerate() {
         let f = r
             .base
             .base
             .fragments
             .iter()
             .find(|f| f.role == e.role)
-            .ok_or_else(|| bad("unknown role"))?;
-        if f.end.checked_sub(f.start).is_none_or(|n| e.offset >= n) {
-            return Err(bad(
-                "substitution lies outside original source contribution",
-            ));
-        }
-    }
-    let mut total = 0usize;
-    for (i, e) in r.edits.iter().enumerate() {
-        if e.role.is_empty()
-            || e.role.len() > 128
-            || e.role.chars().any(char::is_control)
-            || e.end.checked_sub(e.start) != Some(e.expected.len())
+            .ok_or_else(|| bad("unknown edit role"))?;
+        if e.end.checked_sub(e.start) != Some(e.expected.len())
+            || e.end > f.selector.length()?
             || !literal(&e.expected)
             || !literal(&e.replacement)
             || e.expected == e.replacement
         {
             return Err(bad(
-                "declare a bounded role and distinct uppercase DNA literals matching the original half-open interval",
+                "distinct bounded uppercase literals must match original contribution interval",
             ));
         }
         total = total
             .checked_add(e.expected.len())
             .and_then(|n| n.checked_add(e.replacement.len()))
-            .filter(|n| *n <= MAX_EDIT_BASES)
+            .filter(|n| *n <= 100_000)
             .ok_or(Error::TooLarge)?;
         if r.edits[..i]
             .iter()
             .any(|p| p.role == e.role && conflicts(e.start, e.end, p.start, p.end))
+            || r.base
+                .substitutions
+                .iter()
+                .any(|s| s.role == e.role && conflicts(e.start, e.end, s.offset, s.offset + 1))
         {
             return Err(bad(
-                "internal edits overlap or share an ambiguous insertion boundary",
+                "overlapping edits or ambiguous insertion/substitution boundary",
             ));
-        }
-        if r.base.substitutions.iter().any(|p| {
-            p.role == e.role && conflicts(e.start, e.end, p.offset, p.offset.saturating_add(1))
-        }) {
-            return Err(bad("internal edit conflicts with a declared substitution"));
         }
     }
     Ok(())
 }
-fn geometry(inputs: &[Pin], r: &Request) -> Result<Vec<AppliedEdit>, Error> {
-    let sources = inputs
-        .iter()
-        .map(|p| (p.input_id.as_str(), p))
-        .collect::<BTreeMap<_, _>>();
-    let originals = &r.base.base.fragments;
-    let lengths = originals
-        .iter()
-        .map(|f| {
-            sources
-                .get(f.input_id.as_str())
-                .map(|m| m.length)
-                .ok_or_else(|| bad("unknown original input"))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let adjusted =
-        assembly_junction_edit::intent_adjustment(&r.base.base, &r.base.junction_edits, &lengths)?;
-    let mut offsets = Vec::with_capacity(originals.len());
-    let mut output = 0usize;
-    for (i, f) in adjusted.fragments.iter().enumerate() {
-        offsets.push(output);
-        output = output.checked_add(f.end - f.start).ok_or(Error::TooLarge)?;
-        if let Some(j) = r.base.junction_edits.iter().find(|e| e.junction == i) {
-            output = output
-                .checked_add(
-                    j.inserted
-                        .bytes()
-                        .filter(|b| !b.is_ascii_whitespace())
-                        .count(),
-                )
-                .ok_or(Error::TooLarge)?;
-        }
-    }
-    let mut out = Vec::with_capacity(r.edits.len());
+pub fn source_preflight(
+    inputs: &[(&str, &Molecule)],
+    r: &Request,
+    w: Option<&Workspace>,
+) -> Result<(), Error> {
+    shape(r)?;
+    assembly_substitution_intent::source_preflight(inputs, &r.base, w)?;
+    let layout = assembly_junction_edit::retained_layout(&r.base.base, &r.base.junction_edits)?;
     for e in &r.edits {
-        let i = originals
+        let i = r
+            .base
+            .base
+            .fragments
             .iter()
             .position(|f| f.role == e.role)
-            .ok_or_else(|| bad("edit refers to an unknown contribution role"))?;
-        let original = &originals[i];
-        let retained = &adjusted.fragments[i];
-        let source = sources[original.input_id.as_str()];
-        let turn = if source.topology == Topology::Circular && retained.start < original.start {
-            source.length
-        } else {
-            0
-        };
-        let begin = if original.reverse {
-            original
-                .end
-                .checked_sub(retained.end.checked_add(turn).ok_or(Error::TooLarge)?)
-        } else {
-            retained
-                .start
-                .checked_add(turn)
-                .and_then(|n| n.checked_sub(original.start))
+            .ok_or(Error::TooLarge)?;
+        if e.start < layout[i].0 || e.end > layout[i].1 {
+            return Err(bad("edit is outside retained original source contribution"));
         }
-        .ok_or_else(|| bad("trimmed contribution changed coordinate direction"))?;
-        let a = e
-            .start
-            .checked_sub(begin)
-            .ok_or_else(|| bad("edit is removed by a junction trim"))?;
-        let b = e
-            .end
-            .checked_sub(begin)
-            .filter(|n| *n <= retained.end - retained.start)
-            .ok_or_else(|| bad("edit extends beyond the retained contribution"))?;
-        let start = offsets[i].checked_add(a).ok_or(Error::TooLarge)?;
-        let end = offsets[i].checked_add(b).ok_or(Error::TooLarge)?;
-        out.push(AppliedEdit {
-            role: e.role.clone(),
-            input_id: original.input_id.clone(),
-            input_revision: source.revision.clone(),
+        if let Selector::ReferenceRange { .. } = &r.base.base.fragments[i].selector {
+            let f = &r.base.base.fragments[i];
+            let m = inputs
+                .iter()
+                .find(|(id, _)| *id == f.input_id)
+                .ok_or(Error::TooLarge)?
+                .1;
+            let original = assembly_intent::reference_sequence(m, &f.selector)?;
+            if original.as_str().get(e.start..e.end) != Some(e.expected.as_str()) {
+                return Err(bad(
+                    "expected edit literal differs from original oriented reference",
+                ));
+            }
+        }
+    }
+    assembly_recipe::hash(&(inputs, r))?;
+    Ok(())
+}
+fn context(source: &str, r: &Request) -> Result<String, Error> {
+    assembly_recipe::hash(&(ENGINE_VERSION, source, r))
+}
+pub fn intent_revision(
+    inputs: &[PlanInput],
+    r: &Request,
+    w: Option<&Workspace>,
+) -> Result<String, Error> {
+    source_preflight(
+        &inputs
+            .iter()
+            .map(|i| (i.id.as_str(), &i.molecule))
+            .collect::<Vec<_>>(),
+        r,
+        w,
+    )?;
+    context(
+        &assembly_intent::intent_revision(inputs, &r.base.base, w)?,
+        r,
+    )
+}
+fn applied(rows: &[PlacedFragment], r: &Request) -> Result<Vec<AppliedEdit>, Error> {
+    let layout = assembly_junction_edit::retained_layout(&r.base.base, &r.base.junction_edits)?;
+    let insert = assembly_junction_edit::intent_inserts(&r.base.base, &r.base.junction_edits)?;
+    let mut positions = vec![];
+    let mut pos = 0usize;
+    for ((a, b), s) in layout.iter().zip(insert) {
+        positions.push(pos);
+        pos = pos
+            .checked_add(b - a)
+            .and_then(|n| n.checked_add(s.len()))
+            .ok_or(Error::TooLarge)?;
+    }
+    let mut result = vec![];
+    for e in &r.edits {
+        let i = rows
+            .iter()
+            .position(|f| f.role == e.role)
+            .ok_or(Error::TooLarge)?;
+        let row = &rows[i];
+        let (a, b) = layout[i];
+        if e.start < a
+            || e.end > b
+            || row.original_sequence.as_str().get(e.start..e.end) != Some(e.expected.as_str())
+        {
+            return Err(bad(
+                "edit literal differs from actual original oriented strand or was removed by trimming",
+            ));
+        }
+        result.push(AppliedEdit {
+            role: row.role.clone(),
+            input_id: row.input_id.clone(),
+            input_revision: row.input_revision.clone(),
             start: e.start,
             end: e.end,
-            reverse: original.reverse,
-            original_output_start: start,
-            original_output_end: end,
+            selector: row.selector.clone(),
+            original_output_start: positions[i] + e.start - a,
+            original_output_end: positions[i] + e.end - a,
             output_start: 0,
             output_end: 0,
             expected: e.expected.clone(),
             replacement: e.replacement.clone(),
         });
     }
-    for (i, e) in out.iter().enumerate() {
-        if out[..i].iter().any(|p| {
+    for (i, e) in result.iter().enumerate() {
+        if result[..i].iter().any(|p| {
             conflicts(
                 e.original_output_start,
                 e.original_output_end,
@@ -222,133 +184,63 @@ fn geometry(inputs: &[Pin], r: &Request) -> Result<Vec<AppliedEdit>, Error> {
                 p.original_output_end,
             )
         }) {
-            return Err(bad("edits share an ambiguous output boundary"));
+            return Err(bad(
+                "edits conflict at a shared construct boundary; declare one explicit junction edit",
+            ));
         }
     }
-    // Preserve request order in evidence while computing final coordinates in output order.
-    let mut order = (0..out.len()).collect::<Vec<_>>();
-    order.sort_by_key(|i| out[*i].original_output_start);
-    let mut removed = 0usize;
-    let mut added = 0usize;
+    let mut order = (0..result.len()).collect::<Vec<_>>();
+    order.sort_by_key(|i| result[*i].original_output_start);
+    let mut shift = 0i64;
     for i in order {
-        let e = &mut out[i];
-        e.output_start = e
-            .original_output_start
-            .checked_sub(removed)
-            .and_then(|n| n.checked_add(added))
-            .ok_or(Error::TooLarge)?;
+        let e = &mut result[i];
+        e.output_start = usize::try_from(
+            (e.original_output_start as i64)
+                .checked_add(shift)
+                .ok_or(Error::TooLarge)?,
+        )
+        .map_err(|_| Error::TooLarge)?;
         e.output_end = e
             .output_start
             .checked_add(e.replacement.len())
             .ok_or(Error::TooLarge)?;
-        removed = removed
-            .checked_add(e.end - e.start)
-            .ok_or(Error::TooLarge)?;
-        added = added
-            .checked_add(e.replacement.len())
+        shift = shift
+            .checked_add(e.replacement.len() as i64 - e.expected.len() as i64)
             .ok_or(Error::TooLarge)?;
     }
-    if output.checked_add(added).is_none_or(|n| n > MAX_BASES)
-        || output
-            .checked_sub(removed)
-            .and_then(|n| n.checked_add(added))
-            .is_none_or(|n| n == 0)
-    {
-        return Err(Error::TooLarge);
-    }
-    Ok(out)
+    Ok(result)
 }
-/// Borrowed bounded validation before constructing the intended reference.
-pub fn source_preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
+fn request_json(r: &Request) -> Result<String, Error> {
+    #[derive(Serialize)]
+    struct D<'a> {
+        base: serde_json::Value,
+        edits: &'a [Edit],
+    }
+    serde_json::to_string(&D {
+        base: serde_json::from_str(&assembly_substitution_intent::request_json(&r.base)?)
+            .map_err(|_| Error::TooLarge)?,
+        edits: &r.edits,
+    })
+    .map_err(|_| Error::TooLarge)
+}
+pub(crate) fn build_resolved(
+    resolved: &assembly_intent::Resolved<'_>,
+    r: &Request,
+) -> Result<assembly_intent::Built, Error> {
     shape(r)?;
-    assembly_substitution_intent::source_preflight(inputs, &r.base)?;
-    geometry(&pins(inputs), r)?;
-    let sources = inputs.iter().copied().collect::<BTreeMap<_, _>>();
-    for e in &r.edits {
-        let original = r
-            .base
-            .base
-            .fragments
-            .iter()
-            .find(|f| f.role == e.role)
-            .ok_or_else(|| bad("unknown role"))?;
-        let source = sources[original.input_id.as_str()];
-        // Check literal against immutable original letters, never primers or a mutated target.
-        for (offset, expected) in (e.start..e.end).zip(e.expected.bytes()) {
-            let local = if original.reverse {
-                original.end - original.start - 1 - offset
-            } else {
-                offset
-            };
-            let pos =
-                original.start.checked_add(local).ok_or(Error::TooLarge)? % source.sequence.len();
-            let raw = source.sequence.as_str().as_bytes()[pos];
-            let actual = if original.reverse {
-                crate::model::complement(raw, Alphabet::Dna)
-            } else {
-                raw
-            };
-            if actual != expected {
-                return Err(bad(
-                    "expected literal differs from the original construct-oriented source",
-                ));
-            }
-        }
-    }
-
-    Ok(())
-}
-pub fn intent_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Error> {
-    source_preflight(
-        &inputs
-            .iter()
-            .map(|i| (i.id.as_str(), &i.molecule))
-            .collect::<Vec<_>>(),
-        r,
-    )?;
-    let base = assembly_substitution_intent::intent_revision(inputs, &r.base)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, base, r))
-}
-struct Count(usize);
-impl Write for Count {
-    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-        self.0 = self
-            .0
-            .checked_add(b.len())
-            .filter(|n| *n <= MAX_COPY_WORK)
-            .ok_or_else(|| std::io::Error::other("intended-edit copy budget"))?;
-        Ok(b.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-pub fn build(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
-    let context_revision = intent_revision(inputs, r)?;
-    let source_pins = pins(
-        &inputs
-            .iter()
-            .map(|i| (i.id.as_str(), &i.molecule))
-            .collect::<Vec<_>>(),
-    );
-    let mut applied = geometry(&source_pins, r)?;
-    let initial = assembly_substitution_intent::build(inputs, &r.base)?;
+    let context_revision = context(&resolved.context, r)?;
+    let applied = applied(&resolved.rows, r)?;
+    let initial = assembly_substitution_intent::build_resolved(resolved, &r.base)?;
     let mut target = initial.target;
-    let mut count = Count(0);
-    serde_json::to_writer(&mut count, &target).map_err(|_| Error::TooLarge)?;
-    if count
-        .0
+    let warnings = initial.warnings;
+    if target
+        .sequence
+        .len()
         .checked_mul(applied.len())
-        .is_none_or(|n| n > MAX_COPY_WORK)
+        .is_none_or(|n| n > 128 << 20)
     {
-        return Err(bad(
-            "bounded annotation/sequence copy budget exceeded; split this design into smaller explicit edit sets",
-        ));
+        return Err(bad("bounded intended-reference copy work exceeded"));
     }
-    // Remove old target-coordinate receipts; the full original declaration is embedded below.
-    target
-        .metadata
-        .retain(|k, _| !k.starts_with("assembly_substitution_intent:"));
     let mut order = (0..applied.len()).collect::<Vec<_>>();
     order.sort_by_key(|i| std::cmp::Reverse(applied[*i].original_output_start));
     for i in order {
@@ -360,7 +252,7 @@ pub fn build(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
             != Some(e.expected.as_str())
         {
             return Err(bad(
-                "native source/junction reference differs from expected edit literal",
+                "independent source/substitution reference differs from edit literal",
             ));
         }
         target = target.replace(
@@ -370,29 +262,40 @@ pub fn build(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         )?;
     }
     let mut fragments = initial.fragments;
-    let mut offset = 0usize;
+    let mut cursor = 0usize;
     for f in &mut fragments {
-        let mut len = f.output_end - f.output_start;
+        let mut length = f.output_end - f.output_start;
         for e in applied.iter().filter(|e| e.role == f.role) {
-            len = len
-                .checked_sub(e.end - e.start)
+            length = length
+                .checked_sub(e.expected.len())
                 .and_then(|n| n.checked_add(e.replacement.len()))
                 .ok_or(Error::TooLarge)?;
         }
-        f.output_start = offset;
-        offset = offset.checked_add(len).ok_or(Error::TooLarge)?;
-        f.output_end = offset;
+        if length == 0 {
+            return Err(bad("edited row must retain nonempty intended DNA"));
+        }
+        f.output_start = cursor;
+        cursor = cursor.checked_add(length).ok_or(Error::TooLarge)?;
+        f.output_end = cursor;
     }
-    if offset != target.sequence.len() {
-        return Err(bad(
-            "edited contribution accounting differs from intended DNA",
-        ));
+    if cursor != target.sequence.len() {
+        return Err(bad("edited contribution accounting differs from target"));
     }
+    target
+        .metadata
+        .retain(|k, _| !k.starts_with("assembly_substitution_intent:"));
     for (key, value) in [
-        ("engine", ENGINE_VERSION.to_owned()),
+        ("engine", ENGINE_VERSION.into()),
+        ("context_revision", context_revision.clone()),
+        ("source_context_revision", resolved.context.clone()),
+        ("request", request_json(r)?),
         (
-            "inputs",
-            serde_json::to_string(&source_pins).map_err(|_| Error::TooLarge)?,
+            "applied",
+            serde_json::to_string(&applied).map_err(|_| Error::TooLarge)?,
+        ),
+        (
+            "contributions",
+            assembly_intent::placements_json(&fragments)?,
         ),
         (
             "sequence_blake3",
@@ -404,242 +307,169 @@ pub fn build(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
             "features_revision",
             assembly_recipe::hash(&target.features)?,
         ),
-        ("context_revision", context_revision.clone()),
-        (
-            "request",
-            serde_json::to_string(r).map_err(|_| Error::TooLarge)?,
-        ),
-        (
-            "contributions",
-            serde_json::to_string(&fragments).map_err(|_| Error::TooLarge)?,
-        ),
-        (
-            "applied",
-            serde_json::to_string(&applied).map_err(|_| Error::TooLarge)?,
-        ),
     ] {
-        if value.len() > 1024 * 1024 {
-            return Err(Error::TooLarge);
-        }
         target.metadata.insert(format!("{PREFIX}{key}"), value);
     }
-    target.metadata.insert(
-        "duplex_model".into(),
-        "Reference-only assembly edit design intent; physical material state unavailable".into(),
-    );
-    target
-        .metadata
-        .insert("assembly:intent:reference_only".into(), "true".into());
-    crate::model::bounds::model_preflight(&[&target])?;
-    target.validate()?;
-    let mut warnings = initial.warnings;
-    warnings.push("Internal insertions, deletions and replacements are literal operator declarations in original contribution orientation before junction trims. Original inputs remain unchanged; no primer or reconstructed product determines this target.".into());
-    warnings.push("Native reference editing remaps retained annotations, flags intersected features and removes stale translations. Deleted features remain available in original source documents. This target is not physical material or experimental evidence.".into());
-    Ok(Report {
-        context_revision,
-        request: r.clone(),
+    Ok(assembly_intent::Built {
         target,
         fragments,
-        applied: std::mem::take(&mut applied),
         warnings,
     })
 }
+pub fn build(inputs: &[PlanInput], r: &Request, w: Option<&Workspace>) -> Result<Report, Error> {
+    source_preflight(
+        &inputs
+            .iter()
+            .map(|i| (i.id.as_str(), &i.molecule))
+            .collect::<Vec<_>>(),
+        r,
+        w,
+    )?;
+    let resolved = assembly_intent::resolve(inputs, &r.base.base, w)?;
+    let built = build_resolved(&resolved, r)?;
+    let report = Report {
+        context_revision: context(&resolved.context, r)?,
+        source_context_revision: resolved.context.clone(),
+        request: r.clone(),
+        target: built.target,
+        fragments: built.fragments,
+        applied: applied(&resolved.rows, r)?,
+        warnings: built.warnings,
+    };
+    report.validate_binding(&report.context_revision)?;
+    Ok(report)
+}
 impl Report {
-    /// Replay against exact original inputs, rejecting changed target, coordinates or receipts.
-    pub fn validate_sources(&self, inputs: &[PlanInput], expected: &str) -> Result<(), Error> {
-        crate::model::bounds::model_preflight(&[&self.target])?;
-        if self.context_revision != expected
-            || self.applied.len() > MAX_EDITS
-            || self.fragments.len() > 32
-            || self.warnings.len() > 2048
-            || self.warnings.iter().any(|s| s.len() > 16384)
-        {
-            return Err(bad("stale or oversized edit report"));
-        }
-        self.validate_binding(expected)?;
-        let rebuilt = build(inputs, &self.request)?;
-        if rebuilt.context_revision != expected
-            || assembly_recipe::hash(self)? != assembly_recipe::hash(&rebuilt)?
-        {
-            return Err(bad(
-                "edit report differs from fresh original-source reconstruction",
-            ));
-        }
-        Ok(())
-    }
-    /// Bounded self-consistency only; use validate_sources for fresh source replay.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         shape(&self.request)?;
+        if self.context_revision != expected
+            || !assembly_intent::hex(&self.source_context_revision)
+            || context(&self.source_context_revision, &self.request)? != expected
+        {
+            return Err(bad("source/edit context changed"));
+        }
         crate::model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
-        if self.context_revision != expected
-            || self.fragments.len() > 32
-            || self.applied.len() > MAX_EDITS
-            || self.warnings.len() > 2048
-            || self.warnings.iter().any(|s| s.len() > 16384)
-        {
-            return Err(bad("stale or oversized report"));
+        assembly_intent::validate_rows(&self.fragments, &self.request.base.base, &self.target)?;
+        let desired = applied(&self.fragments, &self.request)?;
+        if desired != self.applied {
+            return Err(bad("edit original-strand correspondence changed"));
         }
-        let get = |key: &str| {
-            self.target
-                .metadata
-                .get(&format!("{PREFIX}{key}"))
-                .filter(|s| s.len() <= 1024 * 1024)
-                .ok_or_else(|| bad("missing bounded provenance"))
-        };
-        let source_pins: Vec<Pin> =
-            serde_json::from_str(get("inputs")?).map_err(|_| bad("invalid source pins"))?;
-        if source_pins.is_empty()
-            || source_pins.len() > 32
-            || source_pins.iter().any(|p| {
-                p.input_id.trim().is_empty()
-                    || p.input_id.len() > 128
-                    || p.input_id.chars().any(char::is_control)
-                    || p.length == 0
-                    || p.length > MAX_BASES
-                    || p.revision.len() != 64
-                    || !p
-                        .revision
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-            })
-        {
-            return Err(bad("invalid original source pins"));
-        }
-        let base = assembly_recipe::hash(&(
-            assembly_substitution_intent::ENGINE_VERSION,
-            assembly_junction_edit::ENGINE_VERSION,
-            &source_pins,
-            &self.request.base,
-        ))?;
-        let context = assembly_recipe::hash(&(ENGINE_VERSION, base, &self.request))?;
-        let sources = source_pins
-            .iter()
-            .map(|p| (p.input_id.as_str(), p))
-            .collect::<BTreeMap<_, _>>();
-        if sources.len() != source_pins.len()
-            || source_pins
-                .iter()
-                .try_fold(0usize, |n, p| n.checked_add(p.length))
-                .is_none_or(|n| n > MAX_BASES)
-        {
-            return Err(bad("duplicate or oversized original sources"));
-        }
-        let lengths = self
-            .request
-            .base
-            .base
-            .fragments
-            .iter()
-            .map(|f| {
-                sources
-                    .get(f.input_id.as_str())
-                    .map(|p| p.length)
-                    .ok_or_else(|| bad("unknown original input"))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let adjusted = assembly_junction_edit::intent_adjustment(
+        let layout = assembly_junction_edit::retained_layout(
             &self.request.base.base,
             &self.request.base.junction_edits,
-            &lengths,
         )?;
-        let mut expected_fragments = Vec::with_capacity(adjusted.fragments.len());
-        let mut offset = 0usize;
-        for (i, f) in adjusted.fragments.iter().enumerate() {
-            let source = sources[f.input_id.as_str()];
-            if source.topology == Topology::Linear && f.end > source.length {
-                return Err(bad("linear source exceeds its actual length"));
+        let insert = assembly_junction_edit::intent_inserts(
+            &self.request.base.base,
+            &self.request.base.junction_edits,
+        )?;
+        for (i, row) in self.fragments.iter().enumerate() {
+            let (a, b) = layout[i];
+            if row.retained_start != a || row.retained_end != b {
+                return Err(bad("retained original strand window changed"));
             }
-            let mut length = f.end - f.start;
-            if let Some(j) = self
+            let mut expected =
+                format!("{}{}", &row.original_sequence.as_str()[a..b], insert[i]).into_bytes();
+            for s in self
                 .request
                 .base
-                .junction_edits
+                .substitutions
                 .iter()
-                .find(|e| e.junction == i)
+                .filter(|s| s.role == row.role)
             {
-                length = length
-                    .checked_add(
-                        j.inserted
-                            .bytes()
-                            .filter(|b| !b.is_ascii_whitespace())
-                            .count(),
-                    )
-                    .ok_or(Error::TooLarge)?;
+                if row.original_sequence.as_str().get(s.offset..s.offset + 1)
+                    != Some(s.expected.as_str())
+                {
+                    return Err(bad("expected substitution differs from original strand"));
+                }
+                expected[s.offset - a] = s.replacement.as_bytes()[0];
             }
-            for e in self.request.edits.iter().filter(|e| e.role == f.role) {
-                length = length
-                    .checked_sub(e.end - e.start)
-                    .and_then(|n| n.checked_add(e.replacement.len()))
-                    .ok_or(Error::TooLarge)?;
+            let mut edits = self
+                .applied
+                .iter()
+                .filter(|e| e.role == row.role)
+                .collect::<Vec<_>>();
+            edits.sort_by_key(|e| std::cmp::Reverse(e.start));
+            for e in edits {
+                let start = e.start - a;
+                let end = e.end - a;
+                if expected.get(start..end) != Some(e.expected.as_bytes()) {
+                    return Err(bad("conflicting edit/substitution literals"));
+                }
+                expected.splice(start..end, e.replacement.bytes());
             }
-            let end = offset.checked_add(length).ok_or(Error::TooLarge)?;
-            expected_fragments.push(PlacedFragment {
-                role: f.role.clone(),
-                input_id: f.input_id.clone(),
-                input_revision: source.revision.clone(),
-                start: f.start,
-                end: f.end,
-                reverse: f.reverse,
-                output_start: offset,
-                output_end: end,
-            });
-            offset = end;
+            if self
+                .target
+                .sequence
+                .as_str()
+                .as_bytes()
+                .get(row.output_start..row.output_end)
+                != Some(expected.as_slice())
+            {
+                return Err(bad(
+                    "edited target differs from independently declared original-strand literals",
+                ));
+            }
         }
-        if assembly_recipe::hash(&expected_fragments)? != assembly_recipe::hash(&self.fragments)? {
-            return Err(bad("edited contribution geometry changed"));
-        }
-        let applied = geometry(&source_pins, &self.request)?;
-        if context != expected
-            || applied != self.applied
-            || get("engine")? != ENGINE_VERSION
-            || get("context_revision")? != expected
-            || get("request")?
-                != &serde_json::to_string(&self.request).map_err(|_| Error::TooLarge)?
-            || get("applied")?
-                != &serde_json::to_string(&self.applied).map_err(|_| Error::TooLarge)?
-            || get("contributions")?
-                != &serde_json::to_string(&self.fragments).map_err(|_| Error::TooLarge)?
-            || get("sequence_blake3")?
-                != blake3::hash(self.target.sequence.as_str().as_bytes())
+        for (key, value) in [
+            ("engine", ENGINE_VERSION.into()),
+            ("context_revision", self.context_revision.clone()),
+            (
+                "source_context_revision",
+                self.source_context_revision.clone(),
+            ),
+            ("request", request_json(&self.request)?),
+            (
+                "applied",
+                serde_json::to_string(&self.applied).map_err(|_| Error::TooLarge)?,
+            ),
+            (
+                "contributions",
+                assembly_intent::placements_json(&self.fragments)?,
+            ),
+            (
+                "sequence_blake3",
+                blake3::hash(self.target.sequence.as_str().as_bytes())
                     .to_hex()
-                    .as_str()
-            || get("features_revision")? != &assembly_recipe::hash(&self.target.features)?
-            || self.fragments.last().map_or(0, |f| f.output_end) != self.target.sequence.len()
-            || self.target.sequence.len() > MAX_BASES
-            || self.target.sequence.alphabet() != Alphabet::Dna
-            || self.target.name != self.request.base.base.name
+                    .to_string(),
+            ),
+            (
+                "features_revision",
+                assembly_recipe::hash(&self.target.features)?,
+            ),
+        ] {
+            if self.target.metadata.get(&format!("{PREFIX}{key}")) != Some(&value) {
+                return Err(bad("retained edit evidence changed"));
+            }
+        }
+        if self.target.name != self.request.base.base.name
             || self.target.topology
                 != if self.request.base.base.circular {
                     Topology::Circular
                 } else {
                     Topology::Linear
                 }
-            || self.target.metadata.get("duplex_model").map(String::as_str)
-                != Some(
-                    "Reference-only assembly edit design intent; physical material state unavailable",
-                )
-            || self
-                .target
-                .metadata
-                .get("assembly:intent:reference_only")
-                .map(String::as_str)
-                != Some("true")
+            || self.target.sequence.alphabet() != Alphabet::Dna
         {
-            return Err(bad("report source/request/target correspondence changed"));
+            return Err(bad("edited reference identity changed"));
         }
-        for e in &self.applied {
-            if self
-                .target
-                .sequence
-                .as_str()
-                .get(e.output_start..e.output_end)
-                != Some(e.replacement.as_str())
-            {
-                return Err(bad("applied edit differs from target"));
-            }
+        assembly_intent::validate_material_descriptors(
+            &self.target,
+            &self.request.base.base,
+            &self.fragments,
+        )?;
+        assembly_intent::report_bound(self)
+    }
+    pub fn validate_sources(
+        &self,
+        inputs: &[PlanInput],
+        expected: &str,
+        w: Option<&Workspace>,
+    ) -> Result<(), Error> {
+        if intent_revision(inputs, &self.request, w)? != expected {
+            return Err(bad("original source declaration changed"));
         }
-        assembly_recipe::hash(self)?;
-        Ok(())
+        self.validate_binding(expected)?;
+        assembly_intent::validate_reference_rows(inputs, &self.fragments)
     }
 }

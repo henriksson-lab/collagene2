@@ -595,19 +595,190 @@ pub(crate) fn derived_ancestry_walk(
 /// Build a durable declaration only after the actual saved event has been freshly
 /// reconstructed. Returned bytes carry instructions, never physical authority.
 pub fn capsule(workspace: &Workspace, selection: &Selection) -> Result<Capsule, Error> {
-    let _fresh = run_material::reconstruct(workspace, selection)?;
-    let run = run_lineage::load_run(workspace, &selection.run_id)?;
-    let origin = Capsule {
-        schema_version: 1,
-        selection: selection.clone(),
-        candidate: transfer::save_candidate(&Candidate::new(run.plan))?,
-        target: run_material::resolve(workspace, &run.target)?.clone(),
-        target_event: run.target,
-        inputs: run.inputs,
-        products: run.products,
+    let mut roots = documentary_material_origins(
+        workspace,
+        &[run_material::MaterialSelection::Run(selection.clone())],
+    )?;
+    let run_material::MaterialOrigin::Run(origin) = roots.remove(0) else {
+        return Err(bad("run capsule kind differs"));
     };
-    origin.validate_documentary()?;
+    let _fresh = run_material::reconstruct(workspace, selection)?;
     Ok(origin)
+}
+
+/// Build closed documentary recipes for explicitly selected native events.
+/// This performs ownership/current record validation and ONE mixed-root budget,
+/// before copying candidate bytes, source models or closed child capsules. It
+/// never verifies a plan, calls reconstruct/replay, or creates live material.
+/// The eventual native consumer must freshly replay the returned origins.
+pub fn documentary_material_origins(
+    workspace: &Workspace,
+    selections: &[run_material::MaterialSelection],
+) -> Result<Vec<run_material::MaterialOrigin>, Error> {
+    if selections.len() > 32 {
+        return Err(Error::TooLarge);
+    }
+    for selection in selections {
+        selection.validate()?;
+    }
+    workspace.validate()?;
+    enum Root {
+        Run {
+            index: usize,
+            record: run_lineage::RunRecord,
+        },
+        Derived {
+            index: usize,
+            hash: String,
+            record: crate::material_derivation::Record,
+        },
+    }
+    let mut roots = Vec::with_capacity(selections.len());
+    let mut loaded = Budget::default();
+    // Current native loaders own all record decoding, never a partial/custom reader.
+    for (index, selection) in selections.iter().enumerate() {
+        match selection {
+            run_material::MaterialSelection::Run(selection) => {
+                let record = run_lineage::load_run(workspace, &selection.run_id)?;
+                // Bound retained decoded roots as they enter the collection too;
+                // repeated selection of a large run cannot accumulate 32 copies
+                // before the mixed ancestry phase checks its aggregate allowance.
+                charge_serialized_bounded(&mut loaded, &record, MAX_AGGREGATE_ORIGIN_BYTES)?;
+                run_material::selected_reference(workspace, selection, &record)?;
+                roots.push(Root::Run { index, record });
+            }
+            run_material::MaterialSelection::Derived(event) => {
+                let (hash, record) =
+                    crate::material_derivation::documentary_capsule_parts(workspace, event)?;
+                charge_serialized_bounded(&mut loaded, &record, MAX_AGGREGATE_ORIGIN_BYTES)?;
+                roots.push(Root::Derived {
+                    index,
+                    hash,
+                    record,
+                });
+            }
+        }
+    }
+    let mut budget = Budget::default();
+    let mut nodes = vec![];
+    for root in &roots {
+        match root {
+            Root::Run { index, record } => {
+                let target = run_material::resolve(workspace, &record.target)?;
+                // Count the actual compact candidate shape without allocating
+                // its envelope or cloning a rich source. Conservative reserves
+                // cover the current CGP header and outer capsule field names.
+                #[derive(Serialize)]
+                struct CandidateDeclaration<'a> {
+                    plan_revision: &'a str,
+                    plan: &'a DesignPlan,
+                }
+                let candidate_bytes =
+                    postcard::experimental::serialized_size(&CandidateDeclaration {
+                        plan_revision: &record.plan_revision,
+                        plan: &record.plan,
+                    })
+                    .map_err(|_| Error::TooLarge)?
+                    .checked_add(64)
+                    .filter(|n| *n <= MAX_CAPSULE_BYTES)
+                    .ok_or(Error::TooLarge)?;
+                add(
+                    &mut budget.bytes,
+                    candidate_bytes.div_ceil(3) * 4,
+                    MAX_AGGREGATE_ORIGIN_BYTES,
+                )?;
+                add(&mut budget.bytes, 1024, MAX_AGGREGATE_ORIGIN_BYTES)?;
+                charge_serialized_bounded(
+                    &mut budget,
+                    &(
+                        1u16,
+                        selections.get(*index),
+                        &record.target,
+                        &record.inputs,
+                        &record.products,
+                        target,
+                    ),
+                    MAX_AGGREGATE_ORIGIN_BYTES,
+                )?;
+                budget.plan(&record.plan)?;
+                budget.model(target)?;
+                nodes.extend(
+                    origins(&record.plan)
+                        .into_iter()
+                        .map(|(depth, node)| (depth + 1, node)),
+                );
+            }
+            Root::Derived { record, hash, .. } => {
+                let source = run_material::resolve(workspace, &record.request.source)?;
+                let bytes = &workspace.attachments[hash].bytes;
+                // Opaque record wrapper uses bounded base64 in human-readable
+                // recipes; account it before cloning, plus the actual source model.
+                add(
+                    &mut budget.bytes,
+                    bytes.len().div_ceil(3) * 4,
+                    MAX_AGGREGATE_ORIGIN_BYTES,
+                )?;
+                charge_serialized_bounded(
+                    &mut budget,
+                    &(1u16, &record.product, source),
+                    MAX_AGGREGATE_ORIGIN_BYTES,
+                )?;
+                add(&mut budget.bytes, 1024, MAX_AGGREGATE_ORIGIN_BYTES)?;
+                budget.model(source)?;
+                add(&mut budget.steps, 1, MAX_STEPS)?;
+                if let crate::material_derivation::SourceOrigin::Saved(origin) =
+                    &record.request.origin
+                {
+                    nodes.push((2, material_node(origin)));
+                }
+            }
+        }
+    }
+    workspace_walk(workspace, nodes, budget)?;
+    let mut result = Vec::with_capacity(roots.len());
+    for root in roots {
+        let origin = match root {
+            Root::Run { index, record } => {
+                let run_material::MaterialSelection::Run(selection) = &selections[index] else {
+                    return Err(bad("root kind differs"));
+                };
+                let target = run_material::resolve(workspace, &record.target)?.clone();
+                run_material::MaterialOrigin::Run(Capsule {
+                    schema_version: 1,
+                    selection: selection.clone(),
+                    candidate: transfer::save_candidate(&Candidate::new(record.plan))?,
+                    target,
+                    target_event: record.target,
+                    inputs: record.inputs,
+                    products: record.products,
+                })
+            }
+            Root::Derived {
+                index,
+                hash,
+                record,
+            } => {
+                let run_material::MaterialSelection::Derived(product) = &selections[index] else {
+                    return Err(bad("root kind differs"));
+                };
+                run_material::MaterialOrigin::Derived(crate::material_derivation::Capsule {
+                    schema_version: 1,
+                    product: product.clone(),
+                    record_bytes: workspace.attachments[&hash].bytes.clone(),
+                    source_snapshot: run_material::resolve(workspace, &record.request.source)?
+                        .clone(),
+                })
+            }
+        };
+        result.push(origin);
+    }
+    // Check actual current serialized wrappers too; this cannot expand the
+    // pre-copy allowance or grant another ancestry/replay budget.
+    material_origins_preflight(&result)?;
+    for origin in &result {
+        origin.validate_for_workspace(workspace, origin.event())?;
+    }
+    Ok(result)
 }
 
 /// Workspace ownership only, safe inside workspace/run structural validation.

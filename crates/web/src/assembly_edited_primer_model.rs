@@ -139,9 +139,9 @@ fn independent(
                 );
             }
             let context =
-                collagene_core::assembly_intent::intent_revision(inputs, &declared.base.base)
+                collagene_core::assembly_intent::intent_revision(inputs, &declared.base.base, None)
                     .map_err(|e| e.to_string())?;
-            let fresh = collagene_core::assembly_intent::build(inputs, &declared.base.base)
+            let fresh = collagene_core::assembly_intent::build(inputs, &declared.base.base, None)
                 .map_err(|e| e.to_string())?;
             if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
                 return Err(
@@ -160,12 +160,14 @@ fn independent(
                 inputs,
                 &declared.base.base,
                 &declared.base.junction_edits,
+                None,
             )
             .map_err(|e| e.to_string())?;
             let fresh = collagene_core::assembly_junction_edit::build_intent(
                 inputs,
                 &declared.base.base,
                 &declared.base.junction_edits,
+                None,
             )
             .map_err(|e| e.to_string())?;
             if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
@@ -186,10 +188,12 @@ fn independent(
             let context = collagene_core::assembly_substitution_intent::intent_revision(
                 inputs,
                 &declared.base,
+                None,
             )
             .map_err(|e| e.to_string())?;
-            let fresh = collagene_core::assembly_substitution_intent::build(inputs, &declared.base)
-                .map_err(|e| e.to_string())?;
+            let fresh =
+                collagene_core::assembly_substitution_intent::build(inputs, &declared.base, None)
+                    .map_err(|e| e.to_string())?;
             if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
                 return Err(
                     "The frozen substitution target differs from its original source declaration."
@@ -199,10 +203,10 @@ fn independent(
             ("substitutions", context)
         }
         IntendedReference::Edits(report) => {
-            let context = assembly_edit_intent::intent_revision(inputs, &declared)
+            let context = assembly_edit_intent::intent_revision(inputs, &declared, None)
                 .map_err(|e| e.to_string())?;
             report
-                .validate_sources(inputs, &context)
+                .validate_sources(inputs, &context, None)
                 .map_err(|e| e.to_string())?;
             if receipt(&report.request, MAX_CONTEXT)? != receipt(&declared, MAX_CONTEXT)? {
                 return Err("The original internal-edit declaration changed.".into());
@@ -272,6 +276,7 @@ pub fn request(
     current_sources: &[EventBinding],
     options: &Options,
 ) -> Result<(Capture, Vec<PlanInput>, native::Request), String> {
+    assembly_draft_model::require_reference_selectors(draft)?;
     draft.validate()?;
     if !eligible(draft) {
         return Err("Whole-assembly proposals require 2–12 ordinary overlap contributions with plain PCR/whole-source preparations. Active digest, declared-chemistry and paired-oligo routes must be kept or changed explicitly.".into());
@@ -301,7 +306,7 @@ pub fn request(
         .collect::<Result<Vec<_>, _>>()?;
     collagene_core::run_material::capsules_preflight(run_origins.into_iter())
         .map_err(|e| e.to_string())?;
-    let (inputs, base, _) = assembly_draft_model::inputs_request(draft)?;
+    let (inputs, base, _) = assembly_draft_model::inputs_request(draft, None)?;
     let (intent_kind, intent_context_revision, declared) =
         independent(draft, intent, &inputs, base)?;
     let roles = draft.methods.role_ids(draft.slots.len())?;
@@ -371,11 +376,11 @@ pub fn from_design(
     // The native API normalizes all kinds to the general edit vocabulary. Keep
     // that receipt intact and validate it separately; metadata from the original
     // SNP/plain/junction target is never retagged as a native verification receipt.
-    let canonical_context = assembly_edit_intent::intent_revision(&inputs, &request.intent)
+    let canonical_context = assembly_edit_intent::intent_revision(&inputs, &request.intent, None)
         .map_err(|e| e.to_string())?;
     report
         .intent
-        .validate_sources(&inputs, &canonical_context)
+        .validate_sources(&inputs, &canonical_context, None)
         .map_err(|e| e.to_string())?;
     if report.intent.target.sequence != intent.target().sequence
         || report.intent.target.topology != intent.target().topology
@@ -471,7 +476,7 @@ impl Proposal {
         for (index, fragment) in self.recipe.fragments.iter().enumerate() {
             if fragment.role != roles[index].role
                 || fragment.input_id != roles[index].input_id
-                || fragment.reverse != draft.slots[index].reverse
+                || fragment.reverse != draft.methods.rows[index].reverse
             {
                 return Err(
                     "The proposed row differs from its original source role or orientation.".into(),
@@ -582,10 +587,14 @@ mod tests {
         })
     }
     fn intent(draft: &Draft) -> IntendedReference {
-        let (inputs, base, _) = assembly_draft_model::inputs_request(draft).unwrap();
+        let (inputs, base, _) = assembly_draft_model::inputs_request(draft, None).unwrap();
         IntendedReference::Edits(
-            assembly_edit_intent::build(&inputs, &assembly_draft_model::edit_request(draft, base))
-                .unwrap(),
+            assembly_edit_intent::build(
+                &inputs,
+                &assembly_draft_model::edit_request(draft, base),
+                None,
+            )
+            .unwrap(),
         )
     }
     fn fixture() -> (Draft, Workspace, Options) {
@@ -602,9 +611,23 @@ mod tests {
         draft.active_slot = 1;
         draft.methods.mode = Mode::Overlap;
         draft.slots[0].captured = Some(captured(vector, event(&frame, 0)));
-        draft.slots[0].end = 20;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 20;
+        }
         draft.slots[1].captured = Some(captured(insert, event(&frame, 1)));
-        draft.slots[1].end = 40;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 40;
+        }
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
         draft.methods.rows[0].forward_tail = "inactive non-DNA".into();
         draft.methods.rows[1].preparation = OverlapPreparation::OverlapExtensionPcr;
@@ -613,7 +636,7 @@ mod tests {
         draft.methods.rows[1].treatment = crate::cloning_methods_model::Treatment::Phosphorylate;
         draft.methods.rows[1].fragment = "7".into();
         draft.sync_rows();
-        let draft = assembly_edit_model::declare(&draft, 1, "17", "21", "TT").unwrap();
+        let draft = assembly_edit_model::declare(&draft, 1, "17", "21", "TT", None).unwrap();
         let mut options = Options::default();
         let p = &mut options.preparation.primer_options;
         p.min_length = 8;
@@ -792,10 +815,11 @@ mod tests {
                 replacement: "T".into(),
             });
         draft.sync_rows();
-        let (inputs, base, _) = assembly_draft_model::inputs_request(&draft).unwrap();
+        let (inputs, base, _) = assembly_draft_model::inputs_request(&draft, None).unwrap();
         let declared = assembly_draft_model::edit_request(&draft, base);
         let intended = IntendedReference::Substitutions(
-            collagene_core::assembly_substitution_intent::build(&inputs, &declared.base).unwrap(),
+            collagene_core::assembly_substitution_intent::build(&inputs, &declared.base, None)
+                .unwrap(),
         );
         let frozen = intended.target().revision();
         let p = propose(&draft, &intended, &frame, &options);

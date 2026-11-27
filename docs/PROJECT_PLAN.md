@@ -3153,11 +3153,13 @@ products, including structured verifier/history evidence and extractable
 HTML/PDF output. Neither a selected path nor bounded enumeration establishes
 experimental isolation or reaction probabilities.
 
-Remaining concrete cloning gaps include internal Type IIS domestication beyond
-circular inverse PCR; internal edits across combinatorial library rows; activated TOPO vector graph reuse; actual-strand-aware reverse sticky-fragment intent; and the protocol
-reaction-quantity UI. Positional checked Golden Gate, retained-run editing,
-generic saved TOPO insert templates and documentary plate assignments are now
-implemented as detailed below.
+Remaining concrete cloning gaps include multi-round/scattered internal Type IIS
+domestication beyond the inverse-PCR and overlap-extension routes; internal edits
+across combinatorial library rows; activated TOPO vector graph reuse; and actual
+material-strand primer/library projection. Actual-strand-aware reverse sticky-
+fragment intent and the protocol reaction-quantity UI are implemented below,
+alongside positional checked Golden Gate, retained-run editing, generic saved
+TOPO insert templates and documentary plate assignments.
 Per-row keep/add TA/GC preparation, read-only fresh saved-run review and direct
 saved-run protocol exports are implemented. Gateway products remain reference-only until actual
 strand crossover/composition is implemented. Map SVG controls are implemented. Wider format corpus checks, GUI
@@ -3497,3 +3499,38 @@ including original-source overlap-extension domestication. Frontend artifact
 validated13 assets (131155545 bytes), exact integrity references and the sole
 current worker. Socket/process identity confirmed the replacement listener.
 No browser or application HTTP checks ran; private services were untouched.
+
+### Actual-strand assembly intent
+
+Reverse sticky-ended fragments require the actual stored bottom strand. For the
+native21-base source whose bottom domain is [4,25), the selected bottom interval
+[15,25) supplies `AATTCGTAAG`; reverse-complementing the selected top interval
+supplies different DNA. The existing physical reversal kernel already preserves
+the real strands. The intended-reference selector now carries the same actual source strand
+through its edit, draft and source-navigation callers.
+
+The direct refactor separates top-reference ranges from native material-strand
+ranges, preserving stored5′→3′ coordinates, exact source events and material state.
+One source resolver attests native origins and replays each unique binding
+once for all four intent layers. Literal edits remain relative to the original
+resolved contribution; target construction precedes the planned assembly.
+Bottom-only calls receive no invented top-reference coordinate or annotation.
+
+Draft16 replaces the slot layout; worker104 carries the changed intent
+requests/results. Existing native physical plans/candidates and chemistry layouts
+remain unchanged. Primer proposal paths require genuine reference intervals;
+material-only templates and unrepresentable library choices stay explicitly
+unsupported until their own models are extended. Original source captures, viewer
+coordinates, history and physical preparation remain separate from intent.
+Focused native validation passes242 distinct cases across the scientific core,
+protocol, MCP, sharing and web models. The targeted recheck also corrected a real
+circular-coordinate normalization defect in trimmed primer preparation. Original
+source/event ownership, literal actual-strand expectations and privacy refusals
+remain covered. Integrated web/worker WASM compilation, formatting and diff
+checks pass. Browser and application HTTP checks remain deferred.
+
+Public8082 now serves the CI-built5e6620d quantity/protocol frontend (worker103).
+Artifact15175556403 supplied13 assets (134440924 bytes); static integrity/worker
+validation and exact listener inspection passed. All three desktop CI builds
+passed. Browser and application HTTP checks remain deferred. The working
+actual-strand refactor is separate from this immutable published snapshot.

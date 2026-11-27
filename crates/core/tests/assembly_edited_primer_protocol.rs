@@ -4,11 +4,12 @@ use collagene_core::{
     analysis::Primer,
     assembly_edit_intent::{self, Edit},
     assembly_edited_primer_design::{self, Request as DesignRequest, RoleOrigin},
-    assembly_intent, assembly_junction_edit,
+    assembly_intent,
+    assembly_intent::{Contribution, Selector},
+    assembly_junction_edit,
     assembly_recipe::Preparation,
     assembly_substitution_intent, cloning_outputs,
     overlap_extension_primer_design::Options,
-    overlap_primer_design::Fragment,
     primers::DesignOptions,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     run_lineage::{EventBinding, InputEventBinding},
@@ -45,22 +46,27 @@ fn fixture() -> (Vec<PlanInput>, DesignRequest) {
                     base: assembly_intent::Request {
                         name: "Independent mutation and literal junction".into(),
                         fragments: vec![
-                            Fragment {
+                            Contribution {
                                 role: "insert".into(),
                                 input_id: "original".into(),
-                                start: 0,
-                                end: 40,
-                                reverse: false,
+                                selector: Selector::ReferenceRange {
+                                    start: 0,
+                                    end: 40,
+                                    reverse: false,
+                                },
                             },
-                            Fragment {
+                            Contribution {
                                 role: "vector".into(),
                                 input_id: "vector".into(),
-                                start: 0,
-                                end: 32,
-                                reverse: false,
+                                selector: Selector::ReferenceRange {
+                                    start: 0,
+                                    end: 32,
+                                    reverse: false,
+                                },
                             },
                         ],
                         circular: false,
+                        material_bindings: vec![],
                     },
                     junction_edits: vec![assembly_junction_edit::Edit {
                         junction: 0,
@@ -257,7 +263,13 @@ fn whole_context_binds_options_sources_and_intent_and_reverse_preparation_stays_
         .unwrap(),
     );
     let mut reverse = request;
-    reverse.intent.base.base.fragments[0].reverse = true;
+    if let Selector::ReferenceRange { reverse, .. } =
+        &mut reverse.intent.base.base.fragments[0].selector
+    {
+        *reverse = true;
+    } else {
+        panic!("reference selector required by fixture");
+    }
     let AnalysisResult::EditedOverlapPrimersDesigned(report) =
         execute(reverse_inputs, reverse).result
     else {

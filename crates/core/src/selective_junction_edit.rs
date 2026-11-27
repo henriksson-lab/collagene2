@@ -93,6 +93,11 @@ fn raw_preparation(f: &FragmentSpec) -> Result<(), Error> {
     Ok(())
 }
 fn shape(r: &Request) -> Result<(), Error> {
+    if !r.base.material_bindings.is_empty() {
+        return Err(bad(
+            "selected primer proposals require reference ranges; material-strand primer templates are unsupported",
+        ));
+    }
     let n = r.base.fragments.len();
     if n == 0
         || n > MAX_ROWS
@@ -130,6 +135,7 @@ fn shape(r: &Request) -> Result<(), Error> {
         return Err(Error::TooLarge);
     }
     for (row, f) in r.rows.iter().zip(&r.base.fragments) {
+        let f = f.reference_fragment()?;
         let (role, input, reverse) = match row {
             Row::Retain(spec) => {
                 raw_preparation(spec)?;
@@ -167,7 +173,7 @@ fn lens(
         })
         .collect()
 }
-fn options(r: &Request, adjusted: &assembly_intent::Request) -> Result<(), Error> {
+fn options(r: &Request, adjusted: &[overlap_primer_design::Fragment]) -> Result<(), Error> {
     if r.rows.iter().any(|r| matches!(r, Row::DesignPcr { .. })) {
         if !r.primer_options.forward_tail.is_empty() || !r.primer_options.reverse_tail.is_empty() {
             return Err(bad(
@@ -175,10 +181,10 @@ fn options(r: &Request, adjusted: &assembly_intent::Request) -> Result<(), Error
             ));
         }
         overlap_primer_design::options(&overlap_primer_design::Request {
-            name: adjusted.name.clone(),
-            fragments: adjusted.fragments.clone(),
+            name: r.base.name.clone(),
+            fragments: adjusted.to_vec(),
             overlap: 1,
-            circular: adjusted.circular,
+            circular: r.base.circular,
             primer_options: r.primer_options.clone(),
             profile_options: r.profile_options.clone(),
         })?;
@@ -189,8 +195,11 @@ fn options(r: &Request, adjusted: &assembly_intent::Request) -> Result<(), Error
 /// a usable PCR source, concrete core/domain geometry or primer design work.
 pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
     shape(r)?;
-    junction::intent_preflight(inputs, &r.base, &r.edits)?;
-    let adjusted = junction::adjustment(&r.base, &r.edits, &lens(inputs, &r.base)?)?;
+    junction::intent_preflight(inputs, &r.base, &r.edits, None)?;
+    let adjusted = junction::adjustment(&r.base, &r.edits, &lens(inputs, &r.base)?)?
+        .iter()
+        .map(assembly_intent::Contribution::reference_fragment)
+        .collect::<Result<Vec<_>, _>>()?;
     let insert = junction::inserts(&r.base, &r.edits)?;
     options(r, &adjusted)?;
     let retained = r
@@ -209,7 +218,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
     }
     let mut work = 0usize;
     let mut scans = 0usize;
-    for (i, (row, f)) in r.rows.iter().zip(&adjusted.fragments).enumerate() {
+    for (i, (row, f)) in r.rows.iter().zip(&adjusted).enumerate() {
         if !matches!(row, Row::DesignPcr { .. }) {
             continue;
         }
@@ -233,7 +242,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
             }
         }
         let tail = if i < r.overlaps.len() {
-            let next = &adjusted.fragments[(i + 1) % adjusted.fragments.len()];
+            let next = &adjusted[(i + 1) % adjusted.len()];
             if r.overlaps[i] > next.end - next.start {
                 return Err(bad(
                     "selected overlap exceeds the next adjusted original core",
@@ -341,17 +350,17 @@ pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Erro
 }
 pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
     let context_revision = design_revision(inputs, r)?;
-    let intent = junction::build_intent(inputs, &r.base, &r.edits)?;
+    let intent = junction::build_intent(inputs, &r.base, &r.edits, None)?;
+    let adjusted = intent
+        .adjusted_fragments
+        .iter()
+        .map(assembly_intent::Contribution::reference_fragment)
+        .collect::<Result<Vec<_>, _>>()?;
     let inserts = junction::inserts(&r.base, &r.edits)?;
     let mut fragments = Vec::with_capacity(r.rows.len());
     let mut designs = Vec::with_capacity(r.rows.len());
     let mut retained_rows = Vec::new();
-    for (i, (row, f)) in r
-        .rows
-        .iter()
-        .zip(&intent.adjusted_request.fragments)
-        .enumerate()
-    {
+    for (i, (row, f)) in r.rows.iter().zip(&adjusted).enumerate() {
         match row {
             Row::Retain(spec) => {
                 fragments.push(spec.clone());
@@ -369,7 +378,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
                 options.target_end = f.end;
                 options.max_pairs = 1;
                 if i < r.overlaps.len() {
-                    let next = &intent.adjusted_request.fragments[(i + 1) % intent.fragments.len()];
+                    let next = &adjusted[(i + 1) % intent.fragments.len()];
                     let next_source = &inputs
                         .iter()
                         .find(|s| s.id == next.input_id)
@@ -470,7 +479,13 @@ impl Report {
         {
             return Err(bad("request/source revision binding changed"));
         }
-        options(&self.request, &self.intent.adjusted_request)?;
+        let adjusted = self
+            .intent
+            .adjusted_fragments
+            .iter()
+            .map(assembly_intent::Contribution::reference_fragment)
+            .collect::<Result<Vec<_>, _>>()?;
+        options(&self.request, &adjusted)?;
         let inserts = junction::inserts(&self.request.base, &self.request.edits)?;
         let mut retained = Vec::new();
         for (i, ((request, row), design)) in self
@@ -491,7 +506,7 @@ impl Report {
                     retained.push(i);
                 }
                 Row::DesignPcr { .. } => {
-                    let f = &self.intent.adjusted_request.fragments[i];
+                    let f = &adjusted[i];
                     let d = design
                         .as_ref()
                         .ok_or_else(|| bad("selected design evidence missing"))?;

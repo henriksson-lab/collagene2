@@ -1,7 +1,8 @@
 //! Literal reference edits are source-bound declarations, never primer-derived products.
 use collagene_core::{
     Feature, Location, Molecule, Topology, assembly_edit_intent as e, assembly_intent,
-    assembly_junction_edit, assembly_substitution_intent as s, overlap_primer_design::Fragment,
+    assembly_intent::{Contribution, ContributionPosition, Selector},
+    assembly_junction_edit, assembly_substitution_intent as s,
     verification::PlanInput,
 };
 fn source(dna: &str, topology: Topology) -> Vec<PlanInput> {
@@ -12,13 +13,15 @@ fn source(dna: &str, topology: Topology) -> Vec<PlanInput> {
         molecule,
     }]
 }
-fn fragment(role: &str, start: usize, end: usize, reverse: bool) -> Fragment {
-    Fragment {
+fn fragment(role: &str, start: usize, end: usize, reverse: bool) -> Contribution {
+    Contribution {
         role: role.into(),
         input_id: "source".into(),
-        start,
-        end,
-        reverse,
+        selector: Selector::ReferenceRange {
+            start,
+            end,
+            reverse,
+        },
     }
 }
 fn edit(role: &str, start: usize, end: usize, expected: &str, replacement: &str) -> e::Edit {
@@ -30,10 +33,11 @@ fn edit(role: &str, start: usize, end: usize, expected: &str, replacement: &str)
         replacement: replacement.into(),
     }
 }
-fn request(fragments: Vec<Fragment>, edits: Vec<e::Edit>) -> e::Request {
+fn request(fragments: Vec<Contribution>, edits: Vec<e::Edit>) -> e::Request {
     e::Request {
         base: s::Request {
             base: assembly_intent::Request {
+                material_bindings: vec![],
                 name: "Literal edited intent".into(),
                 fragments,
                 circular: false,
@@ -56,7 +60,7 @@ fn simultaneous_original_offsets_support_insert_delete_replace_and_retained_rece
             edit("insert", 2, 4, "CC", ""),
         ],
     );
-    let result = e::build(&inputs, &req).unwrap();
+    let result = e::build(&inputs, &req, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "GGAAGGA");
     assert_eq!(
         result
@@ -76,7 +80,7 @@ fn simultaneous_original_offsets_support_insert_delete_replace_and_retained_rece
     assert_eq!(serde_json::to_vec(&inputs).unwrap(), before);
     result.validate_binding(&result.context_revision).unwrap();
     result
-        .validate_sources(&inputs, &result.context_revision)
+        .validate_sources(&inputs, &result.context_revision, None)
         .unwrap();
     assert_eq!(
         result.target.metadata["assembly:intent:reference_only"],
@@ -99,7 +103,7 @@ fn repeated_sources_reverse_orientation_and_disjoint_substitution_stay_independe
         expected: "A".into(),
         replacement: "G".into(),
     });
-    let result = e::build(&inputs, &req).unwrap();
+    let result = e::build(&inputs, &req, None).unwrap();
     // Reverse-complement original is TACCGGTT; original offsets1..3 are AC.
     assert_eq!(result.target.sequence.as_str(), "GACCGGTATTTTCGGTT");
     assert_eq!(
@@ -110,7 +114,7 @@ fn repeated_sources_reverse_orientation_and_disjoint_substitution_stay_independe
         ),
         (9, 9, 12)
     );
-    assert!(result.applied[0].reverse);
+    assert!(result.applied[0].selector.reference_interval().unwrap().2);
     assert_eq!(result.fragments[1].output_end, 17);
     result.validate_binding(&result.context_revision).unwrap();
 }
@@ -130,10 +134,23 @@ fn circular_trim_normalization_preserves_original_offsets_and_outgoing_spacer() 
         remove_right: 3,
         inserted: "GG".into(),
     });
-    let result = e::build(&inputs, &req).unwrap();
+    let result = e::build(&inputs, &req, None).unwrap();
     // Head CC, literal junction GG, retained wrap source base1 A replaced CC.
     assert_eq!(result.target.sequence.as_str(), "CCGGCC");
-    assert_eq!((result.fragments[1].start, result.fragments[1].end), (1, 2));
+    assert_eq!(
+        (
+            result.fragments[1].retained_start,
+            result.fragments[1].retained_end
+        ),
+        (3, 4)
+    );
+    assert!(matches!(
+        result.fragments[1].source_position(3).unwrap(),
+        ContributionPosition::Reference {
+            position: 1,
+            reverse: false
+        }
+    ));
     assert_eq!(
         (
             result.applied[0].original_output_start,
@@ -143,7 +160,7 @@ fn circular_trim_normalization_preserves_original_offsets_and_outgoing_spacer() 
     );
     let mut trimmed = req.clone();
     trimmed.edits[0] = edit("wrap", 2, 3, "A", "C");
-    assert!(e::build(&inputs, &trimmed).is_err());
+    assert!(e::build(&inputs, &trimmed, None).is_err());
     result.validate_binding(&result.context_revision).unwrap();
 }
 #[test]
@@ -160,7 +177,7 @@ fn spanning_cds_includes_inserted_bases_and_drops_stale_translation() {
         vec![fragment("gene", 0, 8, false)],
         vec![edit("gene", 4, 4, "", "AAA")],
     );
-    let result = e::build(&inputs, &req).unwrap();
+    let result = e::build(&inputs, &req, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "AACCAAAGGTT");
     let cds = result
         .target
@@ -172,7 +189,7 @@ fn spanning_cds_includes_inserted_bases_and_drops_stale_translation() {
     assert!(cds.needs_review);
     assert!(!cds.qualifiers.iter().any(|(k, _)| k == "translation"));
     result
-        .validate_sources(&inputs, &result.context_revision)
+        .validate_sources(&inputs, &result.context_revision, None)
         .unwrap();
 }
 #[test]
@@ -184,7 +201,7 @@ fn stale_literals_conflicts_boundaries_and_oversized_edits_are_rejected() {
     );
     let mut bad = base.clone();
     bad.edits[0].expected = "AA".into();
-    assert!(e::build(&inputs, &bad).is_err());
+    assert!(e::build(&inputs, &bad, None).is_err());
     for extra in [
         edit("one", 2, 2, "", "G"),
         edit("one", 4, 4, "", "G"),
@@ -192,7 +209,7 @@ fn stale_literals_conflicts_boundaries_and_oversized_edits_are_rejected() {
     ] {
         let mut bad = base.clone();
         bad.edits.push(extra);
-        assert!(e::build(&inputs, &bad).is_err());
+        assert!(e::build(&inputs, &bad, None).is_err());
     }
     let mut bad = base.clone();
     bad.base.substitutions.push(s::Substitution {
@@ -201,20 +218,20 @@ fn stale_literals_conflicts_boundaries_and_oversized_edits_are_rejected() {
         expected: "C".into(),
         replacement: "A".into(),
     });
-    assert!(e::build(&inputs, &bad).is_err());
+    assert!(e::build(&inputs, &bad, None).is_err());
     let mut bad = base.clone();
     bad.edits[0].replacement = "A".repeat(100001);
-    assert!(e::build(&inputs, &bad).is_err());
+    assert!(e::build(&inputs, &bad, None).is_err());
     let mut bad = base.clone();
     bad.edits[0].role = "missing".into();
-    assert!(e::build(&inputs, &bad).is_err());
+    assert!(e::build(&inputs, &bad, None).is_err());
     let mut bad = base.clone();
     bad.edits = vec![edit("one", 0, 8, "AACCGGTT", "")];
-    assert!(e::build(&inputs, &bad).is_err());
+    assert!(e::build(&inputs, &bad, None).is_err());
     let mut adjacent = base.clone();
     adjacent.edits.push(edit("one", 4, 6, "GG", "A"));
     assert_eq!(
-        e::build(&inputs, &adjacent)
+        e::build(&inputs, &adjacent, None)
             .unwrap()
             .target
             .sequence
@@ -229,13 +246,13 @@ fn changed_source_target_receipts_and_context_cannot_revalidate() {
         vec![fragment("one", 0, 8, false)],
         vec![edit("one", 2, 4, "CC", "A")],
     );
-    let result = e::build(&inputs, &req).unwrap();
+    let result = e::build(&inputs, &req, None).unwrap();
     let mut changed = inputs.clone();
     changed[0].molecule.name = "Renamed original".into();
     changed[0].revision = changed[0].molecule.revision();
     assert!(
         result
-            .validate_sources(&changed, &result.context_revision)
+            .validate_sources(&changed, &result.context_revision, None)
             .is_err()
     );
     let mut changed = result.clone();
@@ -248,10 +265,14 @@ fn changed_source_target_receipts_and_context_cannot_revalidate() {
     changed.fragments[0].output_end += 1;
     assert!(changed.validate_binding(&result.context_revision).is_err());
     let mut forged = result.clone();
-    forged.fragments[0].start += 1;
+    forged.fragments[0].retained_start += 1;
+    let mut descriptors: serde_json::Value =
+        serde_json::from_str(&forged.target.metadata["assembly_edit_intent:contributions"])
+            .unwrap();
+    descriptors[0]["retained_start"] = serde_json::json!(forged.fragments[0].retained_start);
     forged.target.metadata.insert(
         "assembly_edit_intent:contributions".into(),
-        serde_json::to_string(&forged.fragments).unwrap(),
+        serde_json::to_string(&descriptors).unwrap(),
     );
     assert!(forged.validate_binding(&result.context_revision).is_err());
     assert!(result.validate_binding(&"0".repeat(64)).is_err());
@@ -264,7 +285,7 @@ fn protein_alphabet_cannot_masquerade_as_dna_with_identical_letters_and_receipts
         vec![fragment("one", 0, 8, false)],
         vec![edit("one", 2, 4, "CC", "A")],
     );
-    let report = e::build(&inputs, &req).unwrap();
+    let report = e::build(&inputs, &req, None).unwrap();
     let mut forged = report.clone();
     forged.target.sequence = collagene_core::Sequence::new(
         collagene_core::Alphabet::Protein,

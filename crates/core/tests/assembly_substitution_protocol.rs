@@ -1,12 +1,11 @@
 //! Independently declared base changes preserve original source bindings across the worker.
 use collagene_core::{
     Molecule, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
     assembly_junction_edit::Edit,
     assembly_substitution_intent::{self, Request as IntentRequest, Substitution},
-    overlap_primer_design::Fragment,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     verification::PlanInput,
-    workspace::{Workspace, WorkspaceAttachment},
 };
 fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
     let p = postcard::to_allocvec(value).unwrap();
@@ -39,14 +38,17 @@ fn declaration(
     let r = IntentRequest {
         base: assembly_intent::Request {
             name: "Independent substitution intent".into(),
-            fragments: vec![Fragment {
+            fragments: vec![Contribution {
                 role: "one".into(),
                 input_id: "source".into(),
-                start: if cross_origin { 4 } else { 0 },
-                end: 8,
-                reverse,
+                selector: Selector::ReferenceRange {
+                    start: if cross_origin { 4 } else { 0 },
+                    end: 8,
+                    reverse,
+                },
             }],
             circular: cross_origin,
+            material_bindings: vec![],
         },
         junction_edits: vec![],
         substitutions: vec![Substitution {
@@ -76,11 +78,16 @@ fn substituted_intent_161_153_roundtrips_forward_reverse_and_origin_with_literal
     for (reverse, cross) in [(false, false), (true, false), (false, true)] {
         let (inputs, request, expected, source_position) = declaration(reverse, cross);
         let before = inputs[0].molecule.clone();
-        let revision = assembly_substitution_intent::intent_revision(&inputs, &request).unwrap();
+        let revision =
+            assembly_substitution_intent::intent_revision(&inputs, &request, None).unwrap();
         let r = Request {
             id: 161,
             revision: revision.clone(),
-            job: AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request },
+            job: AnalysisJob::BuildSubstitutedAssemblyIntent {
+                inputs,
+                request,
+                workspace: None,
+            },
         };
         let bytes = protocol::encode_request(&r).unwrap();
         let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
@@ -96,8 +103,13 @@ fn substituted_intent_161_153_roundtrips_forward_reverse_and_origin_with_literal
         report.validate_binding(&revision).unwrap();
         assert_eq!(report.target.sequence.as_str(), expected);
         assert_eq!(report.applied.len(), 1);
-        assert_eq!(report.applied[0].source_position, source_position);
-        assert_eq!(report.applied[0].reverse, reverse);
+        assert_eq!(
+            report.applied[0].source_position,
+            collagene_core::assembly_intent::ContributionPosition::Reference {
+                position: source_position,
+                reverse
+            }
+        );
         assert_eq!(report.applied[0].input_revision, before.revision());
         assert!(protocol::decode_response(&wire(b"CGR\0", 76, &response)).is_err());
         let mut stale = r;
@@ -115,19 +127,23 @@ fn substituted_intent_161_153_roundtrips_forward_reverse_and_origin_with_literal
 fn trims_and_literal_inserts_precede_retained_core_substitution_and_expected_base_is_checked() {
     let (inputs, mut request, _, _) = declaration(false, false);
     request.base.fragments = vec![
-        Fragment {
+        Contribution {
             role: "left".into(),
             input_id: "source".into(),
-            start: 0,
-            end: 4,
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: 4,
+                reverse: false,
+            },
         },
-        Fragment {
+        Contribution {
             role: "right".into(),
             input_id: "source".into(),
-            start: 4,
-            end: 8,
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 4,
+                end: 8,
+                reverse: false,
+            },
         },
     ];
     request.junction_edits = vec![Edit {
@@ -142,13 +158,14 @@ fn trims_and_literal_inserts_precede_retained_core_substitution_and_expected_bas
         expected: "A".into(),
         replacement: "T".into(),
     }];
-    let revision = assembly_substitution_intent::intent_revision(&inputs, &request).unwrap();
+    let revision = assembly_substitution_intent::intent_revision(&inputs, &request, None).unwrap();
     let r = Request {
         id: 2,
         revision,
         job: AnalysisJob::BuildSubstitutedAssemblyIntent {
             inputs: inputs.clone(),
             request: request.clone(),
+            workspace: None,
         },
     };
     let response = protocol::decode_response(
@@ -159,8 +176,14 @@ fn trims_and_literal_inserts_precede_retained_core_substitution_and_expected_bas
         panic!("intent")
     };
     assert_eq!(report.target.sequence.as_str(), "ATCAAAGTT");
-    assert_eq!(report.applied[0].source_position, 1);
+    assert_eq!(
+        report.applied[0].source_position,
+        collagene_core::assembly_intent::ContributionPosition::Reference {
+            position: 1,
+            reverse: false
+        }
+    );
     assert_eq!(report.applied[0].output_position, 1);
     request.substitutions[0].expected = "C".into();
-    assert!(assembly_substitution_intent::intent_revision(&inputs, &request).is_err());
+    assert!(assembly_substitution_intent::intent_revision(&inputs, &request, None).is_err());
 }

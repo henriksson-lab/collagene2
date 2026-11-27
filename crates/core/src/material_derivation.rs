@@ -894,18 +894,27 @@ impl Capsule {
         crate::run_material_capsule::derived_capsule_preflight(self)
     }
 }
-pub fn capsule(w: &Workspace, product: &EventBinding) -> Result<Capsule, Error> {
-    let _fresh = reconstruct(w, product)?;
+/// Native record/source lookup after the caller's full Workspace validation;
+/// no science, reserialization, source cloning or capsule copies.
+pub(crate) fn documentary_capsule_parts(
+    w: &Workspace,
+    product: &EventBinding,
+) -> Result<(String, Record), Error> {
     let (hash, record) = record_for(w, product)?;
     let source = run_material::resolve(w, &record.request.source)?;
     crate::model::bounds::model_preflight(&[source])?;
-    let result = Capsule {
-        schema_version: 1,
-        product: product.clone(),
-        record_bytes: w.attachments[&hash].bytes.clone(),
-        source_snapshot: source.clone(),
+    run_material::resolve(w, product)?;
+    Ok((hash, record))
+}
+pub fn capsule(w: &Workspace, product: &EventBinding) -> Result<Capsule, Error> {
+    let mut roots = run_material::documentary_material_origins(
+        w,
+        &[run_material::MaterialSelection::Derived(product.clone())],
+    )?;
+    let run_material::MaterialOrigin::Derived(result) = roots.remove(0) else {
+        return Err(bad("material capsule kind differs"));
     };
-    result.validate_documentary()?;
+    let _fresh = reconstruct(w, product)?;
     Ok(result)
 }
 pub fn validate_capsule_for_workspace(

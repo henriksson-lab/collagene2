@@ -105,7 +105,7 @@ pub fn LiteralIntentEditor(draft: RwSignal<Draft>) -> impl IntoView {
         <Show when=move||!terminal()><label>"Trim downstream intended contribution (bases)"<input type="number" min="0" aria-label="Intended downstream trim" prop:value=move||current().remove_right on:input=move|e|change.run((1,event_target_value(&e)))/></label></Show>
         <label>{move||if terminal(){"Intended final top-strand suffix 5′→3′"}else{"Intended inserted DNA at this junction 5′→3′"}}<textarea maxlength="200" aria-label="Intended literal junction DNA" prop:value=move||current().inserted on:input=move|e|change.run((2,event_target_value(&e)))></textarea></label>
         </Show>
-        <p class="helper">"Trims apply to the selected reference regions in construct orientation. Review intended construct checks that each region retains at least one source base. A final linear suffix has no downstream contribution to trim."</p>
+        <p class="helper">"Trims apply to the selected source contributions in construct orientation. Review intended construct checks that each region retains at least one source base. A final linear suffix has no downstream contribution to trim."</p>
         <Show when=move||!draft.with(|d|d.junction_edits.is_empty())><details><summary>"Review all declared edits"</summary>{move||draft.with(|d|d.junction_edits.iter().map(|e|view!{<p>{format!("Boundary {} · trim {} upstream / {} downstream · insert {}",e.junction+1,e.remove_left,e.remove_right,if e.inserted.is_empty(){"(none)"}else{&e.inserted})}</p>}).collect_view())}</details></Show>
         <p class="helper" role="status">{move||status.get()}</p>
     </details>}.into_any()

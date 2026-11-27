@@ -166,7 +166,15 @@ mod tests {
         for (i, slot) in draft.slots.iter_mut().enumerate() {
             let document = &frame.documents[i];
             let molecule = frame.revisions[&document.head].clone();
-            slot.end = molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = molecule.sequence.len();
+            }
             slot.captured = Some(Arc::new(CapturedSource {
                 source: SourceInfo {
                     binding: EventBinding {

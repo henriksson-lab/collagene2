@@ -674,8 +674,24 @@ mod tests {
         draft.name = "Unchanged intended construct name".into();
         for slot in &mut draft.slots {
             slot.captured = Some(captured(&frame, 0));
-            slot.start = 0;
-            slot.end = 8;
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 0;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 8;
+            }
         }
         draft.sync_rows();
         draft.methods.rows[0].forward = "ac gt".into();
@@ -685,7 +701,7 @@ mod tests {
         frame.attachments.insert(
             blake3::hash(&bytes).to_hex().to_string(),
             WorkspaceAttachment {
-                kind: "assembly-draft-v15".into(),
+                kind: "assembly-draft-v16".into(),
                 name: "Active draft".into(),
                 media_type: "application/json".into(),
                 bytes,
@@ -731,8 +747,8 @@ mod tests {
             assert!(saved.candidates.is_empty());
             assert!(saved.active_candidate.is_none());
         }
-        let substituted = assembly_substitution_model::declare(&base, 0, "3", "T").unwrap();
-        let edited = assembly_edit_model::declare(&base, 0, "3", "5", "TAG").unwrap();
+        let substituted = assembly_substitution_model::declare(&base, 0, "3", "T", None).unwrap();
+        let edited = assembly_edit_model::declare(&base, 0, "3", "5", "TAG", None).unwrap();
         for draft in [substituted, edited] {
             let (saved, entry) = save(&frame, "Literal design", &draft).unwrap();
             assert!(load(&saved, &entry.id).unwrap() == draft);
@@ -842,7 +858,14 @@ mod tests {
         draft.methods.mode = Mode::Ligation;
         draft.slots.truncate(1);
         draft.methods.rows.truncate(1);
-        draft.slots[0].end = capture.molecule.sequence.len();
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = capture.molecule.sequence.len();
+        }
         draft.slots[0].captured = Some(capture);
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
         draft.methods.rows[0].run_origin =
@@ -1036,7 +1059,7 @@ mod tests {
         let active_hash = damaged
             .attachments
             .iter()
-            .find(|(_, asset)| asset.kind == "assembly-draft-v15")
+            .find(|(_, asset)| asset.kind == "assembly-draft-v16")
             .unwrap()
             .0;
         assert!(discard_malformed(&damaged, active_hash).is_err());
@@ -1067,8 +1090,24 @@ mod tests {
         let mut draft = Draft::default();
         for slot in &mut draft.slots {
             slot.captured = Some(captured(&frame, 0));
-            slot.start = 0;
-            slot.end = 8;
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 0;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 8;
+            }
         }
         draft.sync_rows();
         draft.validate().unwrap();

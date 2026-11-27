@@ -32,15 +32,9 @@ fn seed_name(seed: &ChoiceSeed) -> String {
         .map(|v| v.source.name.as_str())
         .unwrap_or("Unassigned");
     format!(
-        "{} · {}–{} · {} · {}",
+        "{} · {} · {}",
         source,
-        seed.slot.start.saturating_add(1),
-        seed.slot.end,
-        if seed.slot.reverse {
-            "reverse"
-        } else {
-            "forward"
-        },
+        crate::assembly_draft_model::selector_label(&seed.slot.selector),
         seed.preparation.summary()
     )
 }
@@ -177,11 +171,13 @@ pub fn AddLibraryBinView(
                 .map_err(|_| "Enter an explicit inclusive end position.")?;
             let flipped = reverse.get_untracked();
             let slot = Slot {
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: first,
+                    end: last,
+                    reverse: flipped,
+                },
                 label: "New source choice".into(),
                 captured: Some(Arc::new(CapturedSource { source, molecule })),
-                start: first,
-                end: last,
-                reverse: flipped,
                 digest_geometry: None,
                 anneal_bottom: None,
             };

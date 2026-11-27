@@ -240,6 +240,8 @@ impl<'a> Graph<'a> {
     fn resolve(&mut self) -> Result<(), Error> {
         let material = material_derivation_closure::Index::new(self.source)?;
         material.validate_existing_owners(&self.owners)?;
+        let mut selected_run_choices =
+            BTreeMap::<String, Vec<collagene_core::run_material::Selection>>::new();
         while !self.pending_events.is_empty() || !self.pending_runs.is_empty() {
             while let Some(id) = self.pending_events.pop_front() {
                 let event = *self
@@ -250,6 +252,74 @@ impl<'a> Graph<'a> {
                     return Err(Error::Unresolved("event revision"));
                 }
                 self.kept_revisions.insert(event.revision.clone());
+                // Actual-strand intent is documentary reference design. Its
+                // small descriptors cannot invent publication parents: every
+                // exact material event must ALREADY be retained native ancestry.
+                let molecule = self
+                    .source
+                    .revisions
+                    .get(&event.revision)
+                    .ok_or(Error::Unresolved("intent source revision"))?;
+                for descriptor in
+                    collagene_core::assembly_intent::material_source_descriptors(molecule)?
+                {
+                    let binding = &descriptor.event;
+                    let mut pending = event.parents.clone();
+                    let mut seen = BTreeSet::new();
+                    let mut owned = false;
+                    while let Some(parent) = pending.pop() {
+                        if !seen.insert(parent.clone()) {
+                            continue;
+                        }
+                        self.edge()?;
+                        let ancestor = self
+                            .events
+                            .get(parent.as_str())
+                            .ok_or(Error::Unresolved("intent ancestor event"))?;
+                        if ancestor.id == binding.event_id {
+                            if ancestor.document_id != binding.document_id
+                                || ancestor.revision != binding.revision
+                            {
+                                return Err(Error::Unresolved(
+                                    "intent material exact ancestor binding",
+                                ));
+                            }
+                            owned = true;
+                            break;
+                        }
+                        pending.extend(ancestor.parents.iter().cloned());
+                    }
+                    if !owned {
+                        return Err(Error::Unresolved(
+                            "intent material event is not a retained ancestor",
+                        ));
+                    }
+                    match &descriptor.selection {
+                        collagene_core::run_material::MaterialSelection::Run(selection) => {
+                            if !selected_run_choices.contains_key(&binding.event_id) {
+                                selected_run_choices.insert(
+                                    binding.event_id.clone(),
+                                    collagene_core::run_material::originating_products(
+                                        self.source,
+                                        binding,
+                                    )?,
+                                );
+                            }
+                            if !selected_run_choices[&binding.event_id].contains(selection) {
+                                return Err(Error::Unresolved(
+                                    "intent material run selection is not an actual native owner",
+                                ));
+                            }
+                        }
+                        collagene_core::run_material::MaterialSelection::Derived(event) => {
+                            if event != binding || !material.owns(event) {
+                                return Err(Error::Unresolved(
+                                    "intent derived selection is not an actual native owner",
+                                ));
+                            }
+                        }
+                    }
+                }
                 for parent in &event.parents {
                     self.event(parent)?;
                 }

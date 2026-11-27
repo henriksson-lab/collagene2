@@ -36,15 +36,9 @@ fn choice_label(choice: &Choice) -> String {
         return "Unassigned source · use the existing source controls before preparation".into();
     };
     format!(
-        "{} · source {}–{} (1-based inclusive, unrolled) · {}",
+        "{} · {}",
         clipped(&capture.source.name, 120),
-        choice.slot.start.saturating_add(1),
-        choice.slot.end,
-        if choice.slot.reverse {
-            "reverse complement in assembly"
-        } else {
-            "forward in assembly"
-        }
+        crate::assembly_draft_model::selector_label(&choice.slot.selector)
     )
 }
 fn dispatch(saved: Arc<Draft>, captured_epoch: u64, apply: Apply) -> Callback<Action> {

@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 103;
+pub const WORKER_SCHEMA_VERSION: u16 = 104;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -14,7 +14,7 @@ pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155, 158, 168,
     169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181, 182, 183, 184, 185, 186, 187, 188,
-    189,
+    189, 98, 109, 161, 163,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -641,6 +641,8 @@ pub enum AnalysisJob {
     BuildAssemblyIntent {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_intent::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     SelectDigestFragment {
         selection: crate::catalog_digest::CatalogSelection,
@@ -698,6 +700,8 @@ pub enum AnalysisJob {
         inputs: Vec<crate::verification::PlanInput>,
         base: crate::assembly_intent::Request,
         edits: Vec<crate::assembly_junction_edit::Edit>,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     DesignEditedAssemblyPrimers {
         inputs: Vec<crate::verification::PlanInput>,
@@ -923,6 +927,8 @@ pub enum AnalysisJob {
     BuildSubstitutedAssemblyIntent {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_substitution_intent::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     InspectMismatchPcrDigest {
         molecule: Molecule,
@@ -932,6 +938,8 @@ pub enum AnalysisJob {
     BuildContributionEditIntent {
         inputs: Vec<crate::verification::PlanInput>,
         request: crate::assembly_edit_intent::Request,
+        #[serde(deserialize_with = "crate::assembly_recipe::required_option")]
+        workspace: Option<crate::workspace::Workspace>,
     },
     DesignOverlapExtensionPrimers {
         source: Molecule,
@@ -1477,7 +1485,11 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 request,
             )?;
         }
-        AnalysisJob::BuildContributionEditIntent { inputs, request } => {
+        AnalysisJob::BuildAssemblyIntent {
+            inputs,
+            request,
+            workspace,
+        } => {
             if inputs.len() > 32 {
                 return Err(Error::TooLarge);
             }
@@ -1485,9 +1497,14 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 .iter()
                 .map(|i| (i.id.as_str(), &i.molecule))
                 .collect::<Vec<_>>();
-            crate::assembly_edit_intent::source_preflight(&sources, request)?;
+            crate::assembly_intent::preflight(&sources, request, workspace.as_ref())?;
         }
-        AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
+        AnalysisJob::BuildEditedAssemblyIntent {
+            inputs,
+            base,
+            edits,
+            workspace,
+        } => {
             if inputs.len() > 32 {
                 return Err(Error::TooLarge);
             }
@@ -1495,7 +1512,44 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
                 .iter()
                 .map(|i| (i.id.as_str(), &i.molecule))
                 .collect::<Vec<_>>();
-            crate::assembly_substitution_intent::source_preflight(&sources, request)?;
+            crate::assembly_junction_edit::intent_preflight(
+                &sources,
+                base,
+                edits,
+                workspace.as_ref(),
+            )?;
+        }
+        AnalysisJob::BuildContributionEditIntent {
+            inputs,
+            request,
+            workspace,
+        } => {
+            if inputs.len() > 32 {
+                return Err(Error::TooLarge);
+            }
+            let sources = inputs
+                .iter()
+                .map(|i| (i.id.as_str(), &i.molecule))
+                .collect::<Vec<_>>();
+            crate::assembly_edit_intent::source_preflight(&sources, request, workspace.as_ref())?;
+        }
+        AnalysisJob::BuildSubstitutedAssemblyIntent {
+            inputs,
+            request,
+            workspace,
+        } => {
+            if inputs.len() > 32 {
+                return Err(Error::TooLarge);
+            }
+            let sources = inputs
+                .iter()
+                .map(|i| (i.id.as_str(), &i.molecule))
+                .collect::<Vec<_>>();
+            crate::assembly_substitution_intent::source_preflight(
+                &sources,
+                request,
+                workspace.as_ref(),
+            )?;
         }
         AnalysisJob::InspectRunCatalogRestriction {
             source_role,
@@ -1654,6 +1708,10 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
     let maximum = if matches!(
         r.job,
         AnalysisJob::SaveWorkspace { .. }
+            | AnalysisJob::BuildAssemblyIntent { .. }
+            | AnalysisJob::BuildEditedAssemblyIntent { .. }
+            | AnalysisJob::BuildSubstitutedAssemblyIntent { .. }
+            | AnalysisJob::BuildContributionEditIntent { .. }
             | AnalysisJob::LoadWorkspace { .. }
             | AnalysisJob::RecordCloningRun { .. }
             | AnalysisJob::ReplayCloningRun { .. }
@@ -2874,16 +2932,30 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::BuildContributionEditIntent { inputs, request } => {
-            if crate::assembly_edit_intent::intent_revision(inputs, request)? != r.revision {
+        AnalysisJob::BuildContributionEditIntent {
+            inputs,
+            request,
+            workspace,
+        } => {
+            if crate::assembly_edit_intent::intent_revision(inputs, request, workspace.as_ref())?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Contribution edit original source/declaration changed".into(),
                 ));
             }
             None
         }
-        AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
-            if crate::assembly_substitution_intent::intent_revision(inputs, request)? != r.revision
+        AnalysisJob::BuildSubstitutedAssemblyIntent {
+            inputs,
+            request,
+            workspace,
+        } => {
+            if crate::assembly_substitution_intent::intent_revision(
+                inputs,
+                request,
+                workspace.as_ref(),
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Substituted assembly original source/declaration changed".into(),
@@ -2891,8 +2963,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
-        AnalysisJob::BuildAssemblyIntent { inputs, request } => {
-            if crate::assembly_intent::intent_revision(inputs, request)? != r.revision {
+        AnalysisJob::BuildAssemblyIntent {
+            inputs,
+            request,
+            workspace,
+        } => {
+            if crate::assembly_intent::intent_revision(inputs, request, workspace.as_ref())?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "assembly intent source/region/options changed".into(),
                 ));
@@ -2903,8 +2981,15 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             inputs,
             base,
             edits,
+            workspace,
         } => {
-            if crate::assembly_junction_edit::intent_revision(inputs, base, edits)? != r.revision {
+            if crate::assembly_junction_edit::intent_revision(
+                inputs,
+                base,
+                edits,
+                workspace.as_ref(),
+            )? != r.revision
+            {
                 return Err(Error::Format(
                     "Edited assembly source/intent changed".into(),
                 ));
@@ -4294,23 +4379,33 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::overlap_extension_primer_design::design(&source, &request)
                 .map(AnalysisResult::OverlapExtensionPrimersDesigned)
         }
-        AnalysisJob::BuildContributionEditIntent { inputs, request } => {
-            crate::assembly_edit_intent::build(&inputs, &request)
-                .map(AnalysisResult::ContributionEditIntent)
-        }
-        AnalysisJob::BuildSubstitutedAssemblyIntent { inputs, request } => {
-            crate::assembly_substitution_intent::build(&inputs, &request)
-                .map(AnalysisResult::SubstitutedAssemblyIntent)
-        }
-        AnalysisJob::BuildAssemblyIntent { inputs, request } => {
-            crate::assembly_intent::build(&inputs, &request).map(AnalysisResult::AssemblyIntent)
-        }
+        AnalysisJob::BuildContributionEditIntent {
+            inputs,
+            request,
+            workspace,
+        } => crate::assembly_edit_intent::build(&inputs, &request, workspace.as_ref())
+            .map(AnalysisResult::ContributionEditIntent),
+        AnalysisJob::BuildSubstitutedAssemblyIntent {
+            inputs,
+            request,
+            workspace,
+        } => crate::assembly_substitution_intent::build(&inputs, &request, workspace.as_ref())
+            .map(AnalysisResult::SubstitutedAssemblyIntent),
+        AnalysisJob::BuildAssemblyIntent {
+            inputs,
+            request,
+            workspace,
+        } => crate::assembly_intent::build(&inputs, &request, workspace.as_ref())
+            .map(AnalysisResult::AssemblyIntent),
         AnalysisJob::BuildEditedAssemblyIntent {
             inputs,
             base,
             edits,
-        } => crate::assembly_junction_edit::build_intent(&inputs, &base, &edits)
-            .map(AnalysisResult::EditedAssemblyIntent),
+            workspace,
+        } => {
+            crate::assembly_junction_edit::build_intent(&inputs, &base, &edits, workspace.as_ref())
+                .map(AnalysisResult::EditedAssemblyIntent)
+        }
         AnalysisJob::DesignEditedAssemblyPrimers { inputs, request } => {
             crate::assembly_junction_edit::design(&inputs, &request)
                 .map(AnalysisResult::EditedAssemblyPrimers)

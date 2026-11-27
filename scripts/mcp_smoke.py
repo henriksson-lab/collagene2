@@ -388,7 +388,8 @@ def main():
         primer_plan_refs={document["name"]:immutable_ref(document) for document in primer_plan_docs}
         primer_plan_inputs=[{"id":"l","document":primer_plan_refs["planner_left"]},{"id":"r","document":primer_plan_refs["planner_right"]}]
         primer_plan_fragments=[{"role":"left","input_id":"l","start":0,"end":20,"reverse":False},{"role":"right","input_id":"r","start":0,"end":20,"reverse":False}]
-        primer_intent=tool("build_assembly_intent",{"inputs":primer_plan_inputs,"request":{"name":"Stdio declared selection intent","fragments":primer_plan_fragments,"circular":False}})
+        primer_intent_fragments=[{"role":"left","input_id":"l","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":False}}},{"role":"right","input_id":"r","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":False}}}]
+        primer_intent=tool("build_assembly_intent",{"origin_workspace":None,"inputs":primer_plan_inputs,"request":{"name":"Stdio declared selection intent","fragments":primer_intent_fragments,"material_bindings":[],"circular":False}})
         assert primer_intent["state"]=="intended-reference" and primer_intent["verified"] is False and primer_intent["preparation_simulated"] is False,primer_intent
         primer_plan_refs["planner_independent_target"]=primer_intent["target"]
         assert tool("read_sequence_region",{"document":primer_intent["target"],"start":0,"end":40})["sequence"]=="ATGACCCCGGGGTTTCCAGAATCCGTTAGCGACCTTGGAA"

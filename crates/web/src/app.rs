@@ -4368,44 +4368,55 @@ pub fn App() -> impl IntoView {
                     return;
                 }
             };
-            let expected = staged[index].head_revision().to_owned();
+            let expected_document = staged[index].id.clone();
+            let expected_event = staged[index].head_event().to_owned();
+            let expected_revision = staged[index].head_revision().to_owned();
             batch(|| {
                 documents.set(staged);
                 active.set(index);
             });
             let apply = wasm_bindgen::closure::Closure::once_into_js(move || {
                 if documents.with_untracked(|docs| {
-                    docs.get(active.get_untracked())
-                        .is_none_or(|d| d.head_revision() != expected)
+                    docs.get(active.get_untracked()).is_none_or(|d| {
+                        d.id != expected_document
+                            || d.head_event() != expected_event
+                            || d.head_revision() != expected_revision
+                    })
                 }) {
                     return;
                 }
                 let n = molecule.with_untracked(|m| m.sequence.len());
-                if n == 0
-                    || request.start >= n
-                    || request.end <= request.start
-                    || request.end > request.start.saturating_add(n)
-                {
-                    return;
+                let topology = molecule.with_untracked(|m| m.topology);
+                let mut parts = Vec::new();
+                for (start, end, _) in &request.regions {
+                    if n == 0
+                        || *start >= n
+                        || end <= start
+                        || end - start > n
+                        || (topology == Topology::Linear && *end > n)
+                    {
+                        message.set("The source projection lies outside the displayed reference. Review the strand contribution again.".into());
+                        return;
+                    }
+                    if *end <= n {
+                        parts.push((*start, *end));
+                    } else {
+                        parts.push((*start, n));
+                        parts.push((0, *end - n));
+                    }
                 }
                 selected_feature.set(None);
-                let parts = if request.end <= n {
-                    vec![(request.start, request.end)]
-                } else {
-                    vec![(request.start, n), (0, request.end - n)]
-                };
                 selection.set(if parts.len() == 1 {
                     Some(parts[0])
                 } else {
                     None
                 });
-                search_regions.set(Some((expected, parts)));
-                message.set(if request.reverse {
-                    "Selected the pinned source region; this fragment is reversed in the assembly."
-                        .into()
+                search_regions.set(if parts.is_empty() {
+                    None
                 } else {
-                    "Selected the pinned assembly source region.".into()
+                    Some((expected_revision, parts))
                 });
+                message.set(if request.regions.is_empty(){format!("{} · These actual strand bases have no displayed top-reference positions. Inspect the strand sequence in the assembly source details.",request.description)}else{format!("{} · Highlighted only mapped original top-reference bases; actual strand-only bases remain in assembly source details.",request.description)});
             });
             if let Some(window) = web_sys::window() {
                 let _ = window.request_animation_frame(apply.unchecked_ref());

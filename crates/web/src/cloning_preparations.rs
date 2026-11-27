@@ -321,16 +321,19 @@ mod tailing_tests {
                 })
                 .collect::<Vec<_>>();
             let base = assembly_intent::Request {
+                material_bindings: Vec::new(),
                 name: "Operator declared target".into(),
                 circular,
                 fragments: roles
                     .iter()
-                    .map(|role| overlap_primer_design::Fragment {
+                    .map(|role| collagene_core::assembly_intent::Contribution {
                         role: role.role.clone(),
                         input_id: role.input_id.clone(),
-                        start: 0,
-                        end: 6,
-                        reverse: false,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: 0,
+                            end: 6,
+                            reverse: false,
+                        },
                     })
                     .collect(),
             };
@@ -348,7 +351,8 @@ mod tailing_tests {
                     inserted: "A".into(),
                 },
             ];
-            let intent = assembly_junction_edit::build_intent(&inputs, &base, &edits).unwrap();
+            let intent =
+                assembly_junction_edit::build_intent(&inputs, &base, &edits, None).unwrap();
             assert_eq!(intent.target.sequence.as_str(), "AAACCCTGGGTTTA");
             let (bound, recipe) = tailing_request(&state, originals, &intent.target).unwrap();
             let preview =
@@ -577,26 +581,31 @@ mod annealed_tests {
             .collect::<Vec<_>>();
         let roles = state.role_ids(2).unwrap();
         let declaration = assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: "Independent backbone and top contribution".into(),
             circular: true,
             fragments: vec![
-                overlap_primer_design::Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[0].role.clone(),
                     input_id: ids[0].clone(),
-                    start: 2,
-                    end: 14,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 2,
+                        end: 14,
+                        reverse: false,
+                    },
                 },
-                overlap_primer_design::Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[1].role.clone(),
                     input_id: ids[1].clone(),
-                    start: 0,
-                    end: 10,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 10,
+                        reverse: false,
+                    },
                 },
             ],
         };
-        let intent = assembly_intent::build(&inputs, &declaration).unwrap();
+        let intent = assembly_intent::build(&inputs, &declaration, None).unwrap();
         assert_eq!(intent.target.sequence.as_str(), "AATTCTTACGGGAATTGCTACG");
         let (bound_ids, fragments) = prepared_rows(&state, 3).unwrap();
         assert_eq!(bound_ids, ids);

@@ -2,11 +2,11 @@
 use collagene_core::{
     Molecule, Topology,
     assembly_edit_intent::{self, Edit, Request as IntentRequest},
-    assembly_intent, assembly_substitution_intent,
-    overlap_primer_design::Fragment,
+    assembly_intent,
+    assembly_intent::{Contribution, Selector},
+    assembly_substitution_intent,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
     verification::PlanInput,
-    workspace::{Workspace, WorkspaceAttachment},
 };
 fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8> {
     let payload = postcard::to_allocvec(value).unwrap();
@@ -29,22 +29,27 @@ fn declaration() -> (Vec<PlanInput>, IntentRequest) {
             base: assembly_intent::Request {
                 name: "Independent edited requirement".into(),
                 fragments: vec![
-                    Fragment {
+                    Contribution {
                         role: "left".into(),
                         input_id: "original".into(),
-                        start: 0,
-                        end: 4,
-                        reverse: false,
+                        selector: Selector::ReferenceRange {
+                            start: 0,
+                            end: 4,
+                            reverse: false,
+                        },
                     },
-                    Fragment {
+                    Contribution {
                         role: "right".into(),
                         input_id: "original".into(),
-                        start: 0,
-                        end: 4,
-                        reverse: true,
+                        selector: Selector::ReferenceRange {
+                            start: 0,
+                            end: 4,
+                            reverse: true,
+                        },
                     },
                 ],
                 circular: false,
+                material_bindings: vec![],
             },
             junction_edits: vec![],
             substitutions: vec![],
@@ -73,13 +78,14 @@ fn contribution_edits_append_163_155_and_reject_old_or_stale_bindings() {
     assert!(protocol::WORKER_SCHEMA_VERSION >= 79);
     let (inputs, declaration) = declaration();
     let originals = inputs.clone();
-    let revision = assembly_edit_intent::intent_revision(&inputs, &declaration).unwrap();
+    let revision = assembly_edit_intent::intent_revision(&inputs, &declaration, None).unwrap();
     let request = Request {
         id: 163,
         revision: revision.clone(),
         job: AnalysisJob::BuildContributionEditIntent {
             inputs,
             request: declaration,
+            workspace: None,
         },
     };
     let encoded = protocol::encode_request(&request).unwrap();
@@ -96,7 +102,9 @@ fn contribution_edits_append_163_155_and_reject_old_or_stale_bindings() {
         panic!("literal intent")
     };
     report.validate_binding(&revision).unwrap();
-    report.validate_sources(&originals, &revision).unwrap();
+    report
+        .validate_sources(&originals, &revision, None)
+        .unwrap();
     assert_eq!(report.target.sequence.as_str(), "AATTCCGAT");
     assert_eq!(report.applied.len(), 2);
     assert_eq!(report.fragments.len(), 2);
@@ -129,14 +137,18 @@ fn contribution_edits_append_163_155_and_reject_old_or_stale_bindings() {
 fn wrong_original_literal_and_revision_are_rejected_before_worker_execution() {
     let (mut inputs, mut request) = declaration();
     request.edits[1].expected = "AC".into();
-    assert!(assembly_edit_intent::intent_revision(&inputs, &request).is_err());
+    assert!(assembly_edit_intent::intent_revision(&inputs, &request, None).is_err());
     request.edits[1].expected = "GT".into();
-    let revision = assembly_edit_intent::intent_revision(&inputs, &request).unwrap();
+    let revision = assembly_edit_intent::intent_revision(&inputs, &request, None).unwrap();
     inputs[0].revision = "0".repeat(64);
     let request = Request {
         id: 7,
         revision,
-        job: AnalysisJob::BuildContributionEditIntent { inputs, request },
+        job: AnalysisJob::BuildContributionEditIntent {
+            inputs,
+            request,
+            workspace: None,
+        },
     };
     assert!(protocol::process_request(&protocol::encode_request(&request).unwrap()).is_err());
 }

@@ -3,9 +3,9 @@ use collagene_core::{
     Feature, Location, Molecule, Topology,
     analysis::Primer,
     assembly_intent,
+    assembly_intent::{Contribution, ContributionPosition, Selector},
     assembly_junction_edit::Edit,
     assembly_substitution_intent as s,
-    overlap_primer_design::Fragment,
     verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
 };
 fn input(molecule: Molecule) -> PlanInput {
@@ -15,13 +15,15 @@ fn input(molecule: Molecule) -> PlanInput {
         molecule,
     }
 }
-fn fragment(role: &str, start: usize, end: usize, reverse: bool) -> Fragment {
-    Fragment {
+fn fragment(role: &str, start: usize, end: usize, reverse: bool) -> Contribution {
+    Contribution {
         role: role.into(),
         input_id: "original".into(),
-        start,
-        end,
-        reverse,
+        selector: Selector::ReferenceRange {
+            start,
+            end,
+            reverse,
+        },
     }
 }
 fn edit(role: &str, offset: usize, expected: &str, replacement: &str) -> s::Substitution {
@@ -32,9 +34,10 @@ fn edit(role: &str, offset: usize, expected: &str, replacement: &str) -> s::Subs
         replacement: replacement.into(),
     }
 }
-fn request(fragments: Vec<Fragment>, substitutions: Vec<s::Substitution>) -> s::Request {
+fn request(fragments: Vec<Contribution>, substitutions: Vec<s::Substitution>) -> s::Request {
     s::Request {
         base: assembly_intent::Request {
+            material_bindings: vec![],
             name: "Independently declared mutant".into(),
             fragments,
             circular: false,
@@ -56,24 +59,27 @@ fn repeated_originals_have_distinct_roles_and_reverse_edits_use_construct_letter
         ],
         vec![edit("forward", 2, "C", "A"), edit("reverse", 2, "C", "T")],
     );
-    let result = s::build(&inputs, &request).unwrap();
+    let result = s::build(&inputs, &request, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "AAACGGTTAATCGGTT");
     assert_eq!(
         result
             .applied
             .iter()
-            .map(|a| (a.source_position, a.output_position, a.reverse))
+            .map(|a| {
+                let (position, reverse) = reference_position(&a.source_position);
+                (position, a.output_position, reverse)
+            })
             .collect::<Vec<_>>(),
         vec![(2, 2, false), (5, 10, true)]
     );
     assert_eq!(serde_json::to_vec(&inputs).unwrap(), before);
     result
-        .validate_binding(&s::intent_revision(&inputs, &request).unwrap())
+        .validate_binding(&s::intent_revision(&inputs, &request, None).unwrap())
         .unwrap();
     let mut only_forward = request.clone();
     only_forward.substitutions.pop();
     assert_eq!(
-        s::build(&inputs, &only_forward)
+        s::build(&inputs, &only_forward, None)
             .unwrap()
             .target
             .sequence
@@ -90,24 +96,34 @@ fn circular_original_contributions_cross_origin_without_moving_declared_output_o
         vec![fragment("wrap", 4, 8, false)],
         vec![edit("wrap", 2, "A", "G")],
     );
-    let result = s::build(&inputs, &forward).unwrap();
+    let result = s::build(&inputs, &forward, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "CCGA");
     assert_eq!(
         (
-            result.applied[0].source_position,
+            reference_position(&result.applied[0].source_position).0,
             result.applied[0].output_position
         ),
         (0, 2)
     );
-    assert_eq!((result.fragments[0].start, result.fragments[0].end), (4, 8));
+    assert_eq!(
+        result.fragments[0].selector.reference_interval().unwrap(),
+        (4, 8, false)
+    );
+    assert_eq!(
+        (
+            result.fragments[0].retained_start,
+            result.fragments[0].retained_end
+        ),
+        (0, 4)
+    );
     let reverse = request(
         vec![fragment("wrap", 4, 8, true)],
         vec![edit("wrap", 0, "T", "A")],
     );
-    let result = s::build(&inputs, &reverse).unwrap();
+    let result = s::build(&inputs, &reverse, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "ATGG");
-    assert_eq!(result.applied[0].source_position, 1);
-    assert!(result.applied[0].reverse);
+    assert_eq!(reference_position(&result.applied[0].source_position).0, 1);
+    assert!(reference_position(&result.applied[0].source_position).1);
 }
 #[test]
 fn retained_cores_and_literal_junctions_keep_separate_offsets_and_trimmed_edits_fail() {
@@ -127,21 +143,26 @@ fn retained_cores_and_literal_junctions_keep_separate_offsets_and_trimmed_edits_
         remove_right: 1,
         inserted: "AAA".into(),
     }];
-    let result = s::build(&inputs, &request).unwrap();
+    let result = s::build(&inputs, &request, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "ATCAAAGCT");
     assert_eq!(
         result
             .fragments
             .iter()
-            .map(|f| (f.start, f.end, f.output_start, f.output_end))
+            .map(|f| (
+                f.retained_start,
+                f.retained_end,
+                f.output_start,
+                f.output_end
+            ))
             .collect::<Vec<_>>(),
-        vec![(0, 3, 0, 6), (5, 8, 6, 9)]
+        vec![(0, 3, 0, 6), (1, 4, 6, 9)]
     );
     assert_eq!(result.applied[1].output_position, 7);
     for substitution in [edit("left", 3, "C", "A"), edit("right", 0, "G", "A")] {
         let mut changed = request.clone();
         changed.substitutions = vec![substitution];
-        assert!(s::intent_revision(&inputs, &changed).is_err());
+        assert!(s::intent_revision(&inputs, &changed, None).is_err());
     }
     // A final linear suffix remains literal synthetic DNA, never a source offset.
     request.junction_edits.push(Edit {
@@ -151,7 +172,7 @@ fn retained_cores_and_literal_junctions_keep_separate_offsets_and_trimmed_edits_
         inserted: "GG".into(),
     });
     assert_eq!(
-        s::build(&inputs, &request)
+        s::build(&inputs, &request, None)
             .unwrap()
             .target
             .sequence
@@ -185,7 +206,7 @@ fn affected_annotations_require_review_and_keep_full_original_qualifiers() {
         vec![fragment("whole", 0, 8, false)],
         vec![edit("whole", 2, "C", "A")],
     );
-    let result = s::build(&inputs, &r).unwrap();
+    let result = s::build(&inputs, &r, None).unwrap();
     assert!(result.target.features[0].needs_review);
     assert!(
         !result.target.features[0]
@@ -211,7 +232,7 @@ fn affected_annotations_require_review_and_keep_full_original_qualifiers() {
     unsafe_source.features[0]
         .qualifiers
         .push(("transl_except".into(), Some("(pos:3..3,aa:Sec)".into())));
-    assert!(s::build(&[input(unsafe_source)], &r).is_err());
+    assert!(s::build(&[input(unsafe_source)], &r, None).is_err());
 }
 #[test]
 fn physical_reconstruction_is_checked_against_predeclared_internal_changes() {
@@ -224,7 +245,7 @@ fn physical_reconstruction_is_checked_against_predeclared_internal_changes() {
         vec![fragment("whole", 0, 32, false)],
         vec![edit("whole", 2, "T", "A"), edit("whole", 30, "T", "G")],
     );
-    let target = s::build(&inputs, &r).unwrap().target;
+    let target = s::build(&inputs, &r, None).unwrap().target;
     assert_eq!(target.sequence.as_str(), INTENDED);
     let mut plan = DesignPlan {
         name: "Check independently declared substitutions".into(),
@@ -263,7 +284,7 @@ fn stale_bases_roles_sources_report_tampering_and_hostile_counts_fail_explicitly
         vec![fragment("whole", 0, 8, false)],
         vec![edit("whole", 2, "C", "A")],
     );
-    let result = s::build(&inputs, &r).unwrap();
+    let result = s::build(&inputs, &r, None).unwrap();
     for edit in [
         edit("whole", 2, "A", "T"),
         edit("missing", 2, "C", "A"),
@@ -273,21 +294,24 @@ fn stale_bases_roles_sources_report_tampering_and_hostile_counts_fail_explicitly
     ] {
         let mut changed = r.clone();
         changed.substitutions = vec![edit];
-        assert!(s::intent_revision(&inputs, &changed).is_err());
+        assert!(s::intent_revision(&inputs, &changed, None).is_err());
     }
     let mut duplicate = r.clone();
     duplicate
         .substitutions
         .push(duplicate.substitutions[0].clone());
-    assert!(s::intent_revision(&inputs, &duplicate).is_err());
+    assert!(s::intent_revision(&inputs, &duplicate, None).is_err());
     let mut huge = r.clone();
     huge.substitutions = vec![edit("whole", 2, "C", "A"); 257];
-    assert!(s::source_preflight(&[("original", &inputs[0].molecule)], &huge).is_err());
+    assert!(s::source_preflight(&[("original", &inputs[0].molecule)], &huge, None).is_err());
     let mut stale = inputs.clone();
     stale[0].revision = "0".repeat(64);
-    assert!(s::intent_revision(&stale, &r).is_err());
+    assert!(s::intent_revision(&stale, &r, None).is_err());
     let mut tampered = result.clone();
-    tampered.applied[0].source_position = 5;
+    tampered.applied[0].source_position = ContributionPosition::Reference {
+        position: 5,
+        reverse: false,
+    };
     assert!(tampered.validate_binding(&result.context_revision).is_err());
     let mut tampered = result.clone();
     tampered.target.sequence = collagene_core::Sequence::dna("AATCGGTT").unwrap();
@@ -318,22 +342,35 @@ fn normalized_circular_trimmed_cores_keep_original_oriented_offsets_on_both_stra
         remove_right: 3,
         inserted: "GG".into(),
     }];
-    let result = s::build(&inputs, &forward).unwrap();
+    let result = s::build(&inputs, &forward, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "ATCCGGC");
-    assert_eq!((result.fragments[1].start, result.fragments[1].end), (1, 2));
     assert_eq!(
         (
-            result.applied[1].source_position,
+            result.fragments[1].retained_start,
+            result.fragments[1].retained_end
+        ),
+        (3, 4)
+    );
+    assert!(matches!(
+        result.fragments[1].source_position(3).unwrap(),
+        ContributionPosition::Reference {
+            position: 1,
+            reverse: false
+        }
+    ));
+    assert_eq!(
+        (
+            reference_position(&result.applied[1].source_position).0,
             result.applied[1].output_position
         ),
         (1, 6)
     );
     result
-        .validate_binding(&s::intent_revision(&inputs, &forward).unwrap())
+        .validate_binding(&s::intent_revision(&inputs, &forward, None).unwrap())
         .unwrap();
     let mut trimmed = forward.clone();
     trimmed.substitutions = vec![edit("wrap", 2, "A", "G")];
-    assert!(s::intent_revision(&inputs, &trimmed).is_err());
+    assert!(s::intent_revision(&inputs, &trimmed, None).is_err());
     // Reverse TTAA: outgoing trim3 retains original reverse offset0 (source1,
     // expected T is the complement of original A). The core again normalizes1..2.
     let mut reverse = request(
@@ -349,21 +386,41 @@ fn normalized_circular_trimmed_cores_keep_original_oriented_offsets_on_both_stra
         remove_right: 1,
         inserted: "GG".into(),
     }];
-    let result = s::build(&inputs, &reverse).unwrap();
+    let result = s::build(&inputs, &reverse, None).unwrap();
     assert_eq!(result.target.sequence.as_str(), "CGGATC");
-    assert_eq!((result.fragments[0].start, result.fragments[0].end), (1, 2));
     assert_eq!(
         (
-            result.applied[0].source_position,
+            result.fragments[0].retained_start,
+            result.fragments[0].retained_end
+        ),
+        (0, 1)
+    );
+    assert!(matches!(
+        result.fragments[0].source_position(0).unwrap(),
+        ContributionPosition::Reference {
+            position: 1,
+            reverse: true
+        }
+    ));
+    assert_eq!(
+        (
+            reference_position(&result.applied[0].source_position).0,
             result.applied[0].output_position
         ),
         (1, 0)
     );
-    assert!(result.applied[0].reverse);
+    assert!(reference_position(&result.applied[0].source_position).1);
     result
-        .validate_binding(&s::intent_revision(&inputs, &reverse).unwrap())
+        .validate_binding(&s::intent_revision(&inputs, &reverse, None).unwrap())
         .unwrap();
     let mut trimmed = reverse.clone();
     trimmed.substitutions = vec![edit("wrap", 1, "T", "A")];
-    assert!(s::intent_revision(&inputs, &trimmed).is_err());
+    assert!(s::intent_revision(&inputs, &trimmed, None).is_err());
+}
+
+fn reference_position(position: &ContributionPosition) -> (usize, bool) {
+    match position {
+        ContributionPosition::Reference { position, reverse } => (*position, *reverse),
+        ContributionPosition::Material { .. } => panic!("expected an original reference position"),
+    }
 }

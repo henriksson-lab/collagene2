@@ -63,6 +63,12 @@ impl<'a> Index<'a> {
         }
         Ok(Self { source, owners })
     }
+    /// Readonly exact native owner lookup from the already-validated index.
+    pub(super) fn owns(&self, event: &EventBinding) -> bool {
+        self.owners
+            .get(&event.event_id)
+            .is_some_and(|owner| owner.product == *event)
+    }
     /// Invoke after ordinary run ownership has been indexed. A
     /// product cannot acquire a second native owner depending on attachment order.
     pub(super) fn validate_existing_owners(

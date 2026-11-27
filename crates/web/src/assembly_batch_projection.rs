@@ -209,9 +209,7 @@ fn typed_row(
 struct SourceKey<'a> {
     label: &'a str,
     source: Option<&'a EventBinding>,
-    start: usize,
-    end: usize,
-    reverse: bool,
+    selector: &'a collagene_core::assembly_intent::Selector,
     digest_geometry: Option<&'a DigestGeometry>,
 }
 fn source_key<'a>(slot: &'a Slot, label: &'a str) -> SourceKey<'a> {
@@ -221,9 +219,7 @@ fn source_key<'a>(slot: &'a Slot, label: &'a str) -> SourceKey<'a> {
             .captured
             .as_ref()
             .map(|capture| &capture.source.binding),
-        start: slot.start,
-        end: slot.end,
-        reverse: slot.reverse,
+        selector: &slot.selector,
         digest_geometry: slot.digest_geometry.as_ref(),
     }
 }
@@ -362,6 +358,7 @@ fn declaration_revision(stored: &Draft, request: &batch::Request) -> Result<Stri
 }
 
 pub fn project(draft: &Draft) -> Result<Projection, String> {
+    crate::assembly_draft_model::require_reference_selectors(draft)?;
     let stored = alternatives::for_storage(draft)?;
     let library = stored
         .alternatives
@@ -379,13 +376,14 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
                 .iter()
                 .filter_map(|choice| {
                     let capture = choice.slot.captured.as_ref()?;
+                    let (start, end, reverse) = choice.slot.selector.reference_interval().ok()?;
                     Some(design::Choice {
                         id: choice.id.clone(),
                         label: source_label(&capture.source.name, &choice.id),
                         source: capture.source.binding.clone(),
-                        start: choice.slot.start,
-                        end: choice.slot.end,
-                        reverse: choice.slot.reverse,
+                        start,
+                        end,
+                        reverse,
                         preparation: None,
                         treatment: None,
                         generation: None,
@@ -515,8 +513,24 @@ mod tests {
             .iter_mut()
             .zip([source("backbone", "AACCGGTT"), source("insert", "TTGCAACC")])
         {
-            slot.start = 0;
-            slot.end = captured.molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 0;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = captured.molecule.sequence.len();
+            }
             slot.captured = Some(captured);
         }
         draft.sync_rows();
@@ -689,15 +703,36 @@ mod tests {
         assert_eq!(project(&other).unwrap().revision, original.revision);
         let capture = source("pending replacement", "CCGTAAGG");
         draft.slots[1].captured = Some(capture);
-        draft.slots[1].start = 0;
-        draft.slots[1].end = 8;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 0;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 8;
+        }
         draft.sync_rows();
         let first = project(&draft).unwrap();
         assert!(matches!(&first.request.rows[0], RowRequest::Ready(_)));
         assert!(
             matches!(&first.request.rows[1],RowRequest::DraftError{message,..}if message.contains("capture"))
         );
-        draft.slots[1].start = 1;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 1;
+        }
         draft.sync_rows();
         let second = project(&draft).unwrap();
         assert_eq!(
@@ -705,7 +740,7 @@ mod tests {
             batch::request_revision(&second.request).unwrap()
         );
         assert_ne!(first.revision, second.revision);
-        assert_eq!(draft.slots[1].start, 1);
+        assert_eq!(draft.slots[1].selector.reference_interval().unwrap().0, 1);
     }
 
     #[test]
@@ -973,9 +1008,9 @@ mod tests {
                     bin.choices[0].reverse
                 ),
                 (
-                    draft.slots[i].start,
-                    draft.slots[i].end,
-                    draft.slots[i].reverse
+                    draft.slots[i].selector.reference_interval().unwrap().0,
+                    draft.slots[i].selector.reference_interval().unwrap().1,
+                    draft.slots[i].selector.reference_interval().unwrap().2
                 )
             );
         }
@@ -1048,10 +1083,7 @@ mod tests {
     }
     #[test]
     fn ordinary_reference_and_edited_target_metadata_equal_the_frozen_intent_builder() {
-        use collagene_core::{
-            assembly_intent, assembly_junction_edit, overlap_primer_design::Fragment,
-            verification::PlanInput,
-        };
+        use collagene_core::{assembly_intent, assembly_junction_edit, verification::PlanInput};
         let originals = vec![
             Molecule::dna("first source", "AACCGGTTAA", Topology::Linear).unwrap(),
             Molecule::dna("second source", "GGTTAACCGG", Topology::Linear).unwrap(),
@@ -1074,9 +1106,34 @@ mod tests {
                 },
                 molecule: originals[i].clone(),
             }));
-            slot.start = i + 1;
-            slot.end = 8 + i;
-            slot.reverse = i == 1;
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = i + 1;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 8 + i;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    reverse: value,
+                    ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = i == 1;
+            }
         }
         draft.sync_rows();
         for edited in [false, true] {
@@ -1104,26 +1161,27 @@ mod tests {
                 })
                 .collect::<Vec<_>>();
             let request = assembly_intent::Request {
+                material_bindings: Vec::new(),
                 name: draft.name.clone(),
                 circular: draft.circular,
                 fragments: roles
                     .iter()
                     .zip(&draft.slots)
-                    .map(|(r, s)| Fragment {
+                    .map(|(r, s)| collagene_core::assembly_intent::Contribution {
                         role: r.role.clone(),
                         input_id: r.input_id.clone(),
-                        start: s.start,
-                        end: s.end,
-                        reverse: s.reverse,
+                        selector: s.selector.clone(),
                     })
                     .collect(),
             };
             let intended = if edited {
-                assembly_junction_edit::build_intent(&inputs, &request, &draft.junction_edits)
+                assembly_junction_edit::build_intent(&inputs, &request, &draft.junction_edits, None)
                     .unwrap()
                     .target
             } else {
-                assembly_intent::build(&inputs, &request).unwrap().target
+                assembly_intent::build(&inputs, &request, None)
+                    .unwrap()
+                    .target
             };
             let (catalog, row) = active(&draft).unwrap();
             let native = design::resolve(&catalog, &row, &frame).unwrap();

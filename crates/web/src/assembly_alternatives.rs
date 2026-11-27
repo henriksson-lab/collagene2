@@ -195,11 +195,7 @@ pub fn identity(draft: &Draft) -> Option<(String, String, Vec<String>)> {
 }
 
 fn same_geometry(a: &Slot, b: &Slot) -> bool {
-    a.captured == b.captured
-        && a.start == b.start
-        && a.end == b.end
-        && a.reverse == b.reverse
-        && a.digest_geometry == b.digest_geometry
+    a.captured == b.captured && a.selector == b.selector && a.digest_geometry == b.digest_geometry
 }
 /// Source choice authority is explicit; an unfinished working source edit may be
 /// persisted, but must not silently inherit the previously chosen source ID.
@@ -252,6 +248,12 @@ impl Library {
                 .filter(|n| *n <= MAX_CHOICES)
                 .ok_or("Assembly alternatives exceed 256 retained choices.")?;
             for choice in &bin.choices {
+                if matches!(
+                    &choice.slot.selector,
+                    collagene_core::assembly_intent::Selector::MaterialStrandRange { .. }
+                ) {
+                    return Err("Library alternatives currently require reference ranges; keep actual-strand contributions in an ordinary assembly".into());
+                }
                 if !entity_id(self, &choice.id, "choice") || !ids.insert(&choice.id) {
                     return Err("Invalid or duplicate assembly choice identity.".into());
                 }
@@ -327,6 +329,7 @@ fn save_inner(draft: &mut Draft) -> Result<(), String> {
     Ok(())
 }
 pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
+    assembly_workspace::require_reference_selectors(draft)?;
     if draft.alternatives.is_some() {
         return Err("This assembly already has alternative bins.".into());
     }
@@ -687,8 +690,24 @@ mod tests {
             .iter_mut()
             .zip([source("backbone", "AACCGGTT"), source("insert", "TTGCAACC")])
         {
-            slot.start = 0;
-            slot.end = captured.molecule.sequence.len();
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 0;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = captured.molecule.sequence.len();
+            }
             slot.captured = Some(captured);
         }
         draft.sync_rows();
@@ -699,10 +718,12 @@ mod tests {
         let captured = source("alternative", "CCGTAAGG");
         draft.active_slot = 1;
         draft.slots[1] = Slot {
+            selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                start: 0,
+                end: captured.molecule.sequence.len(),
+                reverse: false,
+            },
             label: "Insert".into(),
-            start: 0,
-            end: captured.molecule.sequence.len(),
-            reverse: false,
             digest_geometry: None,
             anneal_bottom: None,
             captured: Some(captured),

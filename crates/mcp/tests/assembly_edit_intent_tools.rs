@@ -79,10 +79,10 @@ async fn literal_contribution_edits_keep_original_sources_and_publish_only_unver
     let source = json!({"id":d["id"],"revision":d["revision"]});
     // Original AACC plus its independently chosen reverse-complement GGTT.
     // Insert TT into left and replace GT by A in right: AATTCC + GAT.
-    let args = json!({"inputs":[{"id":"source","document":source}],"request":{
+    let args = json!({"origin_workspace":null,"inputs":[{"id":"source","document":source}],"request":{
         "base":{"base":{"name":"Independent insertion and deletion requirement","fragments":[
-            {"role":"left","input_id":"source","start":0,"end":4,"reverse":false},
-            {"role":"right","input_id":"source","start":0,"end":4,"reverse":true}],"circular":false},
+            {"role":"left","input_id":"source","selector":{"ReferenceRange":{"start":0,"end":4,"reverse":false}}},
+            {"role":"right","input_id":"source","selector":{"ReferenceRange":{"start":0,"end":4,"reverse":true}}}],"circular":false,"material_bindings":[]},
             "junction_edits":[],"substitutions":[]},
         "edits":[{"role":"left","start":2,"end":2,"expected":"","replacement":"TT"},
             {"role":"right","start":1,"end":3,"expected":"GT","replacement":"A"}]}});
@@ -111,11 +111,12 @@ async fn literal_contribution_edits_keep_original_sources_and_publish_only_unver
         .await["sequence"],
         "AATTCCGAT"
     );
+    assert!(full["origin_workspace"].is_null());
     assert!(
-        full["binding_scope"]
-            .as_str()
+        full["report"]["request"]["base"]["base"]["material_bindings"]
+            .as_array()
             .unwrap()
-            .contains("Native event parents")
+            .is_empty()
     );
     let retry = call(&c, "build_contribution_edit_intent", args.clone()).await;
     assert_eq!(retry["artifact_id"], result["artifact_id"]);

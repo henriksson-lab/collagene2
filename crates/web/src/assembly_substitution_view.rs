@@ -11,6 +11,7 @@ pub fn SubstitutionEditor(
     active_source: Memo<SourceInfo>,
     selected_region: Callback<(), Option<(usize, usize)>>,
     on_navigate: Callback<SelectionNavigation>,
+    source_review: Memo<Option<std::sync::Arc<crate::assembly_edit_model::SourceReview>>>,
 ) -> impl IntoView {
     let position = RwSignal::new("1".to_owned());
     let replacement = RwSignal::new("A".to_owned());
@@ -22,9 +23,7 @@ pub fn SubstitutionEditor(
                 (
                     d.active_slot,
                     s.captured.as_ref().map(|c| c.source.binding.clone()),
-                    s.start,
-                    s.end,
-                    s.reverse,
+                    s.selector.clone(),
                 )
             })
         })
@@ -40,6 +39,7 @@ pub fn SubstitutionEditor(
         draft.with_untracked(|d| d.active_slot),
         &position.get_untracked(),
         &replacement.get_untracked(),
+        source_review.get_untracked().as_deref(),
     ) {
         Ok(next) => {
             draft.set(next);
@@ -66,7 +66,13 @@ pub fn SubstitutionEditor(
             if start.checked_add(1) != Some(end) {
                 return Err("Select exactly one base in the sequence pane.".to_owned());
             }
-            model::selection_offset(&d, d.active_slot, start).map(|offset| offset + 1)
+            model::selection_offset(
+                &d,
+                d.active_slot,
+                start,
+                source_review.get_untracked().as_deref(),
+            )
+            .map(|offset| offset + 1)
         })();
         match result {
             Ok(value) => {
@@ -84,8 +90,8 @@ pub fn SubstitutionEditor(
         <label>"Intended replacement"<select aria-label="Internal substitution replacement" prop:value=move||replacement.get() on:change=move|e|replacement.set(event_target_value(&e))><option value="A">"A"</option><option value="C">"C"</option><option value="G">"G"</option><option value="T">"T"</option></select></label></div>
         <p class="helper">{move||{
             let d=draft.get();
-            position.get().parse::<usize>().ok().and_then(|p|p.checked_sub(1)).and_then(|offset|model::source_base(&d,d.active_slot,offset).ok())
-                .map(|(original,expected)|format!("Original base: {expected} · source position {}. Expected letters are stored with the declaration.",original+1))
+            position.get().parse::<usize>().ok().and_then(|p|p.checked_sub(1)).and_then(|offset|model::source_base(&d,d.active_slot,offset, source_review.get().as_deref()).ok())
+                .map(|(original,expected)|format!("Original base: {expected} · {}. Expected letters are stored with the declaration.",match original{collagene_core::assembly_intent::ContributionPosition::Reference{position,..}=>format!("reference position {}",position+1),collagene_core::assembly_intent::ContributionPosition::Material{strand,offset}=>format!("actual {} strand position {}",match strand{collagene_core::chemistry::Strand::Top=>"top",collagene_core::chemistry::Strand::Bottom=>"bottom"},offset+1)}))
                 .unwrap_or_else(||"Choose a position in the pinned source contribution.".into())
         }}</p>
         <div class="method-row-actions"><button class="button secondary" on:click=from_selection>"Use single-base sequence selection"</button><button class="button primary" on:click=add>"Declare substitution"</button></div>
@@ -100,9 +106,9 @@ pub fn SubstitutionEditor(
                     let result=(|| {
                         let roles=d.methods.role_ids(d.slots.len())?;
                         let index=roles.iter().position(|r|r.role==navigate.role).ok_or("The source contribution is unavailable.")?;
-                        let (source_position,_)=model::source_base(&d,index,navigate.offset)?;
+                        let regions=crate::assembly_edit_model::top_regions(&d,index,navigate.offset,navigate.offset+1,source_review.get_untracked().as_deref())?;
                         let slot=&d.slots[index];let capture=slot.captured.as_ref().ok_or("The original source is unavailable.")?;
-                        Ok::<_,String>(SelectionNavigation{source:capture.source.binding.clone(),start:source_position,end:source_position+1,reverse:slot.reverse})
+                        Ok::<_,String>(SelectionNavigation{source:capture.source.binding.clone(),regions,description:crate::assembly_draft_model::selector_label(&slot.selector)})
                     })();
                     match result{Ok(nav)=>on_navigate.run(nav),Err(error)=>status.set(error)}
                 }>"View source base"</button>

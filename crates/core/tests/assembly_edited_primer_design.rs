@@ -4,12 +4,13 @@ use collagene_core::{
     analysis::Primer,
     assembly_edit_intent::{self, Edit},
     assembly_edited_primer_design::{self as design, Request, RoleOrigin},
-    assembly_intent, assembly_junction_edit,
+    assembly_intent,
+    assembly_intent::{Contribution, Selector},
+    assembly_junction_edit,
     assembly_recipe::{Preparation, RunPreparation},
     assembly_substitution_intent::{self, Substitution},
     cloning_outputs,
     overlap_extension_primer_design::Options,
-    overlap_primer_design::Fragment,
     overlap_profiles::ProfileOptions,
     run_lineage::{EventBinding, InputEventBinding},
     run_material::{self, Capsule, Selection},
@@ -18,7 +19,6 @@ use collagene_core::{
 };
 const VECTOR: &str = "CACGTTCGTAGGACCA";
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
-const EDITED: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
 const TARGET: &str = "CACGTTCGTAGGACCAAGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
 fn input(id: &str, text: &str) -> PlanInput {
     let molecule = Molecule::dna(id, text, Topology::Linear).unwrap();
@@ -42,13 +42,15 @@ fn options() -> Options {
     o.primer_options.max_three_prime_complementarity = 200;
     o
 }
-fn fragment(role: &str, start: usize, end: usize, reverse: bool) -> Fragment {
-    Fragment {
+fn fragment(role: &str, start: usize, end: usize, reverse: bool) -> Contribution {
+    Contribution {
         role: role.into(),
         input_id: role.into(),
-        start,
-        end,
-        reverse,
+        selector: Selector::ReferenceRange {
+            start,
+            end,
+            reverse,
+        },
     }
 }
 fn request() -> Request {
@@ -56,6 +58,7 @@ fn request() -> Request {
         intent: assembly_edit_intent::Request {
             base: assembly_substitution_intent::Request {
                 base: assembly_intent::Request {
+                    material_bindings: vec![],
                     name: "Independent vector and literal edited insert".into(),
                     fragments: vec![
                         fragment("vector", 0, 16, false),
@@ -160,7 +163,14 @@ fn source_orientation_is_preserved_for_reverse_ordinary_and_reverse_edited_contr
                 ins[index].molecule.sequence =
                     ins[index].molecule.sequence.reverse_complement().unwrap();
                 ins[index].revision = ins[index].molecule.revision();
-                req.intent.base.base.fragments[index].reverse = true;
+                let Selector::ReferenceRange {
+                    reverse: selected_reverse,
+                    ..
+                } = &mut req.intent.base.base.fragments[index].selector
+                else {
+                    panic!("reference selector")
+                };
+                *selected_reverse = true;
             }
         }
         let p = design::design(&ins, &req).unwrap();
@@ -186,8 +196,20 @@ fn incoming_trims_junction_insert_and_snp_are_normalized_to_retained_core_coordi
         input("insert", &format!("CCCC{ORIGINAL}AAAA")),
     ];
     let mut req = request();
-    req.intent.base.base.fragments[0].end = 24;
-    req.intent.base.base.fragments[1].end = 48;
+    let Selector::ReferenceRange {
+        end: selected_end, ..
+    } = &mut req.intent.base.base.fragments[0].selector
+    else {
+        panic!("reference selector")
+    };
+    *selected_end = 24;
+    let Selector::ReferenceRange {
+        end: selected_end, ..
+    } = &mut req.intent.base.base.fragments[1].selector
+    else {
+        panic!("reference selector")
+    };
+    *selected_end = 48;
     req.intent.base.junction_edits = vec![assembly_junction_edit::Edit {
         junction: 0,
         remove_left: 4,
@@ -386,12 +408,14 @@ fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_
     assert!(design::preflight(&inputs(), &req).is_err());
     let stock = input("shared", &"ACGT".repeat(2500));
     let mut many = request();
-    many.intent.base.base.fragments = vec![Fragment {
+    many.intent.base.base.fragments = vec![Contribution {
         role: "r0".into(),
         input_id: "shared".into(),
-        start: 0,
-        end: 10000,
-        reverse: false,
+        selector: Selector::ReferenceRange {
+            start: 0,
+            end: 10000,
+            reverse: false,
+        },
     }];
     many.intent.edits = vec![Edit {
         role: "r0".into(),
@@ -402,12 +426,14 @@ fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_
     }];
     assert!(design::preflight(&[stock.clone()], &many).is_ok());
     many.intent.base.base.fragments = (0..32)
-        .map(|i| Fragment {
+        .map(|i| Contribution {
             role: format!("r{i}"),
             input_id: "shared".into(),
-            start: 0,
-            end: 10000,
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: 10000,
+                reverse: false,
+            },
         })
         .collect();
     many.intent.edits = (0..32)

@@ -10,7 +10,7 @@ fn hash(bytes: &[u8]) -> String {
 }
 // Deliberately only a probe-valid header: core does not own WebDraft semantics.
 fn draft(counter: u64, text: &str) -> Vec<u8> {
-    serde_json::to_vec(&serde_json::json!({"version":15,"alternatives":{"id":"literal-library","next_id":counter},"working":text})).unwrap()
+    serde_json::to_vec(&serde_json::json!({"version":history::ACTIVE_DRAFT_VERSION,"alternatives":{"id":"literal-library","next_id":counter},"working":text})).unwrap()
 }
 fn fixture() -> Workspace {
     let mut w = Workspace::from_documents(
@@ -65,7 +65,7 @@ fn proposal() -> String {
 fn exact_unsaved_before_bytes_survive_atomic_replacement_and_native_archive() {
     let w = fixture();
     let snapshot = serde_json::to_vec(&w).unwrap();
-    let before=b"{\n  \"working\": \"invalid overlap text: 12,,7; intentional primer edit\",\n  \"version\":15,\"alternatives\":{\"id\":\"literal-library\",\"next_id\":9}\n}".to_vec();
+    let before = format!("{{\n  \"working\": \"invalid overlap text: 12,,7; intentional primer edit\",\n  \"version\":{},\"alternatives\":{{\"id\":\"literal-library\",\"next_id\":9}}\n}}", history::ACTIVE_DRAFT_VERSION).into_bytes();
     let after = draft(12, "new reviewed order");
     let pin = binding(&w, 0);
     let record = history::create(
@@ -289,7 +289,7 @@ fn recovery_preserves_allocation_highwater_and_rejects_header_regression() {
         history::create(
             &restored.workspace,
             draft(40, "current"),
-            br#"{"version":15,"alternatives":{"id":"other-library","next_id":41}}"#,
+            &serde_json::to_vec(&serde_json::json!({"version":history::ACTIVE_DRAFT_VERSION,"alternatives":{"id":"other-library","next_id":41}})).unwrap(),
             &proposal(),
             vec![],
             vec![]

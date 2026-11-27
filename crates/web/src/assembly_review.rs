@@ -168,7 +168,7 @@ pub fn stage(
         }
         parents.push((doc, binding.event_id.as_str()));
     }
-    let fresh = assembly_intent::build(&candidate.plan.inputs, &intent.request)
+    let fresh = assembly_intent::build(&candidate.plan.inputs, &intent.request, Some(frame))
         .map_err(|e| e.to_string())?;
     intent
         .validate_binding(&fresh.context_revision)
@@ -267,6 +267,7 @@ fn stage_edited(
             .collect::<Vec<_>>(),
         &intent.base_request,
         &intent.edits,
+        Some(frame),
     )
     .map_err(|e| e.to_string())?;
     frame.validate().map_err(|e| e.to_string())?;
@@ -296,6 +297,7 @@ fn stage_edited(
         &candidate.plan.inputs,
         &intent.base_request,
         &intent.edits,
+        Some(frame),
     )
     .map_err(|e| e.to_string())?;
     intent
@@ -387,6 +389,7 @@ pub fn stage_substituted(
         let fresh = collagene_core::assembly_substitution_intent::build(
             &candidate.plan.inputs,
             &intent.request,
+            Some(frame),
         )
         .map_err(|e| e.to_string())?;
         intent
@@ -411,10 +414,11 @@ pub fn stage_contribution_edits(
         let expected = collagene_core::assembly_edit_intent::intent_revision(
             &candidate.plan.inputs,
             &intent.request,
+            Some(frame),
         )
         .map_err(|e| e.to_string())?;
         intent
-            .validate_sources(&candidate.plan.inputs, &expected)
+            .validate_sources(&candidate.plan.inputs, &expected, Some(frame))
             .map_err(|e| e.to_string())?;
         Ok((expected, intent.target.clone()))
     })
@@ -532,7 +536,6 @@ mod tests {
     use super::*;
     use collagene_core::{
         Molecule, Topology,
-        overlap_primer_design::Fragment,
         verification::{DesignPlan, Operation, PlanInput, Source},
     };
     fn fixture() -> (Workspace, Report, Vec<EventBinding>, Candidate) {
@@ -566,16 +569,20 @@ mod tests {
         let intent = assembly_intent::build(
             &inputs,
             &assembly_intent::Request {
+                material_bindings: Vec::new(),
                 name: "intended prefix".into(),
-                fragments: vec![Fragment {
+                fragments: vec![collagene_core::assembly_intent::Contribution {
                     role: "backbone".into(),
                     input_id: "source-1".into(),
-                    start: 0,
-                    end: 4,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 4,
+                        reverse: false,
+                    },
                 }],
                 circular: false,
             },
+            None,
         )
         .unwrap();
         let candidate = Candidate::new(DesignPlan {
@@ -649,27 +656,33 @@ mod tests {
             .collect::<Vec<_>>();
         let roles = state.role_ids(2).unwrap();
         let declaration = assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: "Independent two-contribution intent".into(),
             circular: true,
             fragments: vec![
-                Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[0].role.clone(),
                     input_id: ids[0].clone(),
-                    start: 2,
-                    end: 14,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 2,
+                        end: 14,
+                        reverse: false,
+                    },
                 },
-                Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[1].role.clone(),
                     input_id: ids[1].clone(),
-                    start: 0,
-                    end: 10,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 10,
+                        reverse: false,
+                    },
                 },
             ],
         };
-        let intent =
-            IntendedReference::Regions(assembly_intent::build(&inputs, &declaration).unwrap());
+        let intent = IntendedReference::Regions(
+            assembly_intent::build(&inputs, &declaration, None).unwrap(),
+        );
         // Literal independent expectation precedes actual digestion/annealing.
         assert_eq!(intent.target().sequence.as_str(), "AATTCTTACGGGAATTGCTACG");
         assert_eq!(intent.fragments().len(), 2);
@@ -819,22 +832,27 @@ mod tests {
             .collect::<Vec<_>>();
         let roles = state.role_ids(2).unwrap();
         let declaration = assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: "Independent two-contribution intent".into(),
             circular: true,
             fragments: vec![
-                Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[0].role.clone(),
                     input_id: ids[0].clone(),
-                    start: 2,
-                    end: 14,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 2,
+                        end: 14,
+                        reverse: false,
+                    },
                 },
-                Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[1].role.clone(),
                     input_id: ids[1].clone(),
-                    start: 0,
-                    end: 10,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 10,
+                        reverse: false,
+                    },
                 },
             ],
         };
@@ -850,7 +868,13 @@ mod tests {
         // Selected source core omits the four top overhang bases. They are an
         // explicit independent requirement, physically supplied by the actual
         // original oligo rather than copied from any reaction output.
-        declaration.fragments[1].start = 4;
+        if let collagene_core::assembly_intent::Selector::ReferenceRange { start, .. } =
+            &mut declaration.fragments[1].selector
+        {
+            *start = 4;
+        } else {
+            panic!("fixture requires reference selection")
+        }
         let expected = "AATTCTTACGGGAATTGCTACG";
         let build = |literal: &str| {
             IntendedReference::Junctions(
@@ -863,6 +887,7 @@ mod tests {
                         remove_right: 0,
                         inserted: literal.into(),
                     }],
+                    None,
                 )
                 .unwrap(),
             )
@@ -996,11 +1021,39 @@ mod tests {
         let mut draft = Draft::default();
         draft.methods = state;
         draft.slots[0].captured = Some(captures[0].clone());
-        draft.slots[0].start = 2;
-        draft.slots[0].end = 14;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 2;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 14;
+        }
         draft.slots[1].captured = Some(captures[1].clone());
-        draft.slots[1].start = 0;
-        draft.slots[1].end = 10;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 0;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 10;
+        }
         draft.slots[1].anneal_bottom = Some(captures[2].clone());
         draft.sync_rows();
         draft.methods.rows[1].anneal_candidate = Some(0);
@@ -1055,27 +1108,33 @@ mod tests {
             .collect::<Vec<_>>();
         let roles = swapped.methods.role_ids(2).unwrap();
         let declaration = assembly_intent::Request {
+            material_bindings: Vec::new(),
             name: "Explicit opposite oligo contribution".into(),
             circular: true,
             fragments: vec![
-                Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[0].role.clone(),
                     input_id: ids[0].clone(),
-                    start: 2,
-                    end: 14,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 2,
+                        end: 14,
+                        reverse: false,
+                    },
                 },
-                Fragment {
+                collagene_core::assembly_intent::Contribution {
                     role: roles[1].role.clone(),
                     input_id: ids[1].clone(),
-                    start: 0,
-                    end: 10,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 10,
+                        reverse: false,
+                    },
                 },
             ],
         };
-        let intent =
-            IntendedReference::Regions(assembly_intent::build(&ordered, &declaration).unwrap());
+        let intent = IntendedReference::Regions(
+            assembly_intent::build(&ordered, &declaration, None).unwrap(),
+        );
         assert_eq!(intent.target().sequence.as_str(), "AATTCTTACGGGAATTCGTAGC");
         let (_, rows) = crate::cloning_preparations::prepared_rows(&swapped.methods, 3).unwrap();
         let recipe = ligation_recipe::Recipe {
@@ -1377,19 +1436,23 @@ mod tests {
         let mut base = plain.request;
         base.name = "Explicit inserted and trimmed junction".into();
         base.fragments = vec![
-            Fragment {
+            collagene_core::assembly_intent::Contribution {
                 role: "left".into(),
                 input_id: "source-1".into(),
-                start: 0,
-                end: 4,
-                reverse: false,
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: 0,
+                    end: 4,
+                    reverse: false,
+                },
             },
-            Fragment {
+            collagene_core::assembly_intent::Contribution {
                 role: "right".into(),
                 input_id: "source-1".into(),
-                start: 4,
-                end: 8,
-                reverse: false,
+                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: 4,
+                    end: 8,
+                    reverse: false,
+                },
             },
         ];
         let edits = vec![collagene_core::assembly_junction_edit::Edit {
@@ -1402,6 +1465,7 @@ mod tests {
             &candidate.plan.inputs,
             &base,
             &edits,
+            None,
         )
         .unwrap();
         assert_eq!(edited.target.sequence.as_str(), "ACGGGCGT");
@@ -1540,14 +1604,17 @@ mod tests {
         }];
         let request = substitutions::Request {
             base: assembly_intent::Request {
+                material_bindings: Vec::new(),
                 name: "Independent internal substitution".into(),
                 circular: false,
-                fragments: vec![Fragment {
+                fragments: vec![collagene_core::assembly_intent::Contribution {
                     role: "backbone".into(),
                     input_id: "original".into(),
-                    start: 0,
-                    end: 16,
-                    reverse: false,
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: 0,
+                        end: 16,
+                        reverse: false,
+                    },
                 }],
             },
             junction_edits: vec![],
@@ -1558,7 +1625,7 @@ mod tests {
                 replacement: "T".into(),
             }],
         };
-        let intent = substitutions::build(&inputs, &request).unwrap();
+        let intent = substitutions::build(&inputs, &request, None).unwrap();
         assert_eq!(intent.target.sequence.as_str(), "ACTACCCCGGGGTAAC");
         let candidate = Candidate::new(DesignPlan {
             name: "Explicit mismatch PCR".into(),
@@ -1658,14 +1725,17 @@ mod tests {
         let request = edits::Request {
             base: substitutions::Request {
                 base: assembly_intent::Request {
+                    material_bindings: Vec::new(),
                     name: "Independent insertion and deletion".into(),
                     circular: false,
-                    fragments: vec![Fragment {
+                    fragments: vec![collagene_core::assembly_intent::Contribution {
                         role: "backbone".into(),
                         input_id: "original".into(),
-                        start: 0,
-                        end: 16,
-                        reverse: false,
+                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                            start: 0,
+                            end: 16,
+                            reverse: false,
+                        },
                     }],
                 },
                 junction_edits: vec![],
@@ -1688,7 +1758,7 @@ mod tests {
                 },
             ],
         };
-        let intent = edits::build(&inputs, &request).unwrap();
+        let intent = edits::build(&inputs, &request, None).unwrap();
         assert_eq!(intent.target.sequence.as_str(), "ACGATTCCCCGGTAAC");
         let candidate = Candidate::new(DesignPlan {
             name: "Unedited PCR cannot satisfy literal indels".into(),
@@ -1850,14 +1920,17 @@ mod tests {
             &edits::Request {
                 base: substitutions::Request {
                     base: assembly_intent::Request {
+                        material_bindings: Vec::new(),
                         name: "Independent four-base insertion".into(),
                         circular: true,
-                        fragments: vec![Fragment {
+                        fragments: vec![collagene_core::assembly_intent::Contribution {
                             role: "backbone".into(),
                             input_id: "pinned-original".into(),
-                            start: 0,
-                            end: 32,
-                            reverse: false,
+                            selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                                start: 0,
+                                end: 32,
+                                reverse: false,
+                            },
                         }],
                     },
                     junction_edits: vec![],
@@ -1871,6 +1944,7 @@ mod tests {
                     replacement: "AACG".into(),
                 }],
             },
+            None,
         )
         .unwrap();
         assert_eq!(

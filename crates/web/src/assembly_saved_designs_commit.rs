@@ -158,15 +158,31 @@ mod tests {
         let mut draft = Draft::default();
         for slot in &mut draft.slots {
             slot.captured = Some(capture.clone());
-            slot.start = 0;
-            slot.end = 8;
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 0;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut slot.selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = 8;
+            }
         }
         draft.sync_rows();
         draft.validate().unwrap();
         let raw = crate::assembly_draft_model::encode_raw(&draft).unwrap();
         attachment(
             &mut frame,
-            "assembly-draft-v15",
+            "assembly-draft-v16",
             "Current working draft",
             &raw,
         );
@@ -217,7 +233,7 @@ mod tests {
         let key = current
             .attachments
             .iter()
-            .find(|(_, a)| a.kind == "assembly-draft-v15")
+            .find(|(_, a)| a.kind == "assembly-draft-v16")
             .unwrap()
             .0
             .clone();

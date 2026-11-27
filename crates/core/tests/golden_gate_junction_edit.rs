@@ -2,6 +2,7 @@ use collagene_core::{
     Molecule, Topology,
     analysis::Primer,
     assembly_intent,
+    assembly_intent::{Contribution, Selector},
     assembly_junction_edit::Edit,
     assembly_recipe::{FragmentSpec, Preparation},
     catalog_digest,
@@ -9,7 +10,6 @@ use collagene_core::{
     golden_gate::GoldenGateEnzyme,
     golden_gate_junction_edit::*,
     ligation_recipe,
-    overlap_primer_design::Fragment,
     verification::{self, PlanInput, Status},
 };
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -52,21 +52,26 @@ fn fixture(enzyme: GoldenGateEnzyme) -> (Vec<PlanInput>, Request) {
     };
     let r = Request {
         base: assembly_intent::Request {
+            material_bindings: vec![],
             name: "Independent inserted circle".into(),
             fragments: vec![
-                Fragment {
+                Contribution {
                     role: "selected".into(),
                     input_id: "a".into(),
-                    start: 0,
-                    end: 20,
-                    reverse: false,
+                    selector: Selector::ReferenceRange {
+                        start: 0,
+                        end: 20,
+                        reverse: false,
+                    },
                 },
-                Fragment {
+                Contribution {
                     role: "retained".into(),
                     input_id: "b".into(),
-                    start: 0,
-                    end: 20,
-                    reverse: false,
+                    selector: Selector::ReferenceRange {
+                        start: 0,
+                        end: 20,
+                        reverse: false,
+                    },
                 },
             ],
             circular: true,
@@ -163,7 +168,14 @@ fn literal_inserted_circle_uses_real_bsai_or_sapi_ends_and_keeps_retained_oligos
 fn reverse_row_places_nonpalindromic_insert_on_original_forward_primer_and_actual_bottom_projection()
  {
     let (inputs, mut r) = fixture(GoldenGateEnzyme::BsaI);
-    r.base.fragments[0].reverse = true;
+    let Selector::ReferenceRange {
+        reverse: selected_reverse,
+        ..
+    } = &mut r.base.fragments[0].selector
+    else {
+        panic!("reference selector")
+    };
+    *selected_reverse = true;
     r.rows[0] = Row::DesignPcr {
         role: "selected".into(),
         input_id: "a".into(),

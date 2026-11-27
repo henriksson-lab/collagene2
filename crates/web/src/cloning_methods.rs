@@ -1357,7 +1357,7 @@ fn OverlapFields(
         <Show when=move||fixed_sources><p class="preparation-source-summary">{move||{
             let r=row();
             let name=query_options.with(|options|options.iter().find(|(i,_)|*i==r.document).map(|(_,name)|name.clone()).unwrap_or_else(||"Source unavailable".into()));
-            format!("{} · source {}–{} (1-based, unrolled) · {}",name,r.interval_start,if r.interval_end.is_empty(){"end"}else{&r.interval_end},if r.reverse{"reverse"}else{"forward"})
+            if r.interval_start.is_empty() && r.interval_end.is_empty(){format!("{} · {} prepared fragment",name,if r.reverse{"reversed"}else{"forward"})}else{format!("{} · source {}–{} (1-based, unrolled) · {}",name,r.interval_start,if r.interval_end.is_empty(){"end"}else{&r.interval_end},if r.reverse{"reverse"}else{"forward"})}
         }}</p></Show>
         <Show when=move||!fixed_sources>
         <label>"Original source"<select disabled=fixed_sources aria-label=move||format!("{} source {}",preparation_label(config.get().mode),index+1) prop:value=move||row().document.to_string() on:change=move|e|config.update(|c|if let Some(r)=c.rows.get_mut(index){let next=event_target_value(&e).parse().unwrap_or(0);if r.document!=next{r.source_generation=None;}r.document=next})>{move||query_options.get().into_iter().map(|(n,label)|view!{<option value=n.to_string()>{label}</option>}).collect_view()}</select></label>

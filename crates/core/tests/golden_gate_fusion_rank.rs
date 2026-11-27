@@ -1,13 +1,13 @@
 //! Source/profile binding, explicit materialization and compact score oracles.
 use collagene_core::{
     Molecule, Sequence, Topology, assembly_intent,
+    assembly_intent::{Contribution, Selector},
     golden_gate::GoldenGateEnzyme,
     golden_gate_fusion_design::{self as fusion, Constraints, Limits, Window},
     golden_gate_fusion_rank::{self as rank, PairEstimate, Score, ScoreClass},
     golden_gate_junction_edit::{self as gate, Row},
     ligation_fidelity::UnknownReason,
     ligation_profiles as profiles, ligation_recipe,
-    overlap_primer_design::Fragment,
     verification::{PlanInput, Status},
 };
 const A: &str = "ATGACCCCGGGGTTTCCAGATCGC";
@@ -33,19 +33,23 @@ fn fixture(b: &str, circular: bool) -> (Vec<PlanInput>, rank::Request) {
         })
         .collect();
     let fragments = vec![
-        Fragment {
+        Contribution {
             role: "left".into(),
             input_id: "a".into(),
-            start: 0,
-            end: A.len(),
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: A.len(),
+                reverse: false,
+            },
         },
-        Fragment {
+        Contribution {
             role: "right".into(),
             input_id: "b".into(),
-            start: 0,
-            end: b.len(),
-            reverse: false,
+            selector: Selector::ReferenceRange {
+                start: 0,
+                end: b.len(),
+                reverse: false,
+            },
         },
     ];
     let rows = fragments
@@ -53,7 +57,7 @@ fn fixture(b: &str, circular: bool) -> (Vec<PlanInput>, rank::Request) {
         .map(|f| Row::DesignPcr {
             role: f.role.clone(),
             input_id: f.input_id.clone(),
-            reverse: f.reverse,
+            reverse: f.selector.reference_interval().unwrap().2,
             forward_length: 8,
             reverse_length: 8,
         })
@@ -61,6 +65,7 @@ fn fixture(b: &str, circular: bool) -> (Vec<PlanInput>, rank::Request) {
     let design = fusion::Request {
         base: gate::Request {
             base: assembly_intent::Request {
+                material_bindings: vec![],
                 name: "Independent source AB".into(),
                 fragments,
                 circular,

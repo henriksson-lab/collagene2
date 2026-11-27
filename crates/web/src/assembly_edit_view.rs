@@ -11,6 +11,7 @@ pub fn ContributionEditEditor(
     active_source: Memo<SourceInfo>,
     selected_region: Callback<(), Option<(usize, usize)>>,
     on_navigate: Callback<SelectionNavigation>,
+    source_review: Memo<Option<std::sync::Arc<crate::assembly_edit_model::SourceReview>>>,
 ) -> impl IntoView {
     let start = RwSignal::new("1".to_owned());
     let end = RwSignal::new("1".to_owned());
@@ -23,9 +24,7 @@ pub fn ContributionEditEditor(
                 (
                     d.active_slot,
                     s.captured.as_ref().map(|c| c.source.binding.clone()),
-                    s.start,
-                    s.end,
-                    s.reverse,
+                    s.selector.clone(),
                 )
             })
         })
@@ -46,11 +45,12 @@ pub fn ContributionEditEditor(
             &start.get_untracked(),
             &end.get_untracked(),
             &replacement.get_untracked(),
+            source_review.get_untracked().as_deref(),
         ) {
             Ok(next) => {
                 draft.set(next);
                 replacement.set(String::new());
-                status.set("Edit declared from the original reference. Review intended DNA, then verify the physical preparation.".into());
+                status.set("Edit declared from the original contribution. Review intended DNA, then verify the physical preparation.".into());
             }
             Err(error) => status.set(error),
         }
@@ -69,7 +69,13 @@ pub fn ContributionEditEditor(
             let (a, b) = selected_region
                 .run(())
                 .ok_or("Select exact bases or place a caret in Sequence.")?;
-            model::selection_interval(&d, d.active_slot, a, b)
+            model::selection_interval(
+                &d,
+                d.active_slot,
+                a,
+                b,
+                source_review.get_untracked().as_deref(),
+            )
         })();
         match result {
             Ok((a, b)) => {
@@ -94,11 +100,11 @@ pub fn ContributionEditEditor(
             let original=(|| {
                 let a=start.get().parse::<usize>().ok()?.checked_sub(1)?;
                 let b=end.get().parse::<usize>().ok()?.checked_sub(1)?;
-                model::source_text(&d,d.active_slot,a,b).ok()
+                model::source_text(&d,d.active_slot,a,b,source_review.get().as_deref()).ok()
             })();
             match original {
                 Some(text) if text.is_empty()=>"Insertion between original bases; no source letters removed.".to_owned(),
-                Some(text)=>format!("Original reference: {}{} · {} bases. Exact expected letters are retained with the declaration.",text.chars().take(80).collect::<String>(),if text.len()>80{"…"}else{""},text.len()),
+                Some(text)=>format!("Original contribution: {}{} · {} bases. Exact expected letters are retained with the declaration.",text.chars().take(80).collect::<String>(),if text.len()>80{"…"}else{""},text.len()),
                 None=>"Choose valid boundaries within the pinned contribution.".to_owned(),
             }
         }}</p>
@@ -115,10 +121,10 @@ pub fn ContributionEditEditor(
                     let result=(||{
                         let roles=d.methods.role_ids(d.slots.len())?;
                         let index=roles.iter().position(|r|r.role==navigate.role).ok_or("The source contribution is unavailable.")?;
-                        let (start,end)=model::source_interval(&d,index,navigate.start,navigate.end)?;
+                        let regions=model::top_regions(&d,index,navigate.start,navigate.end,source_review.get_untracked().as_deref())?;
                         let slot=&d.slots[index];
                         let capture=slot.captured.as_ref().ok_or("The pinned source is unavailable.")?;
-                        Ok::<_,String>(SelectionNavigation{source:capture.source.binding.clone(),start,end,reverse:slot.reverse})
+                        Ok::<_,String>(SelectionNavigation{source:capture.source.binding.clone(),regions,description:crate::assembly_draft_model::selector_label(&slot.selector)})
                     })();
                     match result {Ok(nav)=>on_navigate.run(nav),Err(error)=>status.set(error)}
                 }>"View original interval"</button>

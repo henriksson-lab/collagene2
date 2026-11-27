@@ -79,7 +79,7 @@ fn options() -> DesignOptions {
 }
 const TARGET: &str = "ATGACCCCGGGGTTTCCAGAGCGCATAGTCGACTAGCTTGCAATCATCCGTTAGCGACCTTGGAAGAT";
 fn base() -> Value {
-    json!({"name":"Selective three-source assembly","fragments":[{"role":"left","input_id":"a","start":0,"end":20,"reverse":false},{"role":"manual","input_id":"b","start":0,"end":20,"reverse":false},{"role":"existing-cut","input_id":"c","start":3,"end":29,"reverse":false}],"circular":false})
+    json!({"name":"Selective three-source assembly","fragments":[{"role":"left","input_id":"a","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},{"role":"manual","input_id":"b","selector":{"ReferenceRange":{"start":0,"end":20,"reverse":false}}},{"role":"existing-cut","input_id":"c","selector":{"ReferenceRange":{"start":3,"end":29,"reverse":false}}}],"circular":false,"material_bindings":[]})
 }
 fn edits() -> Value {
     json!([{"junction":0,"remove_left":0,"remove_right":0,"inserted":"GC"}])
@@ -127,7 +127,7 @@ async fn replan_only_selected_pcr_preserves_named_oligos_catalog_pin_and_variabl
     let intent = call(
         &c,
         "build_edited_assembly_intent",
-        json!({"inputs":bound,"base":base(),"edits":edits()}),
+        json!({"origin_workspace":null,"inputs":bound,"base":base(),"edits":edits()}),
     )
     .await;
     assert_eq!(intent["state"], "intended-reference");
@@ -211,7 +211,7 @@ async fn replan_only_selected_pcr_preserves_named_oligos_catalog_pin_and_variabl
     let unedited = call(
         &c,
         "build_assembly_intent",
-        json!({"inputs":bound,"request":base()}),
+        json!({"origin_workspace":null,"inputs":bound,"request":base()}),
     )
     .await;
     let mismatch = call(

@@ -202,10 +202,10 @@ fn independent_intent(
             if declared.edits.is_empty() {
                 return Err("Declare an internal contribution edit first.".into());
             }
-            let expected = assembly_edit_intent::intent_revision(inputs, &declared)
+            let expected = assembly_edit_intent::intent_revision(inputs, &declared, None)
                 .map_err(|e| e.to_string())?;
             report
-                .validate_sources(inputs, &expected)
+                .validate_sources(inputs, &expected, None)
                 .map_err(|e| e.to_string())?;
             if receipt(&report.request, MAX_CONTEXT)? != receipt(&declared, MAX_CONTEXT)? {
                 return Err("The frozen edit declaration changed.".into());
@@ -219,13 +219,15 @@ fn independent_intent(
             let expected = collagene_core::assembly_substitution_intent::intent_revision(
                 inputs,
                 &declared.base,
+                None,
             )
             .map_err(|e| e.to_string())?;
             report
                 .validate_binding(&expected)
                 .map_err(|e| e.to_string())?;
-            let fresh = collagene_core::assembly_substitution_intent::build(inputs, &declared.base)
-                .map_err(|e| e.to_string())?;
+            let fresh =
+                collagene_core::assembly_substitution_intent::build(inputs, &declared.base, None)
+                    .map_err(|e| e.to_string())?;
             if receipt(report, MAX_CONTEXT)? != receipt(&fresh, MAX_CONTEXT)? {
                 return Err(
                     "The frozen substitution target differs from its original sources.".into(),
@@ -246,6 +248,7 @@ pub fn request(
     current_source: &EventBinding,
     options: &native::Options,
 ) -> Result<(Capture, Molecule, native::Request), String> {
+    assembly_draft_model::require_reference_selectors(draft)?;
     draft.validate()?;
     if draft.alternatives.is_some() {
         return Err("Choose an ordinary construct before preparing an edited contribution.".into());
@@ -293,12 +296,13 @@ pub fn request(
     if options.outer_forward_tail != tails.0 || options.outer_reverse_tail != tails.1 {
         return Err("Existing outer-PCR tails changed; review their explicit settings before proposing primers.".into());
     }
-    let (inputs, base, _) = assembly_draft_model::inputs_request(draft)?;
+    let (inputs, base, _) = assembly_draft_model::inputs_request(draft, None)?;
     let original = base
         .fragments
         .get(index)
         .ok_or("The exact source role is unavailable.")?
-        .clone();
+        .reference_fragment()
+        .map_err(|e| e.to_string())?;
     let intent_context_revision = independent_intent(draft, intent, &inputs, base)?;
     // PlacedFragment retains the actual source core after explicit junction
     // trims, before internal edits. Its source coordinates may be normalized
@@ -310,16 +314,31 @@ pub fn request(
     if retained.role != original.role
         || retained.input_id != original.input_id
         || retained.input_revision != current_source.revision
-        || retained.reverse != original.reverse
+        || retained
+            .selector
+            .reference_interval()
+            .map_err(|e| e.to_string())?
+            .2
+            != original.reverse
     {
         return Err("The intended retained core differs from its original source role.".into());
     }
+    let right_trim = retained
+        .original_sequence
+        .len()
+        .checked_sub(retained.retained_end)
+        .ok_or("The retained source window exceeds its original contribution.")?;
+    let adjusted = retained
+        .selector
+        .trim(retained.retained_start, right_trim, retained.source_length)
+        .map_err(|e| e.to_string())?;
+    let (start, end, reverse) = adjusted.reference_interval().map_err(|e| e.to_string())?;
     let fragment = collagene_core::overlap_primer_design::Fragment {
         role: retained.role.clone(),
         input_id: retained.input_id.clone(),
-        start: retained.start,
-        end: retained.end,
-        reverse: retained.reverse,
+        start,
+        end,
+        reverse,
     };
     let incoming = index
         .checked_sub(1)
@@ -405,16 +424,25 @@ fn check_expected(
     let local = assembly_edit_intent::Request {
         base: collagene_core::assembly_substitution_intent::Request {
             base: collagene_core::assembly_intent::Request {
+                material_bindings: Vec::new(),
                 name: "Independent selected contribution".into(),
                 circular: false,
-                fragments: vec![request.fragment.clone()],
+                fragments: vec![collagene_core::assembly_intent::Contribution {
+                    role: request.fragment.role.clone(),
+                    input_id: request.fragment.input_id.clone(),
+                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                        start: request.fragment.start,
+                        end: request.fragment.end,
+                        reverse: request.fragment.reverse,
+                    },
+                }],
             },
             junction_edits: vec![],
             substitutions: vec![],
         },
         edits: request.edits.clone(),
     };
-    let local = assembly_edit_intent::build(&[input], &local).map_err(|e| e.to_string())?;
+    let local = assembly_edit_intent::build(&[input], &local, None).map_err(|e| e.to_string())?;
     let physical = if request.fragment.reverse {
         local
             .target
@@ -612,10 +640,14 @@ mod tests {
         })
     }
     fn intent(draft: &Draft) -> IntendedReference {
-        let (inputs, base, _) = assembly_draft_model::inputs_request(draft).unwrap();
+        let (inputs, base, _) = assembly_draft_model::inputs_request(draft, None).unwrap();
         IntendedReference::Edits(
-            assembly_edit_intent::build(&inputs, &assembly_draft_model::edit_request(draft, base))
-                .unwrap(),
+            assembly_edit_intent::build(
+                &inputs,
+                &assembly_draft_model::edit_request(draft, base),
+                None,
+            )
+            .unwrap(),
         )
     }
     fn options(draft: &Draft) -> native::Options {
@@ -660,11 +692,40 @@ mod tests {
         draft.methods.mode = Mode::Overlap;
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
         draft.slots[0].captured = Some(captured(vector, event(&frame, 0)));
-        draft.slots[0].end = 12;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[0].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 12;
+        }
         draft.slots[1].captured = Some(captured(source, event(&frame, 1)));
-        draft.slots[1].start = if reverse_wrapped { 32 } else { 0 };
-        draft.slots[1].end = if reverse_wrapped { 70 } else { 40 };
-        draft.slots[1].reverse = reverse_wrapped;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = if reverse_wrapped { 32 } else { 0 };
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = if reverse_wrapped { 70 } else { 40 };
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange {
+                reverse: value, ..
+            } = &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = reverse_wrapped;
+        }
         draft.methods.rows[1].preparation = OverlapPreparation::ExactPcr;
         draft.methods.rows[1].repair = Some(EndRepairMethod::Blunt);
         draft.methods.rows[1].treatment = Treatment::Phosphorylate;
@@ -674,9 +735,9 @@ mod tests {
         draft.methods.rows[1].reverse_primer = "TTTT".into();
         draft.methods.rows[1].fragment = "7".into();
         draft.sync_rows();
-        let mut draft = assembly_edit_model::declare(&draft, 1, "17", "19", "T").unwrap();
+        let mut draft = assembly_edit_model::declare(&draft, 1, "17", "19", "T", None).unwrap();
         let role = draft.methods.role_ids(2).unwrap()[1].role.clone();
-        let expected = assembly_edit_model::source_text(&draft, 1, 19, 20).unwrap();
+        let expected = assembly_edit_model::source_text(&draft, 1, 19, 20, None).unwrap();
         draft
             .substitutions
             .push(collagene_core::assembly_substitution_intent::Substitution {
@@ -834,7 +895,7 @@ mod tests {
             .apply(&draft, &intent, &p.capture.source, &options)
             .unwrap();
         assert!(after.slots == draft.slots);
-        assert!(after.slots[1].reverse);
+        assert!(after.slots[1].selector.reference_interval().unwrap().2);
         assert_eq!(
             after.methods.rows[1]
                 .overlap_extension_pcr
@@ -877,9 +938,31 @@ mod tests {
         .unwrap();
         draft.slots[0].captured = Some(captured(vector, event(&frame, 0)));
         draft.slots[1].captured = Some(captured(original.clone(), event(&frame, 1)));
-        draft.slots[1].start = 0;
-        draft.slots[1].end = 43;
-        draft.slots[1].reverse = false;
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { start: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 0;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange { end: value, .. } =
+                &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = 43;
+        }
+        {
+            let collagene_core::assembly_intent::Selector::ReferenceRange {
+                reverse: value, ..
+            } = &mut draft.slots[1].selector
+            else {
+                panic!("fixture requires reference selector")
+            };
+            *value = false;
+        }
         draft.edits.clear();
         draft.substitutions.clear();
         draft.junction_edits = vec![collagene_core::assembly_junction_edit::Edit {
@@ -889,7 +972,7 @@ mod tests {
             inserted: String::new(),
         }];
         draft.sync_rows();
-        let draft = assembly_edit_model::declare(&draft, 1, "20", "24", "TT").unwrap();
+        let draft = assembly_edit_model::declare(&draft, 1, "20", "24", "TT", None).unwrap();
         let intended = intent(&draft);
         let options = options(&draft);
         let target_revision = intended.target().revision();
@@ -955,9 +1038,34 @@ mod tests {
             .unwrap();
             draft.slots[0].captured = Some(captured(vector, event(&frame, 0)));
             draft.slots[1].captured = Some(captured(source, event(&frame, 1)));
-            draft.slots[1].start = start;
-            draft.slots[1].end = end;
-            draft.slots[1].reverse = reverse;
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    start: value, ..
+                } = &mut draft.slots[1].selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = start;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    end: value, ..
+                } = &mut draft.slots[1].selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = end;
+            }
+            {
+                let collagene_core::assembly_intent::Selector::ReferenceRange {
+                    reverse: value,
+                    ..
+                } = &mut draft.slots[1].selector
+                else {
+                    panic!("fixture requires reference selector")
+                };
+                *value = reverse;
+            }
             draft.edits.clear();
             draft.substitutions.clear();
             draft.junction_edits = vec![collagene_core::assembly_junction_edit::Edit {
@@ -973,10 +1081,12 @@ mod tests {
                 &(edit_start + 1).to_string(),
                 &(edit_end + 1).to_string(),
                 "T",
+                None,
             )
             .unwrap();
             let expected =
-                assembly_edit_model::source_text(&draft, 1, snp_offset, snp_offset + 1).unwrap();
+                assembly_edit_model::source_text(&draft, 1, snp_offset, snp_offset + 1, None)
+                    .unwrap();
             draft
                 .substitutions
                 .push(collagene_core::assembly_substitution_intent::Substitution {
@@ -1242,7 +1352,7 @@ mod tests {
             after.slots[1].captured.as_ref().unwrap().source.binding,
             selection.event
         );
-        let (inputs, _, _) = assembly_draft_model::inputs_request(&after).unwrap();
+        let (inputs, _, _) = assembly_draft_model::inputs_request(&after, None).unwrap();
         let (_, fragments) =
             crate::cloning_preparations::prepared_rows(&after.methods, inputs.len()).unwrap();
         let compiled = collagene_core::assembly_recipe::compile_preparations(

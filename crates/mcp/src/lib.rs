@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 199;
+pub const CURRENT_TOOL_COUNT: usize = 200;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1317,6 +1317,14 @@ pub struct SimilarityQuery {
     pub options: collagene_core::sequence_similarity::Options,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AlignmentAntibodyQuery {
+    pub alignment: EvidenceRef,
+    pub row_id: String,
+    pub options: collagene_core::antibody_numbering::domain_candidates::Options,
+    pub limits: collagene_core::antibody_numbering::domain_candidates::Limits,
+}
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AntibodyQuery {
@@ -6062,6 +6070,23 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let report=translation::find_orfs(&molecule,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"document":args.document,"engine_version":verification::ENGINE_VERSION,"orfs":report}))?;
             output(json!({"document":args.document,"options":report.options,"count":report.orfs.len(),"truncated_search":report.truncated,"display_truncated":report.orfs.len()>100,"orfs":report.orfs.iter().take(100).map(|o|json!({"location":o.location,"reverse":o.reverse,"frame":o.frame,"amino_acids":o.protein.len(),"protein_preview":o.protein.chars().take(80).collect::<String>(),"crosses_origin":o.crosses_origin,"partial_5prime":o.partial_5prime,"partial_3prime":o.partial_3prime,"termination":o.termination})).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Analyze one exact protein alignment row against the current human V/J reference model. Requires immutable alignment reference, stable row ID, explicit native options and work/retention limits. Preserves gaps via a bounded ungapped-index to alignment-column map; gaps never acquire numbering. Returns conditional IMGT track summaries and full report artifact without alignment, document, history or material mutation. Not calibrated domain classification or independent numbering certification."
+    )]
+    async fn analyze_alignment_antibody(
+        &self,
+        Parameters(args): Parameters<AlignmentAntibodyQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            use collagene_core::alignment_antibody as a;
+            let doc={server.store.lock().unwrap().alignment(&args.alignment)?};
+            let source=a::source(&doc,&args.row_id).map_err(bad)?;
+            let r=a::analyze(&doc,&source,&args.options,&args.limits,&mut || false).map_err(bad)?;
+            let artifact=server.analysis_artifact(&serde_json::to_value(&r).map_err(bad)?)?;
+            output(json!({"alignment":args.alignment,"source":r.source,"engine":r.engine,"context_revision":r.context_revision,"columns":r.column_count,"ungapped_residues":r.residue_columns.len(),"qualified_pairs_in_retained_v":r.analysis.evidence.qualified_pairs_in_retained_v,"retained_candidates":r.analysis.tracks.len(),"v_retention_truncated":r.analysis.evidence.v_retention_truncated,"pair_retention_truncated":r.analysis.evidence.pair_retention_truncated,"preview_truncated":r.analysis.tracks.len()>20,"candidates":r.analysis.tracks.iter().take(20).map(|t|json!({"candidate_id":t.candidate_id,"locus":t.locus,"unassigned_residues":t.unassigned_residues,"first_supported_row_residue":t.first_supported_source_index,"row_residue_end":t.source_end})).collect::<Vec<_>>(),"artifact_id":artifact,"authority":"Conditional human-reference/rule evidence. Alignment gaps have no residue label; no calibrated domain/species classification or independent biological numbering certification."}))
         }).await
     }
     #[tool(

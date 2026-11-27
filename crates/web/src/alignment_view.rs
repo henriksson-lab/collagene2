@@ -48,7 +48,7 @@ impl AlignmentRevision {
             bytes: Arc::new(bytes),
         })
     }
-    fn doc(&self) -> &AlignmentDocument {
+    pub(crate) fn doc(&self) -> &AlignmentDocument {
         self.prepared.document()
     }
 }
@@ -167,6 +167,9 @@ pub fn AlignmentPanel(
     let row_page = RwSignal::new(0usize);
     let annotation_page = RwSignal::new(0usize);
     let focused = RwSignal::new((0usize, 0usize));
+    let antibody_report =
+        RwSignal::new(None::<(u64, Arc<collagene_core::alignment_antibody::Report>)>);
+    let antibody_candidate = RwSignal::new(0usize);
     let export_format = RwSignal::new(AlignmentFormat::AlignedFasta);
     let exported = RwSignal::new(None::<(String, AlignmentFormat, AlignmentExport)>);
     let active_worker = StoredValue::new_local(None::<Rc<worker::CachedWorker>>);
@@ -197,6 +200,18 @@ pub fn AlignmentPanel(
             }),
             true,
         )
+    });
+    let antibody = Memo::new(move |_| {
+        let (e, r) = antibody_report.get()?;
+        let a = alignment.get()?;
+        let row = focused.get().0;
+        (e == epoch.get()
+            && r.source.alignment_revision == a.revision
+            && a.doc()
+                .rows
+                .get(row)
+                .is_some_and(|row| row.id == r.source.row_id))
+        .then_some(r)
     });
     Effect::new(move |_| {
         let _ = (current.get(), epoch.get());
@@ -506,7 +521,11 @@ pub fn AlignmentPanel(
             {move||alignment.get().map(|item|{let doc=item.doc();let title=format!("{} · {} rows × {} columns · {:?}",doc.name,doc.rows.len(),doc.column_count(),doc.alphabet);let snapshot=item.clone();let original=item.clone();view!{
                 <h3>{title}</h3><p class="helper">{format!("Source: {} · digest {}. Original bytes and imported annotations remain separate from derived sequence documents.",format_name(doc.source.format),&doc.source.blake3[..16])}</p>
                 <div class="alignment-actions"><button class="button secondary" on:click=move|_|{crate::app::download_with_completion("alignment.cg2aln","application/json",snapshot.bytes.as_ref(),move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e);}})}>"Save alignment file"</button><button class="button secondary" on:click=move|_|match original.doc().original_bytes(){Ok(bytes)=>{crate::app::download_with_completion(&format!("original-alignment.{}",extension(original.doc().source.format)),"text/plain",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(e)=result {status.set(e);}})},Err(e)=>status.set(e.to_string())}>"Original alignment source"</button></div>
-                <AlignmentCanvas alignment=item.clone() focused=focused/>
+                <AlignmentCanvas alignment=item.clone() focused=focused antibody=antibody candidate=antibody_candidate/>
+                <Show when=move||alignment.with(|a|a.as_ref().is_some_and(|a|a.doc().alphabet==Alphabet::Protein))>
+                    <crate::alignment_antibody_view::AlignmentAntibodyPanel alignment=alignment focused=focused epoch=epoch candidate=antibody_candidate on_report=Callback::new(move|r|antibody_report.set(r))/>
+                </Show>
+                <p class="helper" aria-live="polite">{move||antibody.get().map(|r|crate::alignment_antibody_model::description(&r,antibody_candidate.get(),focused.get().1)).unwrap_or_default()}</p>
                 <div class="alignment-readout" aria-live="polite">{move||alignment.get().map(|a|{let(row,col)=focused.get();let doc=a.doc();let Some(r)=doc.rows.get(row)else{return String::new();};let mut counts=BTreeMap::new();for r in &doc.rows{if let Some(c)=r.aligned.as_bytes().get(col){*counts.entry(*c as char).or_insert(0usize)+=1;}}let position=match a.prepared.position(row,col){Ok(Some(n))=>format!("ungapped row position {}",n+1),Ok(None)=>"gap; no residue position".into(),Err(e)=>e.to_string()};let column_annotations=doc.metadata.annotations.iter().filter(|tag|tag.scope=="GC"||(tag.scope=="GR"&&tag.row_identifier.as_deref()==Some(r.identifier.as_str()))).take(100).filter_map(|tag|tag.value.as_bytes().get(col).map(|symbol|format!("{} {}={}",tag.scope,tag.tag,*symbol as char))).collect::<Vec<_>>().join(", ");let consensus=doc.metadata.clustal_consensus.as_ref().and_then(|value|value.as_bytes().get(col)).map(|c|format!("; imported CLUSTAL consensus: {}",*c as char)).unwrap_or_default();let low=col.saturating_sub(30);let high=(col+31).min(r.aligned.len());format!("Row {} · alignment column {} · {} · {}\nVisible row excerpt (columns {}–{}): {}\nObserved symbols in this column: {}. Counts are not alignment confidence.\nImported column annotations (up to100 tags): {}{}",r.identifier,col+1,r.aligned.as_bytes().get(col).copied().map(char::from).unwrap_or('?'),position,low+1,high,r.aligned.get(low..high).unwrap_or(""),counts.iter().map(|(s,n)|format!("{s}: {n}")).collect::<Vec<_>>().join(", "),column_annotations,consensus)}).unwrap_or_default()}</div>
                 <details class="alignment-rows"><summary>"Rows and ungapped sequence extraction"</summary><p class="helper">"Selected rows become new linear documents in their stored5′→3′ / N→C order. Gaps are removed. Features, alignment confidence and external coordinates are not invented. All-gap rows cannot become sequence documents."</p><div class="alignment-actions"><button class="text-tool" on:click=move|_|alignment.with_untracked(|a|if let Some(a)=a{selected.set(a.doc().rows.iter().map(|r|r.id.clone()).collect());})>"Select all alignment rows"</button><button class="text-tool" on:click=move|_|selected.set(BTreeSet::new())>"Clear row selection"</button><button class="button primary" disabled=move||busy.get()||selected.with(BTreeSet::is_empty) on:click=move|_|extract.run(())>"Open selected ungapped rows"</button></div>
                     <p>{move||format!("{} selected rows",selected.with(BTreeSet::len))}</p>
@@ -525,6 +544,8 @@ pub fn AlignmentPanel(
 fn AlignmentCanvas(
     alignment: AlignmentRevision,
     focused: RwSignal<(usize, usize)>,
+    antibody: Memo<Option<Arc<collagene_core::alignment_antibody::Report>>>,
+    candidate: RwSignal<usize>,
 ) -> impl IntoView {
     const LABEL: f64 = 180.;
     const CELL: f64 = 10.;
@@ -551,6 +572,8 @@ fn AlignmentCanvas(
     Effect::new(move |_| {
         let (top, left) = scroll.get();
         let focus = focused.get();
+        let analysis = antibody.get();
+        let candidate = candidate.get();
         let Some(c) = container.get() else {
             return;
         };
@@ -610,6 +633,23 @@ fn AlignmentCanvas(
                     if (row, col) == focus {
                         ctx.set_fill_style_str("#badfce");
                         ctx.fill_rect(x, y, CELL, ROW);
+                    }
+                    if let Some(r) = analysis.as_ref().filter(|r| {
+                        r.source.alignment_revision == a.revision && r.source.row_id == data.id
+                    }) {
+                        if let Some(residue) = r.at_column(candidate, col) {
+                            if let Some(color) = residue
+                                .assignment
+                                .as_ref()
+                                .and_then(|a| crate::antibody_overlay::color(&a.region))
+                            {
+                                ctx.set_fill_style_str(color);
+                                ctx.fill_rect(x, y, CELL, ROW);
+                            } else if residue.assignment.is_none() {
+                                ctx.set_fill_style_str("#808080");
+                                ctx.fill_rect(x, y + 22., CELL - 1., 2.);
+                            }
+                        }
                     }
                     let b = data.aligned.as_bytes()[col];
                     ctx.set_fill_style_str(match b {

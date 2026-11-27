@@ -2333,3 +2333,34 @@ No browser/application HTTP checks were run. Imported alignment-row projection,
 alternate schemes/definitions, broader independent biology validation and whole-
 product graphical/platform/interoperability acceptance remain required.
 [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Exact alignment-row antibody tracks
+
+Core alignment-row analysis pins the actual alignment revision and stable row ID,
+extracts a provenance-bound protein source and retains a sparse ungapped-residue/
+alignment-column map with the current native antibody report. Gaps never acquire
+labels. Source-free packet checks validate shape/current context; actual-source
+map validation authenticates projection, and full reconstruction checks native
+scientific evidence. Worker schema 119 adds job 196/result 186 under existing
+ordinary bounds. UI adds cancellable focused-row analysis, explicit options,
+candidate selection, CDR colors/unresolved underlines, exact cell readouts and
+full report download. Row/alignment/workspace/settings changes invalidate output;
+column navigation keeps it. Native MCP exposes one read-only row tool (200 total).
+No source rows, annotations, documents, history or materials are installed/changed.
+
+All 17 selected native cases pass, including literal gap/label coordinates, equal-
+content row refusal, reordering, source-based detection of plausible wrong maps,
+rewritten packet checksums, cancellation/bounds, current binary/session dispatch,
+SDK/artifact exchange, readonly state and event/row guards. Integrated WASM and
+repository formatting checks pass. Alternate schemes/definitions, broader
+independent biological validation and whole-product acceptance remain required.
+[Contract](ANTIBODY_NUMBERING.md).
+
+The public 8082 snapshot is now CI frontend `dd7f03a` / worker 118 (artifact
+15235533056, successful frontend job 140767172628 in run 46076502219). Archive
+digest and confined static integrity were verified; socket ownership confirms
+the detached static-only server. Desktop build/embedded-MCP checks for that source
+pass on Windows/macOS/Linux. No browser/application HTTP checks were run. That
+preview includes the antibody inspector; viewer overlays and current alignment-row
+work are newer source changes awaiting later frontend artifacts.

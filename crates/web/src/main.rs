@@ -471,3 +471,8 @@ mod antibody_view;
 mod antibody_overlay;
 #[cfg(target_arch = "wasm32")]
 mod antibody_overlay_draw;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod alignment_antibody_model;
+#[cfg(target_arch = "wasm32")]
+mod alignment_antibody_view;

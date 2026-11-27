@@ -6,7 +6,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 118;
+pub const WORKER_SCHEMA_VERSION: u16 = 119;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
@@ -1108,6 +1108,12 @@ pub enum AnalysisJob {
         options: crate::antibody_numbering::domain_candidates::Options,
         limits: crate::antibody_numbering::domain_candidates::Limits,
     },
+    AnalyzeAlignmentAntibody {
+        alignment: crate::alignment_formats::AlignmentDocument,
+        source: crate::alignment_antibody::Source,
+        options: crate::antibody_numbering::domain_candidates::Options,
+        limits: crate::antibody_numbering::domain_candidates::Limits,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1306,6 +1312,7 @@ pub enum AnalysisResult {
     RnaChemistry(crate::rna_chemistry::Report),
     ProteinLiabilities(crate::protein_liabilities::Report),
     Antibody(crate::antibody_numbering::domain_tracks::Report),
+    AlignmentAntibody(crate::alignment_antibody::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1484,6 +1491,14 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             crate::material_derivation::annealed_oligos_preview_revision(
                 workspace, top, bottom, options,
             )?;
+        }
+        AnalysisJob::AnalyzeAlignmentAntibody {
+            alignment,
+            source,
+            options,
+            limits,
+        } => {
+            crate::alignment_antibody::request_revision(alignment, source, options, limits)?;
         }
         AnalysisJob::AnalyzeAntibody {
             molecule,
@@ -1985,6 +2000,7 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         AnalysisResult::MaterialAnnealedOligosPreview(report) => {
             report.validate_binding(&response.revision)?;
         }
+        AnalysisResult::AlignmentAntibody(report) => report.validate_binding(&response.revision)?,
         AnalysisResult::Antibody(report) => report
             .validate_binding(&response.revision)
             .map_err(|e| Error::Format(e.to_string()))?,
@@ -2973,6 +2989,21 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             {
                 return Err(Error::Format(
                     "Annealed-material source events/options changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::AnalyzeAlignmentAntibody {
+            alignment,
+            source,
+            options,
+            limits,
+        } => {
+            if crate::alignment_antibody::request_revision(alignment, source, options, limits)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Alignment antibody source/options changed".into(),
                 ));
             }
             None
@@ -4505,6 +4536,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         } => {
             crate::material_derivation::preview_annealed_oligos(&workspace, &top, &bottom, &options)
                 .map(AnalysisResult::MaterialAnnealedOligosPreview)
+        }
+        AnalysisJob::AnalyzeAlignmentAntibody {
+            alignment,
+            source,
+            options,
+            limits,
+        } => {
+            crate::alignment_antibody::analyze(&alignment, &source, &options, &limits, &mut || {
+                false
+            })
+            .map(AnalysisResult::AlignmentAntibody)
         }
         AnalysisJob::AnalyzeAntibody {
             molecule,

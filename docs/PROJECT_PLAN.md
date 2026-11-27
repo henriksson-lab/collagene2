@@ -4579,3 +4579,36 @@ fixture groups, integrated WASM and repository formatting checks pass. Imported 
 schemes/definitions, broader independent biological validation and whole-product
 graphical/platform/interoperability acceptance remain open.
 [Contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 exact alignment-row antibody analysis
+
+The core analyzes one pinned protein alignment revision/stable row using ordinary
+ungapped extraction provenance and the single current antibody analysis. A bounded
+map (at most 2,000 residues) projects assignments onto stored columns; gaps receive
+no labels. Source-based map validation is distinct from source-free shape/context
+checks, and full scientific reconstruction remains available. Equal-content rows,
+reordering and stale options cannot retarget old evidence. Worker 119 adds job
+196/result 186 without changing ordinary message or workspace-admission bounds.
+
+Protein alignments now expose explicit row analysis settings, cancellable workers,
+candidate selection, conditional CDR colors/unresolved underlines, exact focused-
+cell numbering/evidence and full report download. Row/alignment/epoch/settings
+changes invalidate results; column-only navigation does not. MCP adds read-only
+`analyze_alignment_antibody` with immutable alignment/row resolution and bounded
+previews/full artifacts (200 tools). No rows, annotations, documents, history or
+materials are changed. All 17 selected native cases, integrated WASM and
+repository formatting checks pass. Alternate schemes/definitions, broader
+independent biology validation and whole-product graphical/platform/interoperability
+acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).
+
+### Public preview source checkpoint
+
+Port 8082 is refreshed to successful CI frontend `dd7f03a`, worker 118, including
+the conditional antibody inspector. Its pinned artifact archive digest, static
+asset/integrity references, immutable served root and detached socket owner were
+verified without browser/application HTTP requests. The corresponding desktop
+build/MCP smoke jobs pass on Windows, macOS and Linux; this does not establish
+installed GUI acceptance. Protein viewer overlays (`83cd37a`) and subsequent row
+analysis follow that preview source checkpoint and await their own frontend
+artifact refresh. The preview server exposes only its explicit static snapshot.

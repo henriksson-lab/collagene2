@@ -43,7 +43,7 @@ fn worker_sessions_use_one_current_source_options_bound_binary_analysis() {
         },
     };
     let wire = protocol::encode_request(&q).unwrap();
-    assert_eq!(&wire[4..6], &118u16.to_le_bytes());
+    assert_eq!(&wire[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&wire[42..]).unwrap();
     assert_eq!(tag, 195);
     let mut session = protocol::AnalysisSession::default();

@@ -251,3 +251,18 @@ The viewer readout describes the first selected residue. Use the inspector table
 or downloaded report for all labels. Uncheck the control to hide the overlay; it
 can remain visible when the inspector closes, but it cannot move to another
 document/event or survive a changed source version. No annotations are installed.
+
+
+## Antibody analysis in protein alignments
+
+Open a protein alignment and focus a row by clicking a cell or using the arrow
+keys. Expand **Antibody analysis of focused row**, review the heuristic settings
+and analyze. Choose a retained candidate to color its conditional CDRs on that
+row. Grey underlines mark unresolved residues. Focus a cell to read its exact
+IMGT position, region and reference/rule origin; gaps have no residue label.
+Moving between columns keeps the row analysis. Changing rows, alignment, settings
+or workspace cancels/discards old output. Download the full row report for all
+numbering assignments, loop diagnostics, alternatives and provenance. Original
+rows, imported annotations and exported alignment files are unchanged. These are
+conditional human-reference assignments, not calibrated classification or
+independently certified biological numbering.

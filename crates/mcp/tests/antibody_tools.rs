@@ -47,7 +47,11 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let c = ().serve(b).await.unwrap();
     let tools = c.list_all_tools().await.unwrap();
     assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
-    for name in ["list_antibody_profiles", "analyze_antibody"] {
+    for name in [
+        "list_antibody_profiles",
+        "analyze_antibody",
+        "analyze_alignment_antibody",
+    ] {
         assert!(tools.iter().any(|t| t.name == name));
     }
     let discovery = call(&c, "list_antibody_profiles", json!({})).await;
@@ -154,6 +158,58 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
         json!({"document":doc,"options":options}),
     )
     .await;
+    assert_eq!(call(&c, "list_documents", json!({})).await, before);
+    // Analyze alignment evidence directly; do not forge an extracted document ref.
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let input = format!(">row-a\n--{seq}--\n>row-b\n--{seq}--\n");
+    let imported=call(&c,"import_alignment",json!({"data_base64":STANDARD.encode(input.as_bytes()),"format":"AlignedFasta","alphabet":"Protein","name":"Antibody row fixture"})).await;
+    limits.max_candidates = 4;
+    let alignment_before=call(&c,"read_alignment",json!({"alignment":imported["alignment"],"row_start":0,"max_rows":2,"column_start":0,"max_columns":200})).await;
+    let row = imported["rows"][0]["id"].clone();
+    let ar = call(
+        &c,
+        "analyze_alignment_antibody",
+        json!({"alignment":imported["alignment"],"row_id":row,"options":options,"limits":limits}),
+    )
+    .await;
+    assert_eq!(ar["retained_candidates"], 1);
+    assert_eq!(
+        ar["source"]["alignment_revision"],
+        imported["alignment"]["revision"]
+    );
+    let mut text = String::new();
+    let mut start = 0;
+    loop {
+        let chunk = call(
+            &c,
+            "read_artifact",
+            json!({"artifact_id":ar["artifact_id"],"start":start,"max_bytes":16384}),
+        )
+        .await;
+        text.push_str(chunk["text"].as_str().unwrap());
+        if chunk["done"] == true {
+            break;
+        }
+        start = chunk["next_start"].as_u64().unwrap();
+        assert!(text.len() < 4 * 1024 * 1024);
+    }
+    let full: collagene_core::alignment_antibody::Report = serde_json::from_str(&text).unwrap();
+    full.validate_binding(ar["context_revision"].as_str().unwrap())
+        .unwrap();
+    assert!(full.at_column(0, 0).is_none());
+    assert_eq!(full.at_column(0, 2).unwrap().source_index, 0);
+    let other=call(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":imported["rows"][1]["id"],"options":options,"limits":limits})).await;
+    assert_ne!(ar["context_revision"], other["context_revision"]);
+    reject(&c,"analyze_alignment_antibody",json!({"alignment":imported["alignment"],"row_id":"unknown","options":options,"limits":limits})).await;
+    let mut stale = imported["alignment"].clone();
+    stale["revision"] = json!("f".repeat(64));
+    reject(
+        &c,
+        "analyze_alignment_antibody",
+        json!({"alignment":stale,"row_id":row,"options":options,"limits":limits}),
+    )
+    .await;
+    assert_eq!(call(&c,"read_alignment",json!({"alignment":imported["alignment"],"row_start":0,"max_rows":2,"column_start":0,"max_columns":200})).await,alignment_before);
     assert_eq!(call(&c, "list_documents", json!({})).await, before);
     c.cancel().await.unwrap();
     server.await.unwrap();

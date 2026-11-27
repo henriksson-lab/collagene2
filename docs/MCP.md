@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 199 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 200 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -56,6 +56,15 @@ reference provenance. Counts-only requests retain no candidates. These tools mak
 no source/history/material edits and do not establish calibrated domain/species
 classification or independently validated biological numbering. They do not expand
 thin WebMCP permissions. [Contract and limits](ANTIBODY_NUMBERING.md).
+
+`analyze_alignment_antibody` analyzes an exact immutable protein alignment row
+without extracting or installing a document. Supply the alignment reference,
+stable row ID and the same explicit native options/limits. The full artifact
+retains a bounded ungapped-residue to alignment-column map and current native
+track report; gaps have no residue or numbering label. Source-free transport
+checks validate shape and context; source reconstruction authenticates the actual
+alignment projection. Preview at most 20 candidate summaries. No alignment,
+document, history or material mutation occurs.
 
 Build and configure:
 

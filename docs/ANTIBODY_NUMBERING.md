@@ -526,3 +526,39 @@ Only visible source rows are painted. Scrolling does not hash molecules, rebuild
 reference models, rerun alignment or install annotations. This source-coordinate
 overlay does not yet project antibody evidence onto imported alignment rows,
 provide alternate schemes or establish independent residue-level validation.
+
+
+## Exact imported alignment-row projection
+
+`alignment_antibody` analyzes one explicitly pinned protein alignment revision and
+stable row ID. It derives the ordinary ungapped row molecule with existing native
+extraction/provenance rules, runs the current antibody track analysis and retains
+an increasing map from ungapped residue indices to stored alignment columns. At
+most 2,000 residue indices are stored, even when long gaps span many columns.
+DNA/RNA, unknown/all-gap rows and oversized ungapped proteins are refused. Equal
+sequence content in a different row does not retarget a report. Reordering/editing
+alignment rows changes the exact alignment revision and invalidates old pins.
+
+`validate_binding` checks current context, column/resource bounds, strict map
+ordering and native report consistency. It does not authenticate the actual gap
+map: a source-free increasing map can still point at the wrong actual columns.
+`validate_source` resolves the actual immutable alignment/row and checks the map
+and native request/source context without running DP; `validate_for` additionally
+reconstructs the native scientific analysis. UI replies use actual-source map
+validation, and independently supplied scientific evidence needs full reconstruction.
+
+Worker 119 adds job 196/result 186 under unchanged ordinary message limits. The
+protein alignment inspector supplies explicit settings, cancellable row analysis,
+retained-candidate selection, CDR colors, unresolved underlines, exact focused-cell
+numbering/evidence readouts and full report download. Changing rows, alignment,
+workspace or settings invalidates output; changing only the focused column does
+not. Only visible cells are painted, with a bounded binary search into the retained
+map; no alignment/hash/reference analysis runs during scrolling.
+
+Native MCP `analyze_alignment_antibody` resolves immutable alignment evidence and
+stable row ID, requires explicit options/limits and provides at most 20 inline
+candidate summaries plus a full report artifact. It installs no document or other
+scientific state. Neither UI nor MCP modifies imported rows, annotations or source
+bytes, guesses labels for gaps or treats imported column annotations as computed
+confidence. Alternate numbering/region definitions, broader independent biology
+validation and whole-product acceptance remain open.

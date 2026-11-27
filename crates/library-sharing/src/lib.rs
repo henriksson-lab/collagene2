@@ -82,6 +82,9 @@ pub struct Projection {
 /// proposals and workspace UI state are not required foreign keys of a plasmid.
 fn presentation(kind: &str) -> bool {
     kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND
+        || kind == collagene_core::protocol_layout::KIND
+        || kind == collagene_core::combinatorial_batch::KIND
+        || kind == collagene_core::combinatorial_release::KIND
         || matches!(
             kind,
             "cloning-output-visibility-v1"
@@ -335,6 +338,13 @@ impl<'a> Graph<'a> {
         if let Some(event) = &selection.head_event {
             self.event(event)?;
         }
+        self.finish_inventory(selection, documentary)
+    }
+    fn finish_inventory(
+        mut self,
+        selection: &Selection,
+        documentary: bool,
+    ) -> Result<Inventory, Error> {
         self.resolve()?;
         if documentary {
             let (sbol_assets, used) = sbol_source::required_assets(
@@ -507,5 +517,72 @@ pub fn document_closure(source: &Workspace, selection: &Selection) -> Result<Exp
         workspace: projected.workspace,
         archive,
         inventory: projected.inventory,
+    })
+}
+
+/// Explicit documentary plate publication. This scope intentionally includes
+/// all references of indivisible retained batch/release records, not only wells.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProtocolLayoutInventory {
+    pub layout_hash: String,
+    pub inventory: Inventory,
+    pub notices: Vec<String>,
+}
+pub struct ProtocolLayoutProjection {
+    pub workspace: Workspace,
+    pub review: ProtocolLayoutInventory,
+}
+pub fn inspect_protocol_layout_closure(
+    source: &Workspace,
+    layout_hash: &str,
+) -> Result<ProtocolLayoutInventory, Error> {
+    let layout = collagene_core::protocol_layout::load(source, layout_hash)?;
+    let dependencies = collagene_core::protocol_layout::source_bindings(source, &layout)?;
+    let primary = dependencies.events.first().ok_or(Error::Unresolved(
+        "layout has no independently retained source event",
+    ))?;
+    let selection = Selection {
+        document_id: primary.document_id.clone(),
+        revision: primary.revision.clone(),
+        head_event: Some(primary.event_id.clone()),
+    };
+    let mut graph = Graph::new(source)?;
+    graph.kept_assets.insert(layout_hash.into());
+    for hash in &dependencies.attachments {
+        graph.edge()?;
+        if !source.attachments.contains_key(hash) {
+            return Err(Error::Unresolved("layout dependency attachment"));
+        }
+        graph.kept_assets.insert(hash.clone());
+    }
+    for event in &dependencies.events {
+        graph.binding(event)?;
+    }
+    for run in &dependencies.runs {
+        graph.run(run)?;
+    }
+    let inventory = graph.finish_inventory(&selection, true)?;
+    Ok(ProtocolLayoutInventory{layout_hash:layout_hash.into(),inventory,notices:vec![
+        "Explicit complete-layout publication includes all native references of retained indivisible batch/release records, including rows outside the assigned wells. Review document/event counts before publishing.".into(),
+        "Ordinary selected-plasmid publication omits documentary plate layouts and does not imply this broader sharing scope.".into(),
+        "Assignments and retained scientific assessments are documentary; no experimental execution or inventory authority is granted.".into(),
+    ]})
+}
+pub fn project_protocol_layout_closure(
+    source: &Workspace,
+    layout_hash: &str,
+) -> Result<ProtocolLayoutProjection, Error> {
+    let review = inspect_protocol_layout_closure(source, layout_hash)?;
+    let projected = project_inventory(
+        source,
+        &review.inventory.selection,
+        review.inventory.clone(),
+    )?;
+    // Validate every retained layout reference against the projected exact scope.
+    collagene_core::protocol_layout::load(&projected.workspace, layout_hash)?;
+    Ok(ProtocolLayoutProjection {
+        workspace: projected.workspace,
+        review,
     })
 }

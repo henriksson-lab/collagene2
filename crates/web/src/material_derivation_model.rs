@@ -3,9 +3,7 @@
 use collagene_core::{
     Molecule,
     analysis::Primer,
-    catalog_digest::CatalogSelection,
     material_derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
-    restriction_inspection::{FragmentSummary, InspectionOptions},
     run_lineage::EventBinding,
     run_material::MaterialOrigin,
     verification::PcrDocument,
@@ -165,12 +163,6 @@ impl PcrChoice {
             preview_context,
         })
     }
-    pub fn source(&self) -> &SourcePin {
-        &self.source
-    }
-    pub fn preview_revision(&self) -> &str {
-        &self.preview_revision
-    }
     pub fn validate_current(
         &self,
         event: &EventBinding,
@@ -188,156 +180,31 @@ impl PcrChoice {
         }
         Ok(())
     }
+
     pub fn request(
-        &self,
-        workspace: &Workspace,
-        name: &str,
-    ) -> Result<PendingInstallation, String> {
-        self.request_with_primers(workspace, name, false)
-    }
-    pub fn request_with_primers(
         &self,
         workspace: &Workspace,
         name: &str,
         save_primers: bool,
-    ) -> Result<PendingInstallation, String> {
+    ) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
-        PendingInstallation::new(
-            workspace,
-            &self.source,
-            native::Request {
-                source: self.source.event.clone(),
-                origin: self.source.native_origin(),
-                name: name.into(),
-                save_primers,
-                derivation: Derivation::ExactPcr {
-                    forward: self.forward.clone(),
-                    reverse: self.reverse.clone(),
-                    selection: PcrSelection {
-                        selected_index: self.selected_index,
-                        expected_preview_revision: self.preview_revision.clone(),
-                        geometry: self.preview.geometry.clone(),
-                    },
+        let request = native::Request {
+            source: self.source.event.clone(),
+            origin: self.source.native_origin(),
+            name: name.into(),
+            save_primers,
+            derivation: Derivation::ExactPcr {
+                forward: self.forward.clone(),
+                reverse: self.reverse.clone(),
+                selection: PcrSelection {
+                    selected_index: self.selected_index,
+                    expected_preview_revision: self.preview_revision.clone(),
+                    geometry: self.preview.geometry.clone(),
                 },
             },
-        )
-    }
-}
-#[derive(Debug, Clone)]
-pub struct DigestChoice {
-    source: SourcePin,
-    selection: CatalogSelection,
-    options: InspectionOptions,
-    fragment: FragmentSummary,
-    inspection_revision: String,
-    preview_context: String,
-}
-impl DigestChoice {
-    /// The caller supplies a validated, current native inspection context. This
-    /// records its choice only; native installation recomputes actual cleavage.
-    pub fn capture(
-        source: SourcePin,
-        selection: CatalogSelection,
-        options: InspectionOptions,
-        inspection_revision: String,
-        fragment: FragmentSummary,
-    ) -> Result<Self, String> {
-        if !hex(&inspection_revision) || fragment.index >= options.max_fragments {
-            return Err("Choose a bounded fragment from a current digest inspection.".into());
-        }
-        let preview_context = hash(&(&selection, &options, &inspection_revision, &fragment))?;
-        Ok(Self {
-            source,
-            selection,
-            options,
-            fragment,
-            inspection_revision,
-            preview_context,
-        })
-    }
-    /// Accept a fresh native generic inspection, retaining its actual fragment
-    /// contour; no Run-only adapter or imported duplex summary is involved.
-    pub fn from_preview(
-        source: SourcePin,
-        molecule: &Molecule,
-        selection: CatalogSelection,
-        options: InspectionOptions,
-        preview: &native::DigestPreview,
-        fragment_index: usize,
-    ) -> Result<Self, String> {
-        source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
-        let role = collagene_core::restriction_history::source_role(source.event())
-            .map_err(|e| e.to_string())?;
-        let expected = native::digest_inspection_revision(
-            &role,
-            molecule,
-            &source.native_origin(),
-            &selection,
-            &options,
-        )
-        .map_err(|e| e.to_string())?;
-        preview
-            .validate_binding(&expected)
-            .map_err(|e| e.to_string())?;
-        if hash(&preview.selection)? != hash(&selection)? || !preview.inspection.products_determined
-        {
-            return Err(
-                "The current native digest does not determine this catalog fragment.".into(),
-            );
-        }
-        let fragment = preview
-            .inspection
-            .fragments
-            .iter()
-            .find(|fragment| fragment.index == fragment_index)
-            .cloned()
-            .ok_or("The selected native digest fragment is unavailable.")?;
-        Self::capture(source, selection, options, expected, fragment)
-    }
-    pub fn source(&self) -> &SourcePin {
-        &self.source
-    }
-    pub fn inspection_revision(&self) -> &str {
-        &self.inspection_revision
-    }
-    pub fn validate_current(
-        &self,
-        event: &EventBinding,
-        epoch: u64,
-        source: &Molecule,
-        origin: Option<&MaterialOrigin>,
-        selection: &CatalogSelection,
-        options: &InspectionOptions,
-        inspection_revision: &str,
-        fragment: &FragmentSummary,
-    ) -> Result<(), String> {
-        self.source.validate_current(event, epoch, source, origin)?;
-        if hash(&(selection, options, inspection_revision, fragment))? != self.preview_context {
-            return Err("Digest catalog, limits, inspection or fragment geometry changed; run the digest again.".into());
-        }
-        Ok(())
-    }
-    pub fn request(
-        &self,
-        workspace: &Workspace,
-        name: &str,
-    ) -> Result<PendingInstallation, String> {
-        self.source.attest(workspace)?;
-        PendingInstallation::new(
-            workspace,
-            &self.source,
-            native::Request {
-                source: self.source.event.clone(),
-                origin: self.source.native_origin(),
-                name: name.into(),
-                save_primers: false,
-                derivation: Derivation::CatalogDigest {
-                    selection: self.selection.clone(),
-                    options: self.options.clone(),
-                    fragment_index: self.fragment.index,
-                },
-            },
-        )
+        };
+        native::preflight(workspace, &request).map_err(|e| e.to_string())?;
+        Ok(request)
     }
 }
 /// A literal mismatch-PCR choice bound to its exact native source and policy.
@@ -438,24 +305,22 @@ impl MismatchChoice {
         workspace: &Workspace,
         name: &str,
         save_primers: bool,
-    ) -> Result<PendingInstallation, String> {
+    ) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
-        PendingInstallation::new(
-            workspace,
-            &self.source,
-            native::Request {
-                source: self.source.event.clone(),
-                origin: self.source.native_origin(),
-                derivation: Derivation::MismatchPcr {
-                    forward: self.forward.clone(),
-                    reverse: self.reverse.clone(),
-                    options: self.options.clone(),
-                    selection: self.selection.clone(),
-                },
-                name: name.into(),
-                save_primers,
+        let request = native::Request {
+            source: self.source.event.clone(),
+            origin: self.source.native_origin(),
+            derivation: Derivation::MismatchPcr {
+                forward: self.forward.clone(),
+                reverse: self.reverse.clone(),
+                options: self.options.clone(),
+                selection: self.selection.clone(),
             },
-        )
+            name: name.into(),
+            save_primers,
+        };
+        native::preflight(workspace, &request).map_err(|e| e.to_string())?;
+        Ok(request)
     }
 }
 /// Repair acts on freshly reconstructed saved material, never imported end summaries.
@@ -508,100 +373,29 @@ impl RepairChoice {
         }
         Ok(())
     }
-    pub fn request(
-        &self,
-        workspace: &Workspace,
-        name: &str,
-    ) -> Result<PendingInstallation, String> {
+    pub fn request(&self, workspace: &Workspace, name: &str) -> Result<native::Request, String> {
         self.source.attest(workspace)?;
-        PendingInstallation::new(
-            workspace,
-            &self.source,
-            native::Request {
-                source: self.source.event.clone(),
-                origin: self.source.native_origin(),
-                derivation: Derivation::EndRepair {
-                    method: self.method,
-                },
-                name: name.into(),
-                save_primers: false,
+        let request = native::Request {
+            source: self.source.event.clone(),
+            origin: self.source.native_origin(),
+            derivation: Derivation::EndRepair {
+                method: self.method,
             },
-        )
-    }
-}
-
-/// Ready for the worker, not an installed product. The UI must retain its choice
-/// and validate current context before dispatch, persistence and visible apply.
-#[derive(Debug, Clone)]
-pub struct PendingInstallation {
-    request: native::Request,
-    context_revision: String,
-    workspace_fingerprint: String,
-    source: SourcePin,
-}
-impl PendingInstallation {
-    fn new(
-        workspace: &Workspace,
-        source: &SourcePin,
-        request: native::Request,
-    ) -> Result<Self, String> {
+            name: name.into(),
+            save_primers: false,
+        };
         native::preflight(workspace, &request).map_err(|e| e.to_string())?;
-        Ok(Self {
-            context_revision: native::revision(workspace, &request).map_err(|e| e.to_string())?,
-            workspace_fingerprint: collagene_core::run_lineage::workspace_fingerprint(workspace)
-                .map_err(|e| e.to_string())?,
-            request,
-            source: source.clone(),
-        })
-    }
-    pub fn request(&self) -> &native::Request {
-        &self.request
-    }
-    pub fn context_revision(&self) -> &str {
-        &self.context_revision
-    }
-    pub fn validate_workspace(&self, workspace: &Workspace, epoch: u64) -> Result<(), String> {
-        if epoch != self.source.epoch
-            || collagene_core::run_lineage::workspace_fingerprint(workspace)
-                .map_err(|e| e.to_string())?
-                != self.workspace_fingerprint
-        {
-            return Err("The workspace changed while reusable material was being prepared.".into());
-        }
-        Ok(())
-    }
-    /// Validates the worker's archive receipt only. Caller still must atomically
-    /// commit current+previous recovery frames and then visibly apply the archive.
-    pub fn validate_received(
-        &self,
-        installed: &native::Installed,
-        decoded: &Workspace,
-    ) -> Result<(), String> {
-        installed
-            .validate_binding(&self.context_revision)
-            .map_err(|e| e.to_string())?;
-        if installed.receipt.source != self.source.event {
-            return Err("Derivation receipt names another source event.".into());
-        }
-        installed
-            .receipt
-            .validate_archive(decoded)
-            .map_err(|e| e.to_string())?;
-        let actual = collagene_core::workspace::load_workspace(&installed.archive)
-            .map_err(|e| e.to_string())?;
-        if hash(&actual)? != hash(decoded)? {
-            return Err(
-                "Decoded workspace differs from the exact received derivation archive.".into(),
-            );
-        }
-        Ok(())
+        Ok(request)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Topology, catalog_digest, restriction_history, verification};
+    use collagene_core::{
+        Topology, catalog_digest, restriction_history, restriction_inspection::InspectionOptions,
+        verification,
+    };
     fn event(workspace: &Workspace) -> EventBinding {
         let doc = &workspace.documents[0];
         EventBinding {
@@ -686,46 +480,40 @@ mod tests {
                 .validate_current(&event, 7, &source, None, &forward, &reverse, 0, &changed)
                 .is_err()
         );
-        let pending = choice.request(&workspace, "Reusable PCR").unwrap();
-        assert!(matches!(
-            pending.request().derivation,
-            Derivation::ExactPcr { .. }
-        ));
-        pending.validate_workspace(&workspace, 7).unwrap();
-        assert!(pending.validate_workspace(&workspace, 8).is_err());
-        let mut changed = workspace;
-        changed.name = "Different workspace context".into();
-        assert!(pending.validate_workspace(&changed, 7).is_err());
+        let pending = choice.request(&workspace, "Reusable PCR", false).unwrap();
+        assert!(matches!(pending.derivation, Derivation::ExactPcr { .. }));
     }
     #[test]
     fn received_native_pcr_archive_is_validated_but_no_commit_or_reference_promotion_occurs() {
         let (workspace, _, _, _, _, preview, choice) = pcr();
         let before = hash(&workspace).unwrap();
-        let pending = choice
-            .request_with_primers(&workspace, "Reusable PCR", true)
-            .unwrap();
-        let installed = native::install(&workspace, pending.request()).unwrap();
+        let pending = choice.request(&workspace, "Reusable PCR", true).unwrap();
+        let installed = native::install(&workspace, &pending).unwrap();
         assert!(installed.receipt.primer_attachment.is_some());
         let decoded = collagene_core::workspace::load_workspace(&installed.archive).unwrap();
-        pending.validate_received(&installed, &decoded).unwrap();
+        installed
+            .validate_binding(&native::revision(&workspace, &pending).unwrap())
+            .unwrap();
+        installed.receipt.validate_archive(&decoded).unwrap();
         assert_eq!(hash(&workspace).unwrap(), before);
-        assert_eq!(choice.preview_revision(), preview.molecule.revision());
+        assert_eq!(choice.preview_revision, preview.molecule.revision());
         assert_ne!(
             installed.receipt.product.event_id,
-            choice.source().event().event_id
+            choice.source.event().event_id
         );
-        let mut altered = decoded;
-        altered.name = "Not the received archive".into();
-        assert!(pending.validate_received(&installed, &altered).is_err());
         let mut wrong = installed;
         wrong.receipt.context_revision = "0".repeat(64);
-        assert!(pending.validate_received(&wrong, &altered).is_err());
+        assert!(
+            wrong
+                .validate_binding(&native::revision(&workspace, &pending).unwrap())
+                .is_err()
+        );
     }
     #[test]
     fn installed_derivation_origin_is_explicit_and_cannot_be_cleared_or_rebound_to_equal_dna() {
         let (workspace, _, _, _, _, _, choice) = pcr();
-        let pending = choice.request(&workspace, "Reusable PCR").unwrap();
-        let installed = native::install(&workspace, pending.request()).unwrap();
+        let pending = choice.request(&workspace, "Reusable PCR", false).unwrap();
+        let installed = native::install(&workspace, &pending).unwrap();
         let decoded = collagene_core::workspace::load_workspace(&installed.archive).unwrap();
         let product = installed.receipt.product.clone();
         let source = &decoded.revisions[&product.revision];
@@ -742,87 +530,63 @@ mod tests {
         assert_eq!(pin.event(), &product);
     }
     #[test]
-    fn catalog_fragment_retains_exact_geometry_limits_and_catalog_without_a_target() {
+    fn catalog_preview_binds_current_limits_and_literal_cut_geometry_without_a_target() {
         let source = Molecule::dna("Original circle", "AAAGAATTCTTT", Topology::Circular).unwrap();
-        let workspace =
-            Workspace::from_documents("Digest context", vec![source.clone()], 0).unwrap();
+        let workspace = Workspace::from_documents("Digest", vec![source.clone()], 0).unwrap();
         let event = event(&workspace);
-        let pin = SourcePin::capture(event.clone(), 9, &source, None).unwrap();
-        let catalog = catalog_digest::builtin_catalog().unwrap();
-        let enzyme = catalog
-            .edition()
-            .enzymes
-            .iter()
-            .find(|enzyme| enzyme.name == "EcoRI")
-            .unwrap();
-        let selection = catalog_digest::select(&catalog, &[enzyme.id.clone()]).unwrap();
-        let options = InspectionOptions::default();
         let role = restriction_history::source_role(&event).unwrap();
-        let inspection =
-            catalog_digest::inspect(&catalog, &selection, &role, &source, &options).unwrap();
-        let fragment = inspection.inspection.fragments[0].clone();
-        let choice = DigestChoice::capture(
-            pin,
-            selection.clone(),
-            options.clone(),
-            inspection.batch_revision.clone(),
-            fragment.clone(),
+        let catalog = catalog_digest::builtin_catalog().unwrap();
+        let selection = catalog_digest::select(&catalog, &["ecori".into()]).unwrap();
+        let options = collagene_core::restriction_inspection::InspectionOptions::default();
+        let preview = native::inspect_digest(
+            &role,
+            &source,
+            &SourceOrigin::OriginalReference,
+            &selection,
+            &options,
         )
         .unwrap();
-        choice
-            .validate_current(
-                &event,
-                9,
-                &source,
-                None,
-                &selection,
-                &options,
-                &inspection.batch_revision,
-                &fragment,
-            )
-            .unwrap();
+        let expected = native::digest_inspection_revision(
+            &role,
+            &source,
+            &SourceOrigin::OriginalReference,
+            &selection,
+            &options,
+        )
+        .unwrap();
+        preview.validate_binding(&expected).unwrap();
+        let fragment = &preview.inspection.fragments[0];
+        assert_eq!(fragment.top_start, 4);
+        assert_eq!(fragment.bottom_start, 8);
         let mut changed = options.clone();
         changed.max_sites -= 1;
-        assert!(
-            choice
-                .validate_current(
-                    &event,
-                    9,
-                    &source,
-                    None,
-                    &selection,
-                    &changed,
-                    &inspection.batch_revision,
-                    &fragment
-                )
-                .is_err()
-        );
-        let mut changed = fragment;
-        changed.top_start += 1;
-        assert!(
-            choice
-                .validate_current(
-                    &event,
-                    9,
-                    &source,
-                    None,
-                    &selection,
-                    &options,
-                    &inspection.batch_revision,
-                    &changed
-                )
-                .is_err()
-        );
-        let pending = choice
-            .request(&workspace, "Reusable digest fragment")
+        let changed_context = native::digest_inspection_revision(
+            &role,
+            &source,
+            &SourceOrigin::OriginalReference,
+            &selection,
+            &changed,
+        )
+        .unwrap();
+        assert!(preview.validate_binding(&changed_context).is_err());
+        let request = native::Request {
+            source: event.clone(),
+            origin: SourceOrigin::OriginalReference,
+            name: "Reusable digest fragment".into(),
+            save_primers: false,
+            derivation: Derivation::CatalogDigest {
+                selection,
+                options,
+                fragment_index: fragment.index,
+            },
+        };
+        let installed = native::install(&workspace, &request).unwrap();
+        installed
+            .validate_binding(&native::revision(&workspace, &request).unwrap())
             .unwrap();
-        assert!(matches!(
-            pending.request().derivation,
-            Derivation::CatalogDigest { .. }
-        ));
-        let installed = native::install(&workspace, pending.request()).unwrap();
         let decoded = collagene_core::workspace::load_workspace(&installed.archive).unwrap();
-        pending.validate_received(&installed, &decoded).unwrap();
+        installed.receipt.validate_archive(&decoded).unwrap();
+        assert_eq!(installed.receipt.source, event);
     }
     #[test]
     fn repeated_digest_uses_derived_origin_and_actual_generic_inspection() {
@@ -856,19 +620,35 @@ mod tests {
             &options,
         )
         .unwrap();
-        let first = DigestChoice::from_preview(
-            SourcePin::capture(original_event, 1, &source, None).unwrap(),
-            &source,
-            first_selection,
-            options.clone(),
-            &preview,
-            0,
-        )
-        .unwrap();
-        let request = first.request(&workspace, "Opened EcoRI circle").unwrap();
-        let installed = native::install(&workspace, request.request()).unwrap();
+        preview
+            .validate_binding(
+                &native::digest_inspection_revision(
+                    &role,
+                    &source,
+                    &SourceOrigin::OriginalReference,
+                    &first_selection,
+                    &options,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let request = native::Request {
+            source: original_event,
+            origin: SourceOrigin::OriginalReference,
+            name: "Opened EcoRI circle".into(),
+            save_primers: false,
+            derivation: Derivation::CatalogDigest {
+                selection: first_selection,
+                options: options.clone(),
+                fragment_index: preview.inspection.fragments[0].index,
+            },
+        };
+        let installed = native::install(&workspace, &request).unwrap();
         let next = collagene_core::workspace::load_workspace(&installed.archive).unwrap();
-        request.validate_received(&installed, &next).unwrap();
+        installed
+            .validate_binding(&native::revision(&workspace, &request).unwrap())
+            .unwrap();
+        installed.receipt.validate_archive(&next).unwrap();
         let product = installed.receipt.product.clone();
         let material = &next.revisions[&product.revision];
         let origin = Arc::new(MaterialOrigin::Derived(
@@ -885,22 +665,39 @@ mod tests {
         )
         .unwrap();
         assert_eq!(preview.inspection.fragments.len(), 2);
-        let second = DigestChoice::from_preview(
-            SourcePin::capture(product, 2, material, Some(origin)).unwrap(),
-            material,
-            second_selection,
-            options,
-            &preview,
-            0,
-        )
-        .unwrap();
-        let request = second.request(&next, "Sequential SmaI fragment").unwrap();
-        assert!(matches!(request.request().origin, SourceOrigin::Saved(_)));
-        let installed = native::install(&next, request.request()).unwrap();
+        preview
+            .validate_binding(
+                &native::digest_inspection_revision(
+                    &role,
+                    material,
+                    &SourceOrigin::Saved(origin.as_ref().clone()),
+                    &second_selection,
+                    &options,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let request = native::Request {
+            source: product,
+            origin: SourceOrigin::Saved(origin.as_ref().clone()),
+            name: "Sequential SmaI fragment".into(),
+            save_primers: false,
+            derivation: Derivation::CatalogDigest {
+                selection: second_selection,
+                options,
+                fragment_index: preview.inspection.fragments[0].index,
+            },
+        };
+        assert!(matches!(&request.origin, SourceOrigin::Saved(_)));
+        let installed = native::install(&next, &request).unwrap();
         let final_workspace =
             collagene_core::workspace::load_workspace(&installed.archive).unwrap();
-        request
-            .validate_received(&installed, &final_workspace)
+        installed
+            .validate_binding(&native::revision(&next, &request).unwrap())
+            .unwrap();
+        installed
+            .receipt
+            .validate_archive(&final_workspace)
             .unwrap();
         assert_ne!(installed.receipt.source, installed.receipt.product);
     }
@@ -964,10 +761,10 @@ mod mismatch_repair_tests {
         .unwrap();
         let pending = choice.request(&frame, "Explicit mutant", true).unwrap();
         assert!(
-            matches!(&pending.request().derivation,Derivation::MismatchPcr{selection,..} if selection.selected_index==0 && selection.geometry.sequence.as_str()=="AATCCGATGCTAGACT")
+            matches!(&pending.derivation,Derivation::MismatchPcr{selection,..} if selection.selected_index==0 && selection.geometry.sequence.as_str()=="AATCCGATGCTAGACT")
         );
         let before = serde_json::to_vec(&frame).unwrap();
-        let installed = native::prepare_install(&frame, pending.request()).unwrap();
+        let installed = native::prepare_install(&frame, &pending).unwrap();
         assert!(installed.receipt.primer_attachment.is_some());
         assert_eq!(
             installed.workspace.revisions[&installed.receipt.product.revision]
@@ -1061,13 +858,13 @@ mod mismatch_repair_tests {
             .request(&cut.workspace, "Filled saved fragment")
             .unwrap();
         assert!(matches!(
-            pending.request().derivation,
+            pending.derivation,
             Derivation::EndRepair {
                 method: EndRepairMethod::FillFivePrimeOverhangs
             }
         ));
         let before = serde_json::to_vec(&cut.workspace).unwrap();
-        let installed = native::prepare_install(&cut.workspace, pending.request()).unwrap();
+        let installed = native::prepare_install(&cut.workspace, &pending).unwrap();
         assert_eq!(
             installed.workspace.revisions[&installed.receipt.product.revision]
                 .sequence

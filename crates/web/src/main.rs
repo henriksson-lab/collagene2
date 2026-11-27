@@ -414,3 +414,8 @@ mod map_export_model;
 mod saved_run_review_model;
 #[cfg(target_arch = "wasm32")]
 mod saved_run_review_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod protocol_layout_model;
+#[cfg(target_arch = "wasm32")]
+mod protocol_layout_view;

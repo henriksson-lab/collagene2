@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 189;
+pub const CURRENT_TOOL_COUNT: usize = 190;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1295,6 +1295,41 @@ pub struct OverlapExtensionPrimerDesignQuery {
     pub request: collagene_core::overlap_extension_primer_design::Request,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ProtocolLayoutQuery {
+    pub workspace: WorkspaceRef,
+    pub task: ProtocolLayoutTask,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub enum ProtocolLayoutTask {
+    Preview {
+        request: collagene_core::protocol_layout::Request,
+    },
+    Capture {
+        request: collagene_core::protocol_layout::Request,
+        expected_context_revision: String,
+    },
+    List {
+        offset: usize,
+        limit: usize,
+    },
+    Open {
+        layout_hash: String,
+    },
+    Export {
+        layout_hash: String,
+        format: collagene_core::protocol_layout::ExportFormat,
+    },
+    ReviewPublication {
+        layout_hash: String,
+    },
+    ProjectPublication {
+        layout_hash: String,
+        expected_scope_revision: String,
+    },
+}
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct MaterialOriginWorkspace {
@@ -3090,6 +3125,79 @@ impl ServerHandler for CollageneServer {
 
 #[tool_router]
 impl CollageneServer {
+    #[tool(
+        description = "Plan explicit96/384-well documentary cloning assignments using exact retained batch declarations or released run/product events. Preview never records; Capture requires the reviewed context and creates a NEW immutable workspace with a bounded layout attachment, preserving all biological heads and historical status. List/Open inspect saved layouts. Export emits native CSV/HTML/PDF planning documents with exact identifiers and missing-quantity notices. No automatic placement, inventory, schedules, instrument commands, fabricated amounts or experimental success. Ordinary plasmid publication omits plate layouts; complete plate publication requires a separate explicit closure review."
+    )]
+    async fn protocol_layout(
+        &self,
+        Parameters(args): Parameters<ProtocolLayoutQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::protocol_layout as layout;
+            let frame=server.restore_workspace(&args.workspace)?;
+            match args.task {
+                ProtocolLayoutTask::Preview{request}=>{
+                    let expected=layout::preview_revision(&frame,&request).map_err(bad)?;
+                    let report=layout::preview(&frame,&request).map_err(bad)?;
+                    report.validate_binding(&expected).map_err(bad)?;
+                    let text=bounded_json_limit(&report,layout::MAX_BYTES)?;
+                    let artifact=server.text_artifact(text,"application/json","protocol-layout.json")?;
+                    output(json!({"context_revision":report.context_revision,"assignment_count":report.resolved.len(),"warnings":report.warnings,"artifact_id":artifact,"state":"documentary preview","verified":false,"authority":"Well assignments do not verify reactions or laboratory execution. Quantities remain missing unless explicitly provided by a separate typed planning workflow."}))
+                }
+                ProtocolLayoutTask::Capture{request,expected_context_revision}=>{
+                    let expected=layout::preview_revision(&frame,&request).map_err(bad)?;
+                    if expected!=expected_context_revision{return Err(bad("Layout source or assignments changed; preview again before capture."));}
+                    let commit=layout::capture(&frame,&request).map_err(bad)?;
+                    commit.validate_binding(&expected).map_err(bad)?;
+                    let text=bounded_json_limit(&commit.layout,layout::MAX_BYTES)?;
+                    let receipt=json!({"attachment_hash":commit.attachment_hash,"context_revision":commit.context_revision,"source_workspace_fingerprint":commit.source_workspace_fingerprint,"assignment_count":commit.layout.resolved.len(),"state":"documentary","verified":false});
+                    let bytes=workspace::save_workspace(&commit.workspace).map_err(bad)?;
+                    server.commit_workspace_outputs_named(commit.workspace,Some((text,receipt)),Some(bytes),"protocol-layout.json","Documentary well assignments only; no laboratory execution or scientific verification authority.")
+                }
+                ProtocolLayoutTask::List{offset,limit}=>{
+                    if limit==0||limit>200||offset>layout::MAX_LAYOUTS{return Err(bad("Invalid layout page bounds."));}
+                    let mut entries=Vec::new();
+                    for (hash,asset) in frame.attachments.iter().filter(|(_,a)|a.kind==layout::KIND){
+                        if entries.len()>=layout::MAX_LAYOUTS{return Err(bad("Too many layout attachments."));}
+                        let report=layout::load(&frame,hash).map_err(bad)?;
+                        entries.push(json!({"layout_hash":hash,"name":asset.name,"context_revision":report.context_revision,"plate":report.request.plate,"assignment_count":report.request.assignments.len()}));
+                    }
+                    let total=entries.len();let page=entries.into_iter().skip(offset).take(limit).collect::<Vec<_>>();
+                    output(json!({"workspace":args.workspace,"offset":offset,"total":total,"next_offset":(offset+page.len()<total).then_some(offset+page.len()),"layouts":page,"authority":"Historical documentary layouts only."}))
+                }
+                ProtocolLayoutTask::Open{layout_hash}=>{
+                    let report=layout::load(&frame,&layout_hash).map_err(bad)?;
+                    let artifact=server.text_artifact(bounded_json_limit(&report,layout::MAX_BYTES)?,"application/json","protocol-layout.json")?;
+                    output(json!({"layout_hash":layout_hash,"context_revision":report.context_revision,"assignment_count":report.resolved.len(),"artifact_id":artifact,"state":"documentary","verified":false}))
+                }
+                ProtocolLayoutTask::ReviewPublication{layout_hash}=>{
+                    let review=collagene_library_sharing::inspect_protocol_layout_closure(&frame,&layout_hash).map_err(bad)?;
+                    let text=bounded_json_limit(&review,32*1024*1024)?;
+                    let scope_revision=blake3::hash(text.as_bytes()).to_hex().to_string();
+                    let artifact=server.text_artifact(text,"application/json","protocol-layout-publication.json")?;
+                    output(json!({"layout_hash":layout_hash,"scope_revision":scope_revision,"documents":review.inventory.documents.len(),"events":review.inventory.events.len(),"attachments":review.inventory.attachments.len(),"omitted":review.inventory.omitted,"notices":review.notices,"artifact_id":artifact,"authority":"Explicit layout scope review; no archive or publication has been made."}))
+                }
+                ProtocolLayoutTask::ProjectPublication{layout_hash,expected_scope_revision}=>{
+                    let review=collagene_library_sharing::inspect_protocol_layout_closure(&frame,&layout_hash).map_err(bad)?;
+                    let text=bounded_json_limit(&review,32*1024*1024)?;
+                    if blake3::hash(text.as_bytes()).to_hex().as_str()!=expected_scope_revision{return Err(bad("Layout publication scope changed; review the full dependency counts again."));}
+                    let projected=collagene_library_sharing::project_protocol_layout_closure(&frame,&layout_hash).map_err(bad)?;
+                    let bytes=workspace::save_workspace(&projected.workspace).map_err(bad)?;
+                    server.commit_workspace_outputs_named(projected.workspace,Some((text,json!({"layout_hash":layout_hash,"scope_revision":expected_scope_revision,"authority":"Explicit complete layout projection, including indivisible batch/release dependencies. No server upload or experimental authority."}))),Some(bytes),"protocol-layout-publication.json","Reviewed explicit layout dependency projection only; no server upload, experiment or scientific verification.")
+                }
+                ProtocolLayoutTask::Export{layout_hash,format}=>{
+                    let expected=layout::export_revision(&frame,&layout_hash,format).map_err(bad)?;
+                    let exported=layout::export(&frame,&layout_hash,format).map_err(bad)?;
+                    exported.validate_binding(&expected).map_err(bad)?;
+                    let (mime,filename)=match format{layout::ExportFormat::Csv=>("text/csv","protocol-layout.csv"),layout::ExportFormat::Html=>("text/html","protocol-layout.html"),layout::ExportFormat::Pdf=>("application/pdf","protocol-layout.pdf")};
+                    let length=exported.bytes.len();
+                    let artifact=server.binary_artifact(exported.bytes,mime,filename)?;
+                    output(json!({"layout_hash":layout_hash,"context_revision":expected,"artifact_id":artifact,"filename":filename,"mime_type":mime,"encoding":"base64","bytes":length,"warnings":exported.warnings,"authority":"Documentary planning export, not experimental execution evidence."}))
+                }
+            }
+        }).await
+    }
     #[tool(
         description = "Freshly reconstruct every explicitly selected saved combinatorial row against its independent target and atomically release named native constructs, retained preparation/run events and optional oligo collections in a NEW immutable workspace. Per-row output options are explicit. A late failure discards the entire private prefix and publishes no workspace/artifact. Returns full historical release manifest plus native archive; imported reports never authorize release, and experimental success is not asserted."
     )]

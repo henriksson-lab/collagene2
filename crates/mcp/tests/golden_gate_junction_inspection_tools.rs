@@ -93,7 +93,7 @@ async fn actual_golden_gate_windows_reverse_bottom_coordinates_and_wrong_targets
         .await;
         let target = doc(&imported);
         let plan=call(&c,"propose_plan",json!({"name":"actual selected cut path","inputs":[{"id":"template","document":source}],"target":target,
-            "steps":[Operation::GoldenGate{templates:vec![Source::Input("template".into())],options:GoldenGateOptions{max_fragments:1,..Default::default()},candidate_index:usize::from(reverse)}]})).await;
+            "steps":[Operation::DeclareSourceModifications{template:Source::Input("template".into()),assumptions:collagene_core::modified_duplex::GenerationAssumptions{dam:collagene_core::methylation::MethylationState::Unmodified,dcm:collagene_core::methylation::MethylationState::Unmodified,cpg:collagene_core::methylation::MethylationState::Unmodified}},Operation::GoldenGate{templates:vec![Source::Step(0)],options:GoldenGateOptions{max_fragments:1,..Default::default()},candidate_index:usize::from(reverse)}]})).await;
         let query = json!({"plan_revision":plan["plan_revision"],"options":collagene_core::assembly_junctions::Options{flank_bases:4,..Default::default()}});
         let inspected = call(&c, "inspect_assembly_junctions", query.clone()).await;
         assert_eq!(
@@ -111,8 +111,8 @@ async fn actual_golden_gate_windows_reverse_bottom_coordinates_and_wrong_targets
         assert_eq!(method["candidate_index"], usize::from(reverse));
         assert_eq!(method["path"][0]["top_start"], 11);
         assert_eq!(method["path"][0]["bottom_start"], 15);
-        assert_eq!(method["path"][0]["template"], json!({"Input":"template"}));
-        assert_eq!(method["path"][0]["template_revision"], source["revision"]);
+        assert_eq!(method["path"][0]["template"], json!({"Step":0}));
+
         assert_eq!(method["path"][0]["reverse"], reverse);
         assert_eq!(inspected["junctions"][0]["boundary"], 0);
         assert_eq!(
@@ -121,6 +121,16 @@ async fn actual_golden_gate_windows_reverse_bottom_coordinates_and_wrong_targets
         );
         let evidence = full(&c, &inspected["artifact_id"]).await;
         assert_eq!(evidence["method"], inspected["method"]);
+        let declared: Molecule =
+            serde_json::from_value(evidence["verification"]["products"][0].clone()).unwrap();
+        assert_eq!(method["path"][0]["template_revision"], declared.revision());
+        assert_eq!(
+            evidence["verification"]["products"]
+                .as_array()
+                .unwrap()
+                .len(),
+            2
+        );
         assert_eq!(evidence["context_revision"], inspected["context_revision"]);
         assert_eq!(
             call(&c, "inspect_assembly_junctions", query).await["artifact_id"],

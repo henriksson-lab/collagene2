@@ -3298,8 +3298,7 @@ pub fn App() -> impl IntoView {
                     std::sync::Arc::new(selected.clone()),
                 )?;
                 let frame = library_snapshot.run(())?;
-                let pending =
-                    captured.request_with_primers(&frame, &choice.name, choice.save_primers)?;
+                let request = captured.request(&frame, &choice.name, choice.save_primers)?;
                 let bound = choice.review.clone();
                 let guard = Callback::new(move |()| {
                     if modal.get() != "material_product"
@@ -3324,7 +3323,7 @@ pub fn App() -> impl IntoView {
                     Ok(())
                 });
                 Ok(crate::digest_product::MaterialOpenRequest {
-                    request: pending.request().clone(),
+                    request,
                     epoch: choice.review.epoch,
                     guard,
                 })

@@ -124,17 +124,8 @@ pub async fn save(db: &IdbDatabase, bytes: &[u8]) -> Result<(), String> {
     committed(&tx).await
 }
 
-/// Replacing a workspace and retaining its recovery copy is one transaction.
-/// Quota/abort failure leaves both prior slots intact.
-pub async fn replace_workspace(
-    db: &IdbDatabase,
-    current: &[u8],
-    previous: &[u8],
-) -> Result<(), String> {
-    replace_workspace_cancellable(db, current, previous, Rc::new(RefCell::new(None))).await
-}
-
-/// A caller-owned handle permits aborting an uncommitted atomic replacement on
+/// Replacing the workspace and its recovery copy is one transaction. A
+/// caller-owned handle permits aborting an uncommitted atomic replacement on
 /// cancellation/unmount. Successful completion is the commit point.
 pub async fn replace_workspace_cancellable(
     db: &IdbDatabase,

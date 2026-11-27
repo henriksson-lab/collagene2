@@ -33,14 +33,24 @@ fn raw(reverse: bool) -> (DesignPlan, Molecule) {
             molecule: input,
         }],
         target_revision: target.revision(),
-        steps: vec![Operation::GoldenGate {
-            templates: vec![Source::Input("source".into())],
-            options: GoldenGateOptions {
-                max_fragments: 1,
-                ..Default::default()
+        steps: vec![
+            Operation::DeclareSourceModifications {
+                template: Source::Input("source".into()),
+                assumptions: collagene_core::modified_duplex::GenerationAssumptions {
+                    dam: collagene_core::methylation::MethylationState::Unmodified,
+                    dcm: collagene_core::methylation::MethylationState::Unmodified,
+                    cpg: collagene_core::methylation::MethylationState::Unmodified,
+                },
             },
-            candidate_index: usize::from(reverse),
-        }],
+            Operation::GoldenGate {
+                templates: vec![Source::Step(0)],
+                options: GoldenGateOptions {
+                    max_fragments: 1,
+                    ..Default::default()
+                },
+                candidate_index: usize::from(reverse),
+            },
+        ],
     };
     (plan, target)
 }
@@ -52,7 +62,7 @@ fn options() -> Options {
 }
 
 #[test]
-fn raw_cuts_closure_and_window_codon_are_actual_and_new_nested_method_requires_48() {
+fn declared_raw_cuts_closure_and_window_codon_use_current_wire_and_reject_noncurrent_headers() {
     let (plan, target) = raw(false);
     let report = junctions::inspect_plan(&plan, &target, &options()).unwrap();
     assert_eq!(
@@ -72,7 +82,15 @@ fn raw_cuts_closure_and_window_codon_are_actual_and_new_nested_method_requires_4
     assert_eq!(path.len(), 1);
     assert_eq!((path[0].top_start, path[0].bottom_start), (11, 15));
     assert_eq!((path[0].output_start, path[0].output_end), (0, 20));
-    assert!(matches!(&path[0].template,Source::Input(id) if id=="source"));
+    assert!(matches!(&path[0].template, Source::Step(0)));
+    assert_eq!(
+        path[0].template_revision,
+        report.verification.products[0].revision()
+    );
+    assert_eq!(
+        report.verification.products[0].sequence,
+        plan.inputs[0].molecule.sequence
+    );
     assert!(!path[0].reverse);
     let j = &report.junctions[0];
     assert!(j.closing);
@@ -85,7 +103,7 @@ fn raw_cuts_closure_and_window_codon_are_actual_and_new_nested_method_requires_4
     );
     let revision = junctions::inspection_revision(&plan, &target, &options()).unwrap();
     let bytes = protocol::encode_request(&Request {
-        id: 480,
+        id: 1,
         revision: revision.clone(),
         job: AnalysisJob::InspectAssemblyJunctions {
             plan: plan.clone(),
@@ -103,8 +121,12 @@ fn raw_cuts_closure_and_window_codon_are_actual_and_new_nested_method_requires_4
         panic!("wrong result")
     };
     decoded.validate_binding(&revision).unwrap();
+    assert_eq!(
+        u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+        protocol::WORKER_SCHEMA_VERSION
+    );
     let mut old = bytes;
-    old[4..6].copy_from_slice(&47u16.to_le_bytes());
+    old[4..6].copy_from_slice(&(protocol::WORKER_SCHEMA_VERSION - 1).to_le_bytes());
     assert!(protocol::decode_response(&old).is_err());
     let mut changed = report.clone();
     let Some(Method::GoldenGate { path, .. }) = &mut changed.method else {

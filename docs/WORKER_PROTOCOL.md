@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **98**,
+same deterministic scientific engines. Current schemas are worker **99**,
 candidate **26** and native workspace plan **24**; the verifier is **science-27**.
 Only current internal encodings are accepted. Superseded development formats have
 no fallback decoder, migration or capability ladder.
@@ -450,3 +450,19 @@ ancestry limits; reported comparison counts do not claim an aggregate bound over
 all historical replays. GG jobs retain their existing ordinary32MiB envelope
 unless explicitly listed for the128MiB lane above. Oversized closed inputs fail
 rather than changing admission or dropping ancestry.
+
+
+## Documentary plate assignments
+
+Current worker99 appends PreviewProtocolLayout/CaptureProtocolLayout/
+ExportProtocolLayout jobs182–184 and results172–174. Candidate26, plan24,
+science27 and draft15 are unchanged: these are documentary assignments, with no
+new scientific operation or accepted material. Workspace requests use the bounded
+workspace lane; the capture result uses its workspace response lane.
+
+Every reply binds the exact requested context. Capture validates that removing
+only its new attachment restores the original complete workspace fingerprint.
+Layout/export records have4MiB bounds, at most384 unique occupied wells and128
+layouts per workspace; referenced immutable batch/release evidence shares a32MiB
+ledger. CSV/HTML/PDF exports preserve full identities and missing quantities.
+[Contract](PROTOCOL_LAYOUT_TRANSPORT.md).

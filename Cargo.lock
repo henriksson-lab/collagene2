@@ -1001,6 +1001,7 @@ dependencies = [
  "blake3",
  "collagene-core",
  "collagene-enzyme-catalog",
+ "collagene-library-sharing",
  "collagene-local-storage",
  "collagene-protocol-units",
  "collagene-sources",

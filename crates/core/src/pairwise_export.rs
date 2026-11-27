@@ -405,7 +405,8 @@ pub fn export(
         ),
         Format::Pdf => {
             let blocks = blocks(record, reference_name, query_name, fresh, true)?;
-            let (bytes, _pages, extra) = crate::pdf::export_comparison_pdf(
+            let (bytes, _pages, extra) = crate::pdf::export_documentary_pdf(
+                crate::pdf::DocumentaryKind::SequenceComparison,
                 "Collagene 2 sequence comparison",
                 label(fresh),
                 &record.reference.revision,

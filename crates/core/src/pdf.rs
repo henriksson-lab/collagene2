@@ -681,6 +681,31 @@ Bottom strand 5prime to 3prime: {}",
     out.finish()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum DocumentaryKind {
+    SequenceComparison,
+    PlateLayout,
+}
+impl DocumentaryKind {
+    fn header(self) -> &'static str {
+        match self {
+            Self::SequenceComparison => "COLLAGENE 2 / SEQUENCE COMPARISON",
+            Self::PlateLayout => "COLLAGENE 2 / PLATE LAYOUT",
+        }
+    }
+    fn footer(self) -> (&'static str, &'static str) {
+        match self {
+            Self::SequenceComparison => ("Reference", "Query"),
+            Self::PlateLayout => ("Layout", "Context"),
+        }
+    }
+    fn producer(self) -> &'static str {
+        match self {
+            Self::SequenceComparison => "Collagene embedded Rust comparison exporter",
+            Self::PlateLayout => "Collagene embedded Rust plate layout exporter",
+        }
+    }
+}
 struct Layout {
     face: Face<'static>,
     pages: Vec<Content>,
@@ -691,13 +716,21 @@ struct Layout {
     text_bytes: usize,
     status: Status,
     review_label: Option<String>,
+    review_kind: Option<DocumentaryKind>,
     attachments: Vec<EmbeddedEvidence>,
 }
 impl Layout {
     fn new(status: Status) -> Result<Self, Error> {
-        Self::with_review_label(status, None)
+        Self::with_review_label(status, None, None)
     }
-    fn with_review_label(status: Status, review_label: Option<String>) -> Result<Self, Error> {
+    fn with_review_label(
+        status: Status,
+        review_label: Option<String>,
+        review_kind: Option<DocumentaryKind>,
+    ) -> Result<Self, Error> {
+        if review_label.is_some() != review_kind.is_some() {
+            return Err(Error::Format("documentary PDF kind/label missing".into()));
+        }
         let mut layout = Self {
             face: Face::parse(FONT, 0)
                 .map_err(|_| Error::Format("bundled PDF font is invalid".into()))?,
@@ -709,6 +742,7 @@ impl Layout {
             text_bytes: 0,
             status,
             review_label,
+            review_kind,
             attachments: vec![],
         };
         layout.header()?;
@@ -777,7 +811,9 @@ impl Layout {
             self.text_at(
                 MARGIN,
                 822.0,
-                "COLLAGENE 2 / SEQUENCE COMPARISON",
+                self.review_kind
+                    .ok_or_else(|| Error::Format("documentary PDF kind missing".into()))?
+                    .header(),
                 9.0,
                 GREEN,
             )?;
@@ -1151,17 +1187,9 @@ impl Layout {
                     "Page {} of {} | {} {} | {} {}",
                     index + 1,
                     count,
-                    if self.review_label.is_some() {
-                        "Reference"
-                    } else {
-                        "Plan"
-                    },
+                    self.review_kind.map(|k| k.footer().0).unwrap_or("Plan"),
                     revision_label(plan_revision),
-                    if self.review_label.is_some() {
-                        "Query"
-                    } else {
-                        "Target"
-                    },
+                    self.review_kind.map(|k| k.footer().1).unwrap_or("Target"),
                     revision_label(target_revision)
                 ),
                 8.0,
@@ -1217,11 +1245,11 @@ impl Layout {
             .title(TextStr(title))
             .subject(TextStr(subject))
             .creator(TextStr("Collagene 2"))
-            .producer(TextStr(if self.review_label.is_some() {
-                "Collagene embedded Rust comparison exporter"
-            } else {
-                "Collagene embedded Rust protocol exporter"
-            }));
+            .producer(TextStr(
+                self.review_kind
+                    .map(DocumentaryKind::producer)
+                    .unwrap_or("Collagene embedded Rust protocol exporter"),
+            ));
         let page_ids: Vec<_> = (0..count).map(|i| Ref::new(10 + i as i32 * 2)).collect();
         pdf.pages(pages)
             .kids(page_ids.iter().copied())
@@ -1329,7 +1357,8 @@ pub(crate) enum ReviewBlock {
     Paragraph(String),
     Fixed(Vec<String>),
 }
-pub(crate) fn export_comparison_pdf(
+pub(crate) fn export_documentary_pdf(
+    kind: DocumentaryKind,
     title: &str,
     label: &str,
     reference_revision: &str,
@@ -1343,7 +1372,7 @@ pub(crate) fn export_comparison_pdf(
     {
         return Err(Error::TooLarge);
     }
-    let mut layout = Layout::with_review_label(Status::Incomplete, Some(label.into()))?;
+    let mut layout = Layout::with_review_label(Status::Incomplete, Some(label.into()), Some(kind))?;
     for block in blocks {
         match block {
             ReviewBlock::Heading(text) => layout.heading(text)?,
@@ -1358,7 +1387,7 @@ pub(crate) fn export_comparison_pdf(
                     })
                 {
                     return Err(Error::Format(
-                        "invalid fixed-column comparison block".into(),
+                        "invalid fixed-column documentary block".into(),
                     ));
                 }
                 layout.ensure(height)?;

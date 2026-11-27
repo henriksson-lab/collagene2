@@ -242,3 +242,5 @@ pub mod ligation_outcomes;
 
 pub mod run_review;
 pub mod svg_export;
+
+pub mod protocol_layout;

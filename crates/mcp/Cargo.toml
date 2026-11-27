@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-library-sharing = { path = "../library-sharing" }
 collagene-local-storage = { path = "../local-storage" }
 collagene-core = { path = "../core", features = ["json-schema"] }
 collagene-sources = { path = "../sources" }

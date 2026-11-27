@@ -225,26 +225,6 @@ impl Prepared {
         }
     }
 }
-/// Worker-side adapter: call only off the UI thread when registered. Uses the
-/// native renderer unchanged; supplied restriction coordinates are not rescanned.
-pub fn render_native(request: RenderRequest) -> Result<Rendered, String> {
-    if !hex(&request.context_revision) {
-        return Err("Map render context is invalid.".into());
-    }
-    let value = collagene_core::svg_export::render(&collagene_core::svg_export::Request {
-        source: request.source,
-        source_revision: request.source_revision,
-        restriction_sites: request.restriction_sites,
-    })
-    .map_err(|error| error.to_string())?;
-    Ok(Rendered {
-        source_revision: value.source_revision,
-        context_revision: request.context_revision,
-        svg: value.svg,
-        warnings: value.warnings,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -309,7 +289,19 @@ mod tests {
             selected_site: None,
         });
         let first = Capture::new(initial.clone()).unwrap();
-        let output = render_native(first.request()).unwrap();
+        let request = first.request();
+        let rendered = collagene_core::svg_export::render(&collagene_core::svg_export::Request {
+            source: request.source,
+            source_revision: request.source_revision,
+            restriction_sites: request.restriction_sites,
+        })
+        .unwrap();
+        let output = Rendered {
+            source_revision: rendered.source_revision,
+            context_revision: request.context_revision,
+            svg: rendered.svg,
+            warnings: rendered.warnings,
+        };
         let mut other = initial.clone();
         other.restrictions.as_mut().unwrap().display_context = "all enzymes".into();
         assert!(first.matches(other.clone()).is_err());

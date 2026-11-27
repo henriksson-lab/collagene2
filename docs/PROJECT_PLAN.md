@@ -3295,9 +3295,9 @@ static references and integrity before writing a new immutable snapshot. Older
 worker-retention flags, merge logic and compatibility-only tests are removed.
 Three offline staging tests pass, including rejection of a second worker version;
 CI runs them with the two static preview-boundary cases. Application HTTP and
-browser checks remain deferred. Port8082 now serves the CI frontend for6c97320 (worker97), verified through
-static integrity and process/socket inspection. Unverified Golden Gate changes
-are not served.
+browser checks remain deferred. Port8082 now serves the CI frontend for9000367 (worker98), including checked
+Golden Gate and saved-run editing, verified through static integrity and
+process/socket inspection. The newer plate-layout worktree is not served.
 
 
 ### Positional checked Golden Gate
@@ -3345,5 +3345,42 @@ check and formatting pass. No browser or application HTTP checks were performed.
 
 Parallel F27 work is implementing documentary96/384-well protocol assignments
 bound to exact planned constructs or released product events. This is not
-inventory, physical-sample tracking, instrument automation or scheduling. Current
-source does not yet include the plate-layout patches.
+inventory, physical-sample tracking, instrument automation or scheduling. The plate-layout patches are now integrated; focused native and WASM verification
+remain pending for this increment.
+
+
+### Documentary protocol plate layouts
+
+The existing saved-batch panel now opens explicit96/384-well assignments. Users
+choose planned declarations or released product events; labels never determine
+identity. Replicates and optional fill require deliberate review and Apply.
+Immutable capture preserves all biological heads and history. CSV, HTML and
+embedded PDF retain full identities and explicit missing quantities. This initial
+layout workflow does not supply reaction amounts; connecting the existing exact
+mixture/volume arithmetic remains F27 work.
+
+One MCP task family supports native preview/capture/open/export plus explicit
+complete-layout publication review/projection. Ordinary plasmid publication
+omits documentary layout/batch/release sidecars; complete-layout projection
+follows exact dependencies, including whole indivisible records and their
+nonassigned rows. It requires a separately reviewed scope hash.
+
+Current worker99/MCP190 carry these documentary operations; candidate26, plan24,
+science27 and draft15 are unchanged. Unused digest/pending-installation wrappers
+are deleted, and real callers pass preflighted native requests to existing
+material installers. Canonical PDF readback fixtures share one helper module.
+Fifty-two focused native cases pass, including actual releases, archive restart,
+scoped sharing, native/MCP binary transport, all three exports and independent PDF
+text/xref readback. Existing comparison/protocol PDF and material-reuse cases also
+pass. The integrated web/worker WASM check and formatting pass. No browser or
+application HTTP checks.
+
+
+The 9000367 Ubuntu CI run found ten stale assertions in four further targets:
+raw-source Golden Gate fixtures omitted the explicit unmodified generation
+declaration, and two inspection fixtures still read the removed raw artifact.
+Current fixture corrections retain the literal strand/annotation/target/search
+checks; a raw worker request now expects unknown cleavage and withheld products.
+The tagged catalog artifact reader has no fallback. All21 cases across those
+four targets now pass, giving 73 focused native cases for the plate/cleanup/CI
+increment. The current web/worker WASM check passes.

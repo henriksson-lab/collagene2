@@ -408,28 +408,6 @@ pub fn from_design<I: IntendedEdit + ?Sized>(
     })
 }
 
-/// Native fixture/reference path: the expensive molecular reconstruction runs
-/// once. The web UI uses request → existing worker → from_design instead.
-pub fn propose<I: IntendedEdit + ?Sized>(
-    draft: &Draft,
-    intent: &I,
-    current_source: &EventBinding,
-    frozen_target: &Molecule,
-    options: &Options,
-) -> Result<Proposal, String> {
-    let (_, source, native) = request(draft, intent, current_source, frozen_target, options)?;
-    let report = mutagenesis::design_inverse_pcr(&source, frozen_target, &native)
-        .map_err(|e| e.to_string())?;
-    from_design(
-        draft,
-        intent,
-        current_source,
-        frozen_target,
-        options,
-        report,
-    )
-}
-
 impl Proposal {
     /// Recheck the capture, exact native compilation and retained worker receipt.
     /// This rejects edits to public proposal fields without rerunning physics.
@@ -475,6 +453,27 @@ mod tests {
         workspace::Workspace,
     };
     use std::sync::Arc;
+    /// Native fixture/reference path: the expensive molecular reconstruction runs
+    /// once. The web UI uses request → existing worker → from_design instead.
+    fn propose<I: IntendedEdit + ?Sized>(
+        draft: &Draft,
+        intent: &I,
+        current_source: &EventBinding,
+        frozen_target: &Molecule,
+        options: &Options,
+    ) -> Result<Proposal, String> {
+        let (_, source, native) = request(draft, intent, current_source, frozen_target, options)?;
+        let report = mutagenesis::design_inverse_pcr(&source, frozen_target, &native)
+            .map_err(|e| e.to_string())?;
+        from_design(
+            draft,
+            intent,
+            current_source,
+            frozen_target,
+            options,
+            report,
+        )
+    }
     fn fixture(
         start: &str,
         end: &str,

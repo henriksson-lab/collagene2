@@ -304,7 +304,7 @@ pub fn ReusableMaterialView(
             guard.run((review.source.clone(), review.settings_revision.clone()))?;
             let molecule = source.get_untracked().ok_or("The source is unavailable.")?;
             let frame = get_workspace.run(())?;
-            let pending = match (&review.settings, &review.preview) {
+            let request = match (&review.settings, &review.preview) {
                 (
                     Settings::Mismatch {
                         forward,
@@ -355,7 +355,7 @@ pub fn ReusableMaterialView(
                 Ok(())
             });
             on_open.run(crate::digest_product::MaterialOpenRequest {
-                request: pending.request().clone(),
+                request,
                 epoch: review.source.epoch(),
                 guard: bound_guard,
             })

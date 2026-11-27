@@ -3,6 +3,8 @@ use collagene_core::{
     analysis::Primer,
     chemistry::{Duplex, DuplexSummary},
     golden_gate::GoldenGateOptions,
+    methylation::{MethylationState, Outcome},
+    modified_duplex::GenerationAssumptions,
     mutagenesis::PcrOptions,
     primers::BindingOptions,
     protocol::{self, AnalysisJob, AnalysisResult, Request},
@@ -310,11 +312,29 @@ fn gate_plan(
             .enumerate()
             .map(|(i, m)| (if i == 0 { "a" } else { "b" }, m))
             .collect(),
-        vec![Operation::GoldenGate {
-            templates: vec![Source::Input("a".into()), Source::Input("b".into())],
-            options,
-            candidate_index: index,
-        }],
+        vec![
+            Operation::DeclareSourceModifications {
+                template: Source::Input("a".into()),
+                assumptions: GenerationAssumptions {
+                    dam: MethylationState::Unmodified,
+                    dcm: MethylationState::Unmodified,
+                    cpg: MethylationState::Unmodified,
+                },
+            },
+            Operation::DeclareSourceModifications {
+                template: Source::Input("b".into()),
+                assumptions: GenerationAssumptions {
+                    dam: MethylationState::Unmodified,
+                    dcm: MethylationState::Unmodified,
+                    cpg: MethylationState::Unmodified,
+                },
+            },
+            Operation::GoldenGate {
+                templates: vec![Source::Step(0), Source::Step(1)],
+                options,
+                candidate_index: index,
+            },
+        ],
     )
 }
 #[test]
@@ -332,8 +352,8 @@ fn golden_gate_selected_candidate_is_reconstructed_with_annotations_and_external
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 1);
-    let product = &r.products[0];
+    assert_eq!(r.products.len(), 3);
+    let product = &r.products[2];
     assert_eq!(product.sequence, target.sequence);
     assert_eq!(product.topology, Topology::Circular);
     assert_eq!(named(product, "payload").location, Location::range(4, 8));
@@ -355,7 +375,7 @@ fn golden_gate_selected_candidate_is_reconstructed_with_annotations_and_external
     let p = gate_plan(&wrong, inputs, gate_options(), 0);
     let r = verification::verify(&p, &wrong);
     assert_eq!(r.status, Status::Invalid);
-    assert_eq!(r.products.len(), 1);
+    assert_eq!(r.products.len(), 3);
 }
 #[test]
 fn golden_gate_recutting_and_unavailable_candidate_are_conclusive_failures() {
@@ -376,7 +396,11 @@ fn golden_gate_recutting_and_unavailable_candidate_are_conclusive_failures() {
     let p = gate_plan(&target, gate_inputs(), gate_options(), usize::MAX);
     let r = verification::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid);
-    assert!(r.products.is_empty());
+    assert_eq!(
+        r.products.len(),
+        2,
+        "only the declared original sources remain"
+    );
 }
 #[test]
 fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness() {
@@ -388,8 +412,8 @@ fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness()
     let p = gate_plan(&target, gate_inputs(), options, 0);
     let r = verification::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert_eq!(r.products.len(), 1);
-    assert_eq!(r.products[0].sequence, target.sequence);
+    assert_eq!(r.products.len(), 3);
+    assert_eq!(r.products[2].sequence, target.sequence);
     assert!(
         r.findings
             .iter()
@@ -406,7 +430,11 @@ fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness()
     );
     let r = verification::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete);
-    assert!(r.products.is_empty());
+    assert_eq!(
+        r.products.len(),
+        2,
+        "only the declared original sources remain"
+    );
 }
 #[test]
 fn golden_gate_accepts_reconstructed_staggered_digest_steps_without_imported_metadata_authority() {
@@ -499,7 +527,19 @@ fn new_worker_jobs_preserve_results_annotation_review_and_request_identity() {
     let AnalysisResult::GoldenGate(report) = response.result else {
         panic!("wrong gate result")
     };
-    assert_eq!(report.stable_physical_product_count, 1);
+    // A raw worker request declares no original-source generation assumptions.
+    // Recognition geometry alone cannot establish permission to cleave.
+    assert!(!report.products_determined);
+    assert!(report.fragments.is_empty());
+    assert!(report.candidates.is_empty());
+    assert_eq!(report.stable_physical_product_count, 0);
+    assert!(!report.enumeration_complete);
+    assert!(report.source_cleavage.iter().any(|source| {
+        source
+            .sites
+            .iter()
+            .any(|site| site.outcome == Outcome::Unknown)
+    }));
     assert!(!report.exhaustive_mixture_search);
 }
 #[test]
@@ -606,9 +646,9 @@ fn a_known_selected_product_mismatching_target_is_invalid_even_when_other_paths_
         0,
     );
     let r = verification::verify(&p, &wrong);
-    assert_eq!(r.products.len(), 1);
-    assert_eq!(r.products[0].sequence.as_str(), "AATGCCCCGCTTTTTT");
-    assert_ne!(r.products[0].sequence, wrong.sequence);
+    assert_eq!(r.products.len(), 3);
+    assert_eq!(r.products[2].sequence.as_str(), "AATGCCCCGCTTTTTT");
+    assert_ne!(r.products[2].sequence, wrong.sequence);
     assert_eq!(
         r.status,
         Status::Invalid,

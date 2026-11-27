@@ -4,8 +4,8 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-Current source uses worker98, candidate26, native plan24, science27, draft15 and
-189 MCP tools. Unsupported internal schemas are rejected; implementations and
+Current source uses worker99, candidate26, native plan24, science27, draft15 and
+190 MCP tools. Unsupported internal schemas are rejected; implementations and
 callers are updated directly without compatibility readers. The shared cloning
 workflow now carries original generation declarations and exact Run/Derived
 origins through positional checked Golden Gate preparation, initial cutting and
@@ -14,22 +14,22 @@ tracked candidate strands, exact catalog/profile evidence and bounded enclosing
 work remain separate from the independent intended target.
 [Scientific scope and limits](CHECKED_GOLDEN_GATE.md).
 
-Native verification covers490 distinct cases across core, MCP, UI models and
-sharing after21 corrected-case rechecks. All affected native test callers compile;
-formatting passes. The integrated web/worker WASM check passes, including Golden Gate and
-saved-run editing. The checked-digest handler and Leptos target property compile
-errors were corrected directly. Browser and application HTTP acceptance remain
-deferred until all in-scope code is complete.
+Pushed checkpoint `9000367` passes 490 Golden Gate/native regression cases,
+18 focused retained-run editing cases, affected native callers and integrated
+web/worker WASM compilation. Current source adds documentary plate layouts and
+removes obsolete material-installation wrappers; its 73 focused native cases,
+formatting and combined web/worker WASM check pass. Browser and application HTTP
+acceptance remain deferred until all in-scope code is complete.
 
-Port8082 serves the immutable CI frontend for `6c97320` (worker97). Its13 assets,
-static integrity, snapshot process and listening socket were checked without
-application requests. Staging requires exactly one current worker bundle; older
-worker retention and merge flags are removed. Unverified source changes are not
-served. The same checkpoint produced unsigned packages on Windows/macOS/Linux.
-Its scientific CI failures were the same10 failing targets on all three systems;
-current source fixes their stale wire/option fixtures and coherent historical
-replay evidence, preserving the scientific and unsupported-version assertions.
-Installation, graphical/offline acceptance and new cross-platform CI remain open.
+Port8082 serves the immutable CI frontend for `9000367` (worker98), including
+positional checked Golden Gate and saved-run editing. Its 13 assets, static
+integrity, snapshot process and listening socket were checked without application
+requests. Staging requires exactly one current worker bundle. Plate-layout source
+is not served yet. Scientific CI exposed ten stale fixture assertions across four
+targets: bare-source Golden Gate assumptions and the removed raw inspection
+artifact shape. Their current-contract fixture corrections pass all 21 cases in
+the four affected targets, preserving the scientific checks. Installation,
+graphical/offline acceptance and full new cross-platform CI remain open.
 
 Saved-run review now explicitly opens a separate candidate in the existing DAG
 editor, preserving original source and target events after document heads advance.
@@ -38,6 +38,12 @@ paths use the same retained independent target; recording creates a new run.
 Eighteen focused native cases pass, including saved-PCR editing, phosphorylation,
 HTML/PDF, archive restart and physical replay. Editing preferences are session-only;
 after restart prepare the saved run again. [Contract](RUN_REVIEW.md).
+
+Documentary96/384-well layouts are integrated in the saved-batch panel, including
+explicit planned/released identities, replicates, immutable capture and CSV/HTML/PDF.
+MCP supports explicit whole-layout dependency review/projection; ordinary plasmid
+sharing omits these sidecars. Quantities remain missing; the exact reaction-planning
+UI remains unfinished. [Model](PROTOCOL_LAYOUT.md) · [Sharing](PROTOCOL_LAYOUT_TRANSPORT.md).
 
 The checkpoint evidence below records earlier implementation stages. Current
 schema and public-preview claims are the ones above.
@@ -1333,9 +1339,9 @@ WebGL2 supplies circular/linear map geometry, rotation and zoom; sequence text i
 
 The Plan panel can retain a complete reconstructed graph through **Keep reconstructed products**. Exact source events are selected explicitly when identical content is ambiguous; operation inputs become product parents and the independent target stays separate and active. Capture re-verifies before an atomic current/previous workspace installation. History lists saved reconstructions as unverified historical evidence, with explicit current-engine replay, product/status/engine comparison and JSON download. Source heads and undo/redo remain unchanged. This covers retained full plans; standalone preview exports still need equivalent source-event retention. [Run lineage](RUN_LINEAGE.md).
 
-Rust/WASM workers use Postcard and transferable binary buffers, bounded job limits and obsolete-result rejection. Current worker98/candidate26/plan24/science27 encodings are updated together; unsupported internal versions are rejected without fallback readers or migrations. Exact workspace-bearing jobs permit bounded128MiB payloads, while ordinary scientific messages retain32MiB limits. Recorded report engines remain documentary provenance; scientific reuse requires fresh current-engine replay. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate retained workers on source replacement/unmount. Large-reference work uses private retained sessions and bounded owner-block advances with cancellation. A general worker pool and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
+Rust/WASM workers use Postcard and transferable binary buffers, bounded job limits and obsolete-result rejection. Current worker99/candidate26/plan24/science27 encodings are updated together; unsupported internal versions are rejected without fallback readers or migrations. Exact workspace-bearing jobs permit bounded128MiB payloads, while ordinary scientific messages retain32MiB limits. Recorded report engines remain documentary provenance; scientific reuse requires fresh current-engine replay. Sequence tracks debounce viewport jobs, reject obsolete replies and terminate retained workers on source replacement/unmount. Large-reference work uses private retained sessions and bounded owner-block advances with cancellation. A general worker pool and chunked plasmid-document caches remain pending. [Binary protocol](WORKER_PROTOCOL.md).
 
-The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its189 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
+The session-only stdio MCP server uses the official Rust SDK, typed tool schemas, immutable resources and bounded outputs. Browser snapshots can pass through the actual MCP server and return as candidates for UI review, independent current-revision binding and WASM verification. Its190 tools expose restriction/PCR/duplex analysis, URL import and Addgene sequence choices, translation/CDS/ORFs, primer analysis/design, PDF export, Golden Gate/mismatch-PCR simulation, inverse-PCR candidates, gel/diagnostic artifacts, pairwise/circular comparison, read validation, explicit-encoding FASTQ, oligo collections/selections and full native workspace exchange, versioned feature libraries and GFF3/BED annotation datasets, plus end-repair/oligo-annealing previews, source-bound unified search/viewport tracks, immutable alignment collections/exchange/column inspection/row extraction, protein-property models, explicit tailing previews, oriented overlap-profile checks and immutable retained-run capture/list/replay plus source-bound codon design, independent candidate checking and paginated dot-plot analysis with JSON/SVG artifacts and source-bound read contigs with immutable report/consensus resources, plus paginated methylation assessments, CRISPR guide/off-target reports and independently checked edit-template resources, plus managed streamed reference import/export, global interval reads/guides and private cooperative genome searches. Native workspace upload uses bounded offset/hash-checked chunks and atomic installation, including a tested archive above 8 MiB and a 1,000-document archive with retained history, candidates and evidence. It has no implicit browser/project-write authority. Live synchronization, persistent authorized writes, hosted HTTP and cooperative cancellation for older one-shot scientific analyses remain pending. See [MCP usage](MCP.md).
 
 The History inspector now renders recorded event DAG branches/merges and exact parent links with bounded SVG/DOM pages, keyboard inspection, navigation-stack badges and external-parent details. Equal-content events remain distinct. Opening an old event as a new document retains its exact source-event parent through native archive/reload. Graph content/candidate matches carry no scientific verification authority. [History graph](HISTORY_GRAPH.md).
 

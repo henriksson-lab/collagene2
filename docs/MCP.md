@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 189 tools. Internal exchange uses only worker 98, candidate 26, native workspace plan 24, verifier `science-27`, and assembly draft 15. Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 190 tools. Internal exchange uses only worker 99, candidate 26, native workspace plan 24, verifier `science-27`, and assembly draft 15. Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -965,3 +965,22 @@ explicit processing. [Scientific contract](THREE_PRIME_HOMOLOGY.md).
 `prepare_saved_run_review {workspace, run_id}` prepares the exact retained native run with its original source and independent-target events. It returns the documentary review JSON and a portable unverified candidate artifact; it does not adopt the recorded verdict, material status or workspace heads. Fresh verification is required.
 
 `export_map_svg {id, revision}` exports canonical features of that exact immutable native document to a bounded UTF-8 SVG artifact. It returns the exact source revision, warnings and artifact identity. The MCP route requests no restriction overlay; it makes no cloning/physical-material claim and changes no source or native catalog.
+
+
+## Documentary plate layouts
+
+`protocol_layout` uses an exact immutable native workspace and a typed task.
+`Preview` resolves explicit96/384-well assignments to planned batch declarations
+or released run/product events. `Capture` requires the reviewed context and
+returns a new workspace; existing heads and historical assessments are unchanged.
+`List` and `Open` inspect saved layouts. `Export` produces CSV, HTML or embedded
+PDF with exact identities and explicit missing quantities. Assignment validity
+does not freshly verify a construct or establish physical execution.
+
+Ordinary selected-plasmid publication omits plate-layout sidecars.
+`ReviewPublication` computes the complete layout dependency scope;
+`ProjectPublication` requires its exact scope revision before producing a native
+archive. Indivisible batch/release records may retain references outside assigned
+wells, disclosed by the review counts and notices. This creates an export
+projection, without uploading it to a database.
+[Native model](PROTOCOL_LAYOUT.md) · [Transport and sharing](PROTOCOL_LAYOUT_TRANSPORT.md).

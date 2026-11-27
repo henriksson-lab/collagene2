@@ -63,6 +63,7 @@ pub fn AssemblyBatchView(
     let historical = RwSignal::new(false);
     let status = RwSignal::new(String::new());
     let history = RwSignal::new(Vec::<batch::Summary>::new());
+    let layout_batch = RwSignal::new(None::<String>);
     let historical_record = RwSignal::new(None::<Arc<Record>>);
     let worker = StoredValue::new_local(None::<Rc<CachedWorker>>);
     let generation = StoredValue::new_local(Rc::new(Cell::new(0u64)));
@@ -488,7 +489,8 @@ pub fn AssemblyBatchView(
         <button class="button secondary" disabled=move||!finished.get()||scope.get().is_none()||workspace_busy.get() on:click=capture>"Save batch evidence"</button>
         <p class="helper" role="status">{move||status.get()}</p>
         <button class="text-tool" disabled=move||workspace_busy.get() on:click=load_history>"Load saved batch records"</button>
-        <BatchHistory history open_record replay on_release busy=workspace_busy/>
+        <BatchHistory history open_record replay on_release on_layout=Callback::new(move|hash:String|layout_batch.set(Some(hash))) busy=workspace_busy/>
+        {move||layout_batch.get().map(|batch_hash|view!{<crate::protocol_layout_view::ProtocolLayoutView batch_hash epoch snapshot validate on_restore db workspace_busy save_generation on_close=Callback::new(move|()|layout_batch.set(None))/>})}
         {move||historical_record.get().map(|record|view!{<button class="button secondary" on:click=move|_|match serde_json::to_vec(record.as_ref()){Ok(bytes)=>crate::app::download_with_completion("combinatorial-batch.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download historical batch evidence JSON"</button>})}
     </details>}.into_any()
 }
@@ -551,14 +553,15 @@ fn BatchHistory(
     open_record: Callback<String>,
     replay: Callback<String>,
     on_release: Callback<String>,
+    on_layout: Callback<String>,
     busy: RwSignal<bool>,
 ) -> impl IntoView {
     let page = RwSignal::new(0usize);
     view!{<section>{move||history.with(|all|{
         let pages=all.len().div_ceil(10).max(1);let current=page.get().min(pages-1);
         let rows=all.iter().skip(current*10).take(10).map(|summary|{
-            let open=summary.attachment_hash.clone();let rerun=open.clone();let release=open.clone();
-            view!{<article><p>{format!("{} · {} rows · {} evaluated · {} errors · recorded {}",summary.design_name,summary.total_rows,summary.evaluated_rows,summary.error_rows,summary.recorded_engine)}</p><button class="text-tool" on:click=move|_|open_record.run(open.clone())>"Open historical batch"</button><button class="text-tool" on:click=move|_|replay.run(rerun.clone())>"Replay pinned matrix"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|on_release.run(release.clone())>"Choose bulk outputs"</button></article>}
+            let open=summary.attachment_hash.clone();let rerun=open.clone();let release=open.clone();let layout=open.clone();
+            view!{<article><p>{format!("{} · {} rows · {} evaluated · {} errors · recorded {}",summary.design_name,summary.total_rows,summary.evaluated_rows,summary.error_rows,summary.recorded_engine)}</p><button class="text-tool" on:click=move|_|open_record.run(open.clone())>"Open historical batch"</button><button class="text-tool" on:click=move|_|replay.run(rerun.clone())>"Replay pinned matrix"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|on_release.run(release.clone())>"Choose bulk outputs"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|on_layout.run(layout.clone())>"Plan plate layout"</button></article>}
         }).collect_view();
         view!{<div>{rows}<p>{format!("Saved batch page {} of {pages}",current+1)}</p><button class="text-tool" disabled=current==0 on:click=move|_|page.set(current.saturating_sub(1))>"Previous saved batches"</button><button class="text-tool" disabled={current+1>=pages} on:click=move|_|page.set(current+1)>"Next saved batches"</button></div>}
     })}</section>}.into_any()

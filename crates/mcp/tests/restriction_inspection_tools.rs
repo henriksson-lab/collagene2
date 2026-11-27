@@ -1,6 +1,6 @@
 //! Actual SDK dispatch for bounded source-bound inspection, without imported report authority.
 use collagene_core::{formats, restriction_inspection::*};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::{CollageneServer, RestrictionInspectionEvidence};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -193,24 +193,43 @@ async fn inspection_sdk_pages_exact_geometry_and_source_without_creating_product
     assert_eq!(first["fragments_done"], false);
     assert_eq!(first["sites"][0]["recognition_length"], 6);
     assert_eq!(first["fragments"][0]["duplex"]["top_length"], 5);
-    let report: RestrictionInspection =
+    assert!(first.get("catalog_artifact_id").is_none());
+    let evidence: RestrictionInspectionEvidence =
         serde_json::from_value(artifact(&c, &first["artifact_id"]).await).unwrap();
+    let RestrictionInspectionEvidence::Original { inspection: pinned } = evidence else {
+        panic!("Original reference inspection must retain its explicit tagged catalog evidence");
+    };
+    assert_eq!(pinned.batch_revision, first["catalog_batch_revision"]);
+    assert_eq!(
+        serde_json::to_value(&pinned.selection).unwrap(),
+        first["catalog_pin"]
+    );
     let molecule = formats::import_text(&format!(">source\n{dna}\n"))
         .unwrap()
         .molecules
         .remove(0);
-    let enzymes = collagene_core::analysis::starter_enzymes()
-        .into_iter()
-        .filter(|e| matches!(e.name.as_str(), "EcoRI" | "BamHI"))
+    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let selection: collagene_core::catalog_digest::CatalogSelection =
+        serde_json::from_value(first["catalog_pin"].clone()).unwrap();
+    let mut selected_names = selection
+        .enzymes
+        .iter()
+        .map(|e| e.enzyme.name.as_str())
         .collect::<Vec<_>>();
-    report
+    selected_names.sort();
+    assert_eq!(selected_names, vec!["BamHI", "EcoRI"]);
+    pinned
         .validate_bindings_for(
+            &catalog,
+            &selection,
             "source-event",
             &molecule,
-            &enzymes,
             &InspectionOptions::default(),
         )
         .unwrap();
+    let report = &pinned.inspection;
+    assert_eq!(report.batch_revision, first["batch_revision"]);
+    assert_eq!(report.source_revision, d["revision"]);
     assert_eq!(
         report
             .fragments
@@ -264,9 +283,21 @@ async fn possible_edge_and_incomplete_evidence_survive_while_legacy_tool_stays_s
         assert_eq!(r["products_determined"], false);
         assert_eq!(r["fragment_count"], 0);
         assert!(!r["sites"][0]["diagnostics"].as_array().unwrap().is_empty());
-        let report: RestrictionInspection =
+        assert!(r.get("catalog_artifact_id").is_none());
+        let evidence: RestrictionInspectionEvidence =
             serde_json::from_value(artifact(&c, &r["artifact_id"]).await).unwrap();
-        assert!(!report.products_determined);
+        let RestrictionInspectionEvidence::Original { inspection: pinned } = evidence else {
+            panic!("Ordinary input must retain Original evidence");
+        };
+        pinned.validate().unwrap();
+        assert_eq!(pinned.batch_revision, r["catalog_batch_revision"]);
+        assert_eq!(
+            serde_json::to_value(&pinned.selection).unwrap(),
+            r["catalog_pin"]
+        );
+        assert_eq!(pinned.inspection.source_revision, d["revision"]);
+        assert!(!pinned.inspection.products_determined);
+        assert!(pinned.inspection.fragments.is_empty());
         reject(
             &c,
             "analyze_restriction",

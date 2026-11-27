@@ -6,14 +6,14 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
-pub const WORKER_SCHEMA_VERSION: u16 = 98;
+pub const WORKER_SCHEMA_VERSION: u16 = 99;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 26;
 
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 102, 105, 106, 107, 108, 128, 130, 131, 134, 135, 149, 155, 158, 168,
-    169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181,
+    169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 180, 181, 182, 183, 184,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -1020,6 +1020,19 @@ pub enum AnalysisJob {
         origin: crate::material_derivation::SourceOrigin,
         method: crate::chemistry::EndRepairMethod,
     },
+    PreviewProtocolLayout {
+        workspace: crate::workspace::Workspace,
+        request: crate::protocol_layout::Request,
+    },
+    CaptureProtocolLayout {
+        workspace: crate::workspace::Workspace,
+        request: crate::protocol_layout::Request,
+    },
+    ExportProtocolLayout {
+        workspace: crate::workspace::Workspace,
+        layout_hash: String,
+        format: crate::protocol_layout::ExportFormat,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Request {
@@ -1204,6 +1217,9 @@ pub enum AnalysisResult {
     MapSvgExported(crate::svg_export::Rendered),
     MaterialMismatchPcrPreview(crate::material_derivation::MismatchPreview),
     MaterialRepairPreview(crate::material_derivation::RepairPreview),
+    ProtocolLayoutPreview(crate::protocol_layout::Layout),
+    ProtocolLayoutCaptured(crate::protocol_layout::Capture),
+    ProtocolLayoutExported(crate::protocol_layout::Exported),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {
@@ -1250,6 +1266,18 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
         crate::pairwise_context::preflight(report, reference, query, *translate)?;
     }
     match &r.job {
+        AnalysisJob::PreviewProtocolLayout { workspace, request }
+        | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
+            crate::protocol_layout::preview_revision(workspace, request)?;
+        }
+        AnalysisJob::ExportProtocolLayout {
+            workspace,
+            layout_hash,
+            format,
+        } => {
+            crate::protocol_layout::export_revision(workspace, layout_hash, *format)?;
+        }
+
         AnalysisJob::InspectMaterialOrigin {
             workspace,
             event,
@@ -1599,6 +1627,9 @@ pub fn encode_request(r: &Request) -> Result<Vec<u8>, Error> {
             | AnalysisJob::InstallMaterialDerivation { .. }
             | AnalysisJob::InspectMaterialDigest { .. }
             | AnalysisJob::PrepareSavedRunReview { .. }
+            | AnalysisJob::PreviewProtocolLayout { .. }
+            | AnalysisJob::CaptureProtocolLayout { .. }
+            | AnalysisJob::ExportProtocolLayout { .. }
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {
@@ -1614,12 +1645,22 @@ pub fn decode_response(bytes: &[u8]) -> Result<Response, Error> {
         bytes,
         &[
             20, 21, 40, 41, 62, 65, 94, 97, 100, 122, 126, 127, 159, 160, 161, 162, 163, 164, 165,
-            166, 167, 168, 170, 171,
+            166, 167, 168, 170, 171, 173,
         ],
     )?;
 
     let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
     match &response.result {
+        AnalysisResult::ProtocolLayoutPreview(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::ProtocolLayoutCaptured(report) => {
+            report.validate_binding(&response.revision)?
+        }
+        AnalysisResult::ProtocolLayoutExported(report) => {
+            report.validate_binding(&response.revision)?
+        }
+
         AnalysisResult::SavedRunReviewPrepared(report) => {
             report.validate_request_binding(&response.revision)?;
         }
@@ -2786,6 +2827,30 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             if crate::selective_junction_edit::design_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
                     "Selective assembly source/primers changed".into(),
+                ));
+            }
+            None
+        }
+
+        AnalysisJob::PreviewProtocolLayout { workspace, request }
+        | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
+            if crate::protocol_layout::preview_revision(workspace, request)? != r.revision {
+                return Err(Error::Format(
+                    "Protocol layout source or assignment context changed".into(),
+                ));
+            }
+            None
+        }
+        AnalysisJob::ExportProtocolLayout {
+            workspace,
+            layout_hash,
+            format,
+        } => {
+            if crate::protocol_layout::export_revision(workspace, layout_hash, *format)?
+                != r.revision
+            {
+                return Err(Error::Format(
+                    "Protocol layout export source or format changed".into(),
                 ));
             }
             None
@@ -4117,6 +4182,21 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             crate::selective_junction_edit::design(&inputs, &request)
                 .map(AnalysisResult::SelectiveAssemblyPrimers)
         }
+
+        AnalysisJob::PreviewProtocolLayout { workspace, request } => {
+            crate::protocol_layout::preview(&workspace, &request)
+                .map(AnalysisResult::ProtocolLayoutPreview)
+        }
+        AnalysisJob::CaptureProtocolLayout { workspace, request } => {
+            crate::protocol_layout::capture(&workspace, &request)
+                .map(AnalysisResult::ProtocolLayoutCaptured)
+        }
+        AnalysisJob::ExportProtocolLayout {
+            workspace,
+            layout_hash,
+            format,
+        } => crate::protocol_layout::export(&workspace, &layout_hash, format)
+            .map(AnalysisResult::ProtocolLayoutExported),
         AnalysisJob::InspectGoldenGateReaction {
             inputs,
             target,
@@ -4806,6 +4886,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::MaterialDerivationInstalled(_)
             | AnalysisResult::MaterialDigestInspection(_)
             | AnalysisResult::SavedRunReviewPrepared(_)
+            | AnalysisResult::ProtocolLayoutCaptured(_)
     ) {
         MAX_WORKSPACE_MESSAGE_BYTES
     } else {

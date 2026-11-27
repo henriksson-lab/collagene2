@@ -1,41 +1,63 @@
 # Collagene 2
 
-A molecular cloning workspace built with Rust, WebAssembly and Leptos, with WebGL2 maps and deterministic design verification. MIT licensed, with a Tauri desktop shell for Windows, macOS and Linux in development.
+A molecular cloning workspace in Rust, WebAssembly and Leptos, with WebGL2 maps and deterministic design verification. [MIT licensed](LICENSE). In active development.
 
-The implementation goal is active. This repository contains an initial working foundation, not complete Benchling/SnapGene parity. See [implementation status](docs/IMPLEMENTATION_STATUS.md) and the [product plan](docs/PROJECT_PLAN.md).
+![Sequence editor and circular plasmid map](docs/images/collagene-workspace.png)
 
-The interface targets desktop use first. Mobile scope and controls will be decided after the finished desktop product has been reviewed and edited; mobile acceptance testing is deferred.
+![Vector assembly with selected backbone and insert](docs/images/collagene-assembly.png)
 
-Server mode now has a shared plasmid database and folder library, with native
-revision storage, binary requests and authenticated access. The Leptos source
-includes browsing, search, history, and guarded share/push/import controls.
-[Server setup and deployment boundaries](docs/SERVER_LIBRARY.md) ·
-[Storage](docs/LAB_LIBRARY_STORAGE.md) · [History-preserving sharing](docs/LAB_LIBRARY_SHARING.md).
-Tauri's full offline local library and synchronization to chosen remotes remain
-active work; this server does not replace those requirements.
+*Development screenshots, 27 November 2026. Assembly example uses synthetic sequences.*
 
-The native shell now provides an offline local library, explicit database sync
-and embedded stdio MCP. Its export controls save exact files under the configured
-storage area's `exports` folder and show the actual filename after acknowledgment.
-Use `--storage-root DIRECTORY` to choose that area. See [desktop setup](docs/TAURI_DESKTOP.md),
-[native exports](docs/DESKTOP_EXPORTS.md) and [unsigned installer builds](docs/DESKTOP_PACKAGING.md).
-Installation and graphical offline acceptance remain unfinished.
+## Features
 
-The immediate desktop MVP focuses on the sequence/plasmid viewer, GenBank import and virtual restriction digest. Features and Digest are primary; More tools retains the advanced modules. The shared [molecular model](crates/model/README.md), format adapters, worker API and renderer remain foundations for the full product. [MVP model and acceptance](docs/MVP_DESKTOP.md).
+- Sequence editing, annotations, translations and synchronized circular/linear maps.
+- Restriction-site filtering, virtual digests, primer design and cloning workflows.
+- Independent target verification, retained intermediate products and alternative cloning products.
+- Saved history, primer orders and HTML/PDF protocols.
+- MCP-assisted design, optional WebMCP, shared plasmid folders and offline desktop storage/sync.
 
-Annotated protein exchange supports GenPept and UniProt with explicit identifiers,
-source retention and export-loss review. Alignment exchange supports aligned FASTA,
-CLUSTAL, Stockholm, strict/relaxed PHYLIP, MSF, NEXUS, PIR/NBRF, GDE flat and SELEX;
-these adapters do not run an alignment engine. SBOL3.1 JSON-LD has a separate
-component/sequence and topology review before native projection, with original
-hierarchy retained. See [protein formats](docs/PROTEIN_FORMATS.md),
-[alignment profiles](docs/ALIGNMENT_EXCHANGE.md),
-[additional alignment profiles](docs/ALIGNMENT_EXCHANGE_MORE.md), and
-[SBOL exchange](docs/SBOL_EXCHANGE.md) for the supported profiles and losses.
+### Cloning methods
 
-## Run the web application
+| Methods | Capabilities |
+| --- | --- |
+| Restriction/ligation | Sticky/blunt ends, ordered fragments and alternative products |
+| PCR/mutagenesis | Added primer bases, mismatch/inverse PCR and sequential changes |
+| Gibson/HiFi, In-Fusion | Overlap preparation and method-specific finishing assumptions |
+| Overlap-extension PCR | Source PCRs, reciprocal extension, outer PCR and reusable products |
+| Golden Gate | Type IIS preparation, fusion design and construct libraries |
+| Gateway, TOPO | BP/LR, selected MultiSite profiles and explicit strand-transfer chemistry |
+| TA/GC, end processing | Tails, phosphate treatment, blunting and oligo annealing |
+| Domestication | Checked substitutions with inverse-PCR or overlap-extension preparation |
 
-Install Rust with the `wasm32-unknown-unknown` target and [Trunk](https://github.com/trunk-rs/trunk), then run from this directory:
+### File formats
+
+| Formats | Support |
+| --- | --- |
+| GenBank/ApE, FASTA, EMBL | Import/export |
+| GenPept, UniProt | Annotated protein import/export |
+| SnapGene DNA/protein, XDNA v0, GCG | Selected import/export profiles |
+| ABIF, SCF | Trace import, original download; SCF regeneration |
+| Original Collagene XML | Import and original download |
+| Aligned FASTA, CLUSTAL, Stockholm, PHYLIP, MSF, NEXUS, PIR, GDE, SELEX | Alignment import/export; no external aligner |
+| FASTQ, GFF3/GTF/BED, primer CSV/TSV | Quality, annotation and oligo exchange |
+| SBOL 3.1 JSON-LD | Selected structural profile |
+| Native Collagene 2 | Documents, workspaces, designs and history |
+| HTML/PDF, SVG | Protocol and map export |
+
+[Format profiles and limitations](docs/FORMAT_DELIVERY_MATRIX.md) · [NCBI/Addgene URL imports](docs/URL_IMPORT.md)
+
+### Platforms
+
+| Platform | Delivery |
+| --- | --- |
+| Windows, macOS, Linux browsers | Leptos/WASM web application with WebGL2 |
+| Windows, macOS, Linux desktop | Tauri; native CI builds, installed GUI acceptance in progress |
+| Shared lab server | Rust service with authenticated plasmid folders |
+| Mobile | Deferred |
+
+## Install and start
+
+With Rust installed:
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -43,136 +65,8 @@ cargo install trunk --locked
 trunk serve
 ```
 
-Open `http://127.0.0.1:8080`. If your environment sets `NO_COLOR=1` and Trunk rejects it, unset that variable for the Trunk command. Build static assets with `trunk build --release`; the output is `dist/`. The Rust post-build packager places the worker loader, JavaScript glue and WASM together under one content-hashed directory and pins that URL in the HTML. For deployment, serve `index.html` with `Cache-Control: no-cache`; content-hashed assets may use immutable caching. Retain older hashed bundles during rolling updates so already-open tabs can finish their work.
+Open **http://127.0.0.1:8080**. Build static web assets with `trunk build --release`.
 
-For a review preview on a public port, run `python3 scripts/serve_preview.py --root dist --bind 0.0.0.0 --port 8082`. This development server snapshots only regular assets inside the explicit root, blocks symlinks/hidden paths/directory listings and accepts no uploads or writes. Requests never open host paths. It exposes no native filesystem or MCP API; selected documents and browser storage remain with each visitor. Restart the preview to load a different build. Stage a fresh current bundle with `python3 scripts/stage_preview.py --build dist --output /path/to/new-preview` before restarting. Staging always validates static assets and requires exactly one current worker bundle. Existing tabs may need reload; retain the previous snapshot separately for manual rollback. See [preview publication](docs/PREVIEW_PUBLICATION.md).
+[Desktop installation/build](docs/TAURI_DESKTOP.md) · [Server setup](docs/SERVER_LIBRARY.md) · [Application guide](docs/APPLICATION_GUIDE.md)
 
-Open GenBank, EMBL, GenPept, UniProt, FASTA, supported SnapGene `.dna`/`.prot`, reviewed GCG single-sequence records, ABIF/SCF traces, plain DNA or a saved `.cg2` file, or paste a sequence. The initial plasmid is a labeled synthetic demonstration. Documents and revision history autosave in this browser's IndexedDB. Use **Workspace → Save workspace file** for a portable `.cg2workspace` archive with all documents, branches, undo/redo, candidates and original evidence; `.cg2` remains a single-document copy. **Restore previous workspace** recovers the workspace retained before the last explicit replacement. Browser storage can be cleared by the browser and is not a backup.
-
-The **Documents** explorer searches names, source labels, molecule types and document IDs, with sorting and pages of up to 100 documents. Tabs follow workspace order and support arrow keys, Home and End. Use the Documents button in the left navigation to toggle the explorer; the other buttons open file import, Addgene/NCBI import and workspace settings. Document organization stays within one simple workspace.
-
-**Sequence tracks** controls scientific overlays and the maximum annotation/primer rows. The viewer packs whole-source annotations into stable rows, collapses empty space and identifies additional annotations available in Features. Joined annotations keep one row across their parts. Display reflow preserves the visible reference position while source data and history stay intact. [Layout and validation](docs/MVP_DESKTOP.md#annotation-display-layout).
-
-In the Sequence pane, select bases or shift-click to select an exact range, and edit with undo/redo. Map feature and restriction-site clicks navigate their annotated coordinates. **Clipboard** copies biological feature sequences or selected reference bases, reverse-complements copies, cuts, inserts or replaces from clipboard text. Ctrl/Cmd+C/X/V work with keyboard focus on the sequence canvas; form controls keep normal browser behavior. Clipboard operations require browser permission on HTTPS/localhost, and changed document identities, revisions or selections cancel pending edits. Drag the right-hand circular map to rotate its display and use its zoom controls; rotation preserves the sequence origin and exact selected range. Search, digest predictions, PCR and assembly verification run in Rust workers. **Inspect both strands** shows restriction overhangs/terminal chemistry; the Plan panel also supports ordered restriction/ligation with orientation, terminal treatment and explicit nick acceptance. SVG reference maps download directly and are embedded in HTML protocols.
-
-**Find** searches the sequence, annotations/qualifiers, saved primer annotations and starter-catalog enzyme sites, with bounded results, source options and pages. Compound/origin-crossing hits highlight every part without fabricating an editable interval. **Sequence tracks** configures features, primers, recognition/cut positions, six-frame translations, reviewed CDS and provisional ORFs. A retained binary worker caches the source once; viewport reports disclose codon mappings and limits. See [search](docs/SEARCH.md), [tracks](docs/VIEW_TRACKS.md) and [worker protocol](docs/WORKER_PROTOCOL.md).
-
-**Features** creates/edits compound annotations and qualifiers; **Document settings** changes reference topology/origin or reverse-complements with annotation remapping. **Biology** translates frames/CDSs, finds review-required ORF candidates and calculates explicit protein mass/pI/charge/A280 models with ambiguity and chemistry limits. **Compare** runs global, local or query-in-reference affine pairwise alignment. **Primers** calculates condition-bound Tm/GC, checks binding and contiguous self-complementarity, saves/reuses primer annotations and selects anchored primer pairs for PCR. Standalone PCR previews retain mapped annotations and source revisions. See [annotation rules](docs/ANNOTATIONS.md), [translation](docs/TRANSLATION.md), [primers](docs/PRIMERS.md) and [pairwise alignment](docs/PAIRWISE_ALIGNMENT.md) for models and limits.
-
-**Methylation** reviews the active DNA source under explicit Dam/Dcm/CpG assumptions and versioned supplier profiles. It retains context, original strand/base coordinates, unknown rules and resource limits. This planning assessment does not change the separate assumed-cleavage digest model or establish actual modification state. [Scientific profile](docs/METHYLATION.md) · [Web controls](docs/METHYLATION_UI.md).
-
-In **Plan**, choose checked restriction to declare per-source Dam/Dcm/CpG assumptions and pin the positional profile. Review a single digest product or explicitly repair, treat and ligate selected fragments against the separately selected target. Inherited modifications survive cutting and ligation; synthesized bases use declared standard-unmodified models. Unknown cleavage withholds products, and producer metadata cannot restore physical state. [Tracked model](docs/MODIFIED_DUPLEX.md) · [Checked workflow](docs/CHECKED_RESTRICTION_UI.md).
-
-**Golden Gate** enumerates bounded Type IIS assemblies and recutting/background evidence. **Mutagenesis** reconstructs intentional mismatch PCR and designs target-bound inverse-PCR edits with explicit phosphorylation/ligation. Both hand candidates to **Plan** for independent re-verification. **Gel** predicts digest/PCR bands, retains unknown circular mobility, exports vector SVG, and ranks diagnostic digests. See [Golden Gate](docs/GOLDEN_GATE.md), [mutagenesis](docs/MUTAGENESIS.md) and [gel models](docs/GEL_PREDICTION.md) for assumptions and limits.
-
-**Cloning methods** builds explicit digest/PCR → single-base 3′ tail → treatment → ligation candidates for generic TA/GC workflows. It retains both junction bases and distinguishes free 5′ OH, phosphate-dependent closure and allowed nicks. Its oriented Gibson/HiFi/In-Fusion profiles keep exact homology, advisory length guidance and bounded repeat evidence separate; **Plan** independently reconstructs the target. [Tailing](docs/TAILING.md) · [Overlap profiles](docs/OVERLAP_PROFILES.md).
-
-**End repair / annealing** reconstructs restriction-derived ends before explicit 5′ fill-in/3′ removal, and enumerates complementary oligo offsets with declared terminal chemistry. Review a candidate against the independently chosen active target, with optional phosphorylation and sealed circular ligation. Actual strands, alternatives, source revisions and incomplete search stay visible. [Physical models and limits](docs/END_REPAIR.md).
-
-**Recombination** reconstructs defined two-site BP/LR reference exchanges using an explicitly selected, versioned full-context profile. Review all reciprocal components, check the independent target, and hand a selected component to **Plan** for fresh verification and HTML/PDF export. Source annotations and exact source-event history remain available. Matching results stay **Incomplete** because physical chemistry, biological repair and broader Gateway coverage remain unfinished. [Web workflow and example](docs/RECOMBINATION_UI.md) · [Scientific library](crates/recombination/README.md) · [MCP](docs/RECOMBINATION_MCP.md).
-
-The independent [physical TOPO crate](crates/topo/README.md) underlies the connected preparation, ordered transfer/flap/sealing, saved whole-graph continuation and explicit physical projection workflows in the web UI and MCP. Every source call, activation, nick and excised component remains evidence. [Streaming SAM/BAM exchange](crates/read-alignments/README.md) retains original records and reported coordinate evidence; further BAM/BAI work is deferred until the cloning product is complete. Broader chemistry and installed/graphical acceptance remain open.
-
-For an assembly example, open [overlap-demo.fasta](fixtures/overlap-demo.fasta), select `target`, open **Plan**, choose `left` and `right`, set the overlap to **4**, and reconstruct. Changing the overlap to **3** must fail. Export HTML or use **Export PDF protocol** for a standalone paginated vector PDF generated in a Rust/WASM worker. Both exports re-verify the exact plan; invalid/incomplete drafts remain marked. [PDF details and font notice](docs/PDF_EXPORT.md).
-
-## Formats, traces and sequence URLs
-
-Use **Dot plot** to inspect repeated, inverted and similar windows between open DNA/RNA/protein documents. Pan/zoom uses a retained WebGL point buffer; exact source spans remain available in the hit list and JSON/SVG exports. Sampled and incomplete results are explicit. [Dot-plot model](docs/DOTPLOT.md) · [View controls](docs/DOTPLOT_UI.md).
-
-Use **Read assembly** to build reference-free contigs from linear DNA reads, including retained ABIF/SCF and explicitly encoded FASTQ evidence. Inspect gapped overlaps, branches, original calls and gap support; unresolved consensus stays `N`. Keeping evidence or opening a consensus records exact contributing source events atomically. Historical reports require fresh replay before use. [Scientific model](docs/CONTIGS.md) · [Web controls](docs/CONTIGS_UI.md) · [Native evidence](docs/CONTIG_HISTORY.md).
-
-Use **CRISPR** to inspect SpCas9, declared Cas12a or custom PAM/spacer geometry, then search explicitly selected reference documents with build/accession labels. Mismatch ranges, intended-locus tagging and search limits stay visible. Design a literal homology donor against a separate intended target; an independent source-based checker runs before opening/export. Cuts are nominal, spacers omit RNA scaffolds, and these sequence models do not establish genome-wide specificity or cellular editing. [Guide/search model](docs/CRISPR.md) · [Donor model](docs/EDIT_TEMPLATE.md) · [Web controls](docs/CRISPR_UI.md).
-
-Use **Codon design** with a protein or complete linear coding-DNA document to reverse translate or optimize synonymous DNA under explicit codon preferences, motif, GC and homopolymer constraints. A separate worker checks the candidate against the original required protein before opening/export. Search limits, pruning and optimality remain explicit; this is not a host-expression prediction. [Codon design](docs/CODON_DESIGN.md).
-
-In an assembly fragment’s preparation menu, **Overlap-extension PCR** accepts separate left, right and outer primer pairs. The first two PCRs use the original source; reciprocal extension and the final outer PCR supply the prepared insert. **Overlap-extension PCR → pinned catalog digest** continues from that actual amplicon into explicit fragment selection and optional end repair. Its inspector shows the three PCR stages and retains conditional search or saved-origin findings. One pair is visible at a time, and all six oligos persist in drafts and saved designs. Specify intended edits separately; reconstructed products never define the required target. The intended-construct review can propose six oligos from declared internal edits, with bounded native primer ranking, source-geometry checks and a separate four-step verification. For an overlap construct, the combined proposal plans all contributions together: exact-PCR pairs for unchanged fragments and six-oligo preparations for internally edited fragments, with junction tails derived from literal inserts and the next edited core. Applying a suggestion changes only that fragment’s preparation; the complete assembly must still be verified against the independently declared target. These proposal controls are available in the current web preview. Reference-only overlap products do not establish physical material; the optional strand model described below adds a separate checked reuse path.
-
-After verifying a cloning plan, **Keep reconstructed products** retains its complete step graph with exact source-event parents and a separately bound target. Inspect it from History and replay it with the current verifier; archive recovery restores historical evidence without restoring verification status. [Reconstruction history](docs/RUN_LINEAGE.md).
-
-Use **Genome references** to stream large FASTA or `.cgref` files into separate browser storage, browse bounded global intervals, design guides and run cooperative searches across every imported contig. Source integrity, exhaustive manifest coverage and a complete declared expected build are distinct. Workspace archives retain small reference links; keep the separately exported `.cgref` for transfer and recovery. Saved reports never restore current verification. [Reference format](docs/GENOME_FORMAT.md) · [Search model](docs/GENOME_CRISPR.md) · [Web workflow](docs/GENOME_UI.md).
-
-Use **Import URL** for NCBI nucleotide URLs/accession.version or a direct public HTTPS sequence-file URL. The web adapter streams bounded downloads where CORS permits; the MCP `import_url` tool uses the embedded native Rust client. Source URL, actual accession/version, retrieval time and content hash are retained. A live NCBI import has been tested. [URL import details](docs/URL_IMPORT.md).
-
-Addgene IDs/page URLs use its official authenticated catalog API. Enter an approved API token in **Import URL**, discover records and explicitly choose a deposited/Addgene full/partial sequence. The browser keeps the token only in the dialog; CORS or authenticated redirects may require native/MCP import using `COLLAGENE_ADDGENE_API_TOKEN`. MCP provides `list_source_sequences` and `import_url` with `sequence_id`. Original sequence evidence and selected provider facts are retained. Live authenticated interoperability is still unverified; the adapter and browser flow are tested with published-schema fixtures.
-
-Original Collagene `.collagene`/`.seqfile` XML and the documented XDNA v0 profile can be opened directly. Notes, supported features/primer geometry and original bytes are retained. Original aligned upper/lower rows are inspectable; gaps/mismatches and uninterpreted material fields block intact-duplex assumptions. XDNA overhang evidence is not converted into trusted chemistry. Producer-file interoperability remains unverified; the tests use independent fixtures. [Legacy migration audit and profiles](docs/LEGACY_MIGRATION.md).
-
-Supported SnapGene import covers explicit uncompressed dsDNA and linear protein profiles with original bytes retained. **File → Export SnapGene** writes fresh selected `.dna`/`.prot` reference packets after reviewing unsupported-field loss; native history and physical-state evidence remain separate. **Export GCG** provides explicit ID/date and omission review, while GCG import asks for the sequence alphabet. Original Collagene XML lower-only records require a separate migration review. EMBL imports/export retain supported nucleotide semantics. ABIF/SCF traces keep original attachments in native files; **Show chromatogram** provides a virtualized plot, raw quality evidence and shared selection. Editing calls makes the original trace view stale until undone, while original evidence still downloads unchanged. Text exports report the supported semantics they omit.
-
-See [format delivery matrix](docs/FORMAT_DELIVERY_MATRIX.md), [compatibility controls](docs/SEQUENCE_COMPATIBILITY_CONTROLS.md), [SnapGene profile](docs/SNAPGENE_FORMAT.md), [EMBL adapter](docs/EMBL_FORMAT.md), [trace formats](docs/TRACE_FORMATS.md), and [SVG map export](docs/MAP_EXPORT.md) for tested behavior and remaining limitations.
-
-**Oligo table** imports CSV/TSV with explicit column mapping, retains the original collection once, and opens selected unmodified DNA rows as documents. Modified oligos remain evidence. FASTQ imports require an explicit Phred+33/64 choice. **Read validation** aligns supported SCF/ABIF/FASTQ reads, reports source confidence and coordinate ambiguity, and constructs a support-only consensus with N at uncovered sites. **History** draws exact event branches and merge/parent links, distinguishes equal-content events, and opens source-bound forks; saved candidates remain proposals for separate verification. See [oligo/FASTQ formats](docs/OLIGO_FORMATS.md), [read validation](docs/TRACE_VALIDATION.md) and [workspace archive](docs/WORKSPACE_ARCHIVE.md).
-
-**Feature libraries** builds versioned templates from your own annotations and searches both strands/circular origins, with explicit mismatches, ambiguity and work limits. Review and apply selected proposals; inferred annotations remain marked for review. Libraries are retained in full workspace archives and can be exchanged as JSON. **Annotation files** imports/exports supported GFF3/BED profiles with explicit reference IDs, coordinate/phase/relationship evidence, selected application and original-source downloads after edits/reopening. See [feature libraries](docs/FEATURE_LIBRARY.md) and [annotation formats](docs/ANNOTATION_FORMATS.md).
-
-## Check the scientific core
-
-```sh
-cargo test -p collagene-model -p collagene-core -p collagene-mcp -p collagene-sources -p collagene-source-gateway -p collagene-web --locked
-cargo test -p collagene-protocol-units -p collagene-enzyme-catalog -p collagene-web-assets --features collagene-protocol-units/serde --locked
-cargo check -p collagene-web -p analysis-worker -p collagene-protocol-units -p collagene-enzyme-catalog --features collagene-protocol-units/serde --target wasm32-unknown-unknown --locked
-cargo fmt --all -- --check
-```
-
-CI sets `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0` and `CARGO_INCREMENTAL=0` to keep generated test files small.
-
-Browser checks are deferred until the in-scope code is complete, per the [implementation workflow](docs/PROJECT_PLAN.md#implementation-workflow--user-instruction-24-november-2026). The following browser commands are for final validation, not intermediate implementation gates.
-
-The optional [browser smoke helper](scripts/browser_qa.py) exercises an isolated Chrome test profile through local DevTools. It requires Python's `websocket-client` (the dot-plot pixel check also uses `Pillow`), an already running Chrome on loopback port 9224, and a local build on port 8080. It clears IndexedDB for that test origin, so use a dedicated test profile. These are development tools, not application runtime dependencies. Run the full desktop workflow suite with `python3 scripts/desktop_qa.py`; this runner explicitly leaves mobile acceptance deferred. Set `COLLAGENE_QA_ORIGIN=http://127.0.0.1:8081` to test a separate staging preview with the same dedicated QA browser. If its bundle is outside `dist/`, also set `COLLAGENE_QA_DIST` to that exact directory so served worker hashes are checked against the correct files. The machine-specific performance helper remains separate.
-
-[Format/source checks](scripts/format_browser_qa.py), [annotation/biology/comparison checks](scripts/biology_browser_qa.py) and [primer/Addgene checks](scripts/primer_source_browser_qa.py), and [cloning/gel checks](scripts/cloning_gel_browser_qa.py) use the same isolated profile and local preview. [Workspace recovery checks](scripts/workspace_browser_qa.py) cover retained branches, exact undo/redo, candidate state and atomic tamper rejection; [read/oligo checks](scripts/reads_oligos_browser_qa.py) cover explicit FASTQ quality, support-only consensus, result invalidation and exact table recovery. [Annotation/library checks](scripts/annotation_library_browser_qa.py) verify source coordinate/strand mapping, retained templates, reviewed application, undo/reopening and annotation exports. [Cloning-method checks](scripts/methods_browser_qa.py) cover literal tailing/ligation products, oriented overlaps, protocol exports and cancellation. [Alignment checks](scripts/alignment_browser_qa.py), [history graph checks](scripts/history_graph_browser_qa.py), [retained reconstruction checks](scripts/run_history_browser_qa.py) and [protein checks](scripts/protein_browser_qa.py), [codon-design checks](scripts/codon_browser_qa.py), [dot-plot checks](scripts/dotplot_browser_qa.py) and [read-assembly checks](scripts/contig_browser_qa.py) and [methylation checks](scripts/methylation_browser_qa.py) and [checked-restriction checks](scripts/checked_restriction_browser_qa.py) and [CRISPR checks](scripts/crispr_browser_qa.py) and [large-reference checks](scripts/genome_browser_qa.py) cover the new source-bound workflows. [Search/track checks](scripts/search_tracks_browser_qa.py) exercise navigation, literal cut/codon coordinates and cached viewport messages. [Physical-operation checks](scripts/physical_browser_qa.py) cover exact repair/annealing strands, phosphate-dependent closure, independent targets and exported oligos. [Clipboard/legacy checks](scripts/clipboard_legacy_browser_qa.py) exercise real clipboard permissions/actions/races, keyboard focus, original aligned rows and XDNA bytes. The main suite uses Poppler's `pdftotext` as an independent development check of downloaded embedded PDFs; the application has no Poppler dependency.
-
-The independent [protocol-units](crates/protocol-units/README.md) library supplies exact dilution, mixture, explicit rounding and declared-model DNA molar-ratio calculations. The [enzyme catalog](crates/enzyme-catalog/README.md) supplies versioned geometry and formulation-specific documentary evidence, including unknown/conflicting facts. The desktop digest pins the selected catalog edition, content hash, enzyme identities and cut geometry through inspection, export and native history.
-
-## Implementation policy
-
-Application and cloning/verification code is implemented independently. Other cloning projects may be consulted narrowly to understand undocumented file formats; their application/scientific code is not borrowed. Reviewed standalone libraries remain candidates. Scientific processing invokes no external executables or installed scientific tools.
-
-Benchling's sequence workspace is a visual reference, with simpler document organization. No organization/project setup is required to open, edit or export.
-
-OpenGel integration and its format, Primer3, and MAFFT/MUSCLE/Clustal-style engines are deferred. ELN, inventory/freezers, sample/barcode/stock management and instrument/automation/reporting workflows are outside scope.
-
-[Product plan](docs/PROJECT_PLAN.md) · [Implementation status](docs/IMPLEMENTATION_STATUS.md) · [Historical software comparison](docs/OPEN_SOURCE_LANDSCAPE.md) · [MIT license](LICENSE)
-
-## Run the local MCP server
-
-Build the standalone Rust server with `cargo build -p collagene-mcp --release --locked`. Configure your MCP client to launch the resulting `target/release/collagene-mcp` executable (`collagene-mcp.exe` on Windows) using stdio. The server itself launches no external programs. See [MCP usage and boundaries](docs/MCP.md) for tool contracts and client configuration.
-
-To confine managed native files to an existing safe folder, launch it with `--storage-root /absolute/path/to/CollageneData`, or put those two arguments in your MCP client's configuration. It creates private session storage there, uses directory capabilities and retained handles, and enables no arbitrary path-based file tools. The public web preview has no native filesystem API. [Folder configuration and boundaries](docs/LOCAL_STORAGE.md).
-
-The server keeps immutable documents and candidate plans in memory. In the web **Plan** panel, use **Export for AI** to save an exact `.cg2design` snapshot for `import_workspace`; ask the client to save the binary artifact returned by `export_candidate` as `.cg2plan`. Use **Open candidate** to review it and **Verify candidate** to reconstruct it against current browser revisions. The original planning snapshot exchange supports up to 8 MiB. Full `.cg2workspace` archives also pass through MCP with bounded chunk uploads and immutable workspace references, retaining history, candidates and evidence; imported candidates require explicit rebinding and verification. MCP now has 96 tools, including exact dilution/mixture/DNA-ratio calculations, read validation, FASTQ/oligo collections, feature libraries and GFF3/BED annotation datasets. Live synchronization, a hosted HTTP endpoint and authorized persistent application remain pending.
-
-Local viewport measurements and remaining browser/hardware gates are documented in [performance measurements](docs/PERFORMANCE.md).
-
-Aligned FASTA, CLUSTAL and Stockholm exchange profiles are available in the Rust core with explicit alphabets, source-byte retention, column mappings and export-loss diagnostics. Use **Alignments** for explicit-alphabet import, virtual column/gap inspection, row extraction, export-loss review and retained workspace collections. Worker/MCP interfaces expose the same source-bound evidence. [Alignment exchange](docs/ALIGNMENT_FORMATS.md).
-
-
-Optional physical homology processing is now implemented and checked in source.
-It reconstructs source strands, explicit 5′ cuts, gap filling and eligible nick
-seals so faithfully represented products can be saved and reused through their
-original run. Unsealed diagnostic products remain unavailable as material.
-[Model and limits](docs/HOMOLOGY_ASSEMBLY.md). These controls await the next public
-preview build; existing reference-only overlap behavior remains available.
-
-Explicit 3′ resection and homology annealing are a separate assembly route with
-per-source cuts and actual strand/gap/nick review. No filling, sealing or cellular
-rescue is inferred; the annealed joined reference remains incomplete. MCP exposes
-`preview_annealing_recipe` alongside the existing 5′ physical preview. Draft11
-preserves both routes' settings. [3′ processing contract](docs/THREE_PRIME_HOMOLOGY.md).
-
-Native Local library saves retain exact private originals without a sharing review;
-opening narrows native history while preserving required original exchange evidence.
-Public sharing keeps its separate scope and explicit subset review.
-[Private local library](docs/PRIVATE_LOCAL_LIBRARY.md).
-
-TOPO preparation can choose an exact saved insert-template origin, replay it for
-new PCR, inspect/declare physical processing and retain a normal verifiable plan.
-Source incompleteness remains visible; new ordered PCR oligos can be collected
-with outputs. [Saved-template TOPO](docs/TOPO_SAVED_TEMPLATE.md).
-
-Native Databases controls support explicitly reviewed local folder/metadata
-publication and SBOL subset pushes. Queue first, then resume the saved durable
-job when ready; local originals remain intact. Shared-library operators can use
-`backup`, `verify-backup` and `restore-new` without an external SQLite program.
-[Publication](docs/REPOSITORY_METADATA_PUBLICATION.md) ·
-[Recovery](docs/LAB_LIBRARY_BACKUP.md).
+[Implementation status](docs/IMPLEMENTATION_STATUS.md) · [Product plan](docs/PROJECT_PLAN.md)

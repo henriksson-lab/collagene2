@@ -461,3 +461,8 @@ mod structure_view;
 mod protein_liability_model;
 #[cfg(target_arch = "wasm32")]
 mod protein_liability_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod antibody_model;
+#[cfg(target_arch = "wasm32")]
+mod antibody_view;

@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 197;
+pub const CURRENT_TOOL_COUNT: usize = 199;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -1315,6 +1315,14 @@ pub struct SimilarityQuery {
     pub subjects: Vec<DocumentRef>,
     #[serde(default)]
     pub options: collagene_core::sequence_similarity::Options,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AntibodyQuery {
+    pub document: DocumentRef,
+    pub options: collagene_core::antibody_numbering::domain_candidates::Options,
+    pub limits: collagene_core::antibody_numbering::domain_candidates::Limits,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -6054,6 +6062,33 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let report=translation::find_orfs(&molecule,&args.options).map_err(bad)?;
             let artifact=server.analysis_artifact(&json!({"document":args.document,"engine_version":verification::ENGINE_VERSION,"orfs":report}))?;
             output(json!({"document":args.document,"options":report.options,"count":report.orfs.len(),"truncated_search":report.truncated,"display_truncated":report.orfs.len()>100,"orfs":report.orfs.iter().take(100).map(|o|json!({"location":o.location,"reverse":o.reverse,"frame":o.frame,"amino_acids":o.protein.len(),"protein_preview":o.protein.chars().take(80).collect::<String>(),"crosses_origin":o.crosses_origin,"partial_5prime":o.partial_5prime,"partial_3prime":o.partial_3prime,"termination":o.termination})).collect::<Vec<_>>(),"warnings":report.warnings,"artifact_id":artifact}))
+        }).await
+    }
+    #[tool(
+        description = "Describe the current conditional human antibody V/J reference analysis, IMGT numbering/region rules, dataset provenance and explicit resource limits. Not calibrated species/domain classification or validated Kabat/Chothia conversion."
+    )]
+    async fn list_antibody_profiles(&self) -> Result<CallToolResult, ErrorData> {
+        use collagene_core::antibody_numbering as n;
+        let corpus = n::references::human_references().map_err(bad)?;
+        output(
+            json!({"engine":n::domain_tracks::TRACK_ENGINE,"rule_revision":n::domain_tracks::catalog_revision(),"corpus_revision":corpus.revision().map_err(bad)?,"sources":corpus.sources(),"v_references":corpus.v_entries().len(),"j_references":corpus.j_entries().len(),"numbering_schemes":["Imgt"],"region_definitions":["Imgt"],"max_source_residues":n::MAX_SOURCE_RESIDUES,"max_candidates":n::domain_candidates::MAX_CANDIDATES,"max_endpoints_per_locus":n::profile::MAX_ENDPOINTS,"max_cells":n::profile::MAX_CELLS,"max_trace_states":n::profile::MAX_TRACE_STATES,"max_scan_windows":n::domain_candidates::MAX_SCAN_WINDOWS,"authority":"Conditional human-reference/rule evidence only; unresolved and alternative candidates retained. No calibrated classification, biological numbering certification or cloning/material authority."}),
+        )
+    }
+    #[tool(
+        description = "Analyze an exact immutable protein document with explicit V scoring, CDR3/FR4 scope and work/retention limits. Returns conditional IMGT source-coordinate tracks, all-optimal invariant framework evidence and explicit unresolved residues/CDRs. Per-endpoint optimal V paths only; truncation is not absence. Full source/options-bound report artifact plus at most 20 candidate summaries; no source/history/material edits. Not independent biological numbering certification or calibrated domain/species classification."
+    )]
+    async fn analyze_antibody(
+        &self,
+        Parameters(args): Parameters<AntibodyQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            use collagene_core::antibody_numbering::domain_tracks as n;
+            let molecule={let store=server.store.lock().unwrap();let m=store.document(&args.document)?;n::request_revision(m,&args.options,&args.limits).map_err(bad)?;m.clone()};
+            let r=n::analyze(&molecule,&args.options,&args.limits,&mut || false).map_err(bad)?;
+            let artifact=server.analysis_artifact(&serde_json::to_value(&r).map_err(bad)?)?;
+            let previews=r.tracks.iter().take(20).map(|t|json!({"candidate_id":t.candidate_id,"locus":t.locus,"numbering_scheme":t.numbering_scheme,"region_definition":t.region_definition,"invariant_position_one":t.invariant_position_one,"first_supported_source_index":t.first_supported_source_index,"source_end":t.source_end,"unassigned_residues":t.unassigned_residues})).collect::<Vec<_>>();
+            output(json!({"document":args.document,"engine":r.engine,"context_revision":r.context_revision,"source_revision":r.source_revision,"corpus_revision":r.evidence.v_evidence.corpus_revision,"qualified_pairs_in_retained_v":r.evidence.qualified_pairs_in_retained_v,"retained_candidates":r.tracks.len(),"v_retention_truncated":r.evidence.v_retention_truncated,"pair_retention_truncated":r.evidence.pair_retention_truncated,"preview_truncated":r.tracks.len()>20,"candidates":previews,"artifact_id":artifact,"authority":"Conditional human-reference/rule evidence. Unassigned residues and unsupported loops remain unresolved. Not independent biological numbering certification or calibrated domain/species classification."}))
         }).await
     }
     #[tool(

@@ -47,7 +47,15 @@ data! {pub struct Report {
     pub blocked_v_endpoints:Vec<BlockedV>,pub v_endpoints_without_j:Vec<VEndpoint>,
     pub candidates:Vec<Candidate>,
 }}
-fn validate_inputs(options: &Options, limits: &Limits) -> Result<()> {
+pub(crate) fn validate_inputs(options: &Options, limits: &Limits) -> Result<()> {
+    options.v_scoring.validate()?;
+    if limits.v_mapping.max_cells == 0
+        || limits.v_mapping.max_cells > profile::MAX_CELLS
+        || limits.v_mapping.max_endpoints_per_locus > profile::MAX_ENDPOINTS
+        || limits.v_mapping.max_trace_states > profile::MAX_TRACE_STATES
+    {
+        return Err(Error::Limit("V-reference aggregate cells"));
+    }
     if options.min_cdr3_residues < 2
         || options.max_cdr3_residues < options.min_cdr3_residues
         || options.max_cdr3_residues > MAX_CDR3_RESIDUES

@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 197 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 199 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -44,6 +44,18 @@ cover the full source after retention caps; possible/certain labels describe
 pattern matching, not measured PTMs or risk probabilities. Full JSON artifacts
 retain the complete options/report. No source or material is installed.
 [Profile, controls and interpretation](PROTEIN_LIABILITIES.md).
+
+Antibody analysis uses `list_antibody_profiles` and `analyze_antibody`. Supply an
+immutable protein document, explicit native scoring/loop/substitution options and
+work/retention limits. The current human V/J reference model produces conditional
+IMGT tracks with separate numbering-scheme and region-definition fields. Framework
+labels require invariant all-optimal correspondences; unresolved CDRs/residues and
+candidate truncation remain visible. Preview at most 20 candidate summaries and
+read the complete source/options-bound report artifact for residue assignments and
+reference provenance. Counts-only requests retain no candidates. These tools make
+no source/history/material edits and do not establish calibrated domain/species
+classification or independently validated biological numbering. They do not expand
+thin WebMCP permissions. [Contract and limits](ANTIBODY_NUMBERING.md).
 
 Build and configure:
 

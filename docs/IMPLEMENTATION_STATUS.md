@@ -2281,3 +2281,30 @@ rows; none of the 18 negative controls gains a candidate. This is conditional
 reference/rule reconstruction, not independent residue-level validation. Worker,
 MCP, protein/alignment display, alternate schemes/definitions and broader biology/
 whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### Antibody analysis worker, inspector and native MCP
+
+Worker 118 adds job 195/result 185 for the current conditional antibody track
+engine 2. Request contexts bind exact source, reference corpus, rules, options and
+limits before computation. Source-free worker checks validate current binding and
+structural evidence/track consistency; independently supplied reports still need
+actual-source reconstruction. Ordinary message limits are unchanged.
+
+Biology offers cancellable worker analysis, explicit heuristic settings, retained
+candidate selection, CDR diagnostics, paged source-coordinate numbering, exact
+residue navigation and full report download. Every action binds document/event/
+revision, epoch and options/limits; equal-content foreign events do not retarget
+results. Two read-only native MCP tools add profile/reference discovery and exact
+source analysis with complete report artifacts and bounded previews (199 tools).
+No annotations, history entries, candidates or materials are installed.
+
+All 13 selected native cases, repository formatting and integrated WASM checks
+pass. Native coverage includes real SDK/artifact exchange,
+counts-only requests, stale sources, immutable session state, rewritten-checksum
+replies, current worker dispatch/session behavior, event/epoch guards and affected
+RNA/liability/similarity/structure protocol cases. No browser/application HTTP
+checks were run. Alternate schemes/definitions, broader independent biology
+validation, protein/alignment overlays beyond the inspector and whole-product
+graphical/platform/interoperability acceptance remain required.
+[Contract](ANTIBODY_NUMBERING.md).

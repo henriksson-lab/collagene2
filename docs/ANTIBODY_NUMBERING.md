@@ -470,6 +470,33 @@ suffixes; there is no floating-point sorting or invented framework insertion.
 Tracks are conditional reference/rule assignments, not a calibrated classifier or
 independent biological numbering certification. Candidate truncation and unresolved
 loop diagnostics remain in the same report. Source/options/report reconstruction,
-source bounds, cancellation and existing candidate caps apply. Application worker,
-protein/alignment display, alternate schemes/definitions and broader independent
-numbering validation remain required.
+source bounds, cancellation and existing candidate caps apply. Protein/alignment display beyond the inspector, alternate schemes/definitions and
+broader independent numbering validation remain required.
+
+
+## Worker, Biology inspector and MCP
+
+The current track engine is `antibody-domain-tracks-2`. Its request context binds
+source, corpus, scoring/loop/FR4 options, work/retention limits and current engines
+and rules without running alignment. `validate_binding` checks current context and
+structural track/evidence consistency for trusted local worker replies: source
+coordinates, labels, regions, assignment origins, repeated overlapping source
+letters, candidate identity and retained-count flags. It does not establish DP
+scores or authenticate source letters. Imported or independently supplied reports
+still require `validate_for` against an independently resolved actual source.
+There is no decoder for the superseded internal track context.
+
+Worker schema 118 adds job 195/result 185 with ordinary message bounds. The Biology
+inspector runs analysis in a cancellable worker, offers explicit analysis settings,
+retained-candidate selection, loop diagnostics, paged residue rows, exact source
+selection and full JSON download. Document ID, event, revision, workspace epoch
+and options/limits pin every request and navigation action. Equal-content foreign
+documents cannot retarget output. Source/settings changes invalidate old results.
+
+Native MCP offers `list_antibody_profiles` and `analyze_antibody` against immutable
+protein documents, explicit options and limits. At most 20 candidate summaries are
+returned inline; a full report artifact preserves all retained evidence. These
+read-only tools do not install documents or materials. The inspector and MCP expose
+the conditional human-reference scope directly. They do not complete alternate
+schemes, independent biological validation, alignment-row projection or full
+whole-product acceptance.

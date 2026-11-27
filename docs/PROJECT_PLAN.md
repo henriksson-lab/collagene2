@@ -4538,3 +4538,26 @@ explicitly unassigned rows. This does not establish independent residue-level
 numbering accuracy. Alternate schemes and
 definitions, broader independent residue-level validation, worker/MCP/application
 integration and whole-product acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).
+
+
+### F34 antibody worker, inspector and MCP integration
+
+Track engine 2 adds a precomputable source/options/limits request context and
+source-free structural validation for trusted local worker replies. Reports retain
+the exact native candidate/reference evidence; imported claims still require full
+source reconstruction. Worker schema 118 adds job 195/result 185 without widening
+message or workspace admission bounds. Callers use only the current context.
+
+The Biology inspector supplies explicit score/FR4/loop/retention controls, worker
+cancellation, candidate selection, CDR diagnostics, paged IMGT residue rows, exact
+source navigation and full evidence download. Source document/event/revision,
+workspace epoch and settings invalidate output and guard every selection/download;
+equal-content foreign documents do not retarget evidence. Native MCP profile
+discovery and read-only analysis use explicit options/limits and full report
+artifacts, with at most 20 inline candidate summaries (199 tools total).
+
+All 13 selected native transport/SDK/event-guard cases and repository formatting
+and integrated WASM checks pass.
+Protein/alignment overlays beyond the inspector, alternate schemes/definitions,
+broader independent biological validation and whole-product graphical/platform/
+interoperability acceptance remain open. [Contract](ANTIBODY_NUMBERING.md).

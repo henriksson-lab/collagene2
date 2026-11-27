@@ -12,7 +12,7 @@ data! {pub struct Scoring {
     pub gap_open:i16,pub gap_extend:i16,pub minimum_score:i32,
 }}
 impl Scoring {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         if !(1..=500).contains(&self.observed_reward)
             || !(0..=500).contains(&self.frequency_bonus)
             || !(-1000..=0).contains(&self.unseen_penalty)

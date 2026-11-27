@@ -31,7 +31,7 @@ fn native_worker_and_retained_session_share_current_binding_and_candidate_annota
         },
     };
     let bytes = protocol::encode_request(&q).unwrap();
-    assert_eq!(&bytes[4..6], &117u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
     let ((_, _, tag), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[42..]).unwrap();
     assert_eq!(tag, 194);
     let mut session = protocol::AnalysisSession::default();
@@ -85,7 +85,7 @@ fn rewritten_transport_checksums_do_not_admit_false_counts_certainty_or_source_s
         };
         let body = postcard::to_allocvec(&response).unwrap();
         let mut out = b"CGR\0".to_vec();
-        out.extend_from_slice(&117u16.to_le_bytes());
+        out.extend_from_slice(&protocol::WORKER_SCHEMA_VERSION.to_le_bytes());
         out.extend_from_slice(&(body.len() as u32).to_le_bytes());
         out.extend_from_slice(blake3::hash(&body).as_bytes());
         out.extend_from_slice(&body);

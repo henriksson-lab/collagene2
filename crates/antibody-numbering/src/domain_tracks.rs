@@ -4,7 +4,7 @@ use super::*;
 use crate::{domain_candidates as d, v_mapping};
 use std::collections::BTreeSet;
 
-pub const TRACK_ENGINE: &str = "antibody-domain-tracks-1";
+pub const TRACK_ENGINE: &str = "antibody-domain-tracks-2";
 const CHART: &str = "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html";
 data! {pub enum NumberingScheme {Imgt}}
 data! {pub enum RegionDefinition {Imgt}}
@@ -30,7 +30,7 @@ data! {pub struct Report {
     pub evidence:d::Report,pub tracks:Vec<Track>,
 }}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-domain-track-rules-1\0", &(TRACK_ENGINE, CHART,
+    hash(b"antibody-domain-track-rules-2\0", &(TRACK_ENGINE, CHART,
         "IMGT regions FR1 1..26 CDR1 27..38 FR2 39..55 CDR2 56..65 FR3 66..104 CDR3 105..117 FR4 118..128; decimal insertions at111/112 only; invariant reference framework assignments; conditional loop rules; complete J FR4; unresolved rows retained; no representative start or inferred insertion labels"),65536).expect("fixed track rules")
 }
 /// Definition selection is separate from numbering selection. No offset-based
@@ -97,7 +97,7 @@ fn assign(
     Ok(())
 }
 fn build_track(
-    source: &Molecule,
+    bytes: &[u8],
     report: &d::Report,
     candidate: &d::Candidate,
     cancel: &mut impl FnMut() -> bool,
@@ -119,7 +119,6 @@ fn build_track(
         .map(|m| m.source_index)
         .min()
         .ok_or(Error::Binding)?;
-    let bytes = source.sequence.as_str().as_bytes();
     let segment = bytes
         .get(start..candidate.source_end)
         .ok_or(Error::Binding)?;
@@ -196,6 +195,44 @@ fn build_track(
         residues: rows,
     })
 }
+fn context_revision(
+    source: &str,
+    corpus: &str,
+    options: &d::Options,
+    limits: &d::Limits,
+) -> Result<String> {
+    hash(
+        b"antibody-domain-track-context-2\0",
+        &(
+            TRACK_ENGINE,
+            catalog_revision(),
+            source,
+            corpus,
+            options,
+            limits,
+            d::CANDIDATE_ENGINE,
+            v_mapping::MAPPING_ENGINE,
+            profile::PROFILE_ENGINE,
+            profile::ENDPOINT_ENGINE,
+            references::REFERENCE_ENGINE,
+        ),
+        65536,
+    )
+}
+/// Cheap source/options admission and request binding; no alignment is run.
+pub fn request_revision(
+    source: &Molecule,
+    options: &d::Options,
+    limits: &d::Limits,
+) -> Result<String> {
+    d::validate_inputs(options, limits)?;
+    context_revision(
+        &source_revision(source)?,
+        &references::human_references()?.revision()?,
+        options,
+        limits,
+    )
+}
 /// Compute the candidate evidence once, then derive all tracks from that exact
 /// immutable result. These are conditional reference/rule assignments, not a
 /// calibrated domain classifier or independently certified biological numbering.
@@ -207,23 +244,23 @@ pub fn analyze(
 ) -> Result<Report> {
     let evidence = d::find_candidates(source, options, limits, cancel)?;
     let rule_revision = catalog_revision();
-    let context_revision = hash(
-        b"antibody-domain-track-context-1\0",
-        &(
-            TRACK_ENGINE,
-            &rule_revision,
-            &evidence.context_revision,
-            NumberingScheme::Imgt,
-            RegionDefinition::Imgt,
-        ),
-        65536,
+    let context_revision = context_revision(
+        &evidence.source_revision,
+        &evidence.v_evidence.corpus_revision,
+        options,
+        limits,
     )?;
     let mut tracks = Vec::with_capacity(evidence.candidates.len());
     for candidate in &evidence.candidates {
         if cancel() {
             return Err(Error::Cancelled);
         }
-        tracks.push(build_track(source, &evidence, candidate, cancel)?);
+        tracks.push(build_track(
+            source.sequence.as_str().as_bytes(),
+            &evidence,
+            candidate,
+            cancel,
+        )?);
     }
     if cancel() {
         return Err(Error::Cancelled);
@@ -238,6 +275,86 @@ pub fn analyze(
     })
 }
 impl Report {
+    /// Source-free current-format/structural checks for trusted local worker replies.
+    /// This does not establish scores or source letters; imported evidence must
+    /// still use validate_for against the independently resolved actual source.
+    pub fn validate_binding(&self, expected: &str) -> Result<()> {
+        let e = &self.evidence;
+        d::validate_inputs(&e.options, &e.limits)?;
+        let corpus = references::human_references()?.revision()?;
+        if self.engine != TRACK_ENGINE
+            || self.source_revision != e.source_revision
+            || e.source_revision.len() != 64
+            || !e.source_revision.bytes().all(|b| b.is_ascii_hexdigit())
+            || self.rule_revision != catalog_revision()
+            || self.context_revision != expected
+            || context_revision(&e.source_revision, &corpus, &e.options, &e.limits)? != expected
+            || e.engine != d::CANDIDATE_ENGINE
+            || e.v_evidence.engine != v_mapping::MAPPING_ENGINE
+            || e.v_evidence.source_revision != e.source_revision
+            || e.v_evidence.corpus_revision != corpus
+            || e.v_evidence.scoring != e.options.v_scoring
+            || e.v_evidence.limits != e.limits.v_mapping
+            || e.candidates.len() > e.limits.max_candidates
+            || e.candidates.len() != self.tracks.len()
+            || e.qualified_pairs_in_retained_v < e.candidates.len()
+            || e.pair_retention_truncated != (e.qualified_pairs_in_retained_v > e.candidates.len())
+            || e.windows_examined > e.limits.max_scan_windows
+            || e.v_retention_truncated
+                != e.v_evidence.mappings.iter().any(|m| m.alignment.truncated)
+            || e.v_evidence.mappings.len() != 3
+            || e.v_evidence.mappings.iter().any(|m| {
+                m.projections.len() > profile::MAX_ENDPOINTS
+                    || m.projections.len() != m.alignment.endpoints.len()
+                    || m.alignment.endpoints.len() > e.limits.v_mapping.max_endpoints_per_locus
+                    || m.alignment.qualified_endpoints < m.alignment.endpoints.len()
+                    || m.alignment.truncated
+                        != (m.alignment.qualified_endpoints > m.alignment.endpoints.len())
+                    || m.projections.iter().any(|p| {
+                        p.invariant_correspondences
+                            .as_ref()
+                            .is_some_and(|i| i.len() > 104)
+                    })
+            })
+        {
+            return Err(Error::Binding);
+        }
+        let mut observed = std::collections::BTreeMap::new();
+        for (candidate, track) in e.candidates.iter().zip(&self.tracks) {
+            if track.first_supported_source_index >= track.source_end
+                || track.source_end > MAX_SOURCE_RESIDUES
+                || track.residues.len() != track.source_end - track.first_supported_source_index
+                || candidate.cdr3.residues.len() > MAX_SOURCE_RESIDUES
+                || candidate.fr4.len() > 11
+                || [&candidate.cdr1, &candidate.cdr2]
+                    .iter()
+                    .any(|o| matches!(o,d::LoopAssignment::Numbered(n) if n.residues.len()>12))
+            {
+                return Err(Error::Binding);
+            }
+            let mut bytes = vec![b'X'; track.source_end];
+            for (i, row) in track.residues.iter().enumerate() {
+                if row.source_index != track.first_supported_source_index + i
+                    || !row.residue.is_ascii()
+                    || row.residue == '*'
+                    || collagene_model::protein_choices(row.residue as u8).is_none()
+                {
+                    return Err(Error::Binding);
+                }
+                if observed
+                    .insert(row.source_index, row.residue)
+                    .is_some_and(|old| old != row.residue)
+                {
+                    return Err(Error::Binding);
+                }
+                bytes[row.source_index] = row.residue as u8;
+            }
+            if *track != build_track(&bytes, e, candidate, &mut || false)? {
+                return Err(Error::Binding);
+            }
+        }
+        Ok(())
+    }
     pub fn validate_for(
         &self,
         source: &Molecule,

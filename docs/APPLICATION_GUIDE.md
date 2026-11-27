@@ -223,3 +223,22 @@ Optional supplied-CDR controls use one-based inclusive coordinates under your
 stated definition/provenance. The context remains pinned to its exact source event;
 reset or clear it explicitly when changing source. It is not automatic antibody
 numbering or proof of complete CDR coverage. [Profile and limits](PROTEIN_LIABILITIES.md).
+
+
+## Antibody reference analysis
+
+With a protein open, expand **Biology → Antibody numbering and CDRs**. Review the
+human-reference scope and analysis settings, then analyze. Minimum V score, FR4
+substitution allowance, maximum CDR3 length and retained-candidate cap are explicit;
+zero retained candidates requests counts only. Scoring weights and work limits are
+documented in the settings and full downloaded report.
+
+Choose a retained candidate to inspect conditional CDR sequences and a paged IMGT
+residue table. Click a source coordinate to select that exact residue in the
+sequence. Unresolved residues stay unassigned, unsupported/missing loop boundaries
+remain explicit, and an unresolved N terminus receives no invented start. Source,
+workspace or settings changes discard prior results; Cancel stops the worker.
+Download the complete evidence report for provenance and alternative candidates.
+These are conditional human-reference/rule assignments, not calibrated domain/
+species classification or independently certified numbering. Kabat/Chothia and
+alternate definitions remain under development. [Scientific contract](ANTIBODY_NUMBERING.md).

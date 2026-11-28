@@ -82,11 +82,12 @@ fn full_discussion_page_binds_remote_actor_revision_and_current_desktop_schema()
     assert!(wire::encode_response(&changed).is_ok());
     assert!(changed.validate_for(&request).is_err());
     let bytes = wire::encode_request(&request).unwrap();
-    assert_eq!(&bytes[4..6], &4u16.to_le_bytes());
+    assert_eq!(&bytes[4..6], &wire::SCHEMA_VERSION.to_le_bytes());
     let mut old = bytes;
-    old[4..6].copy_from_slice(&3u16.to_le_bytes());
+    let previous = wire::SCHEMA_VERSION - 1;
+    old[4..6].copy_from_slice(&previous.to_le_bytes());
     assert!(matches!(
         wire::decode_request(&old),
-        Err(wire::Error::Version(3))
+        Err(wire::Error::Version(version)) if version == previous
     ));
 }

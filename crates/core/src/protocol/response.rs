@@ -15,8 +15,8 @@ pub struct Response {
 }
 
 const LARGE_REPLY_SELECTORS: &[u32] = &[
-    20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163, 165, 166,
-    168, 169, 171, 174, 176, 178, 179, 180, 182, 187, 188, 204,
+    20, 21, 24, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163, 165,
+    166, 168, 169, 171, 174, 176, 178, 179, 180, 182, 187, 188, 204, 205,
 ];
 /// Bounded serialization of only the id/revision/selector prefix. Bulk fields
 /// are never serialized into a temporary full-size buffer to choose a budget.
@@ -72,6 +72,12 @@ impl Response {
         let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::AnnotationMergePreview(report) => {
+                report.validate_binding(&response.revision)?
+            }
+            AnalysisResult::AnnotationMergeApplied(applied) => {
+                applied.validate_binding(&response.revision)?
+            }
             AnalysisResult::DesignConsensus(report) => {
                 report.validate_binding(&response.revision)?
             }
@@ -870,8 +876,7 @@ impl Response {
                     candidate.duplex.validate()?;
                 }
             }
-            AnalysisResult::AnnotatedDocument(molecule)
-            | AnalysisResult::PhysicalPreviewDocument(molecule) => molecule.validate()?,
+            AnalysisResult::PhysicalPreviewDocument(molecule) => molecule.validate()?,
             AnalysisResult::WorkspaceLoaded(workspace) => workspace.validate()?,
             AnalysisResult::WorkspaceSaved(data) => {
                 if data.len() > crate::documents::workspace::MAX_ARCHIVE_BYTES {

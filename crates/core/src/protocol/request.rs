@@ -45,6 +45,16 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::PreviewAnnotationMerge { molecule, request }
+            | AnalysisJob::ApplyAnnotationMerge { molecule, request } => {
+                if crate::sequence::annotations::merge::revision(molecule, request)?
+                    != self.revision
+                {
+                    return Err(Error::Format(
+                        "annotation merge source/settings context changed".into(),
+                    ));
+                }
+            }
             AnalysisJob::AssessDesignConsensus { workspace, request } => {
                 if crate::alignment::design_consensus::revision(workspace, request)?
                     != self.revision
@@ -757,7 +767,9 @@ impl Request {
         }
         let maximum = if matches!(
             self.job,
-            AnalysisJob::AssessConstructCausalQc { .. }
+            AnalysisJob::PreviewAnnotationMerge { .. }
+                | AnalysisJob::ApplyAnnotationMerge { .. }
+                | AnalysisJob::AssessConstructCausalQc { .. }
                 | AnalysisJob::SaveWorkspace { .. }
                 | AnalysisJob::SimulateTopo { .. }
                 | AnalysisJob::InspectTopoOrientations { .. }

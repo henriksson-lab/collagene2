@@ -232,9 +232,19 @@ fn annotation_batch_and_import_keep_calls_but_never_recover_reassigned_identity(
     let (_, trace) = captured(
         &source,
         &event,
-        &[Operation::ImportAnnotations {
-            report,
-            selected: vec![0],
+        &[Operation::MergeAnnotations {
+            request: annotations::merge::Request {
+                schema_version: 1,
+                target_revision: source.revision(),
+                source: annotations::merge::Source::Dataset {
+                    report: report.clone(),
+                },
+                selections: vec![annotations::merge::Selection {
+                    proposal_id: report.proposals[0].id.clone(),
+                    decision: annotations::merge::Decision::Append,
+                }],
+                limits: Default::default(),
+            },
         }],
     );
     let mut lookup = trace.lookup_session();
@@ -303,7 +313,7 @@ fn library_proposals_manual_additions_and_reference_metadata_do_not_invent_prior
         report
             .hits
             .iter()
-            .find(|hit| !hit.already_annotated)
+            .find(|hit| !hit.same_label_geometry_hint)
             .unwrap()
             .id
             .clone(),
@@ -311,10 +321,20 @@ fn library_proposals_manual_additions_and_reference_metadata_do_not_invent_prior
     let (_, trace) = captured(
         &source,
         &event,
-        &[Operation::ApplyFeatureLibrary {
-            library,
-            report,
-            selected,
+        &[Operation::MergeAnnotations {
+            request: annotations::merge::Request {
+                schema_version: 1,
+                target_revision: source.revision(),
+                source: annotations::merge::Source::Library { library, report },
+                selections: selected
+                    .into_iter()
+                    .map(|proposal_id| annotations::merge::Selection {
+                        proposal_id,
+                        decision: annotations::merge::Decision::Append,
+                    })
+                    .collect(),
+                limits: Default::default(),
+            },
         }],
     );
     let mut lookup = trace.lookup_session();
@@ -371,4 +391,76 @@ fn compact_transform_receipt_retains_native_unmapped_review_disposition() {
     let event = binding("unresolved-source", &source);
     let (captured, _) = captured(&source, &event, &[Operation::ReverseComplement]);
     assert_eq!(captured, product);
+}
+
+#[test]
+fn annotation_merge_keeps_target_identity_without_inventing_donor_feature_or_dna_ancestry() {
+    use crate::sequence::annotations::merge::{self, Decision, Selection, Source, Transform};
+    let source = source();
+    let source_event = binding("merge-current-target", &source);
+    let mut donor = source.clone();
+    donor.name = "Independent annotation-only donor".into();
+    donor.features.push(feature(2, 4));
+    let donor_event = binding("merge-independent-donor", &donor);
+    let request = merge::Request {
+        schema_version: 1,
+        target_revision: source.revision(),
+        source: Source::Donor {
+            molecule: donor,
+            event: donor_event,
+            transform: Transform {
+                origin: 0,
+                reverse: false,
+            },
+            indices: vec![0, 2],
+        },
+        selections: vec![
+            Selection {
+                proposal_id: "donor-0".into(),
+                decision: Decision::AddProvenance {
+                    target_index: 0,
+                    annotation_revision: crate::construct_qc::annotation_revision(
+                        &source.features[0],
+                    )
+                    .unwrap(),
+                },
+            },
+            Selection {
+                proposal_id: "donor-2".into(),
+                decision: Decision::Append,
+            },
+        ],
+        limits: Default::default(),
+    };
+    let (product, trace) = captured(
+        &source,
+        &source_event,
+        &[Operation::MergeAnnotations { request }],
+    );
+    assert_eq!(product.sequence, source.sequence);
+    assert_eq!(product.features.len(), 3);
+    assert_eq!(
+        product.features[0].needs_review,
+        source.features[0].needs_review
+    );
+    let mut lookup = trace.lookup_session();
+    for index in 0..2 {
+        let inherited = lookup.feature_at(0, index, None).unwrap();
+        assert!(inherited.complete);
+        assert_eq!(inherited.origins.len(), 1);
+        assert_eq!(inherited.origins[0].feature_index, index);
+        assert_eq!(
+            inherited.origins[0].source.source,
+            SourceHandle::ReferenceEvent(source_event.clone())
+        );
+    }
+    let appended = lookup.feature_at(0, 2, None).unwrap();
+    assert!(!appended.complete && appended.origins.is_empty());
+    let dna = lookup.at(0, 2, None).unwrap();
+    assert!(dna.complete);
+    assert_eq!(dna.origins.len(), 1);
+    assert_eq!(
+        dna.origins[0].source.source,
+        SourceHandle::ReferenceEvent(source_event)
+    );
 }

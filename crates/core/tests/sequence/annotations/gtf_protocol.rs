@@ -1,4 +1,4 @@
-//! GTF adds a nested format selector, not a new outer job or report layout.
+//! Current GTF source evidence flows through the canonical merge worker.
 use collagene_core::{
     formats::annotations::{self as annotation_formats, AnnotationFormat},
     protocol::{
@@ -7,6 +7,7 @@ use collagene_core::{
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
+    sequence::annotations::merge::{self, Decision, Selection, Source},
 };
 use collagene_model::{Molecule, Topology};
 
@@ -17,7 +18,12 @@ fn source() -> Molecule {
 fn request(job: AnalysisJob) -> Vec<u8> {
     protocol::request::Request::encode(&Request {
         id: 91,
-        revision: source().revision(),
+        revision: match &job {
+            AnalysisJob::ApplyAnnotationMerge { molecule, request } => {
+                merge::revision(molecule, request).unwrap()
+            }
+            _ => source().revision(),
+        },
         job,
     })
     .unwrap()
@@ -42,7 +48,7 @@ fn response(result: AnalysisResult, version: u16) -> Vec<u8> {
 }
 
 #[test]
-fn gtf_import_apply_export_requires_thirty_without_changing_old_tags() {
+fn current_gtf_import_merge_export_preserves_source_and_rejects_old_schema() {
     let molecule = source();
     let imported =
         annotation_formats::import_annotations(&molecule, GTF, AnnotationFormat::Gtf, "chr_demo")
@@ -54,10 +60,20 @@ fn gtf_import_apply_export_requires_thirty_without_changing_old_tags() {
             format: AnnotationFormat::Gtf,
             seqid: "chr_demo".into(),
         },
-        AnalysisJob::ApplyAnnotations {
+        AnalysisJob::ApplyAnnotationMerge {
             molecule: molecule.clone(),
-            report: imported.clone(),
-            selected: vec![0],
+            request: merge::Request {
+                schema_version: 1,
+                target_revision: molecule.revision(),
+                source: Source::Dataset {
+                    report: imported.clone(),
+                },
+                selections: vec![Selection {
+                    proposal_id: imported.proposals[0].id.clone(),
+                    decision: Decision::Append,
+                }],
+                limits: Default::default(),
+            },
         },
         AnalysisJob::ExportAnnotations {
             molecule: molecule.clone(),

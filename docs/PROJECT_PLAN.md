@@ -534,7 +534,7 @@ P0 is the foundation and first usable cloning release. P1 supplies everyday mole
 | F16 | P1 | Sanger chromatograms, quality trimming, reference alignment and consensus | Trace peaks and quality align to calls; low-quality and uncovered regions stay visible |
 | F17 | P1 | Pairwise alignments, whole-plasmid verification and sequence differences | Rotation and reverse-complement equivalence are handled; coverage gaps are reported |
 | F18 | P1 | Translation, alternative genetic codes, fusion frames and protein properties | CDS phase, stop codons and compound locations are respected |
-| F19 | P1 | Automatic annotation and reusable feature/part libraries | Matches carry source, version, identity and coverage; uncertain calls remain distinct |
+| F19 | P1 | Automatic annotation and reusable feature/part libraries | Explicit append/skip/attribution preserves existing features and DNA; matches retain source, identity, coverage and uncertainty |
 | F20 | P1 | Gel simulation, diagnostic digest selection, ladders and predicted PCR bands | Band sizes derive from products; co-migration and topology assumptions are visible |
 | F21 | P1 | Enzyme catalog, supplier sets, methylation sensitivity and digest compatibility | Versioned data supports unknown methylation and supplier-condition provenance |
 | F22 | P1 | Graphical cloning history, branching designs and sequence/plan comparison | Any retained product can be traced to inputs, edits and transformations |
@@ -5696,3 +5696,42 @@ identity. Attribution cannot overwrite biological qualifiers or clear review.
 Workers share a canonical contract and contribute to one completed source batch
 before compilation and focused native/WASM execution. These edits are excluded
 from the FASTA execution record. The full implementation goal remains active.
+
+### Non-destructive annotation merge — connected checkpoint
+
+F19 now uses one current merge request and native decision owner across library,
+GFF3/GTF/BED and exact full-record donor sources. Explicit Append creates a
+review-required annotation; Skip records the decision; AddProvenance preserves
+existing meaning and review state. Source claims accumulate in one typed bounded
+feature ledger. Existing DNA and feature ordinals remain intact, and actual
+reference-edit execution emits identity receipts rather than inferring ancestry
+from final arrays. Even all-Skip edits remain recorded history events.
+
+The existing annotation panels, exact-event donor picker, binary worker and MCP
+use the same native contract. Superseded application APIs and internal variants
+are deleted directly; worker schema 140 rejects prior encodings. Library scan
+output calls its coarse label/geometry hint a hint; precise duplicate/conflict
+decisions belong to the merge owner. GenBank/EMBL wrapping preserves the typed
+documentary ledger, with explicit omissions for complete source/workspace data.
+
+Source review caught a genuine idempotence bug: library proposal IDs change with
+the target revision and must not manufacture another contribution from the same
+source. Stable evidence identity now excludes redundant proposal IDs while exact
+report equality remains strict. Actual fresh rescans and MCP repeat applications
+retain one contribution and the first operation pin. Dataset proposal IDs already
+derive from source facts; the reimport fixture verifies their stability.
+
+Native/WASM checks, **500 distinct effective cases** and real default memory-only
+MCP stdio (230 tools) pass. Earlier passing cases are retained; affected annotation,
+library-history and MCP families were re-executed after the production fix, then
+only the corrected dataset fixture was rerun. Not every case ran on the final test
+binary. [Contract](audits/annotation-merge-current.md) ·
+[Source stages, cases and original failures](audits/annotation-merge-current-integration.json).
+No browser/application HTTP, live-provider, installation or GUI acceptance ran.
+
+Published checkpoint `1e3d2d9` passes cross-platform Check run 46188460756 and
+desktop run 46188460676. The current [package inventory](audits/desktop-packages-current.json)
+records its Windows portable executable, macOS installers/app archive and Debian
+package; those artifacts exclude this newer annotation-merge source. Partial or
+indel donor correspondence and general qualifier reconciliation remain outside
+the implemented merge scope. The full implementation goal remains active.

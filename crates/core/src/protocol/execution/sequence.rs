@@ -92,24 +92,19 @@ pub(super) fn scan_feature_library(
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 
-pub(super) fn apply_feature_library(
+pub(super) fn preview_annotation_merge(
     context: &RequestContext,
     molecule: Molecule,
-    library: crate::sequence::annotations::library::FeatureLibrary,
-    report: crate::sequence::annotations::library::ScanReport,
-    selected: Vec<String>,
+    request: crate::sequence::annotations::merge::Request,
 ) -> Result<AnalysisResult, Error> {
-    {
-        let molecule = &molecule;
-
-        let molecule: Option<&Molecule> = Some(molecule);
-        context.admit(molecule)?;
+    let expected = crate::sequence::annotations::merge::revision(&molecule, &request)?;
+    if expected != *context.revision {
+        return Err(Error::Format(
+            "annotation merge source/settings context changed".into(),
+        ));
     }
-    let outcome: Result<AnalysisResult, Error> =
-        crate::sequence::annotations::library::apply_selected(
-            &molecule, &library, &report, &selected,
-        )
-        .map(AnalysisResult::AnnotatedDocument);
+    let outcome = crate::sequence::annotations::merge::preview(&molecule, &request)
+        .map(AnalysisResult::AnnotationMergePreview);
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 
@@ -132,21 +127,22 @@ pub(super) fn import_annotations(
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 
-pub(super) fn apply_annotations(
+pub(super) fn apply_annotation_merge(
     context: &RequestContext,
     molecule: Molecule,
-    report: crate::formats::annotations::AnnotationImportReport,
-    selected: Vec<usize>,
+    request: crate::sequence::annotations::merge::Request,
 ) -> Result<AnalysisResult, Error> {
-    {
-        let molecule = &molecule;
-
-        let molecule: Option<&Molecule> = Some(molecule);
-        context.admit(molecule)?;
+    let expected = crate::sequence::annotations::merge::revision(&molecule, &request)?;
+    if expected != *context.revision {
+        return Err(Error::Format(
+            "annotation merge source/settings context changed".into(),
+        ));
     }
-    let outcome: Result<AnalysisResult, Error> =
-        crate::formats::annotations::apply_annotations(&molecule, &report, &selected)
-            .map(AnalysisResult::AnnotatedDocument);
+    let outcome =
+        crate::sequence::annotations::merge::apply(&molecule, &request).and_then(|applied| {
+            applied.validate_request(&molecule, &request)?;
+            Ok(AnalysisResult::AnnotationMergeApplied(applied))
+        });
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 

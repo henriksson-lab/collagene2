@@ -135,12 +135,12 @@ impl Transition {
                     action.preflight()?;
                 }
                 for action in actions {
-                    if let reference_edit::Operation::PasteReference { source_event, .. } = action {
+                    if let Some(source_event) = action.source_event() {
                         if source_event != source
                             && !supplemental_sources.contains(&source_event.event_id)
                         {
                             return Err(Error::Format(
-                                "reference paste source is not retained among event parents".into(),
+                                "reference edit source is not retained among event parents".into(),
                             ));
                         }
                     }
@@ -189,15 +189,15 @@ impl Transition {
         }
         if let Self::ReferenceEdit { actions, .. } = self {
             for action in actions {
-                if let reference_edit::Operation::PasteReference { source_event, .. } = action {
+                if let Some(source_event) = action.source_event() {
                     let event = events.get(source_event.event_id.as_str()).ok_or_else(|| {
-                        Error::Format("reference paste source event is absent".into())
+                        Error::Format("reference edit source event is absent".into())
                     })?;
                     if event.document_id != source_event.document_id
                         || event.revision != source_event.revision
                     {
                         return Err(Error::Format(
-                            "reference paste source event binding changed".into(),
+                            "reference edit source event binding changed".into(),
                         ));
                     }
                 }

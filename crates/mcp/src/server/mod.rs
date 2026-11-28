@@ -105,6 +105,7 @@ impl Default for CollageneServer {
                 + Self::genome_router()
                 + Self::protocol_router()
                 + Self::sequence_router()
+                + Self::annotation_merge_router()
                 + Self::workspace_router()
                 + Self::image_evidence_router(),
             compute_gate: Arc::new(tokio::sync::Semaphore::new(1)),

@@ -106,6 +106,9 @@ impl Writer {
             .filter(|n| *n <= MAX_LOCATION_WORK)
             .ok_or(Error::TooLarge)?;
         self.ascii(&format!("     {:<16}", feature.kind), &location, false)?;
+        // A reserved contribution field must be one valid current ledger before
+        // emitting it through a wrapped external qualifier representation.
+        crate::sequence::annotations::merge::Ledger::from_feature(feature)?;
         for (key, value) in &feature.qualifiers {
             if key != REVIEW_KEY {
                 self.qualifier(key, value.as_deref())?;

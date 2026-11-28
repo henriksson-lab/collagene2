@@ -204,7 +204,11 @@ impl Parser<'_> {
                 }
                 b'\n' => {
                     Self::append(&mut value, &self.text[start..self.cursor])?;
-                    if key != "translation" {
+                    // These machine fields contain no literal newline semantics.
+                    // JSON string newlines are escaped; physical INSDC wrapping
+                    // must not insert a control character into the typed ledger.
+                    if key != "translation" && key != crate::sequence::annotations::merge::QUALIFIER
+                    {
                         Self::append(&mut value, "\n")?;
                     }
                     self.cursor += 1;

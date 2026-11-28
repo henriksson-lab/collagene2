@@ -1,5 +1,20 @@
 use collagene_core::formats::annotations::{self as a, AnnotationFormat as F};
+use collagene_core::sequence::annotations::merge;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
+
+fn merge_request(
+    target: &Molecule,
+    source: merge::Source,
+    selections: Vec<merge::Selection>,
+) -> merge::Request {
+    merge::Request {
+        schema_version: 1,
+        target_revision: target.revision(),
+        source,
+        selections,
+        limits: Default::default(),
+    }
+}
 fn reference() -> Molecule {
     Molecule::dna(
         "actual_reference_name",
@@ -21,7 +36,28 @@ fn q<'a>(feature: &'a Feature, key: &str) -> Option<&'a str> {
 fn apply(reference: &Molecule, text: &str, format: F) -> Molecule {
     let report = a::import_annotations(reference, text, format, "external_chr").unwrap();
     let selection = (0..report.proposals.len()).collect::<Vec<_>>();
-    a::apply_annotations(reference, &report, &selection).unwrap()
+    merge::apply(
+        reference,
+        &merge_request(
+            reference,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&selection)
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap()
 }
 
 #[test]
@@ -58,7 +94,28 @@ fn explicit_mapping_percent_attributes_parent_grouping_and_original_crlf_are_ret
     let restored: a::AnnotationImportReport =
         serde_json::from_slice(&serde_json::to_vec(&report).unwrap()).unwrap();
     restored.validate(&r).unwrap();
-    let applied = a::apply_annotations(&r, &restored, &[0, 1]).unwrap();
+    let applied = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&restored).clone(),
+            },
+            (&[0, 1])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&restored)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     assert_eq!(applied.sequence, r.sequence);
     assert_eq!(applied.features.len(), 2);
     let native = collagene_core::protocol::save_document(&applied).unwrap();
@@ -116,7 +173,28 @@ fn single_circular_gff_row_crosses_origin_without_swapping_strand() {
         let report = a::import_annotations(&r, &text, F::Gff3, "external_chr").unwrap();
         let f = &report.proposals[0].feature;
         assert_eq!(f.location.extract(&r.sequence).unwrap(), expected);
-        let applied = a::apply_annotations(&r, &report, &[0]).unwrap();
+        let applied = merge::apply(
+            &r,
+            &merge_request(
+                &r,
+                merge::Source::Dataset {
+                    report: (&report).clone(),
+                },
+                (&[0])
+                    .iter()
+                    .map(|index| merge::Selection {
+                        proposal_id: (&report)
+                            .proposals
+                            .get(*index)
+                            .map(|proposal| proposal.id.clone())
+                            .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                        decision: merge::Decision::Append,
+                    })
+                    .collect(),
+            ),
+        )
+        .map(|applied| applied.molecule)
+        .unwrap();
         let export = a::export_annotations(&applied, F::Gff3, "external_chr").unwrap();
         assert!(export.text.contains("\t23\t28\t"));
     }
@@ -193,7 +271,28 @@ fn bed12_blocks_strand_visualization_and_exact_original_are_preserved() {
     assert_eq!(f.location.extract(&r.sequence).unwrap(), "GGGTTT");
     assert_eq!(f.kind, "misc_feature");
     assert_eq!(q(f, "codon_start"), None);
-    let applied = a::apply_annotations(&r, &report, &[0]).unwrap();
+    let applied = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&[0])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     let export = a::export_annotations(&applied, F::Bed, "explicit_new_name").unwrap();
     assert_eq!(
         export.text,
@@ -315,10 +414,92 @@ fn proposals_are_source_revision_bound_and_selection_and_tampering_are_atomic() 
     let text = gff("external_chr\t.\tpromoter\t2\t5\t.\t+\t.\tID=x\n");
     let report = a::import_annotations(&r, &text, F::Gff3, "external_chr").unwrap();
     let changed = r.replace(0, 1, "T").unwrap();
-    assert!(a::apply_annotations(&changed, &report, &[0]).is_err());
-    assert!(a::apply_annotations(&r, &report, &[0, 0]).is_err());
-    assert!(a::apply_annotations(&r, &report, &[1]).is_err());
-    assert!(a::apply_annotations(&r, &report, &[]).is_err());
+    assert!(
+        merge::apply(
+            &changed,
+            &merge_request(
+                &changed,
+                merge::Source::Dataset {
+                    report: (&report).clone()
+                },
+                (&[0])
+                    .iter()
+                    .map(|index| merge::Selection {
+                        proposal_id: (&report)
+                            .proposals
+                            .get(*index)
+                            .map(|proposal| proposal.id.clone())
+                            .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
+    assert!(
+        merge::apply(
+            &r,
+            &merge_request(
+                &r,
+                merge::Source::Dataset {
+                    report: (&report).clone()
+                },
+                (&[0, 0])
+                    .iter()
+                    .map(|index| merge::Selection {
+                        proposal_id: (&report)
+                            .proposals
+                            .get(*index)
+                            .map(|proposal| proposal.id.clone())
+                            .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
+    assert!(
+        merge::apply(
+            &r,
+            &merge_request(
+                &r,
+                merge::Source::Dataset {
+                    report: (&report).clone()
+                },
+                (&[1])
+                    .iter()
+                    .map(|index| merge::Selection {
+                        proposal_id: (&report)
+                            .proposals
+                            .get(*index)
+                            .map(|proposal| proposal.id.clone())
+                            .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
+    assert!(
+        merge::apply(
+            &r,
+            &merge_request(
+                &r,
+                merge::Source::Dataset {
+                    report: (&report).clone()
+                },
+                Vec::<merge::Selection>::new()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
     let mut tampered = report.clone();
     tampered.proposals[0].feature.location = Location::range(3, 5);
     assert!(tampered.validate(&r).is_err());
@@ -329,9 +510,53 @@ fn proposals_are_source_revision_bound_and_selection_and_tampering_are_atomic() 
     tampered.source_blake3 = "0".repeat(64);
     assert!(tampered.original_bytes().is_err());
     assert!(r.features.is_empty());
-    let applied = a::apply_annotations(&r, &report, &[0]).unwrap();
+    let applied = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&[0])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     let rebound = a::import_annotations(&applied, &text, F::Gff3, "external_chr").unwrap();
-    assert!(a::apply_annotations(&applied, &rebound, &[0]).is_err());
+    assert!(
+        merge::apply(
+            &applied,
+            &merge_request(
+                &applied,
+                merge::Source::Dataset {
+                    report: (&rebound).clone()
+                },
+                (&[0])
+                    .iter()
+                    .map(|index| merge::Selection {
+                        proposal_id: (&rebound)
+                            .proposals
+                            .get(*index)
+                            .map(|proposal| proposal.id.clone())
+                            .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
 }
 #[test]
 fn source_record_export_guard_blocks_stale_edit_reverse_origin_and_forged_geometry() {
@@ -372,7 +597,28 @@ fn selected_children_cannot_export_fabricated_absent_parent_hierarchies() {
         "external_chr\t.\tgene\t1\t20\t.\t+\t.\tID=g\nexternal_chr\t.\tCDS\t2\t5\t.\t+\t0\tID=c;Parent=g\n",
     );
     let report = a::import_annotations(&r, &text, F::Gff3, "external_chr").unwrap();
-    let child = a::apply_annotations(&r, &report, &[1]).unwrap();
+    let child = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&[1])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     assert!(a::export_annotations(&child, F::Gff3, "external_chr").is_err());
     assert_eq!(report.original_bytes().unwrap(), text.as_bytes());
 }
@@ -533,7 +779,7 @@ fn generic_types_do_not_invent_ontology_equivalence_and_directives_are_bounded()
 #[test]
 fn gff_single_base_intervals_and_insertion_boundaries_are_distinct() {
     use collagene_core::formats::annotations::{
-        AnnotationFormat, apply_annotations, export_annotations, import_annotations,
+        AnnotationFormat, export_annotations, import_annotations,
     };
     let reference = Molecule::dna("onebase", "ACGT", Topology::Linear).unwrap();
     for kind in ["exon", "SNP", "SNV", "gene", "CDS"] {
@@ -554,7 +800,28 @@ fn gff_single_base_intervals_and_insertion_boundaries_are_distinct() {
             report.proposals[0].feature.location.spans(),
             vec![(1, 2, true)]
         );
-        let annotated = apply_annotations(&reference, &report, &[0]).unwrap();
+        let annotated = merge::apply(
+            &reference,
+            &merge_request(
+                &reference,
+                merge::Source::Dataset {
+                    report: (&report).clone(),
+                },
+                (&[0])
+                    .iter()
+                    .map(|index| merge::Selection {
+                        proposal_id: (&report)
+                            .proposals
+                            .get(*index)
+                            .map(|proposal| proposal.id.clone())
+                            .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                        decision: merge::Decision::Append,
+                    })
+                    .collect(),
+            ),
+        )
+        .map(|applied| applied.molecule)
+        .unwrap();
         let output = export_annotations(&annotated, AnnotationFormat::Gff3, "onebase").unwrap();
         let reopened =
             import_annotations(&reference, &output.text, AnnotationFormat::Gff3, "onebase")

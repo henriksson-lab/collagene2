@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 // Current selectors whose accepted payloads can contain complete workspace archives.
 // Stateless and session dispatch must admit the same envelope before routing.
 pub(super) const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
-    19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 122, 126, 128, 129,
-    132, 133, 140, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167,
-    168, 169, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
-    189, 190, 191, 197, 212, 214,
+    19, 20, 23, 25, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 122, 126,
+    128, 129, 132, 133, 140, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165,
+    166, 167, 168, 169, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186,
+    187, 188, 189, 190, 191, 197, 212, 214,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -160,6 +160,38 @@ pub(super) fn worker_limit(
 mod tests {
     use super::*;
     use collagene_model::{Molecule, Topology};
+
+    #[test]
+    fn annotation_merge_request_prefix_admits_only_current_large_profiles() {
+        let payload_len = MAX_IMPORT_BYTES + 1;
+        let frame_len = HEADER + payload_len;
+        let prefix = |selector| {
+            let mut bytes = b"CGQ\0".to_vec();
+            bytes.extend_from_slice(&WORKER_SCHEMA_VERSION.to_le_bytes());
+            bytes.extend_from_slice(&(payload_len as u32).to_le_bytes());
+            bytes.extend_from_slice(&[0; 32]);
+            bytes.extend(postcard::to_allocvec(&(1u32, "a".repeat(64), selector)).unwrap());
+            bytes
+        };
+        for selector in [23u32, 25] {
+            let bytes = prefix(selector);
+            assert!(bytes.len() < 256);
+            assert_eq!(
+                worker_limit(b"CGQ\0", &bytes, frame_len, WORKSPACE_REQUEST_SELECTORS).unwrap(),
+                MAX_WORKSPACE_MESSAGE_BYTES
+            );
+            let mut obsolete = bytes;
+            obsolete[4..6].copy_from_slice(&(WORKER_SCHEMA_VERSION - 1).to_le_bytes());
+            assert!(matches!(
+                worker_limit(b"CGQ\0", &obsolete, frame_len, WORKSPACE_REQUEST_SELECTORS),
+                Err(Error::Unsupported(_))
+            ));
+        }
+        assert!(matches!(
+            worker_limit(b"CGQ\0", &prefix(0), frame_len, WORKSPACE_REQUEST_SELECTORS),
+            Err(Error::TooLarge)
+        ));
+    }
 
     #[test]
     fn native_model_resource_rejections_preserve_too_large_and_malformed_is_format() {

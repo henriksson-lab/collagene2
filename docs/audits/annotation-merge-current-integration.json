@@ -1,0 +1,398 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "1e3d2d916c711c81df5ecb5697986b8434493240",
+  "status": "verified",
+  "scope": "F19 non-destructive explicit annotation merges, accumulated documentary attribution, exact donor transfer, native event/identity receipts, current worker/MCP/web controls and INSDC interchange.",
+  "compiler_runs": [
+    {
+      "target": "native",
+      "run": 1,
+      "success": false,
+      "diagnostics": [
+        {
+          "message": "the trait bound `annotation_merge::Query: serde::Serialize` is not satisfied",
+          "primary_locations": [
+            {
+              "path": "crates/mcp/src/tools/sequence/annotation_merge.rs",
+              "line": 54
+            }
+          ]
+        },
+        {
+          "message": "type annotations needed for `&_`",
+          "primary_locations": [
+            {
+              "path": "crates/core/tests/sequence/annotations/annotation_formats.rs",
+              "line": 503
+            }
+          ]
+        },
+        {
+          "message": "type annotations needed for `&_`",
+          "primary_locations": [
+            {
+              "path": "crates/core/tests/sequence/annotations/feature_library.rs",
+              "line": 673
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "wasm",
+      "run": 1,
+      "success": false,
+      "diagnostics": [
+        {
+          "message": "function `AttributionInspection` is private",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/sequence/feature_tools.rs",
+              "line": 2
+            }
+          ]
+        },
+        {
+          "message": "function `MergeReview` is private",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/sequence/feature_tools.rs",
+              "line": 2
+            }
+          ]
+        },
+        {
+          "message": "function `DonorAnnotations` is private",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/sequence/feature_tools.rs",
+              "line": 617
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "native",
+      "run": 2,
+      "success": false,
+      "diagnostics": [
+        {
+          "message": "type annotations needed for `&_`",
+          "primary_locations": [
+            {
+              "path": "crates/core/tests/sequence/annotations/feature_library.rs",
+              "line": 709
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "target": "wasm",
+      "run": 2,
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "target": "native",
+      "run": 3,
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "target": "native",
+      "run": 4,
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "target": "wasm",
+      "run": 3,
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "target": "native",
+      "run": 5,
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "target": "wasm",
+      "run": 4,
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "target": "native",
+      "run": 6,
+      "success": true,
+      "diagnostics": []
+    }
+  ],
+  "distinct_effective_passing_cases": 500,
+  "effective_failing_cases": 0,
+  "raw_outcomes": 656,
+  "historical_failure_outcomes": [
+    {
+      "package": "collagene-core",
+      "target": "sequence",
+      "test": "annotations::annotation_library_protocol::annotation_jobs_keep_current_selectors_and_reject_unsupported_versions",
+      "result": "FAILED",
+      "native_run": 3,
+      "binary_sha256": "7288f141c40ddf75745b83529375b92eef660b939fc7dd09ce92e73bf2443c1d"
+    },
+    {
+      "package": "collagene-core",
+      "target": "sequence",
+      "test": "annotations::annotation_library_protocol::selected_apply_rejects_tampered_report_and_old_reference_without_partial_edits",
+      "result": "FAILED",
+      "native_run": 3,
+      "binary_sha256": "7288f141c40ddf75745b83529375b92eef660b939fc7dd09ce92e73bf2443c1d"
+    },
+    {
+      "package": "collagene-core",
+      "target": "sequence",
+      "test": "annotations::feature_library::ambiguous_identity_report_json_preserves_fraction_bits_and_remains_reconstructable",
+      "result": "FAILED",
+      "native_run": 3,
+      "binary_sha256": "7288f141c40ddf75745b83529375b92eef660b939fc7dd09ce92e73bf2443c1d"
+    },
+    {
+      "package": "collagene-core",
+      "target": "sequence",
+      "test": "annotations::feature_library::existing_and_cross_entry_duplicate_annotations_are_explicit_and_never_overwritten",
+      "result": "FAILED",
+      "native_run": 3,
+      "binary_sha256": "7288f141c40ddf75745b83529375b92eef660b939fc7dd09ce92e73bf2443c1d"
+    },
+    {
+      "package": "collagene-core",
+      "target": "sequence",
+      "test": "annotations::annotation_merge::fresh_same_file_reimport_preserves_one_dataset_contribution_and_its_first_operation_pin",
+      "result": "FAILED",
+      "native_run": 5,
+      "binary_sha256": "4b5494f5986f8de0aec5d30ee00920b88fc883861f7bc1aef11b218c52399c7b"
+    }
+  ],
+  "case_index": "docs/audits/annotation-merge-cases.tsv",
+  "case_index_sha256": "eb4ac5d9ca00e39fdb5b02a1583a066df732809cbf6263e3f79dc847faa2bb23",
+  "current_input_files": {
+    "crates/core/src/documents/history.rs": {
+      "sha256": "ce0426585d4908a79a0967ca525722a14113e9377782c36faebe2b53100b5772",
+      "bytes": 21444
+    },
+    "crates/core/src/documents/history/transition.rs": {
+      "sha256": "0122e11c30548ec610e05d18f96ead5e973d2c83b24f26ecad819dd146e949ae",
+      "bytes": 7733
+    },
+    "crates/core/src/documents/reference_edit.rs": {
+      "sha256": "604b62897fb1b5aeb9695215e3664f84b24c985eedf6358925fd3ed3bbe2f123",
+      "bytes": 14398
+    },
+    "crates/core/src/documents/reference_edit/tests.rs": {
+      "sha256": "361c7b508c4049d9969430725502fa6ebfbb57c7f6e904c91b85a343908600ee",
+      "bytes": 17110
+    },
+    "crates/core/src/formats/annotations/mod.rs": {
+      "sha256": "3d2372ecb95c081f59de3e098138cb319758ab71d82a20f0449290060c69eaed",
+      "bytes": 56283
+    },
+    "crates/core/src/formats/sequence/feature_qualifiers.rs": {
+      "sha256": "5094f31770a07445d9e4be549118e6a742a481ac7fc94fcc79b4d32ad6041c0c",
+      "bytes": 11293
+    },
+    "crates/core/src/formats/sequence/feature_writer.rs": {
+      "sha256": "06949d22186aab36865b57194d657737502c295989d07c9c32ec8d6c2c773845",
+      "bytes": 13354
+    },
+    "crates/core/src/formats/sequence/mod.rs": {
+      "sha256": "3f35d52087a072affe7535f25150acabab980579d9566c925f97132a77baf795",
+      "bytes": 54351
+    },
+    "crates/core/src/protocol/envelope.rs": {
+      "sha256": "59525f7baf12bd82173c3919e1046e12d2e4ebc3cb2cbae8a8eb664fad557a47",
+      "bytes": 8077
+    },
+    "crates/core/src/protocol/execution/router.rs": {
+      "sha256": "5af4c137bc399a956fd88729ec9d5aa3e5009339a3690ca27a75095ff19eb6e1",
+      "bytes": 38932
+    },
+    "crates/core/src/protocol/execution/sequence.rs": {
+      "sha256": "4368db443c8320b6ad36cba7c11e02ca62c9597035a890a0f9480c5d23aba33a",
+      "bytes": 18661
+    },
+    "crates/core/src/protocol/request.rs": {
+      "sha256": "48189c919824b8bbeeec6b04de55ae94384feae3a3d968d0623eb9ae9a01cc9f",
+      "bytes": 34051
+    },
+    "crates/core/src/protocol/response.rs": {
+      "sha256": "81a82099f453f02244d164f5cd5fdcc2981a09bf71dcd9004ebd3dfaad2245fe",
+      "bytes": 44586
+    },
+    "crates/core/src/protocol/schema.rs": {
+      "sha256": "0adfa7384543c4298071433befa7d1c93eb64d5d01cfebf55d5809a45e65681e",
+      "bytes": 51270
+    },
+    "crates/core/src/sequence/annotations/library.rs": {
+      "sha256": "6e2a154cb73d43c22cdb37368a0a4e44932fa9cf58f53a14a6f09b629ea358ce",
+      "bytes": 27148
+    },
+    "crates/core/src/sequence/annotations/merge/assessment.rs": {
+      "sha256": "b8fe9e17fcde1d535357c366cb59197dd414b4f07cd93ed49a742229cced6687",
+      "bytes": 12691
+    },
+    "crates/core/src/sequence/annotations/merge/contract.rs": {
+      "sha256": "155c8a95958f6bec06377095aa2b2146df8131981c66f50196bf3cbf99acd272",
+      "bytes": 21359
+    },
+    "crates/core/src/sequence/annotations/merge/mod.rs": {
+      "sha256": "f348edb23e965d68c78ae759ea617cfbd2093a81c5059a325b89c435bfcf56e0",
+      "bytes": 1783
+    },
+    "crates/core/src/sequence/annotations/merge/model.rs": {
+      "sha256": "0cb7e2cd9fa36be5cbdbe15c5ba8b06dee97777a7005aad3708c7122119c48d9",
+      "bytes": 4423
+    },
+    "crates/core/src/sequence/annotations/merge/provenance.rs": {
+      "sha256": "8330034da2bdefa8c3809cfe0c70ab31d4fc4ac5d15c3fdf6624e48a2d80e878",
+      "bytes": 11817
+    },
+    "crates/core/src/sequence/annotations/merge/sources.rs": {
+      "sha256": "06e41187111fcc9af203cfc34d99c0aa181a86a31a6a74effa457dbfc72aae09",
+      "bytes": 8531
+    },
+    "crates/core/src/sequence/annotations/mod.rs": {
+      "sha256": "f1d371ef038f7b769ba6d9d82e38a2e39fe954ebf3e81729e1d010cc2f58002e",
+      "bytes": 17601
+    },
+    "crates/core/tests/history/workspace/library_exchange.rs": {
+      "sha256": "bd3b62c14085501982cb0671a5b5f59d8d01140afc6a37697cb3555f87314bed",
+      "bytes": 6382
+    },
+    "crates/core/tests/sequence/annotations/annotation_formats.rs": {
+      "sha256": "105a59656d33c6df26cf21cb35a02c3fc9d6ddca94f2d64c65fabc0581fc7939",
+      "bytes": 32710
+    },
+    "crates/core/tests/sequence/annotations/annotation_library_protocol.rs": {
+      "sha256": "ebb9211a46198a8e26436278a9746803d62a1ab13001ad368ed49bd11eb7a866",
+      "bytes": 17341
+    },
+    "crates/core/tests/sequence/annotations/annotation_merge.rs": {
+      "sha256": "ed6837edd3cf37bf1e34300e0632362ccc6f6ba98223e9f4cc4118dbb9d9ed88",
+      "bytes": 25193
+    },
+    "crates/core/tests/sequence/annotations/feature_library.rs": {
+      "sha256": "60ef197d4d198eb447caae4c43d66ace2e8c1dac3ce220ef79a052bf4da59f5d",
+      "bytes": 34471
+    },
+    "crates/core/tests/sequence/annotations/gtf_annotations.rs": {
+      "sha256": "683a7c5ec85d773fca886e225f7ac78f47ece748b47f85cbe64ca22e874bf672",
+      "bytes": 8178
+    },
+    "crates/core/tests/sequence/annotations/gtf_protocol.rs": {
+      "sha256": "2c029c1ec0192f7116186d3917ee263995b446601522a76318e66dee081a6704",
+      "bytes": 4095
+    },
+    "crates/core/tests/sequence/annotations/mod.rs": {
+      "sha256": "7f9f7691f4724ac901ef936abc5d98aaeb4f10e261b27272153aca370281a3f1",
+      "bytes": 450
+    },
+    "crates/mcp/src/lib.rs": {
+      "sha256": "08518ee30c90d117c7890e63d0a7980a7102d1d4c2b3fd95e284c9f0cf19691f",
+      "bytes": 223
+    },
+    "crates/mcp/src/server/mod.rs": {
+      "sha256": "bc943eab3aa56619be678e441d8246436bae9a48134e0551a977c1cbd17ae9aa",
+      "bytes": 6594
+    },
+    "crates/mcp/src/tools/sequence/annotation_merge.rs": {
+      "sha256": "4b533f89e5854e2e4a5af439314858f74f2d78881c2b1e784d3755832558245a",
+      "bytes": 9235
+    },
+    "crates/mcp/src/tools/sequence/mod.rs": {
+      "sha256": "b6c581e7c53bf8638411b94eb67a7341200f2d376d6adf1728d8a5d09c4ffc67",
+      "bytes": 70910
+    },
+    "crates/mcp/tests/sequence/annotation_library_tools.rs": {
+      "sha256": "047a3093188d5c07c759498a50b6faa330e81c3c528e70b0a79fe518e9b21f85",
+      "bytes": 28441
+    },
+    "crates/mcp/tests/sequence/coordinate_qualifier_tools.rs": {
+      "sha256": "5b3f705d51d7f30cbfabbcc841fc891f0baf465a43f4fa54132cb83681fe3359",
+      "bytes": 19732
+    },
+    "crates/web/src/app/mod.rs": {
+      "sha256": "3023a9d7b12cca119a0f049973755e9c9a0b618891628090e2d3eed194126696",
+      "bytes": 239830
+    },
+    "crates/web/src/viewer/sequence/annotation_merge/attribution.rs": {
+      "sha256": "4182d685fb459ba4d9097ec6264080c9c2cd1f391addf8fd68601a3a66caeceb",
+      "bytes": 3593
+    },
+    "crates/web/src/viewer/sequence/annotation_merge/donor.rs": {
+      "sha256": "d481afb1a67f09aa1394ab26f2e6d80d61eecb70b8b413b10d44168f1b71a80a",
+      "bytes": 10029
+    },
+    "crates/web/src/viewer/sequence/annotation_merge/mod.rs": {
+      "sha256": "4f38c6ff23e6e375678810b72cc628025518a51508aebf960c98977074701c31",
+      "bytes": 257
+    },
+    "crates/web/src/viewer/sequence/annotation_merge/model.rs": {
+      "sha256": "af4adf2aa96fc336a637ea1b82d5b71e31db6c71707d0b5b9d784be210b5fe9b",
+      "bytes": 4492
+    },
+    "crates/web/src/viewer/sequence/annotation_merge/view.rs": {
+      "sha256": "b4442b60dc0bf621a77406c7032c6729b021b8e0f705eacbda7cce7d2fbaf0bd",
+      "bytes": 18337
+    },
+    "crates/web/src/viewer/sequence/feature_tools.rs": {
+      "sha256": "d0e8432bb652fd5e5b7d212de6b0f45d23d09bf06b409f5b6c167c0bfdc0f1a0",
+      "bytes": 36522
+    },
+    "crates/web/src/viewer/sequence/mod.rs": {
+      "sha256": "f94755509e0e81e29fdbb555863b7b8813cb2af3d1907d79741441ac8a032371",
+      "bytes": 1057
+    }
+  },
+  "final_source_stage": 9,
+  "native_production_source_stage": 8,
+  "wasm_source_stage": 8,
+  "final_fixture_only_delta": {
+    "path": "crates/core/tests/sequence/annotations/annotation_merge.rs",
+    "detail": "Correct actual dataset reimport expectation: dataset IDs already derive from source bytes/rows/feature and remain stable. Preserve real reimport/idempotence and duplicate-ledger integrity assertions. No production changes; only this case was rerun."
+  },
+  "execution_scope": [
+    "Initial affected native execution covered 498 cases across six harnesses. Already passing identical binaries were reused while the sequence harness compiled; no case was re-executed during that assembly.",
+    "Four old fixture premises were corrected: outbound stale-context refusal, canonical ledger fields, and explicit preservation of distinct conflicting annotations rather than the removed coarse duplicate policy.",
+    "Source review then found a real library-rescan idempotence bug: target-dependent proposal IDs were being counted as distinct evidence. Canonical stable-evidence comparison fixes ledger admission/addition and receipt validation while exact full report equality stays strict.",
+    "Affected native annotation, library-history and MCP families were rebuilt and re-executed (157 cases), including two actual rescan/reimport regressions and the SDK repeated-application path. Unrelated passing cases remain from their earlier binaries.",
+    "One new dataset fixture incorrectly expected its source-derived IDs to change. Its one corrected case passed the final focused rerun. Not every effective case ran on the final test binary."
+  ],
+  "stdio_smoke": {
+    "exit_code": 0,
+    "tool_count": 230,
+    "script_sha256": "69e732e6c0ecf61f4c821ea9d530c5adc1bf28488cc42aa69d4dc9b12fa36013",
+    "binary_sha256": "f7ae0bf5669f6a5e41685f7b52efba6349333b3786825b552c6a2c470e7587b5",
+    "scope": "Default memory-only real executable stdio; optional storage-root/native-workspace/browser-workspace branches not selected."
+  },
+  "format_check": {
+    "mode": "Targeted rustfmt with skip_children=true; final changed files only",
+    "files": 44,
+    "status": "passed"
+  },
+  "layout_check": {
+    "rust_files": 1469,
+    "directories": 259,
+    "violations": 0,
+    "size_warnings": 0
+  },
+  "limitations": [
+    "No browser, CDP, screenshot, application HTTP, live-provider, installation or GUI acceptance checks.",
+    "Contribution ledgers are documentary source associations, not authenticated function, physical material, experimental confirmation or native donor annotation inheritance.",
+    "Direct donor transfer requires exact declared complete DNA/topology correspondence; partial homology, indels and generic qualifier reconciliation remain unsupported.",
+    "Current internal worker schema140 rejects superseded encodings; no compatibility decoder, hidden Append fallback or old application API is retained.",
+    "Cross-platform and desktop packaging for this source require exact-head CI after publication. Full implementation goal remains active."
+  ]
+}

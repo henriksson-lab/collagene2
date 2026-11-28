@@ -1,90 +1,90 @@
 {
   "date": "2026-11-28",
-  "source_commit": "6a79798b48cdf8bbf1a37a3278cafc6efa10afa4",
-  "workflow_run": 46183534122,
-  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46183534122",
+  "source_commit": "1e3d2d916c711c81df5ecb5697986b8434493240",
+  "workflow_run": 46188460676,
+  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46188460676",
   "conclusion": "success",
   "profile": "development",
   "developer_signed": false,
   "jobs": [
     {
-      "id": 141103585747,
+      "id": 141119054436,
       "platform": "windows-latest",
       "payloads": [
         "portable executable"
       ],
-      "artifact": "desktop-packages-unsigned-windows-latest-development-6a79798b48cdf8bbf1a37a3278cafc6efa10afa4",
-      "artifact_bytes": 55335311,
-      "artifact_id": 15279765939,
-      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46183534122/artifacts/15279765939",
+      "artifact": "desktop-packages-unsigned-windows-latest-development-1e3d2d916c711c81df5ecb5697986b8434493240",
+      "artifact_bytes": 55623429,
+      "artifact_id": 15281486085,
+      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46188460676/artifacts/15281486085",
       "conclusion": "success",
-      "artifact_digest": "sha256:4b3ae54370b61af87bc1fd48d54798bb49520df0e1d8bc303103df36b1b6ae16"
+      "artifact_digest": "sha256:16d26f96f21621b400bebcc25bcde95dbe8d4b3366fbfe06cc20fa083a4822b2"
     },
     {
-      "id": 141103585775,
+      "id": 141119054454,
       "platform": "macos-latest",
       "payloads": [
         "DMG installer",
         "permission-preserving app tar.gz"
       ],
-      "artifact": "desktop-packages-unsigned-macos-latest-development-6a79798b48cdf8bbf1a37a3278cafc6efa10afa4",
-      "artifact_bytes": 136408003,
-      "artifact_id": 15278883430,
-      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46183534122/artifacts/15278883430",
+      "artifact": "desktop-packages-unsigned-macos-latest-development-1e3d2d916c711c81df5ecb5697986b8434493240",
+      "artifact_bytes": 137252058,
+      "artifact_id": 15281760199,
+      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46188460676/artifacts/15281760199",
       "conclusion": "success",
-      "artifact_digest": "sha256:e4af5a67b3683f6bfa52e9dab08eb185d14cd5b9706c0c84e989a938f20ad324"
+      "artifact_digest": "sha256:7fbf5594a46dde5e7909ac9b85cfbbaad2a8cbb6882a46c71cf144ef8a42f776"
     },
     {
-      "id": 141103585921,
+      "id": 141119054515,
       "platform": "ubuntu-22.04",
       "payloads": [
         "Debian package"
       ],
-      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-6a79798b48cdf8bbf1a37a3278cafc6efa10afa4",
-      "artifact_bytes": 66773125,
-      "artifact_id": 15279298575,
-      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46183534122/artifacts/15279298575",
+      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-1e3d2d916c711c81df5ecb5697986b8434493240",
+      "artifact_bytes": 67075436,
+      "artifact_id": 15281755295,
+      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46188460676/artifacts/15281755295",
       "conclusion": "success",
-      "artifact_digest": "sha256:e6184455742d914b3f5f373594fb3f2d13de37447c47bef7eb1c787df49f207a"
+      "artifact_digest": "sha256:f4d89dedd0d296e702814e0cd0fec281adad5949c7e323b26106117be3885dc0"
     }
   ],
   "evidence": "Exact-head completed GitHub jobs and unexpired artifact inventory/digests. Required CI staging checks expected platform payload kinds and bounded manifests, runs packaged executable stdio MCP smoke, and checks Windows system DLL imports. One same-run fresh frontend is reused. Artifact archives were not downloaded or installed locally for this record.",
   "limitations": [
     "No installer GUI, installation, offline GUI, chosen-remote or final product acceptance is claimed.",
     "Windows requires the OS WebView2 runtime; macOS output uses the hosted runner architecture.",
-    "These published artifacts exclude the current uncommitted semantic design/consensus batch."
+    "These published artifacts include semantic design/consensus assessment and exact FASTA retention, but exclude current annotation-merge source."
   ],
   "frontend": {
-    "job_id": 141098241983,
-    "artifact_id": 15279640570,
-    "bytes": 30860294,
-    "artifact_digest": "sha256:76eceff8a8ee05044c757fc82ee460fcea23469b2a966c8122967abe3ce55435",
+    "job_id": 141113581368,
+    "artifact_id": 15281004346,
+    "bytes": 31081496,
+    "artifact_digest": "sha256:75ee915351b4af4b7ee90f0488f9940afc6c99dbb702e179f62d18417e889bc5",
     "conclusion": "success"
   },
   "check_workflow": {
-    "run_id": 46183534013,
-    "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46183534013",
+    "run_id": 46188460756,
+    "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46188460756",
     "conclusion": "success",
-    "source_commit": "6a79798b48cdf8bbf1a37a3278cafc6efa10afa4",
+    "source_commit": "1e3d2d916c711c81df5ecb5697986b8434493240",
     "jobs": [
       {
-        "id": 141098241817,
-        "name": "Scientific core on macos-latest",
+        "id": 141113581473,
+        "name": "Scientific core on ubuntu-latest",
         "conclusion": "success"
       },
       {
-        "id": 141098242061,
-        "name": "web",
-        "conclusion": "success"
-      },
-      {
-        "id": 141098242101,
+        "id": 141113581625,
         "name": "Scientific core on windows-latest",
         "conclusion": "success"
       },
       {
-        "id": 141098242123,
-        "name": "Scientific core on ubuntu-latest",
+        "id": 141113581684,
+        "name": "Scientific core on macos-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 141113581724,
+        "name": "web",
         "conclusion": "success"
       }
     ],

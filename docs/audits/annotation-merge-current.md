@@ -1,56 +1,109 @@
-# Non-destructive annotation merge: current owner audit
+# Non-destructive annotation merge: current implementation
 
-Source review, 28 November 2026. No Rust/fixture changes, builds, tests, browser or application requests. F19 currently has substantial append-and-review functionality; the missing capability is a unified, explicit merge decision with accumulated feature-level attribution, not a replacement annotation engine.
+28 November 2026. The F19 core, ReferenceEdit, worker, web and MCP integration passes native/WASM checks, 500 distinct effective cases and the default memory-only real MCP stdio check (230 tools). [Exact sources, original failures and execution limits](annotation-merge-current-integration.json). Not every case ran on the final test binary. No GUI or provider acceptance is claimed.
 
-## Existing functionality
+## One current decision owner
 
-| Owner | Actual current behavior |
+[sequence::annotations::merge](../../crates/core/src/sequence/annotations/merge/mod.rs) owns explicit conflict review, contribution storage and atomic application. Existing library scanning and GFF3/GTF/BED import/export remain the source owners. Superseded `library::apply_selected*`, `formats::annotations::apply_annotations*` and ReferenceEdit `ApplyFeatureLibrary`/`ImportAnnotations` implementations are deleted. There is no hidden-Append wrapper or second duplicate policy.
+
+| Public contract | Behavior |
 | --- | --- |
-| `sequence/annotations/library.rs` | Versioned feature libraries retain exact source document revision, source feature ordinal/location/review state, entry and library identities. Scans distinguish concrete identity, compatible ambiguity, mismatches, complete whole-template coverage, repeats, palindromic orientation and work/hit incompleteness. Applying selected hits freshly reconstructs the complete scan, preserves existing annotations and DNA, marks additions for review and commits atomically. |
-| Library feature qualifiers | New features already carry entry/library ID and revision, library name/version, source revision/ordinal, proposal ID and match counts/model. Attribution is per feature, not merely document metadata. Imported source identity remains a claim, not authenticated biological function. Document `feature_library:*` metadata records the last application; it is not a complete accumulated provenance ledger. |
-| `formats/annotations/{mod,gtf}.rs` | GFF3/GTF/BED import has explicit exact-reference/seqid binding and retains source bytes, source hash, row ordinals, directives and source-record feature evidence. Selected annotations append without removing old features. Repeated exact Feature values are refused. Original source/application evidence accumulates by source-file hash in molecule metadata. Export validates retained row evidence against current geometry/qualifiers and refuses contradictory source evidence. |
-| `documents/reference_edit.rs` | ApplyFeatureLibrary and ImportAnnotations are actual typed, replayable reference edits. Their native owners emit `AnnotationIdentity` during the same append execution: earlier feature ordinals remain retained and new ordinals are additions. F36 causal receipts already distinguish native annotation identity from merely similar labels/coordinates. |
-| `sequence/annotations/batch.rs` and native editing | Explicit selected-feature operations preserve unselected annotations and DNA, with source-revision guards. Meaning/strand reassignment is distinct from retention; native receipts must continue to express that distinction. |
-| Web and MCP | `web/viewer/sequence/feature_tools.rs` already offers library creation/import/export, bounded scan proposals and selected application, plus imported annotation preview/application. Worker-backed web edits retain native history. MCP sequence tools expose immutable library/dataset operations and add annotations into new documents, leaving originals intact. |
+| `Request` | Schema 1, exact target revision, one `Source`, 1–1,000 distinct `Selection { proposal_id, decision }` values and explicit limits. Source/input preflight precedes large copies and recursive serialization. |
+| `Source::Library` | Exact library and source-bound scan report; the existing scan kernel reconstructs evidence once for the whole merge. |
+| `Source::Dataset` | Exact annotation import report; the existing source bytes/hash/format/seqid owner reconstructs it once. Actual proposal IDs are used, not positional guesses. |
+| `Source::Donor` | One donor molecule, declared EventBinding, explicit reverse/origin transform and selected original feature ordinals. Actual complete DNA and declared topology must match the target under that transform. |
+| `revision(target,request)` | Binds the engine and complete current request, including source, decisions and target content pin. Structural validation does not scan or import again. |
+| `preview` | Returns source completeness, selected actual proposed features/contributions, exact target annotation pins, typed relationships, comparison work and completeness. It creates no document or authority. |
+| `apply` | Reconstructs the source once, validates every decision, computes prospective changes and publishes `Applied { molecule, review, receipt }` atomically. A late invalid decision returns no changed document. |
+| Documentary validation | `Preview::validate_binding/validate_request` and `Applied::validate_binding/validate_request` check bounded current content/context/receipt and exact source/output binding without another matcher. `Preview::validate_for` is the explicit heavy fresh reassessment route. Imported previews are never application authority: apply reconstructs its own source. |
 
-Existing duplicate definitions differ. Library application keys by feature kind, label and normalized resolved spans/orientations; it refuses an already-present key, including selected collisions within the same batch. Dataset application uses full Feature equality. Therefore two independently sourced but geometrically equivalent annotations can be refused by the library path or appended separately by the file path. Neither behavior silently overwrites existing features, but neither offers an explicit evidence-collation decision.
+`Source::from_library`, `from_dataset` and workspace-aware `from_donor` admit borrowed data before copying it into an owned request. `proposal_ids` exposes structural source IDs without a matcher. `Source::validate_workspace` resolves a donor's actual retained event and compares the complete model; a standalone molecule/EventBinding tuple only declares a documentary association.
 
-## Actual missing capability
+## Explicit decisions and relationships
 
-1. **Explicit, reviewable conflict/duplicate decisions.** There is no common preview showing exact duplicate, same geometry with different meanings/qualifiers, independent attribution, orientation disagreement and merely overlapping features as different cases. Overlap alone must not collapse two features. Identical labels must not establish feature identity.
-2. **Idempotent non-destructive application.** Selecting one already-present library proposal currently rejects the whole selection, including unrelated new features. A declared Skip decision can provide a useful atomic merge without claiming new evidence or silently erasing annotations. It must be recorded explicitly, not reinterpret an error as success.
-3. **Accumulated provenance on the resulting feature.** Existing library and imported-file attribution is real, but there is no common bounded owner for multiple accepted source contributions to one annotation. Replacing the document's last library application metadata does not preserve an accumulated feature-level history by itself.
-4. **Annotation-only transfer between existing documents.** Current library extraction/re-scan or file export/import can transfer annotations indirectly. There is no direct selected-feature merge from an independently bound existing document, with a declared exact coordinate correspondence and no DNA replacement. PasteReference is an actual DNA edit and must not become a disguised annotation merge.
-5. **Unified UI/MCP review and provenance inspection.** Existing controls handle their respective proposal families. They do not present one explicit conflict policy and inspect multiple retained contributions to a selected feature.
+`Decision::Append` adds a new annotation marked `needs_review=true`, preserving all existing feature ordinals and DNA. Exact/equivalent duplicates, including two equivalent Append decisions in one batch, refuse; the caller must explicitly choose Skip or a valid attribution decision. Mere overlap or conflicting annotations are not silently collapsed.
 
-## Proposed cohesive extension
+`Decision::Skip` records an explicit decision without changing annotations or claiming a new contribution. Even an all-Skip ReferenceEdit remains a typed history event rather than disappearing as an unrecorded no-op.
 
-Extend `sequence::annotations` with a `merge` owner, reusing current library scan/import proposal validation and model projection/editing. Keep one typed ReferenceEdit operation for the final merge and one current merge request/report representation across native/worker/web/MCP. Do not synthesize a DesignPlan, a second history or another sequence matcher.
+`Decision::AddProvenance { target_index, annotation_revision }` targets one exact existing annotation. It requires equivalent ordered biological geometry, kind and semantic qualifier values. It changes only the contribution qualifier: biological qualifiers, annotation order and `needs_review` remain unchanged. An already-retained identical contribution is idempotent and is recorded as not newly added. It never reconciles contradictory meanings or clears review.
 
-A concrete initial contract can be:
+The relationship owner uses canonical `BiologicalPath` order and orientation, not labels, bounding boxes or a sorted genomic interval. Semantic comparison excludes the one contribution ledger and intentional external `annotation_exchange:source_record` evidence; qualifier order/content otherwise remains exact. Review state alone is not a different biological meaning.
 
-- `Request { target_revision, source: SourceEvidence, selections: Vec<Selection>, limits }`. SourceEvidence identifies one actual library+scan, imported dataset, or explicitly bound donor document. Selection pins an actual proposal ID/source feature ordinal and a decision: Append, Skip, or AddProvenance to an exact existing target feature ordinal plus its content revision. Mixed-source batches can follow only with a single shared native work/retention ledger.
-- `preview(target, source, request) -> MergeReview` freshly validates the current source owner. Each candidate retains source identity, exact proposed feature, matched target ordinals/content pins and a typed relationship. Distinguish exact whole-feature duplicate, exact geometry with qualifier/type disagreement, biological-path uncertainty and overlap. Preview is evidence, not permission to overwrite or an authenticated function statement.
-- `apply(target, source, request) -> AppliedMerge { molecule, receipt }` recomputes the same source evidence and executes the explicit decisions atomically. Existing feature order/content and every DNA call remain unchanged for Append/Skip. AddProvenance changes attribution only and must not overwrite biological qualifiers or clear needs_review. A semantic merge of qualifier values should be a separately explicit later decision with actual review-required annotation reassignment.
-- Receipt records actual original/destination ordinals and each append/skip/attribution action, emitted in the same execution. Reuse `AnnotationIdentity`; preserve previous identity for genuinely attribution-only additions, while explicit semantic redefinitions sever it. Do not infer retained identity after comparing labels, hashes or final arrays.
+Typed relationships distinguish whole-feature `ExactDuplicate`, `EquivalentAnnotation`, `SameGeometryConflict`, `OppositeOrientation`, `Overlap` and `Unresolved`. Same labels at different locations remain separate. Joined paths, reversed paths and origin-crossing paths retain biological order. Fuzzy/repeated/unsupported paths remain unresolved rather than being reduced to broad intervals. Library `same_label_geometry_hint` is explicitly a coarse display hint, not precise duplicate identity or permission to apply; the old `already_annotated` field is removed.
 
-For direct donor transfer, begin with an explicit full-record identity/reverse-complement/rotation correspondence checked against actual DNA and topology, then use canonical location projection. The requested transform is part of the declared map; repeated equivalent origins are not automatically unique biological correspondence. Partial homology, indel alignment and uncertain remapping remain unsupported until genuinely covered by an existing canonical owner. Joined/reverse/origin-spanning features require actual biological paths and projection receipts; fuzzy/unresolved locations cannot be reduced to a broad min/max interval.
+Incomplete target relationship review refuses mutations; explicit Skip remains available. Incomplete library search is retained separately: known selected proposals do not establish absence, unique correspondence, complete source search or biological function.
 
-## Provenance storage and bounds
+## One typed contribution qualifier
 
-Choose the canonical provenance owner before implementation. A typed model feature field would require one direct current molecule/schema migration and updating all constructors/codecs. A reserved feature-qualifier envelope can avoid a model dependency cycle, but must have one typed parser/validator and one current encoding, not parallel ad-hoc strings and native records. Extend/update current internal library attribution directly if superseded; existing external GFF/GTF/BED source-row evidence remains external-format functionality, not a legacy internal decoder. Do not copy entire library/dataset/file bytes into every feature: retain bounded content-addressed source references and exact contributing ordinals; shared original evidence remains in the native workspace/document source owner.
+The reserved qualifier is `annotation_merge:contributions`. [Ledger](../../crates/core/src/sequence/annotations/merge/provenance.rs) is its sole current parser/writer: `Ledger { schema_version:1, contributions:Vec<Contribution> }`. Unknown schemas, duplicate reserved fields, malformed content and duplicate contributions refuse. `Ledger::from_feature` provides the same bounded attribution inspection API to native, UI and MCP consumers.
 
-Before cloning, admit target/source model trees, selected count, comparison candidates, aggregate locations, attribution count/text/bytes and final output size. Reuse library work200M/hits10k and file8MiB/rows10k guards, but use one aggregate merge allowance rather than multiplying full fresh scans per selection. A single source scan/import must be reconstructed once per application, then all decisions derived from that evidence. Incomplete scans cannot certify absence or prove that an apparent duplicate is the only corresponding feature. Provenance is documentary attribution; imported qualifiers never promote review status or confer native event ancestry.
+A contribution retains the semantic proposed-feature content pin and a typed `SourcePin`:
 
-## Independent fixtures needed
+- Library: exact library/entry revisions, library name/version, source molecule revision/feature ordinal, proposal ID and concrete/ambiguous/mismatch/template-length facts.
+- Dataset: exact original-file hash, external format, explicit seqid, proposal ID and physical source rows.
+- Donor: exact declared event, original feature ordinal/content pin and explicit transform.
 
-- Existing features and DNA survive a mixed Append+explicit Skip merge exactly; a late invalid decision commits nothing.
-- Two features with the same label at different positions remain separate; overlapping promoters/CDSs remain separate; same geometry with conflicting qualifiers requires an explicit decision.
-- Two independently bound identical-DNA donors remain separately attributed; source/document/feature ordinal changes invalidate captured decisions.
-- Reapplying an exact source contribution is idempotent under explicit Skip; a different independent contribution can accumulate without deleting either source record or copying source bytes per feature.
-- Reverse, joined and origin-crossing transfers use literal expected coordinates; unresolved/fuzzy correspondence is explicit uncertainty/refusal.
-- Ambiguous library matches, incomplete scan budgets and palindromic orientations retain their current uncertainty; no automatic review clearance or functional validation.
-- Native merge receipts retain existing ordinals and record actual additions; later semantic reassignment does not masquerade as inherited annotation identity in F36.
-- Current workspace/candidate/history serialization, immutable MCP application and web undo/reopen retain accumulated attribution. External exports either retain supported provenance or report declared loss.
+Library proposal creation now emits this ledger directly; the superseded internal `library_*` qualifier collection and document-level last-application metadata are not recreated. Original external source-row evidence remains intentional file-format support. Dataset raw bytes are retained once under the existing content-addressed document metadata, not copied into every contribution. A newly projected donor annotation references its actual donor event; it does not copy the donor's previous ledger as if those nested contributors had been independently admitted again. Existing target contributions are preserved.
 
-The initial product should deliver conflict-aware append/skip and attribution inspection before attempting generic qualifier reconciliation. Most scanning, import/export, source binding and append infrastructure already exists and should be extended directly.
+The ledger is documentary attribution. Parsing a valid ledger or retaining an imported source hash does not authenticate function, sample identity, event ownership or native annotation ancestry. Exact source evidence remains necessary for interpretation and any fresh scientific check.
+
+## Stable evidence versus operation proposals
+
+Library scan proposal IDs bind an operation to an exact target revision.
+Attribution changes that revision, so an actual fresh library scan produces a
+different proposal ID without supplying additional source evidence. Dataset
+proposal IDs already derive from the source-file hash, format, seqid, rows and
+feature content; an actual same-file reimport retains the same proposal ID.
+
+`Contribution::same_evidence` compares `feature_revision` and all stable source
+fields, excluding only Library/Dataset `proposal_id`. Library identities,
+entry/source ordinal, match counts and template length remain significant;
+dataset raw hash, format, seqid and source rows remain significant. Donor event,
+feature and transform identity is compared in full. Exact report `PartialEq`
+still compares every proposal field for fresh-replay/tamper checks. Ignoring the
+redundant dataset proposal ID in evidence membership also prevents a forged
+alternative ID from disguising duplicate stable source facts.
+
+`Ledger::contains_contribution`, duplicate validation, addition and applied-report
+idempotency use this same predicate. Repeated AddProvenance preserves the first
+stored contribution, including its original proposal pin, and returns
+`contribution_added=false`. A duplicate stable contribution is invalid even when
+its proposal ID differs. Different actual entries/files/events remain separate
+documentary evidence; none authenticates biological function or native ancestry.
+
+Two independent native fixtures use actual fresh library scans and same-file
+reimports after attribution, check changed library IDs and stable dataset IDs
+with an unchanged single-contribution ledger, preserve the first context and biological qualifiers,
+reject duplicated ledgers disguised by new proposal IDs, and exercise explicit
+Skip. These checks pass in the coordinated focused execution; the dataset fixture was corrected to expect its already stable source-derived IDs.
+
+## Direct donor coordinates and native receipts
+
+The declared donor transform reverse-complements first when requested, then rotates by the declared origin. A linear donor permits origin zero only; circular transforms require a valid original length. Actual calls are checked directly under that declared full-record correspondence, with no matcher or uniqueness inference. Canonical model projection runs once and preserves selected original source ordinals. Selected donor features require exact supported biological paths and one complete projection; uncertain, missing or multiply emitted projection does not become guessed geometry.
+
+The sole typed edit is `ReferenceEdit::MergeAnnotations { request }`. Its native execution emits `AnnotationIdentity` during the same mutation: old target annotations are retained, appended ones are introductions, and attribution-only changes preserve original target identity. Added donor annotations do not inherit donor DNA or annotation identity merely from equal sequence, labels or geometry. Donor event dependence is retained by `Operation::source_event` and actual workspace/history guards; a history parent is computational dependence, not physical evidence.
+
+The native receipt records exact decisions, destination ordinals, whether a contribution was added, the complete new-feature suffix, product revision and actual cumulative comparison work. Documentary guards validate action consequences, current ledgers, candidate content pins, ordinal rosters and declared completeness. Exact request validation additionally checks unchanged DNA/topology/name, original annotation meaning/review/order, prior contributions, metadata and contribution idempotency. No output-array matching reconstructs ancestry after the fact.
+
+## Resource and scientific limits
+
+| Bound | Current policy |
+| --- | --- |
+| Request and report | At most 32 MiB each; output may be requested from 4 KiB through 32 MiB. Combined worker source/product envelopes use explicit large-message admission. |
+| Decisions | 1–1,000 distinct selected proposal IDs; donor feature ordinals also bounded at 1,000. |
+| Contributions | At most 32 per feature and 64 KiB of typed ledger content. Shared raw source bytes are not embedded per feature. |
+| Comparison work | Generic API default 1 million; web review uses the existing 200-million shared ceiling so accepted library scans leave room for relationship review. Hard maximum remains 200 million. Actual library base comparisons or donor call checks enter the same merge ledger as ordered relationship comparisons; application receipts include subsequent intra-batch duplicate checks. |
+| Retained relationships | Default 10,000, hard 100,000 across the request. Omitted relationships are explicitly incomplete, not absent. |
+| Existing source owners | Library 8 MiB/1,000 entries/10,000 hits and native 200-million-comparison maximum; external annotation input 8 MiB/10,000 rows and current projection/native tree/string limits remain. |
+
+A known library report requiring more comparisons than admitted refuses before fresh scanning. A forged low count cannot bypass the cap: the same existing scan kernel checks the enclosing actual allowance while retaining original declared options/proposal identities, then fresh equality rejects inconsistent evidence. Work is not reset per selected proposal. Target mutations are preceded by borrowed prospective-output admission including the target, changes, one review, receipt actions and shared dataset source; native save/report guards validate the final result. Bounded decoding applies to new selection, candidate, relationship, receipt, contribution and donor-index collections.
+
+This scope excludes generic qualifier reconciliation, partial-homology/indel donor transfer, inferred unique biological correspondence, functional validation, review clearance and physical material authority. No probabilities or external scientific programs are introduced.
+
+## Integration and verified coverage
+
+Worker schema 140 replaces the superseded application jobs with `PreviewAnnotationMerge` and `ApplyAnnotationMerge`; immutable native MCP operations and the existing library/dataset panels use the same explicit choices. Direct donor UI/MCP resolves an actual workspace event. Event/source/settings/epoch guards prevent stale preview/commit/navigation. The attribution view calls the typed ledger owner rather than parsing ad-hoc qualifier strings.
+
+Native machine-JSON INSDC handling validates a ledger before export and treats physical qualifier wrapping as wrapping, preserving escaped JSON string contents without inventing newline characters. Intentional GFF/GTF/BED source-record evidence excludes the documentary merge ledger from its biological qualifier hash, so attribution-only additions do not falsify external row evidence. Text-export warnings distinguish retained documentary qualifiers from complete source/workspace/search evidence.
+
+Passing fixtures cover atomic mixed Append/Skip, late invalid target pins, existing/independent donor contributions, actual library-rescan and same-file-reimport idempotency, preserved review state, precise overlap/orientation/geometry, literal reverse/rotation/join mapping, incomplete relationship budgets, source/report tampering, native annotation identity, workspace/history/export roundtrip, and actual worker/MCP routes. Existing scientific library/file tests use explicit current decisions; no superseded API-only test is retained as a compatibility requirement. The execution record distinguishes earlier passing binaries from the affected-family rerun and final one-case fixture correction.

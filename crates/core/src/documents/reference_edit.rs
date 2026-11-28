@@ -29,14 +29,8 @@ pub enum Operation {
     EditAnnotations {
         request: annotations::batch::Request,
     },
-    ApplyFeatureLibrary {
-        library: annotations::library::FeatureLibrary,
-        report: annotations::library::ScanReport,
-        selected: Vec<String>,
-    },
-    ImportAnnotations {
-        report: crate::formats::annotations::AnnotationImportReport,
-        selected: Vec<usize>,
+    MergeAnnotations {
+        request: annotations::merge::Request,
     },
     PasteReference {
         source: Molecule,
@@ -143,9 +137,9 @@ impl Operation {
         let mut scan_work = 0usize;
         let mut current = source.clone();
         for (index, action) in actions.iter().enumerate() {
-            if let Self::ApplyFeatureLibrary { report, .. } = action {
+            if let Self::MergeAnnotations { request } = action {
                 scan_work = scan_work
-                    .checked_add(report.options.max_comparisons)
+                    .checked_add(request.limits.max_comparisons)
                     .filter(|n| *n <= annotations::library::MAX_SCAN_COMPARISONS)
                     .ok_or(Error::TooLarge)?;
             }
@@ -184,34 +178,8 @@ impl Operation {
             collagene_model::bounds::ModelBudget::default()
                 .features(std::slice::from_ref(feature))?;
         }
-        let mut annotation_budget = collagene_model::bounds::ModelBudget::annotation_edit();
         match self {
-            Self::ApplyFeatureLibrary {
-                library,
-                report,
-                selected,
-            } => {
-                if report.hits.len() > annotations::library::MAX_SCAN_HITS
-                    || selected.len() > annotations::library::MAX_SCAN_HITS
-                {
-                    return Err(Error::TooLarge);
-                }
-                library.validate()?;
-                for hit in &report.hits {
-                    annotation_budget.location(&hit.location)?;
-                    annotation_budget.features(std::slice::from_ref(&hit.feature))?;
-                }
-            }
-            Self::ImportAnnotations { report, selected } => {
-                if report.proposals.len() > crate::formats::annotations::MAX_ANNOTATION_ROWS
-                    || selected.len() > crate::formats::annotations::MAX_ANNOTATION_ROWS
-                {
-                    return Err(Error::TooLarge);
-                }
-                for proposal in &report.proposals {
-                    annotation_budget.features(std::slice::from_ref(&proposal.feature))?;
-                }
-            }
+            Self::MergeAnnotations { request } => request.preflight()?,
             Self::PasteReference {
                 source,
                 source_event,
@@ -233,14 +201,24 @@ impl Operation {
         crate::encoding::bounded_json::preflight(self, MAX_EDIT_BYTES)?;
         Ok(())
     }
+    /// Actual cross-document event claim retained by the workspace/history owner.
+    pub fn source_event(&self) -> Option<&crate::material::lineage::EventBinding> {
+        match self {
+            Self::PasteReference { source_event, .. } => Some(source_event),
+            Self::MergeAnnotations { request } => match &request.source {
+                annotations::merge::Source::Donor { event, .. } => Some(event),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
     pub fn name(&self) -> &'static str {
         match self {
             Self::ReverseComplement => "ReverseComplement",
             Self::ReplaceSequence { .. } => "ReplaceSequence",
             Self::FlipAnnotationStrands { .. } => "FlipAnnotationStrands",
             Self::EditAnnotations { .. } => "EditAnnotations",
-            Self::ApplyFeatureLibrary { .. } => "ApplyFeatureLibrary",
-            Self::ImportAnnotations { .. } => "ImportAnnotations",
+            Self::MergeAnnotations { .. } => "MergeAnnotations",
             Self::PasteReference { .. } => "PasteReference",
             Self::RotateOrigin { .. } => "RotateOrigin",
             Self::ExtractRegion { .. } => "ExtractRegion",
@@ -304,24 +282,18 @@ impl Operation {
                 annotations::batch::apply(source, &request),
                 Receipt::Annotations
             ),
-            Self::ApplyFeatureLibrary {
-                library,
-                report,
-                selected,
-            } => observed!(
-                annotations::library::apply_selected_with_projection(
-                    source, &library, &report, &selected
-                ),
-                annotations::library::apply_selected(source, &library, &report, &selected),
-                Receipt::Annotations
-            ),
-            Self::ImportAnnotations { report, selected } => observed!(
-                crate::formats::annotations::apply_annotations_with_projection(
-                    source, &report, &selected
-                ),
-                crate::formats::annotations::apply_annotations(source, &report, &selected),
-                Receipt::Annotations
-            ),
+            Self::MergeAnnotations { request } => {
+                if capture {
+                    annotations::merge::apply_with_projection(source, &request).map(
+                        |(applied, identity)| {
+                            (applied.molecule, Some(Receipt::Annotations(identity)))
+                        },
+                    )
+                } else {
+                    annotations::merge::apply(source, &request)
+                        .map(|applied| (applied.molecule, None))
+                }
+            }
             Self::PasteReference {
                 source: donor,
                 source_event: _,

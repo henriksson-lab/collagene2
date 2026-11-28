@@ -1,6 +1,11 @@
 //! User-owned feature libraries and reviewable automatic annotation proposals.
+use super::annotation_merge::{attribution::AttributionInspection, donor, view::MergeReview};
 use crate::platform::worker;
+use crate::sources::identity::SourceInfo;
 use collagene_core::documents::reference_edit::Operation;
+use collagene_core::{
+    documents::workspace::Workspace, material::lineage::EventBinding, sequence::annotations::merge,
+};
 use collagene_core::{
     protocol::{
         request::Request,
@@ -56,7 +61,10 @@ pub fn FeatureLibraryPanel(
     selected_feature: RwSignal<Option<usize>>,
     libraries: RwSignal<Vec<LibraryRevision>>,
     on_keep: Callback<FeatureLibrary, Result<(), String>>,
-    on_commit: Callback<(String, Vec<Operation>), Result<(), String>>,
+    info: Memo<SourceInfo>,
+    epoch: RwSignal<u64>,
+    locked: Memo<bool>,
+    on_commit: Callback<(EventBinding, Vec<Operation>), Result<(), String>>,
     selection: RwSignal<Option<(usize, usize)>>,
 ) -> impl IntoView {
     let name = RwSignal::new("My features".to_string());
@@ -94,6 +102,9 @@ pub fn FeatureLibraryPanel(
     Effect::new(move |_| {
         let _ = (
             molecule.with(Molecule::revision),
+            info.get(),
+            epoch.get(),
+            locked.get(),
             current.get(),
             mismatches.get(),
             comparisons.get(),
@@ -247,6 +258,8 @@ pub fn FeatureLibraryPanel(
         };
         let source = molecule.get_untracked();
         let revision = source.revision();
+        let captured_event = info.get_untracked().binding;
+        let captured_epoch = epoch.get_untracked();
         let lib_revision = lib.revision();
         let id = generation.get_untracked().wrapping_add(1);
         generation.set(id);
@@ -266,7 +279,12 @@ pub fn FeatureLibraryPanel(
                 id,
             )
             .await;
-            if !alive.load(Ordering::Relaxed) || generation.get_untracked() != id {
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != id
+                || info.get_untracked().binding != captured_event
+                || epoch.get_untracked() != captured_epoch
+                || locked.get_untracked()
+            {
                 return;
             }
             busy.set(false);
@@ -288,60 +306,28 @@ pub fn FeatureLibraryPanel(
             }
         });
     };
-    let apply_alive = alive;
-    let apply = Callback::new(move |(): ()| {
-        let (Some(lib), Some(computed)) = (library.get_untracked(), report.get_untracked()) else {
-            return;
-        };
-        let ids = selected.get_untracked().into_iter().collect::<Vec<_>>();
-        if ids.is_empty() {
-            return;
-        }
-        let source = molecule.get_untracked();
-        let revision = source.revision();
-        let id = generation.get_untracked().wrapping_add(1);
-        generation.set(id);
-        busy.set(true);
-        status.set("Rechecking selected proposals…".into());
-        let alive = apply_alive.clone();
-        spawn_local(async move {
-            let action = Operation::ApplyFeatureLibrary {
-                library: lib.as_ref().clone(),
-                report: computed.as_ref().clone(),
-                selected: ids.clone(),
-            };
-            let result = analyze(
-                AnalysisJob::ApplyFeatureLibrary {
-                    molecule: source,
-                    library: lib.as_ref().clone(),
-                    report: computed.as_ref().clone(),
-                    selected: ids,
-                },
-                revision.clone(),
-                id,
-            )
-            .await;
-            if !alive.load(Ordering::Relaxed) || generation.get_untracked() != id {
-                return;
-            }
-            busy.set(false);
-            match result {
-                Ok(AnalysisResult::AnnotatedDocument(_)) => {
-                    match on_commit.run((revision, vec![action])) {
-                        Ok(()) => {
-                            report.set(None);
-                            selected.set(BTreeSet::new());
-                            status.set("Selected annotations applied. Inferred biological annotations remain marked for review.".into());
-                        }
-                        Err(error) => status.set(error),
-                    }
-                }
-                Ok(_) => status.set("Unexpected annotation-apply response.".into()),
-                Err(error) => status.set(error),
-            }
-        });
+    let merge_input = Memo::new(move |_| {
+        let mut settings = selected.get().into_iter().collect::<Vec<_>>();
+        settings.extend([
+            current.get(),
+            mismatches.get(),
+            comparisons.get(),
+            maximum.get(),
+            both.get().to_string(),
+        ]);
+        (generation.get(), settings)
     });
-    view! {<section class="feature-library-panel"><h2>"Feature libraries"</h2><p class="helper">"Build templates from your own annotations, then search another document on both strands and across circular origins. Proposals show identity and ambiguity; adding them never establishes a cloning verification result."</p>
+    let prepare_merge = Callback::new(move |()| -> Result<(merge::Source, Vec<String>), String> {
+        let lib = library.get_untracked().ok_or("Choose a library first.")?;
+        let report = report.get_untracked().ok_or("Scan the library first.")?;
+        let source =
+            merge::Source::from_library(&lib, &report).map_err(|error| error.to_string())?;
+        Ok((
+            source,
+            selected.get_untracked().into_iter().collect::<Vec<_>>(),
+        ))
+    });
+    view! {<section class="feature-library-panel"><h2>"Feature libraries"</h2><AttributionInspection molecule selected_feature/><p class="helper">"Build templates from your own annotations, then search another document on both strands and across circular origins. Proposals show identity and ambiguity; adding them never establishes a cloning verification result."</p>
         <label>"Library revision"<select aria-label="Feature library revision" prop:value=move||current.get() on:change=move|e|current.set(event_target_value(&e))><option value="">"Choose a library"</option>{move||libraries.get().into_iter().map(|lib|{let revision=lib.revision;let lib=lib.library;view!{<option value=revision.clone()>{format!("{} · v{} · {} entries · {}",lib.name,lib.version,lib.entries.len(),revision.chars().take(10).collect::<String>())}</option>}}).collect_view()}</select></label>
         <details><summary>"Create a library"</summary><label>"Library name"<input aria-label="Feature library name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Library version"<input aria-label="Feature library version" prop:value=move||version.get() on:input=move|e|version.set(event_target_value(&e))/></label><button class="button secondary full" on:click=create>"Create feature library"</button></details>
         <button class="button secondary full" disabled=move||library.get().is_none()||selected_feature.get().is_none() on:click=add>"Add selected annotation to library"</button>
@@ -349,7 +335,7 @@ pub fn FeatureLibraryPanel(
         {move||library.get().map(|lib|{let count=lib.entries.len();let start=entry_page.get().min(count.saturating_sub(1)/100)*100;view!{<p class="helper">{format!("{} retained entries. Library revision {}",count,current.get())}</p><ul class="template-list">{lib.entries.iter().skip(start).take(100).map(|entry|view!{<li>{format!("{} · {} bases · {}",entry.name,entry.sequence.len(),entry.kind)}</li>}).collect_view()}</ul><Show when=move||{count>100}><div class="annotation-pages"><button class="button secondary" disabled=move||entry_page.get()==0 on:click=move|_|entry_page.update(|page|*page=page.saturating_sub(1))>"Previous library entries"</button><button class="button secondary" disabled=move||{(entry_page.get()+1)*100>=count} on:click=move|_|entry_page.update(|page|*page+=1)>"Next library entries"</button></div></Show>}})}
         <details><summary>"Import or export library JSON"</summary><button class="button secondary" on:click=move|_|if let Some(element)=input.get(){element.click();}>"Choose feature library file"</button><input node_ref=input type="file" accept=".json,.cg2features" style="display:none" on:change=read/><textarea aria-label="Feature library JSON" rows="6" prop:value=move||json.get() on:input=move|e|json.set(event_target_value(&e))></textarea><button class="button secondary" on:click=import>"Import feature library JSON"</button><button class="button secondary" disabled=move||library.get().is_none() on:click=move|_|if let Some(lib)=library.get_untracked(){match feature_library::save_library(lib.as_ref()){Ok(bytes)=>crate::io::download::download_with_completion("feature-library.cg2features","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}}>"Download feature library"</button></details>
         <h3>"Automatic annotation"</h3><p class="helper">"Searches whole contiguous entry templates. This does not search partial homology or splice alignments. Degenerate-compatible bases are distinguished from concrete matches."</p><label>"Allowed mismatches"<input aria-label="Feature library mismatches" type="number" min="0" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Comparison budget"<input aria-label="Feature library comparison budget" type="number" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum proposals"<input aria-label="Feature library maximum proposals" type="number" prop:value=move||maximum.get() on:input=move|e|maximum.set(event_target_value(&e))/></label><label class="checkbox-label"><input aria-label="Feature library both orientations" type="checkbox" prop:checked=move||both.get() on:change=move|e|both.set(event_target::<web_sys::HtmlInputElement>(&e).checked())/>"Both orientations"</label><button class="button primary full" disabled=move||busy.get()||library.get().is_none() on:click=scan>"Search feature library"</button><p class="feature-library-status" role="status">{move||status.get()}</p>
-        {move||report.get().map(|computed|{let for_json=computed.clone();let count=computed.hits.len();let effective=page.get().min(count.saturating_sub(1)/100);view!{<section class="feature-library-report"><h3>{format!("{} annotation proposals",count)}</h3><p>{format!("Complete: {} · {} comparisons",computed.complete,computed.comparisons)}</p><details class="annotation-evidence"><summary>"Search model and limits"</summary><ul>{computed.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></details>{computed.hits.iter().skip(effective*100).take(100).cloned().map(|hit|{let id=hit.id;let checkbox=id.clone();let loc=collagene_model::annotations::insdc::location_text(&hit.location).unwrap_or_else(|_|"unresolved".into());let start=hit.start;let end=(hit.start+hit.length).min(molecule.with_untracked(|m|m.sequence.len()));view!{<article class="library-hit"><label class="checkbox-label"><input type="checkbox" aria-label=format!("Select library proposal {id}") disabled=hit.already_annotated prop:checked=move||selected.with(|ids|ids.contains(&checkbox)) on:change=move|e|{let checked=event_target::<web_sys::HtmlInputElement>(&e).checked();selected.update(|ids|if checked{ids.insert(id.clone());}else{ids.remove(&id);});}/><strong>{hit.feature.label().to_string()}</strong></label><button class="text-tool" on:click=move|_|{selected_feature.set(None);selection.set(Some((start,end)));}>{loc}</button><p>{format!("Identity {:.2}–{:.2}% · coverage {:.2}% · {} mismatches · {} ambiguous-compatible bases{}",hit.identity_lower*100.,hit.identity_upper*100.,hit.coverage*100.,hit.mismatches,hit.compatible_ambiguous,if hit.already_annotated{" · already annotated"}else{""})}</p><p class="helper">"Proposed annotation · review required"</p><details class="annotation-evidence"><summary>"Match evidence"</summary><ul>{hit.warnings.into_iter().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></details></article>}}).collect_view()}<div class="annotation-pages"><button class="button secondary" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous library proposals"</button><button class="button secondary" disabled=move||{(page.get()+1)*100>=count} on:click=move|_|page.update(|p|*p+=1)>"Next library proposals"</button></div><button class="button primary full" disabled=move||busy.get()||selected.with(BTreeSet::is_empty) on:click=move|_|apply.run(())>"Apply selected library annotations"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(for_json.as_ref()){Ok(bytes)=>crate::io::download::download_with_completion("feature-library-search.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download library search report"</button></section>}})}
+        {move||report.get().map(|computed|{let for_json=computed.clone();let count=computed.hits.len();let effective=page.get().min(count.saturating_sub(1)/100);view!{<section class="feature-library-report"><h3>{format!("{} annotation proposals",count)}</h3><p>{format!("Complete: {} · {} comparisons",computed.complete,computed.comparisons)}</p><details class="annotation-evidence"><summary>"Search model and limits"</summary><ul>{computed.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></details>{computed.hits.iter().skip(effective*100).take(100).cloned().map(|hit|{let id=hit.id;let checkbox=id.clone();let loc=collagene_model::annotations::insdc::location_text(&hit.location).unwrap_or_else(|_|"unresolved".into());let start=hit.start;let end=(hit.start+hit.length).min(molecule.with_untracked(|m|m.sequence.len()));view!{<article class="library-hit"><label class="checkbox-label"><input type="checkbox" aria-label=format!("Select library proposal {id}") prop:checked=move||selected.with(|ids|ids.contains(&checkbox)) on:change=move|e|{let checked=event_target::<web_sys::HtmlInputElement>(&e).checked();selected.update(|ids|if checked{ids.insert(id.clone());}else{ids.remove(&id);});}/><strong>{hit.feature.label().to_string()}</strong></label><button class="text-tool" on:click=move|_|{selected_feature.set(None);selection.set(Some((start,end)));}>{loc}</button><p>{format!("Identity {:.2}–{:.2}% · coverage {:.2}% · {} mismatches · {} ambiguous-compatible bases{}",hit.identity_lower*100.,hit.identity_upper*100.,hit.coverage*100.,hit.mismatches,hit.compatible_ambiguous,if hit.same_label_geometry_hint{" · same label/location; review relationships"}else{""})}</p><p class="helper">"Proposed annotation · review required"</p><details class="annotation-evidence"><summary>"Match evidence"</summary><ul>{hit.warnings.into_iter().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></details></article>}}).collect_view()}<div class="annotation-pages"><button class="button secondary" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous library proposals"</button><button class="button secondary" disabled=move||{(page.get()+1)*100>=count} on:click=move|_|page.update(|p|*p+=1)>"Next library proposals"</button></div><MergeReview molecule info epoch locked input=merge_input prepare=prepare_merge on_commit/><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(for_json.as_ref()){Ok(bytes)=>crate::io::download::download_with_completion("feature-library-search.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download library search report"</button></section>}})}
     </section>}
 }
 
@@ -358,7 +344,11 @@ pub fn AnnotationFilesPanel(
     molecule: Memo<Molecule>,
     source: RwSignal<String>,
     format: RwSignal<collagene_core::formats::annotations::AnnotationFormat>,
-    on_commit: Callback<(String, Vec<Operation>), Result<(), String>>,
+    get_workspace: Callback<(), Result<Workspace, String>>,
+    info: Memo<SourceInfo>,
+    epoch: RwSignal<u64>,
+    locked: Memo<bool>,
+    on_commit: Callback<(EventBinding, Vec<Operation>), Result<(), String>>,
     selection: RwSignal<Option<(usize, usize)>>,
     selected_feature: RwSignal<Option<usize>>,
 ) -> impl IntoView {
@@ -379,6 +369,9 @@ pub fn AnnotationFilesPanel(
     Effect::new(move |_| {
         let _ = (
             molecule.with(Molecule::revision),
+            info.get(),
+            epoch.get(),
+            locked.get(),
             source.with(|_| ()),
             format.get(),
             seqid.get(),
@@ -451,6 +444,8 @@ pub fn AnnotationFilesPanel(
         }
         let source_mol = molecule.get_untracked();
         let revision = source_mol.revision();
+        let captured_event = info.get_untracked().binding;
+        let captured_epoch = epoch.get_untracked();
         let id = generation.get_untracked().wrapping_add(1);
         generation.set(id);
         busy.set(true);
@@ -473,7 +468,12 @@ pub fn AnnotationFilesPanel(
                 id,
             )
             .await;
-            if !alive.load(Ordering::Relaxed) || generation.get_untracked() != id {
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != id
+                || info.get_untracked().binding != captured_event
+                || epoch.get_untracked() != captured_epoch
+                || locked.get_untracked()
+            {
                 return;
             }
             busy.set(false);
@@ -489,60 +489,53 @@ pub fn AnnotationFilesPanel(
             }
         });
     };
-    let apply_alive = alive.clone();
-    let apply = Callback::new(move |(): ()| {
-        let Some(computed) = report.get_untracked() else {
-            return;
-        };
-        let indices = selected.get_untracked().into_iter().collect::<Vec<_>>();
-        if indices.is_empty() {
-            return;
-        }
-        let source_mol = molecule.get_untracked();
-        let revision = source_mol.revision();
-        let id = generation.get_untracked().wrapping_add(1);
-        generation.set(id);
-        busy.set(true);
-        status.set("Rechecking source evidence and selected annotations…".into());
-        let alive = apply_alive.clone();
-        spawn_local(async move {
-            let action = Operation::ImportAnnotations {
-                report: computed.as_ref().clone(),
-                selected: indices.clone(),
-            };
-            let result = analyze(
-                AnalysisJob::ApplyAnnotations {
-                    molecule: source_mol,
-                    report: computed.as_ref().clone(),
-                    selected: indices,
-                },
-                revision.clone(),
-                id,
-            )
-            .await;
-            if !alive.load(Ordering::Relaxed) || generation.get_untracked() != id {
-                return;
-            }
-            busy.set(false);
-            match result {
-                Ok(AnalysisResult::AnnotatedDocument(_)) => {
-                    match on_commit.run((revision, vec![action])) {
-                        Ok(()) => {
-                            report.set(None);
-                            selected.set(BTreeSet::new());
-                            status.set("Selected annotations applied with original source evidence. Undo restores the previous document.".into());
-                        }
-                        Err(error) => status.set(error),
-                    }
-                }
-                Ok(_) => status.set("Unexpected annotation-apply response.".into()),
-                Err(error) => status.set(error),
-            }
+    let merge_input = Memo::new(move |_| {
+        let ids = report.with(|report| {
+            report
+                .as_ref()
+                .map(|report| {
+                    selected
+                        .get()
+                        .iter()
+                        .filter_map(|index| {
+                            report
+                                .proposals
+                                .get(*index)
+                                .map(|proposal| proposal.id.clone())
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
         });
+        let mut settings = ids;
+        settings.push(source.with(|text| blake3::hash(text.as_bytes()).to_hex().to_string()));
+        settings.push(format!("{:?}", format.get()));
+        settings.push(seqid.get());
+        (generation.get(), settings)
+    });
+    let prepare_merge = Callback::new(move |()| -> Result<(merge::Source, Vec<String>), String> {
+        let report = report
+            .get_untracked()
+            .ok_or("Import annotation proposals first.")?;
+        let ids = selected
+            .get_untracked()
+            .into_iter()
+            .map(|index| {
+                report
+                    .proposals
+                    .get(index)
+                    .map(|proposal| proposal.id.clone())
+                    .ok_or_else(|| "A selected proposal is unavailable.".to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let source = merge::Source::from_dataset(&report).map_err(|error| error.to_string())?;
+        Ok((source, ids))
     });
     let export = move |_| {
         let source_mol = molecule.get_untracked();
         let revision = source_mol.revision();
+        let captured_event = info.get_untracked().binding;
+        let captured_epoch = epoch.get_untracked();
         let id = generation.get_untracked().wrapping_add(1);
         generation.set(id);
         busy.set(true);
@@ -561,7 +554,12 @@ pub fn AnnotationFilesPanel(
                 id,
             )
             .await;
-            if !alive.load(Ordering::Relaxed) || generation.get_untracked() != id {
+            if !alive.load(Ordering::Relaxed)
+                || generation.get_untracked() != id
+                || info.get_untracked().binding != captured_event
+                || epoch.get_untracked() != captured_epoch
+                || locked.get_untracked()
+            {
                 return;
             }
             busy.set(false);
@@ -614,6 +612,8 @@ pub fn AnnotationFilesPanel(
         <button class="button primary full" disabled=move||busy.get()||seqid.with(|s|s.trim().is_empty()) on:click=import>"Review annotation import"</button><button class="button secondary full" disabled=move||busy.get()||seqid.with(|s|s.trim().is_empty()) on:click=export>"Export current annotations"</button>
         <p class="annotation-file-status" role="status">{move||status.get()}</p>
         <Show when=move||retained_sources.with(|sources|!sources.is_empty())><details class="retained-annotation-sources"><summary>"Retained original annotation sources"</summary><p class="helper">"These are original input files. Their coordinates may describe an earlier document revision."</p>{move||retained_sources.get().into_iter().map(|hash|{let label=format!("Download retained annotation source {}",hash.chars().take(10).collect::<String>());view!{<button class="button secondary full" on:click=move|_|match collagene_core::formats::annotations::original_annotation_source(&molecule.get_untracked(),&hash){Ok(bytes)=>crate::io::download::download_with_completion("retained-annotations.txt","text/plain",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>{label}</button>}}).collect_view()}</details></Show>
-        {move||report.get().map(|computed|{let original=computed.clone();let for_json=computed.clone();let count=computed.proposals.len();let start=page.get().min(count.saturating_sub(1)/100)*100;view!{<section class="annotation-file-report"><h3>{format!("{} imported annotation proposals",count)}</h3><p>{format!("Reference ID: {} · {}",computed.seqid,computed.reference_revision)}</p><p>{format!("Other sequence IDs: {}",computed.skipped_seqids.join(", "))}</p><ul>{computed.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul><button class="button secondary full" on:click=move|_|selected.update(|indices|indices.extend(start..(start+100).min(count)))>"Select imported annotations on page"</button>{computed.proposals.iter().enumerate().skip(start).take(100).map(|(index,proposal)|{let label=proposal.feature.label().to_string();let location=proposal.feature.location.clone();let location_text=collagene_model::annotations::insdc::location_text(&location).unwrap_or_else(|_|"unresolved".into());let feature=proposal.feature.clone();view!{<article class="annotation-file-proposal"><label class="checkbox-label"><input type="checkbox" aria-label=format!("Select imported annotation {index}") prop:checked=move||selected.with(|indices|indices.contains(&index)) on:change=move|e|{let checked=event_target::<web_sys::HtmlInputElement>(&e).checked();selected.update(|indices|if checked{indices.insert(index);}else{indices.remove(&index);});}/><strong>{label}</strong></label><button class="text-tool" on:click=move|_|{selected_feature.set(None);selection.set(feature.location.spans().first().map(|(a,b,_)|(*a,*b)));}>{location_text}</button><p>{format!("{} · source rows {:?}{}",proposal.feature.kind,proposal.source_rows,if proposal.feature.needs_review{" · review required"}else{""})}</p><ul>{proposal.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></article>}}).collect_view()}<div class="annotation-pages"><button class="button secondary" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous imported annotations"</button><button class="button secondary" disabled=move||{(page.get()+1)*100>=count} on:click=move|_|page.update(|p|*p+=1)>"Next imported annotations"</button></div><button class="button primary full" disabled=move||busy.get()||selected.with(BTreeSet::is_empty) on:click=move|_|apply.run(())>"Apply selected imported annotations"</button><button class="button secondary full" on:click=move|_|match original.original_bytes(){Ok(bytes)=>crate::io::download::download_with_completion("original-annotations.txt","text/plain",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download original annotation source"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(for_json.as_ref()){Ok(bytes)=>crate::io::download::download_with_completion("annotation-import.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download annotation import report"</button></section>}})}
+        {move||report.get().map(|computed|{let original=computed.clone();let for_json=computed.clone();let count=computed.proposals.len();let start=page.get().min(count.saturating_sub(1)/100)*100;view!{<section class="annotation-file-report"><h3>{format!("{} imported annotation proposals",count)}</h3><p>{format!("Reference ID: {} · {}",computed.seqid,computed.reference_revision)}</p><p>{format!("Other sequence IDs: {}",computed.skipped_seqids.join(", "))}</p><ul>{computed.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul><button class="button secondary full" on:click=move|_|selected.update(|indices|indices.extend(start..(start+100).min(count)))>"Select imported annotations on page"</button>{computed.proposals.iter().enumerate().skip(start).take(100).map(|(index,proposal)|{let label=proposal.feature.label().to_string();let location=proposal.feature.location.clone();let location_text=collagene_model::annotations::insdc::location_text(&location).unwrap_or_else(|_|"unresolved".into());let feature=proposal.feature.clone();view!{<article class="annotation-file-proposal"><label class="checkbox-label"><input type="checkbox" aria-label=format!("Select imported annotation {index}") prop:checked=move||selected.with(|indices|indices.contains(&index)) on:change=move|e|{let checked=event_target::<web_sys::HtmlInputElement>(&e).checked();selected.update(|indices|if checked{indices.insert(index);}else{indices.remove(&index);});}/><strong>{label}</strong></label><button class="text-tool" on:click=move|_|{selected_feature.set(None);selection.set(feature.location.spans().first().map(|(a,b,_)|(*a,*b)));}>{location_text}</button><p>{format!("{} · source rows {:?}{}",proposal.feature.kind,proposal.source_rows,if proposal.feature.needs_review{" · review required"}else{""})}</p><ul>{proposal.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul></article>}}).collect_view()}<div class="annotation-pages"><button class="button secondary" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous imported annotations"</button><button class="button secondary" disabled=move||{(page.get()+1)*100>=count} on:click=move|_|page.update(|p|*p+=1)>"Next imported annotations"</button></div><MergeReview molecule info epoch locked input=merge_input prepare=prepare_merge on_commit/><button class="button secondary full" on:click=move|_|match original.original_bytes(){Ok(bytes)=>crate::io::download::download_with_completion("original-annotations.txt","text/plain",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download original annotation source"</button><button class="button secondary full" on:click=move|_|match serde_json::to_vec_pretty(for_json.as_ref()){Ok(bytes)=>crate::io::download::download_with_completion("annotation-import.json","application/json",&bytes,move|result|{if status.try_get_untracked().is_none(){return;}if let Err(error)=result {status.set(error)}}),Err(error)=>status.set(error.to_string())}>"Download annotation import report"</button></section>}})}
+        <AttributionInspection molecule selected_feature/>
+        <donor::DonorAnnotations molecule info epoch locked get_workspace on_commit/>
     </section>}
 }

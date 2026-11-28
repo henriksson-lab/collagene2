@@ -297,6 +297,18 @@ impl DocumentHistory {
                 "invalid supplemental source event identity".into(),
             ));
         }
+        let mut source_events = source_events.to_vec();
+        for action in &actions {
+            action.preflight()?;
+            if let Some(event) = action.source_event() {
+                if !source_events.contains(&event.event_id) {
+                    if source_events.len() >= 128 {
+                        return Err(Error::TooLarge);
+                    }
+                    source_events.push(event.event_id.clone());
+                }
+            }
+        }
         self.ensure_current()?;
         let source = self.binding();
         let next = ReferenceEdit::apply_all(&self.molecule, &actions)?;
@@ -315,7 +327,7 @@ impl DocumentHistory {
             actions,
             supplemental_sources,
         };
-        self.commit_result(next, operation, source_events, transition)
+        self.commit_result(next, operation, &source_events, transition)
     }
     /// Retain an actual named computational producer, without claiming a
     /// reference edit or treating its descriptive label as a replay recipe.
@@ -370,7 +382,15 @@ impl DocumentHistory {
         )?;
         next.validate()?;
         let revision = next.revision();
-        if revision == self.node(&self.head)?.event.revision && source_events.is_empty() {
+        let retains_merge_decisions = matches!(
+            &transition,
+            Transition::ReferenceEdit { actions, .. }
+                if actions.iter().any(|action| matches!(action, ReferenceEdit::MergeAnnotations { .. }))
+        );
+        if revision == self.node(&self.head)?.event.revision
+            && source_events.is_empty()
+            && !retains_merge_decisions
+        {
             return Ok(());
         }
         let mut parents = vec![self.head.clone()];

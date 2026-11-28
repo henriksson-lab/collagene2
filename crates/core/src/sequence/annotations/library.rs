@@ -13,7 +13,7 @@ pub const MAX_SCAN_HITS: usize = 10_000;
 pub const MAX_ENTRY_QUALIFIERS: usize = 500;
 pub const MAX_QUALIFIER_VALUE_BYTES: usize = 1_048_576;
 const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/feature-library-1");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/feature-library-2");
 
 fn invalid(message: impl Into<String>) -> Error {
     Error::Format(message.into())
@@ -318,7 +318,7 @@ impl Default for ScanOptions {
     }
 }
 impl ScanOptions {
-    fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         if self.max_mismatches > 1000
             || self.max_comparisons == 0
             || self.max_comparisons > MAX_SCAN_COMPARISONS
@@ -349,7 +349,9 @@ pub struct AnnotationProposal {
     pub identity_lower: f64,
     pub identity_upper: f64,
     pub coverage: f64,
-    pub already_annotated: bool,
+    /// Coarse same-kind/label/resolved-span hint only, not duplicate identity.
+    /// Exact merge relationships use ordered biological paths and qualifiers.
+    pub same_label_geometry_hint: bool,
     pub feature: Feature,
     pub warnings: Vec<String>,
 }
@@ -513,39 +515,31 @@ fn proposal(
     if !qualifiers.iter().any(|(key, _)| key == "label") {
         qualifiers.insert(0, ("label".into(), Some(entry.name.clone())));
     }
-    for (key, value) in [
-        ("library_entry_id", entry.id.clone()),
-        ("library_entry_revision", entry.revision.clone()),
-        ("library_revision", report.library_revision.clone()),
-        ("library_name", library.name.clone()),
-        ("library_version", library.version.clone()),
-        (
-            "library_source_revision",
-            entry.source.document_revision.clone(),
-        ),
-        (
-            "library_source_feature",
-            entry.source.feature_index.to_string(),
-        ),
-        ("library_proposal_id", id.clone()),
-        ("library_concrete_matches", concrete.to_string()),
-        ("library_ambiguous_columns", ambiguous.to_string()),
-        ("library_mismatches", mismatches.to_string()),
-        ("library_template_length", length.to_string()),
-        (
-            "library_match_model",
-            "whole-template ungapped; function unverified".into(),
-        ),
-    ] {
-        qualifiers.push((key.into(), Some(value)));
-    }
-    let feature = Feature {
+    let mut feature = Feature {
         kind: entry.kind.clone(),
         location: location.clone(),
         qualifiers,
         needs_review: true,
     };
-    let already_annotated = feature_key(&feature).is_some_and(|key| existing.contains(&key));
+    let contribution = super::merge::Contribution::new(
+        super::merge::SourcePin::Library {
+            library_revision: report.library_revision.clone(),
+            library_name: library.name.clone(),
+            library_version: library.version.clone(),
+            entry_id: entry.id.clone(),
+            entry_revision: entry.revision.clone(),
+            source_revision: entry.source.document_revision.clone(),
+            source_feature_index: entry.source.feature_index,
+            proposal_id: id.clone(),
+            concrete_matches: concrete,
+            compatible_ambiguous: ambiguous,
+            mismatches,
+            template_length: length,
+        },
+        &feature,
+    )?;
+    super::merge::Ledger::add_to(&mut feature, &contribution)?;
+    let same_label_geometry_hint = feature_key(&feature).is_some_and(|key| existing.contains(&key));
     Ok(AnnotationProposal {
         id,
         entry_id: entry.id.clone(),
@@ -560,7 +554,7 @@ fn proposal(
         identity_lower: concrete as f64 / length as f64,
         identity_upper: (concrete + ambiguous) as f64 / length as f64,
         coverage: 1.,
-        already_annotated,
+        same_label_geometry_hint,
         feature,
         warnings,
     })
@@ -571,6 +565,29 @@ pub fn scan(
     molecule: &Molecule,
     library: &FeatureLibrary,
     options: &ScanOptions,
+) -> Result<ScanReport, Error> {
+    scan_native(molecule, library, options, options.max_comparisons)
+}
+/// The same scientific scan with an enclosing job's remaining actual-comparison
+/// allowance. Declared options and proposal identities remain unchanged.
+pub(crate) fn scan_with_comparisons(
+    molecule: &Molecule,
+    library: &FeatureLibrary,
+    options: &ScanOptions,
+    available: usize,
+) -> Result<ScanReport, Error> {
+    scan_native(
+        molecule,
+        library,
+        options,
+        available.min(options.max_comparisons),
+    )
+}
+fn scan_native(
+    molecule: &Molecule,
+    library: &FeatureLibrary,
+    options: &ScanOptions,
+    comparison_limit: usize,
 ) -> Result<ScanReport, Error> {
     molecule.validate()?;
     library.validate()?;
@@ -585,7 +602,18 @@ pub fn scan(
         b"collagene-feature-scan-document-size\0",
         MAX_REPORT_BYTES,
     )?;
-    let mut report=ScanReport{source_revision:molecule.revision(),library_revision:library.revision(),options:options.clone(),engine_version:ENGINE_VERSION.into(),complete:true,comparisons:0,hits:vec![],warnings:vec!["Only whole-template, ungapped matches are searched. Partial/homology alignments, indels and functional validation are outside this matching model. Imported source revisions are provenance claims, not authentication.".into()]};
+    let mut report = ScanReport {
+        source_revision: molecule.revision(),
+        library_revision: library.revision(),
+        options: options.clone(),
+        engine_version: ENGINE_VERSION.into(),
+        complete: true,
+        comparisons: 0,
+        hits: vec![],
+        warnings: vec![
+            "Only whole-template, ungapped matches are searched. Partial/homology alignments, indels and functional validation are outside this matching model. Imported source revisions are provenance claims, not authentication.".into(),
+        ],
+    };
     let existing = molecule
         .features
         .iter()
@@ -618,7 +646,7 @@ pub fn scan(
             {
                 let (mut concrete, mut ambiguous, mut mismatches) = (0, 0, 0);
                 for (offset, query) in template.as_str().bytes().enumerate() {
-                    if report.comparisons == options.max_comparisons {
+                    if report.comparisons == comparison_limit {
                         report.complete = false;
                         report.warnings.push("Base-comparison budget exhausted. Unfinished placements and all later work were not reported as matches.".into());
                         break 'entries;
@@ -701,122 +729,4 @@ pub fn scan(
     }
     debug_assert!(json_size(&report, MAX_REPORT_BYTES).is_ok());
     Ok(report)
-}
-/// Apply selected review-required annotations atomically, with full reconstruction of
-/// match evidence. Imported reports/proposals cannot authorize arbitrary annotations.
-pub fn apply_selected(
-    molecule: &Molecule,
-    library: &FeatureLibrary,
-    report: &ScanReport,
-    selected: &[String],
-) -> Result<Molecule, Error> {
-    apply_selected_native(molecule, library, report, selected, false).map(|(molecule, _)| molecule)
-}
-pub(crate) fn apply_selected_with_projection(
-    molecule: &Molecule,
-    library: &FeatureLibrary,
-    report: &ScanReport,
-    selected: &[String],
-) -> Result<(Molecule, crate::sequence::editing::AnnotationIdentity), Error> {
-    let (molecule, identity) = apply_selected_native(molecule, library, report, selected, true)?;
-    Ok((
-        molecule,
-        identity.ok_or_else(|| invalid("native annotation receipt unavailable"))?,
-    ))
-}
-fn apply_selected_native(
-    molecule: &Molecule,
-    library: &FeatureLibrary,
-    report: &ScanReport,
-    selected: &[String],
-    capture: bool,
-) -> Result<
-    (
-        Molecule,
-        Option<crate::sequence::editing::AnnotationIdentity>,
-    ),
-    Error,
-> {
-    molecule.validate()?;
-    library.validate()?;
-    report.options.validate()?;
-    if report.hits.len() > MAX_SCAN_HITS {
-        return Err(Error::TooLarge);
-    }
-    for hit in &report.hits {
-        hit.location.validate(molecule.sequence.len())?;
-        hit.feature.location.validate(molecule.sequence.len())?;
-    }
-    if selected.is_empty() || selected.len() > MAX_SCAN_HITS {
-        return Err(invalid("select one or more bounded annotation proposals"));
-    }
-    if report.source_revision != molecule.revision()
-        || report.library_revision != library.revision()
-        || report.engine_version != ENGINE_VERSION
-    {
-        return Err(invalid(
-            "annotation proposal source/library/engine is stale",
-        ));
-    }
-    digest(report, b"collagene-feature-report-size\0", MAX_REPORT_BYTES)?;
-    let rebuilt = scan(molecule, library, &report.options)?;
-    if *report != rebuilt {
-        return Err(invalid(
-            "annotation report disagrees with reconstructed matches; imported status or edited proposals are not authority",
-        ));
-    }
-    let proposals = rebuilt
-        .hits
-        .iter()
-        .map(|hit| (hit.id.as_str(), hit))
-        .collect::<std::collections::BTreeMap<_, _>>();
-    let mut seen = BTreeSet::new();
-    let mut existing = molecule
-        .features
-        .iter()
-        .filter_map(feature_key)
-        .collect::<BTreeSet<_>>();
-    let mut result = molecule.clone();
-    let mut identity = capture
-        .then(|| crate::sequence::editing::AnnotationIdentity::retained(molecule.features.len()));
-    for id in selected {
-        if !seen.insert(id) {
-            return Err(invalid("duplicate selected annotation proposal"));
-        }
-        let proposal = proposals
-            .get(id.as_str())
-            .copied()
-            .ok_or_else(|| invalid("selected annotation proposal is unavailable"))?;
-        if !existing.insert(
-            feature_key(&proposal.feature)
-                .ok_or_else(|| invalid("proposal has no exact feature geometry"))?,
-        ) {
-            return Err(invalid(
-                "selected feature already exists at this location/orientation; existing annotations were not overwritten",
-            ));
-        }
-        if let Some(identity) = &mut identity {
-            identity.added.push(result.features.len());
-        }
-        result.features.push(proposal.feature.clone());
-    }
-    result.metadata.insert(
-        "feature_library:source_revision".into(),
-        report.source_revision.clone(),
-    );
-    result.metadata.insert(
-        "feature_library:library_revision".into(),
-        report.library_revision.clone(),
-    );
-    result.metadata.insert(
-        "feature_library:scan_revision".into(),
-        digest(report, b"collagene-feature-report-v1\0", MAX_REPORT_BYTES)?,
-    );
-    result.metadata.insert(
-        "feature_library:proposal_ids".into(),
-        serde_json::to_string(selected).map_err(|e| invalid(e.to_string()))?,
-    );
-    result.validate()?;
-    crate::protocol::save_document(&result)?;
-    Ok((result, identity))
 }

@@ -1,4 +1,5 @@
 use crate::session::presentation::summary;
+pub mod annotation_merge;
 pub mod reference_edit;
 pub mod sbol_tools;
 pub mod sequence_exchange_tools;
@@ -166,14 +167,7 @@ pub struct FeatureLibraryScan {
     pub library: EvidenceRef,
     pub options: feature_library::ScanOptions,
 }
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct FeatureLibraryApply {
-    pub document: DocumentRef,
-    pub library: EvidenceRef,
-    pub scan: EvidenceRef,
-    pub selected: Vec<String>,
-}
+
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AnnotationImport {
@@ -183,13 +177,7 @@ pub struct AnnotationImport {
     pub format: annotation_formats::AnnotationFormat,
     pub seqid: String,
 }
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AnnotationApply {
-    pub document: DocumentRef,
-    pub dataset: EvidenceRef,
-    pub selected: Vec<usize>,
-}
+
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct AnnotationExport {
@@ -239,6 +227,14 @@ impl CollageneServer {
         &self,
         Parameters(args): Parameters<reference_edit::Request>,
     ) -> Result<CallToolResult, ErrorData> {
+        if matches!(
+            &args.operation,
+            collagene_core::documents::reference_edit::Operation::MergeAnnotations { .. }
+        ) {
+            return Err(bad(
+                "Use apply_annotation_merge with immutable session source references; raw merge payloads do not resolve source ownership.",
+            ));
+        }
         let server = self.clone();
         self.compute(move || {
             let source = {
@@ -497,22 +493,12 @@ impl CollageneServer {
             let (document,library)={let store=server.session.store.lock().unwrap();(store.document(&args.document)?.clone(),store.feature_library(&args.library)?.clone())};
             let report=feature_library::scan(&document,&library,&args.options).map_err(bad)?;
             let text=serde_json::to_string(&report).map_err(bad)?;let id=blake3::hash(text.as_bytes()).to_hex().to_string();
-            let result=json!({"document":args.document,"library":args.library,"scan":{"id":id,"revision":id},"source_revision":report.source_revision,"library_revision":report.library_revision,"engine_version":report.engine_version,"complete":report.complete,"comparisons":report.comparisons,"options":report.options,"hit_count":report.hits.len(),"hits":report.hits.iter().take(100).map(|hit|json!({"id":hit.id,"entry_id":hit.entry_id,"entry_revision":hit.entry_revision,"start":hit.start,"length":hit.length,"reverse":hit.reverse,"concrete_matches":hit.concrete_matches,"compatible_ambiguous":hit.compatible_ambiguous,"mismatches":hit.mismatches,"identity_lower":hit.identity_lower,"identity_upper":hit.identity_upper,"coverage":hit.coverage,"already_annotated":hit.already_annotated,"name":hit.feature.label().chars().take(256).collect::<String>(),"kind":hit.feature.kind,"needs_review":hit.feature.needs_review})).collect::<Vec<_>>(),"hits_truncated":report.hits.len()>100,"warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),"warnings_truncated":report.warnings.len()>100,"artifact_id":id,"applied":false});
+            let result=json!({"document":args.document,"library":args.library,"scan":{"id":id,"revision":id},"source_revision":report.source_revision,"library_revision":report.library_revision,"engine_version":report.engine_version,"complete":report.complete,"comparisons":report.comparisons,"options":report.options,"hit_count":report.hits.len(),"hits":report.hits.iter().take(100).map(|hit|json!({"id":hit.id,"entry_id":hit.entry_id,"entry_revision":hit.entry_revision,"start":hit.start,"length":hit.length,"reverse":hit.reverse,"concrete_matches":hit.concrete_matches,"compatible_ambiguous":hit.compatible_ambiguous,"mismatches":hit.mismatches,"identity_lower":hit.identity_lower,"identity_upper":hit.identity_upper,"coverage":hit.coverage,"same_label_geometry_hint":hit.same_label_geometry_hint,"name":hit.feature.label().chars().take(256).collect::<String>(),"kind":hit.feature.kind,"needs_review":hit.feature.needs_review})).collect::<Vec<_>>(),"hits_truncated":report.hits.len()>100,"warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),"warnings_truncated":report.warnings.len()>100,"artifact_id":id,"applied":false});
             let mut store=server.session.store.lock().unwrap();let new_report=!store.feature_scans.contains_key(&id);let new_artifact=!store.artifacts.contains_key(&id);
             if new_report&&store.feature_scans.len()>=MAX_ITEMS{return Err(bad("at most 128 feature scans"));}if new_artifact&&store.artifacts.len()>=MAX_ITEMS{return Err(bad("at most 128 artifacts"));}
             let bytes=text.len().checked_mul(usize::from(new_report)+usize::from(new_artifact)).ok_or_else(||bad("session accounting overflow"))?;store.reserve(bytes)?;
             store.feature_scans.entry(id.clone()).or_insert(report);store.artifacts.entry(id).or_insert(Artifact{data:ArtifactData::Text(text),mime_type:"application/json",encoding:"utf-8",filename:"feature-library-scan.json"});output(result)
         }).await
-    }
-    #[tool(
-        description = "Apply explicitly selected proposal IDs from an immutable feature-library scan to a NEW session document. Both exact library and document revisions are required; the core reconstructs the scan and rejects tampering, stale evidence and duplicates. Inferred annotations require review. Original documents and physical chemistry remain unchanged."
-    )]
-    pub(crate) async fn apply_feature_library(
-        &self,
-        Parameters(args): Parameters<FeatureLibraryApply>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let server = self.clone();
-        self.compute(move||{let (document,library,report)={let store=server.session.store.lock().unwrap();(store.document(&args.document)?.clone(),store.feature_library(&args.library)?.clone(),store.feature_scan(&args.scan)?.clone())};let annotated=feature_library::apply_selected(&document,&library,&report,&args.selected).map_err(bad)?;server.session.insert_documents(vec![annotated],vec!["Feature proposals installed only in a new immutable document; inferred annotations still require review.".into()])}).await
     }
     #[tool(
         description = "Parse GFF3, GTF or BED annotation evidence using an explicit source seqid and an exact imported reference revision. Coordinate/phase/strand/compound semantics are checked by the embedded parser; unrelated seqids remain explicit. Returns an immutable proposal dataset. No existing annotations are changed; <=8MiB source."
@@ -532,16 +518,6 @@ impl CollageneServer {
             let result=json!({"dataset":{"id":id,"revision":id},"document":args.document,"format":report.format,"seqid":report.seqid,"source_blake3":report.source_blake3,"reference_revision":report.reference_revision,"proposal_count":report.proposals.len(),"proposals":report.proposals.iter().take(100).enumerate().map(|(i,p)|json!({"index":i,"id":p.id,"name":p.feature.label().chars().take(256).collect::<String>(),"kind":p.feature.kind,"needs_review":p.feature.needs_review,"spans":p.feature.location.spans().iter().take(20).collect::<Vec<_>>(),"spans_truncated":p.feature.location.spans().len()>20,"source_rows":p.source_rows.iter().take(100).collect::<Vec<_>>(),"source_rows_truncated":p.source_rows.len()>100})).collect::<Vec<_>>(),"proposals_truncated":report.proposals.len()>100,"skipped_seqids":report.skipped_seqids.iter().take(100).map(|s|s.chars().take(256).collect::<String>()).collect::<Vec<_>>(),"skipped_seqids_truncated":report.skipped_seqids.len()>100,"warnings":report.warnings.iter().take(100).map(|w|w.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),"warnings_truncated":report.warnings.len()>100,"applied":false});
             let mut store=server.session.store.lock().unwrap();if !store.annotation_datasets.contains_key(&id){if store.annotation_datasets.len()>=MAX_ITEMS{return Err(bad("at most 128 annotation datasets"));}store.reserve(bytes.len())?;store.annotation_datasets.insert(id,report);}output(result)
         }).await
-    }
-    #[tool(
-        description = "Apply explicitly selected indices from an immutable GFF3/GTF/BED dataset to a NEW document at its exact bound reference revision. Revalidates retained source and selected coordinates; no silent replacement, external write or inherited scientific verification."
-    )]
-    pub(crate) async fn apply_annotations(
-        &self,
-        Parameters(args): Parameters<AnnotationApply>,
-    ) -> Result<CallToolResult, ErrorData> {
-        let server = self.clone();
-        self.compute(move||{let (document,report)={let store=server.session.store.lock().unwrap();(store.document(&args.document)?.clone(),store.annotation_dataset(&args.dataset)?.clone())};let annotated=annotation_formats::apply_annotations(&document,&report,&args.selected).map_err(bad)?;server.session.insert_documents(vec![annotated],vec!["Selected source annotations appended in a new immutable document; source evidence is retained and no cloning verification is implied.".into()])}).await
     }
     #[tool(
         description = "Export supported annotations from an exact document as GFF3, GTF or BED with an explicit output seqid. Phase, discontinuous/reverse locations and format losses follow the embedded strict profile; unsupported semantics fail rather than being invented. Full text artifact includes loss diagnostics separately."

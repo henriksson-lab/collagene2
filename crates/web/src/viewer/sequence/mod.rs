@@ -27,3 +27,6 @@ pub(crate) mod sequence_edit_transition;
 pub(crate) mod sequence_geometry;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod sequence_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+mod annotation_merge;

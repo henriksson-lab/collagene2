@@ -133,14 +133,14 @@ async fn feature_library_preserves_coordinate_source_evidence_but_never_copies_i
         stale["revision"] = json!("0".repeat(64));
         reject(
             &client,
-            "apply_feature_library",
-            json!({"document":stale,"library":library,"scan":scan["scan"],"selected":[hit.id]}),
+            "apply_annotation_merge",
+            json!({"document":stale,"source":{"Library":{"library":library,"scan":scan["scan"]}},"selections":[{"proposal_id":hit.id,"decision":"Append"}]}),
         )
         .await;
         let applied = call(
             &client,
-            "apply_feature_library",
-            json!({"document":target,"library":library,"scan":scan["scan"],"selected":[hit.id]}),
+            "apply_annotation_merge",
+            json!({"document":target,"source":{"Library":{"library":library,"scan":scan["scan"]}},"selections":[{"proposal_id":hit.id,"decision":"Append"}]}),
         )
         .await;
         let new_ref = document(&applied);

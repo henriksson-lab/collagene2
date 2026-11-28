@@ -7,7 +7,10 @@ use collagene_core::{
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    sequence::annotations::library::{self as feature_library, FeatureLibrary, ScanOptions},
+    sequence::annotations::{
+        library::{self as feature_library, FeatureLibrary, ScanOptions},
+        merge::{self, Decision, Selection, Source},
+    },
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn source() -> Molecule {
@@ -31,10 +34,31 @@ fn library() -> FeatureLibrary {
 fn linear_target() -> Molecule {
     Molecule::dna("reference", "TTTCGATACGGG", Topology::Linear).unwrap()
 }
+fn merge_request(molecule: &Molecule, source: Source, ids: Vec<String>) -> merge::Request {
+    merge::Request {
+        schema_version: 1,
+        target_revision: molecule.revision(),
+        source,
+        selections: ids
+            .into_iter()
+            .map(|proposal_id| Selection {
+                proposal_id,
+                decision: Decision::Append,
+            })
+            .collect(),
+        limits: Default::default(),
+    }
+}
 fn execute(molecule: &Molecule, job: AnalysisJob) -> Response {
     let request = Request {
         id: 823,
-        revision: molecule.revision(),
+        revision: match &job {
+            AnalysisJob::PreviewAnnotationMerge { molecule, request }
+            | AnalysisJob::ApplyAnnotationMerge { molecule, request } => {
+                merge::revision(molecule, request).unwrap()
+            }
+            _ => molecule.revision(),
+        },
         job,
     };
     let bytes = protocol::request::Request::encode(&request).unwrap();
@@ -85,19 +109,18 @@ fn worker_scan_and_selected_apply_reconstruct_actual_source_bound_annotation() {
         (1., 1., 1.)
     );
     let selected = vec![hit.id.clone()];
-    let AnalysisResult::AnnotatedDocument(annotated) = execute(
+    let AnalysisResult::AnnotationMergeApplied(applied) = execute(
         &molecule,
-        AnalysisJob::ApplyFeatureLibrary {
+        AnalysisJob::ApplyAnnotationMerge {
             molecule: molecule.clone(),
-            library,
-            report,
-            selected,
+            request: merge_request(&molecule, Source::Library { library, report }, selected),
         },
     )
     .result
     else {
         panic!("not applied")
     };
+    let annotated = applied.molecule;
     assert_eq!(annotated.sequence, molecule.sequence);
     assert_eq!(annotated.features.len(), 1);
     assert_eq!(annotated.features[0].location.spans(), vec![(3, 9, false)]);
@@ -117,11 +140,16 @@ fn selected_apply_rejects_tampered_report_and_old_reference_without_partial_edit
     assert!(matches!(
         execute(
             &molecule,
-            AnalysisJob::ApplyFeatureLibrary {
+            AnalysisJob::ApplyAnnotationMerge {
                 molecule: molecule.clone(),
-                library: library.clone(),
-                report,
-                selected: vec![id]
+                request: merge_request(
+                    &molecule,
+                    Source::Library {
+                        library: library.clone(),
+                        report
+                    },
+                    vec![id]
+                ),
             }
         )
         .result,
@@ -130,19 +158,31 @@ fn selected_apply_rejects_tampered_report_and_old_reference_without_partial_edit
     let report = feature_library::scan(&molecule, &library, &ScanOptions::default()).unwrap();
     let changed = molecule.replace(0, 1, "A").unwrap();
     let selected = vec![report.hits[0].id.clone()];
-    assert!(matches!(
-        execute(
-            &changed,
-            AnalysisJob::ApplyFeatureLibrary {
-                molecule: changed.clone(),
-                library,
-                report,
-                selected
-            }
-        )
-        .result,
-        AnalysisResult::Error(_)
-    ));
+    let original_context = merge::revision(
+        &molecule,
+        &merge_request(
+            &molecule,
+            Source::Library {
+                library: library.clone(),
+                report: report.clone(),
+            },
+            selected.clone(),
+        ),
+    )
+    .unwrap();
+    let stale = Request {
+        id: 824,
+        revision: original_context,
+        job: AnalysisJob::ApplyAnnotationMerge {
+            molecule: changed.clone(),
+            request: merge_request(&changed, Source::Library { library, report }, selected),
+        },
+    };
+    assert!(
+        stale.encode().is_err(),
+        "stale source pins refuse outbound publication"
+    );
+    assert!(changed.features.is_empty());
     assert!(molecule.features.is_empty());
 }
 #[test]
@@ -170,18 +210,24 @@ fn explicit_gff_mapping_import_apply_export_preserves_reverse_coordinates_and_ra
         report.proposals[0].feature.location.spans(),
         vec![(2, 6, true)]
     );
-    let AnalysisResult::AnnotatedDocument(annotated) = execute(
+    let AnalysisResult::AnnotationMergeApplied(applied) = execute(
         &molecule,
-        AnalysisJob::ApplyAnnotations {
+        AnalysisJob::ApplyAnnotationMerge {
             molecule: molecule.clone(),
-            report,
-            selected: vec![0],
+            request: merge_request(
+                &molecule,
+                Source::Dataset {
+                    report: report.clone(),
+                },
+                vec![report.proposals[0].id.clone()],
+            ),
         },
     )
     .result
     else {
         panic!("not applied")
     };
+    let annotated = applied.molecule;
     assert_eq!(annotated.sequence, molecule.sequence);
     assert_eq!(annotated.features.len(), 1);
     let AnalysisResult::AnnotationExport(export) = execute(
@@ -226,11 +272,16 @@ fn annotation_jobs_keep_current_selectors_and_reject_unsupported_versions() {
             library: library.clone(),
             options: ScanOptions::default(),
         },
-        AnalysisJob::ApplyFeatureLibrary {
+        AnalysisJob::PreviewAnnotationMerge {
             molecule: molecule.clone(),
-            library,
-            selected: vec![scan.hits[0].id.clone()],
-            report: scan,
+            request: merge_request(
+                &molecule,
+                Source::Library {
+                    library,
+                    report: scan.clone(),
+                },
+                vec![scan.hits[0].id.clone()],
+            ),
         },
         AnalysisJob::ImportAnnotations {
             molecule: molecule.clone(),
@@ -238,10 +289,15 @@ fn annotation_jobs_keep_current_selectors_and_reject_unsupported_versions() {
             format: AnnotationFormat::Bed,
             seqid: "chr1".into(),
         },
-        AnalysisJob::ApplyAnnotations {
+        AnalysisJob::ApplyAnnotationMerge {
             molecule: molecule.clone(),
-            report: annotation,
-            selected: vec![0],
+            request: merge_request(
+                &molecule,
+                Source::Dataset {
+                    report: annotation.clone(),
+                },
+                vec![annotation.proposals[0].id.clone()],
+            ),
         },
         AnalysisJob::ExportAnnotations {
             molecule: molecule.clone(),
@@ -252,7 +308,13 @@ fn annotation_jobs_keep_current_selectors_and_reject_unsupported_versions() {
     for (i, job) in jobs.into_iter().enumerate() {
         let request = Request {
             id: 9,
-            revision: molecule.revision(),
+            revision: match &job {
+                AnalysisJob::PreviewAnnotationMerge { molecule, request }
+                | AnalysisJob::ApplyAnnotationMerge { molecule, request } => {
+                    merge::revision(molecule, request).unwrap()
+                }
+                _ => molecule.revision(),
+            },
             job,
         };
         let bytes = protocol::request::Request::encode(&request).unwrap();
@@ -266,12 +328,14 @@ fn annotation_jobs_keep_current_selectors_and_reject_unsupported_versions() {
         assert!(protocol::execution::process_request(&old).is_err());
         let mut stale = request;
         stale.revision = source().revision();
-        assert!(
-            protocol::execution::process_request(
-                &protocol::request::Request::encode(&stale).unwrap()
-            )
-            .is_err()
-        );
+        if matches!(
+            &stale.job,
+            AnalysisJob::PreviewAnnotationMerge { .. } | AnalysisJob::ApplyAnnotationMerge { .. }
+        ) {
+            assert!(stale.encode().is_err());
+        } else {
+            assert!(protocol::execution::process_request(&stale.encode().unwrap()).is_err());
+        }
     }
 }
 
@@ -302,17 +366,23 @@ fn large_new_job_header_is_rejected_before_its_payload_is_deserialized() {
 
 #[test]
 fn annotated_worker_result_cannot_smuggle_invalid_feature_coordinates() {
-    let mut molecule = linear_target();
-    molecule.features.push(Feature {
-        kind: "misc_feature".into(),
-        location: Location::range(0, 100),
-        qualifiers: vec![],
-        needs_review: true,
-    });
+    let molecule = linear_target();
+    let library = library();
+    let report = feature_library::scan(&molecule, &library, &ScanOptions::default()).unwrap();
+    let request = merge_request(
+        &molecule,
+        Source::Library {
+            library,
+            report: report.clone(),
+        },
+        vec![report.hits[0].id.clone()],
+    );
+    let mut applied = merge::apply(&molecule, &request).unwrap();
+    applied.molecule.features[0].location = Location::range(0, 100);
     let response = Response {
         id: 1,
-        revision: molecule.revision(),
-        result: AnalysisResult::AnnotatedDocument(molecule),
+        revision: merge::revision(&molecule, &request).unwrap(),
+        result: AnalysisResult::AnnotationMergeApplied(applied),
     };
     let payload = postcard::to_allocvec(&response).unwrap();
     let mut envelope = b"CGR\0".to_vec();
@@ -321,4 +391,99 @@ fn annotated_worker_result_cannot_smuggle_invalid_feature_coordinates() {
     envelope.extend(blake3::hash(&payload).as_bytes());
     envelope.extend(payload);
     assert!(protocol::response::Response::decode(&envelope).is_err());
+}
+
+#[test]
+fn merge_context_replies_and_large_prefixes_keep_exact_current_binary_association() {
+    use collagene_core::protocol::schema::WORKER_SCHEMA_VERSION;
+    let molecule = linear_target();
+    let library = library();
+    let report = feature_library::scan(&molecule, &library, &ScanOptions::default()).unwrap();
+    let request = merge_request(
+        &molecule,
+        Source::Library {
+            library,
+            report: report.clone(),
+        },
+        vec![report.hits[0].id.clone()],
+    );
+    let context = merge::revision(&molecule, &request).unwrap();
+    let frame = |magic: &[u8; 4], payload: Vec<u8>| {
+        let mut bytes = magic.to_vec();
+        bytes.extend_from_slice(&WORKER_SCHEMA_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(blake3::hash(&payload).as_bytes());
+        bytes.extend(payload);
+        bytes
+    };
+    for (job, reply_selector) in [
+        (
+            AnalysisJob::PreviewAnnotationMerge {
+                molecule: molecule.clone(),
+                request: request.clone(),
+            },
+            205u32,
+        ),
+        (
+            AnalysisJob::ApplyAnnotationMerge {
+                molecule: molecule.clone(),
+                request: request.clone(),
+            },
+            24u32,
+        ),
+    ] {
+        let current = Request {
+            id: 901,
+            revision: context.clone(),
+            job,
+        };
+        let bytes = current.encode().unwrap();
+        let mut old = bytes.clone();
+        old[4..6].copy_from_slice(&139u16.to_le_bytes());
+        assert!(protocol::execution::process_request(&old).is_err());
+        let output = protocol::execution::process_request(&bytes).unwrap();
+        let ((_, _, tag), _) =
+            postcard::take_from_bytes::<(u32, &str, u32)>(&output[42..]).unwrap();
+        assert_eq!(tag, reply_selector);
+        let mut reply = Response::decode(&output).unwrap();
+        let mut old = output;
+        old[4..6].copy_from_slice(&139u16.to_le_bytes());
+        assert!(Response::decode(&old).is_err());
+        match &mut reply.result {
+            AnalysisResult::AnnotationMergePreview(preview) => {
+                preview.report_revision = "0".repeat(64)
+            }
+            AnalysisResult::AnnotationMergeApplied(applied) => {
+                applied.receipt.product_revision = "0".repeat(64)
+            }
+            _ => panic!("unexpected merge response"),
+        }
+        assert!(
+            Response::decode(&frame(b"CGR\0", postcard::to_allocvec(&reply).unwrap())).is_err()
+        );
+        let mut stale = current;
+        stale.revision = "0".repeat(64);
+        assert!(stale.encode().is_err());
+        assert!(
+            protocol::execution::process_request(&frame(
+                b"CGQ\0",
+                postcard::to_allocvec(&stale).unwrap()
+            ))
+            .is_err()
+        );
+    }
+    let payload_length = 32 * 1024 * 1024 + 1;
+    for selector in [24u32, 205] {
+        let mut prefix = b"CGR\0".to_vec();
+        prefix.extend_from_slice(&WORKER_SCHEMA_VERSION.to_le_bytes());
+        prefix.extend_from_slice(&(payload_length as u32).to_le_bytes());
+        prefix.extend_from_slice(&[0; 32]);
+        prefix.extend(postcard::to_allocvec(&(901u32, context.as_str(), selector)).unwrap());
+        assert!(prefix.len() < 256);
+        assert_eq!(
+            Response::admitted_frame_limit(&prefix, 42 + payload_length).unwrap(),
+            128 * 1024 * 1024
+        );
+        assert!(Response::decode(&prefix).is_err());
+    }
 }

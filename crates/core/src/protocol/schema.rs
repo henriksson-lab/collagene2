@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 139;
+pub const WORKER_SCHEMA_VERSION: u16 = 140;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 35;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,11 +115,9 @@ pub enum AnalysisJob {
         library: crate::sequence::annotations::library::FeatureLibrary,
         options: crate::sequence::annotations::library::ScanOptions,
     },
-    ApplyFeatureLibrary {
+    PreviewAnnotationMerge {
         molecule: Molecule,
-        library: crate::sequence::annotations::library::FeatureLibrary,
-        report: crate::sequence::annotations::library::ScanReport,
-        selected: Vec<String>,
+        request: crate::sequence::annotations::merge::Request,
     },
     ImportAnnotations {
         molecule: Molecule,
@@ -127,10 +125,9 @@ pub enum AnalysisJob {
         format: crate::formats::annotations::AnnotationFormat,
         seqid: String,
     },
-    ApplyAnnotations {
+    ApplyAnnotationMerge {
         molecule: Molecule,
-        report: crate::formats::annotations::AnnotationImportReport,
-        selected: Vec<usize>,
+        request: crate::sequence::annotations::merge::Request,
     },
     ExportAnnotations {
         molecule: Molecule,
@@ -1058,7 +1055,7 @@ pub enum AnalysisResult {
     WorkspaceLoaded(crate::documents::workspace::Workspace),
     TraceValidation(crate::review::reads::trace_validation::TraceValidationReport),
     FeatureLibraryScan(crate::sequence::annotations::library::ScanReport),
-    AnnotatedDocument(Molecule),
+    AnnotationMergeApplied(crate::sequence::annotations::merge::Applied),
     AnnotationImport(crate::formats::annotations::AnnotationImportReport),
     AnnotationExport(AnnotationExportReport),
     RepairPreview(crate::verification::terminal::RepairPreview),
@@ -1258,6 +1255,7 @@ pub enum AnalysisResult {
     ConstructCausalQc(crate::construct_qc::causal::Report),
     ScreeningStrategy(crate::cloning::screening::Report),
     DesignConsensus(crate::alignment::design_consensus::Report),
+    AnnotationMergePreview(crate::sequence::annotations::merge::Preview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

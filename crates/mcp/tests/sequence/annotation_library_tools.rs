@@ -140,7 +140,21 @@ async fn library_creation_export_scan_and_explicit_apply_keep_original_documents
     assert_eq!(full.hits[0].concrete_matches, 6);
     assert_eq!(full.hits[0].compatible_ambiguous, 0);
     assert_eq!(full.hits[0].mismatches, 0);
-    let annotated=call(&client,"apply_feature_library",json!({"document":target,"library":library,"scan":result["scan"],"selected":[full.hits[0].id]})).await;
+    let preview = call(
+        &client,
+        "preview_annotation_merge",
+        json!({
+            "document":target,
+            "source":{"Library":{"library":library,"scan":result["scan"]}},
+            "selections":[{"proposal_id":full.hits[0].id,"decision":"Append"}]
+        }),
+    )
+    .await;
+    assert_eq!(preview["applied"], false);
+    assert_eq!(preview["complete"], true);
+    assert_eq!(preview["candidate_count"], 1);
+    assert_eq!(call(&client, "list_documents", json!({})).await["total"], 2);
+    let annotated=call(&client,"apply_annotation_merge",json!({"document":target,"source":{"Library":{"library":library,"scan":result["scan"]}},"selections":[{"proposal_id":full.hits[0].id,"decision":"Append"}]})).await;
     let new_ref = reference(&annotated["documents"][0]);
     assert_ne!(new_ref, target);
     let changed = molecule(&client, &new_ref).await;
@@ -149,6 +163,74 @@ async fn library_creation_export_scan_and_explicit_apply_keep_original_documents
     assert_eq!(changed.features[0].location.spans(), vec![(3, 9, false)]);
     assert!(changed.features[0].needs_review);
     assert!(original.features.is_empty());
+    let provenance = call(
+        &client,
+        "inspect_annotation_provenance",
+        json!({"document":new_ref,"feature_index":0}),
+    )
+    .await;
+    let ledger: collagene_core::sequence::annotations::merge::Ledger =
+        serde_json::from_value(provenance["ledger"].clone()).unwrap();
+    assert_eq!(ledger.contributions.len(), 1);
+    let collagene_core::sequence::annotations::merge::SourcePin::Library {
+        library_revision,
+        proposal_id,
+        source_revision,
+        ..
+    } = &ledger.contributions[0].source
+    else {
+        panic!("not library evidence")
+    };
+    assert_eq!(library_revision, library["revision"].as_str().unwrap());
+    assert_eq!(proposal_id, &full.hits[0].id);
+    assert_eq!(source_revision, source["revision"].as_str().unwrap());
+    assert_eq!(annotated["native_history_created"], false);
+    assert_eq!(annotated["physical_cloning_verified"], false);
+
+    let fresh_scan = call(
+        &client,
+        "scan_feature_library",
+        json!({"document":new_ref,"library":library,"options":ScanOptions::default()}),
+    )
+    .await;
+    assert_eq!(fresh_scan["hit_count"], 1);
+    let fresh_id = fresh_scan["hits"][0]["id"].clone();
+    assert_ne!(fresh_id, json!(full.hits[0].id));
+    let repeated = call(
+        &client,
+        "apply_annotation_merge",
+        json!({
+            "document":new_ref,
+            "source":{"Library":{"library":library,"scan":fresh_scan["scan"]}},
+            "selections":[{
+                "proposal_id":fresh_id,
+                "decision":{"AddProvenance":{
+                    "target_index":0,
+                    "annotation_revision":collagene_core::construct_qc::annotation_revision(&changed.features[0]).unwrap()
+                }}
+            }]
+        }),
+    ).await;
+    assert_eq!(
+        repeated["receipt"]["actions"][0]["contribution_added"],
+        false
+    );
+    assert_eq!(reference(&repeated["documents"][0]), new_ref);
+    let retained = call(
+        &client,
+        "inspect_annotation_provenance",
+        json!({"document":new_ref,"feature_index":0}),
+    )
+    .await;
+    let retained: collagene_core::sequence::annotations::merge::Ledger =
+        serde_json::from_value(retained["ledger"].clone()).unwrap();
+    assert_eq!(retained.contributions.len(), 1);
+    assert_eq!(
+        retained, ledger,
+        "the first actual proposal context remains stored unchanged"
+    );
+    assert_eq!(molecule(&client, &new_ref).await, changed);
+
     assert_eq!(call(&client, "list_documents", json!({})).await["total"], 3);
     drop(client);
     server.abort();
@@ -202,21 +284,21 @@ async fn library_stale_tamper_limits_and_duplicates_reject_without_partial_docum
         json!({"document":target,"library":library,"options":ScanOptions::default()}),
     )
     .await;
-    let selected = vec![scan["hits"][0]["id"].clone()];
-    reject(&client,"apply_feature_library",json!({"document":target,"library":library,"scan":scan["scan"],"selected":["unknown proposal"]})).await;
+    let selected = vec![json!({"proposal_id":scan["hits"][0]["id"],"decision":"Append"})];
+    reject(&client,"apply_annotation_merge",json!({"document":target,"source":{"Library":{"library":library,"scan":scan["scan"]}},"selections":[{"proposal_id":"unknown proposal","decision":"Append"}]})).await;
     let mut stale_scan = scan["scan"].clone();
     stale_scan["revision"] = json!("stale");
     reject(
         &client,
-        "apply_feature_library",
-        json!({"document":target,"library":library,"scan":stale_scan,"selected":selected}),
+        "apply_annotation_merge",
+        json!({"document":target,"source":{"Library":{"library":library,"scan":stale_scan}},"selections":selected}),
     )
     .await;
     let other = import(&client, ">other_reference_same_bases\nTTTCGATACGGG\n").await;
     reject(
         &client,
-        "apply_feature_library",
-        json!({"document":other,"library":library,"scan":scan["scan"],"selected":selected}),
+        "apply_annotation_merge",
+        json!({"document":other,"source":{"Library":{"library":library,"scan":scan["scan"]}},"selections":selected}),
     )
     .await;
     let mut bounded = ScanOptions::default();
@@ -275,15 +357,15 @@ async fn gff_dataset_original_evidence_and_revision_bound_apply_export_are_expli
     );
     reject(
         &client,
-        "apply_annotations",
-        json!({"document":target,"dataset":dataset,"selected":[0,0]}),
+        "apply_annotation_merge",
+        json!({"document":target,"source":{"Dataset":{"dataset":dataset}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"},{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     assert_eq!(call(&client, "list_documents", json!({})).await["total"], 1);
     let applied = call(
         &client,
-        "apply_annotations",
-        json!({"document":target,"dataset":dataset,"selected":[0]}),
+        "apply_annotation_merge",
+        json!({"document":target,"source":{"Dataset":{"dataset":dataset}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     let new_ref = reference(&applied["documents"][0]);
@@ -293,8 +375,8 @@ async fn gff_dataset_original_evidence_and_revision_bound_apply_export_are_expli
     assert!(molecule(&client, &target).await.features.is_empty());
     reject(
         &client,
-        "apply_annotations",
-        json!({"document":new_ref,"dataset":dataset,"selected":[0]}),
+        "apply_annotation_merge",
+        json!({"document":new_ref,"source":{"Dataset":{"dataset":dataset}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     let exported = call(
@@ -353,8 +435,8 @@ async fn bed_blocks_and_invalid_mapping_or_coordinates_do_not_create_hidden_docu
     .await;
     let applied = call(
         &client,
-        "apply_annotations",
-        json!({"document":target,"dataset":imported["dataset"],"selected":[0]}),
+        "apply_annotation_merge",
+        json!({"document":target,"source":{"Dataset":{"dataset":imported["dataset"]}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     let annotated = molecule(&client, &reference(&applied["documents"][0])).await;
@@ -444,8 +526,8 @@ async fn gtf_quoted_evidence_exact_mapping_and_new_document_roundtrip() {
     );
     reject(
         &client,
-        "apply_annotations",
-        json!({"document":target,"dataset":dataset,"selected":[0,0]}),
+        "apply_annotation_merge",
+        json!({"document":target,"source":{"Dataset":{"dataset":dataset}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"},{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     let mut stale = target.clone();
@@ -461,8 +543,8 @@ async fn gtf_quoted_evidence_exact_mapping_and_new_document_roundtrip() {
     assert_eq!(call(&client, "list_documents", json!({})).await["total"], 1);
     let applied = call(
         &client,
-        "apply_annotations",
-        json!({"document":target,"dataset":dataset,"selected":[0]}),
+        "apply_annotation_merge",
+        json!({"document":target,"source":{"Dataset":{"dataset":dataset}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     let annotated_ref = reference(&applied["documents"][0]);
@@ -473,8 +555,8 @@ async fn gtf_quoted_evidence_exact_mapping_and_new_document_roundtrip() {
     assert!(molecule(&client, &target).await.features.is_empty());
     reject(
         &client,
-        "apply_annotations",
-        json!({"document":annotated_ref,"dataset":dataset,"selected":[0]}),
+        "apply_annotation_merge",
+        json!({"document":annotated_ref,"source":{"Dataset":{"dataset":dataset}},"selections":[{"proposal_id":imported["proposals"][0]["id"],"decision":"Append"}]}),
     )
     .await;
     let exported = call(
@@ -504,6 +586,143 @@ async fn gtf_quoted_evidence_exact_mapping_and_new_document_roundtrip() {
         vec![(2, 6, true)]
     );
     assert_eq!(call(&client, "list_documents", json!({})).await["total"], 2);
+    drop(client);
+    server.abort();
+}
+
+#[tokio::test]
+async fn donor_merge_resolves_exact_workspace_events_and_declared_reverse_rotation_without_mutating_sources()
+ {
+    use collagene_core::{
+        documents::workspace::{self, Workspace},
+        material::lineage::EventBinding,
+        sequence::annotations::merge,
+    };
+    use collagene_model::{Feature, Location, Topology};
+    let (client, server) = setup().await;
+    let mut donor =
+        Molecule::dna("Actual independent donor", "AACCGGTA", Topology::Circular).unwrap();
+    donor.features.push(Feature {
+        kind: "misc_feature".into(),
+        location: Location::Complement(Box::new(Location::Join(vec![
+            Location::range(6, 8),
+            Location::range(0, 2),
+        ]))),
+        qualifiers: vec![(
+            "label".into(),
+            Some("Independently declared donor role".into()),
+        )],
+        needs_review: false,
+    });
+    let mut other = donor.clone();
+    other.name = "Different actual event with identical calls".into();
+    let frame = Workspace::from_documents(
+        "Actual annotation donor event owners",
+        vec![donor.clone(), other],
+        0,
+    )
+    .unwrap();
+    let binding = |index: usize| EventBinding {
+        document_id: frame.documents[index].id.clone(),
+        event_id: frame.documents[index].head_event.clone().unwrap(),
+        revision: frame.documents[index].head.clone(),
+    };
+    let donor_event = binding(0);
+    let other_event = binding(1);
+    let imported = call(
+        &client,
+        "import_workspace_archive",
+        json!({"data_base64":STANDARD.encode(workspace::save_workspace(&frame).unwrap())}),
+    )
+    .await;
+    let workspace_ref = reference(&imported["workspace"]);
+    let target_model = Molecule::dna(
+        "Actual declared donor coordinate destination",
+        "CCGGTTTA",
+        Topology::Circular,
+    )
+    .unwrap();
+    let wrong_model =
+        Molecule::dna("Incompatible full DNA", "ACGGTTTA", Topology::Circular).unwrap();
+    let target_text = collagene_core::formats::sequence::export_with_report(
+        &target_model,
+        collagene_core::formats::sequence::TextFormat::GenBank,
+    )
+    .unwrap()
+    .text;
+    let wrong_text = collagene_core::formats::sequence::export_with_report(
+        &wrong_model,
+        collagene_core::formats::sequence::TextFormat::GenBank,
+    )
+    .unwrap()
+    .text;
+    let target = import(&client, &target_text).await;
+    let wrong = import(&client, &wrong_text).await;
+    let arguments = json!({
+        "document":target,
+        "source":{"Donor":{"workspace":workspace_ref,"event":donor_event,"transform":{"origin":2,"reverse":true},"indices":[0]}},
+        "selections":[{"proposal_id":"donor-0","decision":"Append"}]
+    });
+    let before = call(&client, "list_documents", json!({})).await;
+    let preview = call(&client, "preview_annotation_merge", arguments.clone()).await;
+    assert_eq!(preview["complete"], true);
+    assert_eq!(call(&client, "list_documents", json!({})).await, before);
+    let applied = call(&client, "apply_annotation_merge", arguments.clone()).await;
+    let result_ref = reference(&applied["documents"][0]);
+    let result = molecule(&client, &result_ref).await;
+    assert_eq!(result.sequence.as_str(), "CCGGTTTA");
+    assert_eq!(result.features.len(), 1);
+    assert_eq!(
+        result.features[0]
+            .location
+            .extract(&result.sequence)
+            .unwrap(),
+        "TTTA"
+    );
+    assert!(result.features[0].needs_review);
+    assert!(molecule(&client, &target).await.features.is_empty());
+    let provenance = call(
+        &client,
+        "inspect_annotation_provenance",
+        json!({"document":result_ref,"feature_index":0}),
+    )
+    .await;
+    let ledger: merge::Ledger = serde_json::from_value(provenance["ledger"].clone()).unwrap();
+    assert_eq!(ledger.contributions.len(), 1);
+    let merge::SourcePin::Donor {
+        event,
+        feature_index,
+        transform,
+        ..
+    } = &ledger.contributions[0].source
+    else {
+        panic!("not donor evidence")
+    };
+    assert_eq!(event, &donor_event);
+    assert_eq!(*feature_index, 0);
+    assert!(transform.reverse);
+    assert_eq!(transform.origin, 2);
+    let before_refusals = call(&client, "list_documents", json!({})).await;
+    for field in ["document_id", "event_id", "revision"] {
+        let mut invalid = arguments.clone();
+        invalid["source"]["Donor"]["event"][field] =
+            serde_json::to_value(&other_event).unwrap()[field].clone();
+        reject(&client, "apply_annotation_merge", invalid).await;
+    }
+    let mut invalid = arguments.clone();
+    invalid["source"]["Donor"]["transform"]["reverse"] = json!(false);
+    reject(&client, "apply_annotation_merge", invalid).await;
+    let mut invalid = arguments;
+    invalid["document"] = wrong;
+    reject(&client, "apply_annotation_merge", invalid).await;
+    assert_eq!(
+        call(&client, "list_documents", json!({})).await,
+        before_refusals
+    );
+    let exported = call(&client, "export_workspace_archive", workspace_ref).await;
+    let reopened =
+        workspace::load_workspace(&artifact(&client, &exported["artifact_id"]).await).unwrap();
+    assert_eq!(reopened.revisions[&donor_event.revision], donor);
     drop(client);
     server.abort();
 }

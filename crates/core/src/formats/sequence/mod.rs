@@ -156,24 +156,7 @@ fn import_qualifier(key: &str, value: &Option<String>) -> (String, Option<String
         let compact: String = raw.chars().filter(|c| !c.is_ascii_whitespace()).collect();
         match key {
             "source_revision"
-            | "library_entry_revision"
-            | "library_revision"
-            | "library_source_revision"
                 if compact.len() == 64 && compact.bytes().all(|c| c.is_ascii_hexdigit()) =>
-            {
-                compact
-            }
-            "library_entry_id"
-                if compact.strip_prefix("entry-").is_some_and(|hash| {
-                    hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-                }) =>
-            {
-                compact
-            }
-            "library_proposal_id"
-                if compact.strip_prefix("annotation-").is_some_and(|hash| {
-                    hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit())
-                }) =>
             {
                 compact
             }
@@ -558,12 +541,13 @@ pub fn export_with_report(molecule: &Molecule, format: TextFormat) -> Result<Exp
     {
         warnings.push("Oligo source rows, mapping and quantity/unit evidence are not fully represented by this text export. Keep the native workspace and original oligo table.".into());
     }
-    if molecule
-        .metadata
-        .keys()
-        .any(|key| key.starts_with("feature_library:"))
-    {
-        warnings.push("Feature-library identifiers are provenance references. Complete library templates/source evidence and reconstructed search reports are not represented by this text export; retain the workspace/library JSON and search report. Inferred annotations still require review.".into());
+    if molecule.features.iter().any(|feature| {
+        feature
+            .qualifiers
+            .iter()
+            .any(|(key, _)| key == crate::sequence::annotations::merge::QUALIFIER)
+    }) {
+        warnings.push("Annotation contributions are documentary provenance references. Complete library templates/source evidence, imported annotation files, donor workspace events and reconstructed search/merge reports are not represented by this text export; retain the native workspace and source evidence. A retained contribution qualifier does not authenticate biological function or event ancestry. Inferred annotations still require review.".into());
     }
     if molecule
         .metadata

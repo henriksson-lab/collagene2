@@ -460,3 +460,6 @@ fn change_reference_topology_native(
 
 pub mod batch;
 pub mod library;
+
+/// Explicit non-destructive annotation decisions and source contributions.
+pub mod merge;

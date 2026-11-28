@@ -137,23 +137,18 @@ pub(super) fn dispatch(
             library,
             options,
         } => sequence::scan_feature_library(context, molecule, library, options),
-        AnalysisJob::ApplyFeatureLibrary {
-            molecule,
-            library,
-            report,
-            selected,
-        } => sequence::apply_feature_library(context, molecule, library, report, selected),
+        AnalysisJob::PreviewAnnotationMerge { molecule, request } => {
+            sequence::preview_annotation_merge(context, molecule, request)
+        }
         AnalysisJob::ImportAnnotations {
             molecule,
             text,
             format,
             seqid,
         } => sequence::import_annotations(context, molecule, text, format, seqid),
-        AnalysisJob::ApplyAnnotations {
-            molecule,
-            report,
-            selected,
-        } => sequence::apply_annotations(context, molecule, report, selected),
+        AnalysisJob::ApplyAnnotationMerge { molecule, request } => {
+            sequence::apply_annotation_merge(context, molecule, request)
+        }
         AnalysisJob::ExportAnnotations {
             molecule,
             format,

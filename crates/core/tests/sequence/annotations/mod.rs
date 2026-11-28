@@ -2,6 +2,7 @@
 mod annotation_batch;
 mod annotation_formats;
 mod annotation_library_protocol;
+mod annotation_merge;
 mod annotation_verification;
 mod annotations;
 mod coordinate_qualifiers;

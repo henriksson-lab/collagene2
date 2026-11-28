@@ -1,6 +1,20 @@
 use collagene_core::sequence::annotations::library::*;
+use collagene_core::sequence::annotations::merge;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 
+fn merge_request(
+    target: &Molecule,
+    source: merge::Source,
+    selections: Vec<merge::Selection>,
+) -> merge::Request {
+    merge::Request {
+        schema_version: 1,
+        target_revision: target.revision(),
+        source,
+        selections,
+        limits: Default::default(),
+    }
+}
 fn source(name: &str, bases: &str, location: Location) -> Molecule {
     let mut molecule = Molecule::dna(name, bases, Topology::Linear).unwrap();
     molecule.features.push(Feature {
@@ -489,7 +503,25 @@ fn transferred_annotations_keep_source_evidence_but_strip_phase_translation_ids_
     assert_eq!(report.hits.len(), 1);
     let hit = &report.hits[0];
     assert_eq!(hit.location, Location::range(2, 5));
-    let edited = apply_selected(&target, &lib, &report, &[hit.id.clone()]).unwrap();
+    let edited = merge::apply(
+        &target,
+        &merge_request(
+            &target,
+            merge::Source::Library {
+                library: (&lib).clone(),
+                report: (&report).clone(),
+            },
+            (&[hit.id.clone()])
+                .iter()
+                .map(|id| merge::Selection {
+                    proposal_id: id.clone(),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     assert_eq!(edited.sequence, target.sequence);
     assert_eq!(edited.features.len(), 1);
     let feature = &edited.features[0];
@@ -514,14 +546,23 @@ fn transferred_annotations_keep_source_evidence_but_strip_phase_translation_ids_
             "{key}"
         );
     }
-    assert_eq!(
-        edited.metadata["feature_library:source_revision"],
-        target.revision()
-    );
-    assert_eq!(
-        edited.metadata["feature_library:library_revision"],
-        lib.revision()
-    );
+    let ledger =
+        collagene_core::sequence::annotations::merge::Ledger::from_feature(feature).unwrap();
+    assert_eq!(ledger.contributions.len(), 1);
+    let collagene_core::sequence::annotations::merge::SourcePin::Library {
+        library_revision,
+        source_revision,
+        source_feature_index,
+        proposal_id,
+        ..
+    } = &ledger.contributions[0].source
+    else {
+        panic!("not library attribution")
+    };
+    assert_eq!(library_revision, &lib.revision());
+    assert_eq!(source_revision, &original.revision());
+    assert_eq!(*source_feature_index, 0);
+    assert_eq!(proposal_id, &hit.id);
     assert_eq!(original, original_before);
     assert!(target.features.is_empty());
     let restored = collagene_core::protocol::load_document(
@@ -539,10 +580,50 @@ fn stale_or_forged_reports_cannot_authorize_annotations_and_rejections_are_atomi
     let id = report.hits[0].id.clone();
     let mut changed = target.clone();
     changed.name = "renamed".into();
-    assert!(apply_selected(&changed, &lib, &report, &[id.clone()]).is_err());
+    assert!(
+        merge::apply(
+            &changed,
+            &merge_request(
+                &changed,
+                merge::Source::Library {
+                    library: (&lib).clone(),
+                    report: (&report).clone()
+                },
+                (&[id.clone()])
+                    .iter()
+                    .map(|id| merge::Selection {
+                        proposal_id: id.clone(),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
     let mut changed_lib = lib.clone();
     changed_lib.version = "2".into();
-    assert!(apply_selected(&target, &changed_lib, &report, &[id.clone()]).is_err());
+    assert!(
+        merge::apply(
+            &target,
+            &merge_request(
+                &target,
+                merge::Source::Library {
+                    library: (&changed_lib).clone(),
+                    report: (&report).clone()
+                },
+                (&[id.clone()])
+                    .iter()
+                    .map(|id| merge::Selection {
+                        proposal_id: id.clone(),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
     for mode in 0..7 {
         let mut forged = report.clone();
         match mode {
@@ -555,23 +636,109 @@ fn stale_or_forged_reports_cannot_authorize_annotations_and_rejections_are_atomi
             _ => forged.options.max_mismatches = 1,
         }
         assert!(
-            apply_selected(&target, &lib, &forged, &[id.clone()]).is_err(),
+            merge::apply(
+                &target,
+                &merge_request(
+                    &target,
+                    merge::Source::Library {
+                        library: (&lib).clone(),
+                        report: (&forged).clone()
+                    },
+                    (&[id.clone()])
+                        .iter()
+                        .map(|id| merge::Selection {
+                            proposal_id: id.clone(),
+                            decision: merge::Decision::Append
+                        })
+                        .collect()
+                )
+            )
+            .map(|applied| applied.molecule)
+            .is_err(),
             "mode {mode}"
         );
         assert!(target.features.is_empty());
     }
-    assert!(apply_selected(&target, &lib, &report, &[]).is_err());
-    assert!(apply_selected(&target, &lib, &report, &[id.clone(), id.clone()]).is_err());
-    assert!(apply_selected(&target, &lib, &report, &["missing".into()]).is_err());
+    assert!(
+        merge::apply(
+            &target,
+            &merge_request(
+                &target,
+                merge::Source::Library {
+                    library: (&lib).clone(),
+                    report: (&report).clone()
+                },
+                Vec::<merge::Selection>::new()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
+    assert!(
+        merge::apply(
+            &target,
+            &merge_request(
+                &target,
+                merge::Source::Library {
+                    library: (&lib).clone(),
+                    report: (&report).clone()
+                },
+                (&[id.clone(), id.clone()])
+                    .iter()
+                    .map(|id| merge::Selection {
+                        proposal_id: id.clone(),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
+    assert!(
+        merge::apply(
+            &target,
+            &merge_request(
+                &target,
+                merge::Source::Library {
+                    library: (&lib).clone(),
+                    report: (&report).clone()
+                },
+                vec![merge::Selection {
+                    proposal_id: "missing".into(),
+                    decision: merge::Decision::Append,
+                }]
+            )
+        )
+        .map(|applied| applied.molecule)
+        .is_err()
+    );
     assert!(target.features.is_empty());
     // JSON itself does not make a legitimate report authoritative: reconstruction is still required.
     let reopened: ScanReport =
         serde_json::from_slice(&serde_json::to_vec(&report).unwrap()).unwrap();
     assert_eq!(
-        apply_selected(&target, &lib, &reopened, &[id])
-            .unwrap()
-            .features
-            .len(),
+        merge::apply(
+            &target,
+            &merge_request(
+                &target,
+                merge::Source::Library {
+                    library: (&lib).clone(),
+                    report: (&reopened).clone()
+                },
+                (&[id])
+                    .iter()
+                    .map(|id| merge::Selection {
+                        proposal_id: id.clone(),
+                        decision: merge::Decision::Append
+                    })
+                    .collect()
+            )
+        )
+        .map(|applied| applied.molecule)
+        .unwrap()
+        .features
+        .len(),
         1
     );
 }
@@ -592,7 +759,56 @@ fn existing_and_cross_entry_duplicate_annotations_are_explicit_and_never_overwri
         .iter()
         .map(|hit| hit.id.clone())
         .collect::<Vec<_>>();
-    assert!(apply_selected(&target, &lib, &report, &ids).is_err());
+    let merged = merge::apply(
+        &target,
+        &merge_request(
+            &target,
+            merge::Source::Library {
+                library: lib.clone(),
+                report: report.clone(),
+            },
+            ids.iter()
+                .map(|id| merge::Selection {
+                    proposal_id: id.clone(),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .unwrap()
+    .molecule;
+    assert_eq!(merged.features.len(), 2);
+    assert!(
+        merged
+            .features
+            .iter()
+            .all(|feature| feature.location == Location::range(2, 5) && feature.needs_review)
+    );
+    assert_eq!(
+        merged
+            .features
+            .iter()
+            .filter(|feature| feature
+                .qualifiers
+                .iter()
+                .any(|(key, value)| key == "note" && value.as_deref() == Some("other evidence")))
+            .count(),
+        1
+    );
+    let contributions = merged
+        .features
+        .iter()
+        .map(|feature| merge::Ledger::from_feature(feature).unwrap())
+        .collect::<Vec<_>>();
+    assert!(
+        contributions
+            .iter()
+            .all(|ledger| ledger.contributions.len() == 1)
+    );
+    assert_ne!(
+        contributions[0].contributions[0].source,
+        contributions[1].contributions[0].source
+    );
     assert!(target.features.is_empty());
     let mut existing = target.clone();
     existing.features.push(Feature {
@@ -606,8 +822,33 @@ fn existing_and_cross_entry_duplicate_annotations_are_explicit_and_never_overwri
     });
     let before = existing.clone();
     let matched = scan(&existing, &lib, &options()).unwrap();
-    assert!(matched.hits.iter().all(|hit| hit.already_annotated));
-    assert!(apply_selected(&existing, &lib, &matched, &[matched.hits[0].id.clone()]).is_err());
+    assert!(matched.hits.iter().all(|hit| hit.same_label_geometry_hint));
+    let extended = merge::apply(
+        &existing,
+        &merge_request(
+            &existing,
+            merge::Source::Library {
+                library: lib.clone(),
+                report: matched.clone(),
+            },
+            vec![merge::Selection {
+                proposal_id: matched.hits[0].id.clone(),
+                decision: merge::Decision::Append,
+            }],
+        ),
+    )
+    .unwrap()
+    .molecule;
+    assert_eq!(extended.features.len(), 2);
+    assert_eq!(extended.features[0], before.features[0]);
+    assert!(extended.features[1].needs_review);
+    assert_eq!(
+        merge::Ledger::from_feature(&extended.features[1])
+            .unwrap()
+            .contributions
+            .len(),
+        1
+    );
     assert_eq!(existing, before);
 }
 
@@ -695,9 +936,51 @@ fn ambiguous_identity_report_json_preserves_fraction_bits_and_remains_reconstruc
         report.hits[0].identity_lower.to_bits()
     );
     assert_eq!(serde_json::to_vec(&restored).unwrap(), bytes);
-    let result = apply_selected(&target, &lib, &restored, &[restored.hits[0].id.clone()]).unwrap();
+    let result = merge::apply(
+        &target,
+        &merge_request(
+            &target,
+            merge::Source::Library {
+                library: (&lib).clone(),
+                report: (&restored).clone(),
+            },
+            (&[restored.hits[0].id.clone()])
+                .iter()
+                .map(|id| merge::Selection {
+                    proposal_id: id.clone(),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     assert!(result.features[0].needs_review);
-    assert!(result.features[0].qualifiers.iter().any(|(key,value)|key=="library_ambiguous_columns"&&value.as_deref()==Some("1")));
+    let ledger = merge::Ledger::from_feature(&result.features[0]).unwrap();
+    assert_eq!(ledger.contributions.len(), 1);
+    let merge::SourcePin::Library {
+        concrete_matches,
+        compatible_ambiguous,
+        mismatches,
+        template_length,
+        ..
+    } = &ledger.contributions[0].source
+    else {
+        panic!("not library evidence")
+    };
+    assert_eq!(
+        (
+            *concrete_matches,
+            *compatible_ambiguous,
+            *mismatches,
+            *template_length
+        ),
+        (2, 1, 0, 3)
+    );
+    assert_eq!(
+        *concrete_matches as f64 / *template_length as f64,
+        report.hits[0].identity_lower
+    );
 }
 
 #[test]

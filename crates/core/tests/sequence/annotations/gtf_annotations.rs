@@ -1,5 +1,20 @@
 use collagene_core::formats::annotations::{self as a, AnnotationFormat as F};
+use collagene_core::sequence::annotations::merge;
 use collagene_model::{Feature, Location, Molecule, Topology};
+
+fn merge_request(
+    target: &Molecule,
+    source: merge::Source,
+    selections: Vec<merge::Selection>,
+) -> merge::Request {
+    merge::Request {
+        schema_version: 1,
+        target_revision: target.revision(),
+        source,
+        selections,
+        limits: Default::default(),
+    }
+}
 fn reference() -> Molecule {
     Molecule::dna(
         "explicit actual DNA",
@@ -34,7 +49,28 @@ fn reverse_cds_and_repeated_attributes_remain_independent_rows_with_exact_origin
         .map(|(_, v)| v.as_deref().unwrap())
         .collect::<Vec<_>>();
     assert_eq!(tags, vec!["basic", "basic", "other"]);
-    let applied = a::apply_annotations(&r, &report, &[0, 1]).unwrap();
+    let applied = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&[0, 1])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     let exported = a::export_annotations(&applied, F::Gtf, "renamed").unwrap();
     assert!(exported.text.contains("\t4\t9\t0.25\t-\t2\t"));
     assert!(
@@ -70,7 +106,28 @@ fn single_base_and_unknown_strand_or_missing_phase_are_not_guessed() {
             .extract(&r.sequence)
             .is_err()
     );
-    let applied = a::apply_annotations(&r, &report, &[0, 1]).unwrap();
+    let applied = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&[0, 1])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     assert!(
         a::export_annotations(&applied, F::Gtf, "ext")
             .unwrap()
@@ -111,7 +168,28 @@ fn invalid_syntax_unmapped_rows_and_stale_source_evidence_fail_atomically() {
     let malformed = format!("{valid}other\t.\texon\t0\t2\t.\t+\t.\tgene_id \"off\";\n");
     assert!(a::import_annotations(&r, &malformed, F::Gtf, "ext").is_err());
     let report = a::import_annotations(&r, valid, F::Gtf, "ext").unwrap();
-    let mut applied = a::apply_annotations(&r, &report, &[0]).unwrap();
+    let mut applied = merge::apply(
+        &r,
+        &merge_request(
+            &r,
+            merge::Source::Dataset {
+                report: (&report).clone(),
+            },
+            (&[0])
+                .iter()
+                .map(|index| merge::Selection {
+                    proposal_id: (&report)
+                        .proposals
+                        .get(*index)
+                        .map(|proposal| proposal.id.clone())
+                        .unwrap_or_else(|| format!("unavailable-dataset-proposal-{index}")),
+                    decision: merge::Decision::Append,
+                })
+                .collect(),
+        ),
+    )
+    .map(|applied| applied.molecule)
+    .unwrap();
     applied.features[0].location = Location::range(2, 4);
     assert!(a::export_annotations(&applied, F::Gtf, "ext").is_err());
 }

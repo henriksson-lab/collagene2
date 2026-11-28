@@ -992,114 +992,34 @@ impl AnnotationImportReport {
         Ok(())
     }
 }
-pub fn apply_annotations(
-    reference: &Molecule,
+/// Retain one shared external source record; merge contributions refer to this
+/// content hash rather than copying raw file bytes into each feature.
+pub(crate) fn retain_merge_source(
+    reference: &mut Molecule,
     report: &AnnotationImportReport,
-    selection: &[usize],
-) -> Result<Molecule, Error> {
-    apply_annotations_native(reference, report, selection, false).map(|(molecule, _)| molecule)
-}
-pub(crate) fn apply_annotations_with_projection(
-    reference: &Molecule,
-    report: &AnnotationImportReport,
-    selection: &[usize],
-) -> Result<(Molecule, crate::sequence::editing::AnnotationIdentity), Error> {
-    let (molecule, identity) = apply_annotations_native(reference, report, selection, true)?;
-    Ok((
-        molecule,
-        identity.ok_or_else(|| bad("native annotation receipt unavailable"))?,
-    ))
-}
-fn apply_annotations_native(
-    reference: &Molecule,
-    report: &AnnotationImportReport,
-    selection: &[usize],
-    capture: bool,
-) -> Result<
-    (
-        Molecule,
-        Option<crate::sequence::editing::AnnotationIdentity>,
-    ),
-    Error,
-> {
-    report.validate(reference)?;
-    if selection.is_empty() {
-        return Err(bad("select at least one annotation proposal"));
-    }
-    if selection.len() > MAX_ANNOTATION_ROWS {
-        return Err(Error::TooLarge);
-    }
-    let mut seen = BTreeSet::new();
-    let mut additions = vec![];
-    for &i in selection {
-        if !seen.insert(i) {
-            return Err(bad("duplicate annotation selection"));
-        }
-        let p = report
-            .proposals
-            .get(i)
-            .ok_or_else(|| bad("annotation selection is out of range"))?;
-        if reference.features.contains(&p.feature) {
-            return Err(bad(
-                "selected annotation is already present; no duplicate was added",
-            ));
-        }
-        additions.push(p.feature.clone());
-    }
-    let mut result = reference.clone();
-    let identity = capture.then(|| {
-        let mut identity =
-            crate::sequence::editing::AnnotationIdentity::retained(reference.features.len());
-        identity
-            .added
-            .extend(reference.features.len()..reference.features.len() + additions.len());
-        identity
-    });
-    result.features.extend(additions);
+) -> Result<(), Error> {
     let prefix = format!("annotation_import:{}", report.source_blake3);
-    if let Some(existing) = result.metadata.get(&format!("{prefix}:original_base64")) {
-        if existing != &report.original_base64 {
-            return Err(bad("conflicting annotation source evidence"));
-        }
-    }
-    result.metadata.insert(
-        format!("{prefix}:original_base64"),
-        report.original_base64.clone(),
-    );
-    result
-        .metadata
-        .insert(format!("{prefix}:format"), format!("{:?}", report.format));
-    let key = format!("{prefix}:applications");
-    let mut applications = result
+    let key = format!("{prefix}:original_base64");
+    if reference
         .metadata
         .get(&key)
-        .map(|s| {
-            serde_json::from_str::<Vec<(String, String, Vec<String>)>>(s)
-                .map_err(|_| bad("invalid previous annotation import provenance"))
-        })
-        .transpose()?
-        .unwrap_or_default();
-    applications.push((
-        report.reference_revision.clone(),
-        report.seqid.clone(),
-        selection
-            .iter()
-            .map(|&i| report.proposals[i].id.clone())
-            .collect(),
-    ));
-    result.metadata.insert(
-        key,
-        serde_json::to_string(&applications).map_err(|e| bad(e.to_string()))?,
-    );
-    result.validate()?;
-    crate::protocol::save_document(&result)?;
-    Ok((result, identity))
+        .is_some_and(|existing| existing != &report.original_base64)
+    {
+        return Err(bad("conflicting annotation source evidence"));
+    }
+    reference
+        .metadata
+        .insert(key, report.original_base64.clone());
+    reference
+        .metadata
+        .insert(format!("{prefix}:format"), format!("{:?}", report.format));
+    Ok(())
 }
 
 fn qualifier_hash(qualifiers: &[(String, Option<String>)]) -> Result<String, Error> {
     let values = qualifiers
         .iter()
-        .filter(|(k, _)| k != EVIDENCE)
+        .filter(|(k, _)| k != EVIDENCE && k != crate::sequence::annotations::merge::QUALIFIER)
         .collect::<Vec<_>>();
     Ok(
         blake3::hash(&serde_json::to_vec(&values).map_err(|e| bad(e.to_string()))?)

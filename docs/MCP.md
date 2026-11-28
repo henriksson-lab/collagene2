@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current registry has 200 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current registry has 203 tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol.rs), [workspace plan](../crates/core/src/workspace.rs), [verifier](../crates/core/src/verification.rs) and [assembly draft](../crates/core/src/assembly_library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -11,10 +11,27 @@ optional `plan_sources` bridge binds a returned selection to typed plan sources
 without requiring a client to reproduce internal hash recipes.
 [Recombination tool contracts](RECOMBINATION_MCP.md).
 
-Sequence-file exchange provides `import_compat_sequence`, `export_snapgene` and
-`export_gcg`. Imports require explicit profiles/alphabet. Lossy exports return a
-review without an artifact until omissions are acknowledged, and restrictive
-physical or modified-protein evidence cannot be erased through that choice.
+Sequence-file exchange uses `import_compat_sequence` for explicit FASTA, GCG
+and original Collagene XML text profiles, and `import_sequence_file` for binary
+files. The binary tool requires `data_base64` and an explicit `format`:
+`SnapGene`, `Abif`, `Scf`, `NativeDocument`, or `{"XdnaV0":{"name":"Chosen name"}}`.
+It accepts at most 8 MiB decoded, checks the selected format without text fallback,
+uses the existing core parsers and atomically installs immutable session documents.
+Supported source bytes, trace evidence, annotations and parser warnings are retained.
+Neither import tool accepts filesystem paths or starts external programs.
+
+`export_snapgene`, `export_gcg` and `export_xdna` use the existing reference writers.
+Lossy exports return `review_required` without an artifact until
+`accept_omissions=true`; acknowledgment cannot erase restricted physical or
+modified-protein evidence. `export_trace_scf` requires an exact document reference
+and explicit `precision` (`Smallest`, `EightBit` or `SixteenBit`). It regenerates
+SCF 3.00 only from the document's actual retained SCF signal, calls, peaks,
+four-channel accuracies and orientation. Documentary omissions require the same
+review; stale sequence edits, absent/fabricated trace evidence, ABIF scalar scores
+and precision loss refuse even with acknowledgment. Output is an immutable
+session artifact retrieved through `read_artifact`; sources remain unchanged.
+Use `export_document` to retain a complete native document and its original
+attachments. These native/embedded MCP tools do not expand thin WebMCP permissions.
 [Selected profiles and controls](SEQUENCE_COMPATIBILITY_CONTROLS.md).
 
 Structure coordinates use `import_structure` and `inspect_structure`. Explicit

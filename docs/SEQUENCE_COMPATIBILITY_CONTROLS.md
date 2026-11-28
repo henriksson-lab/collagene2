@@ -35,12 +35,23 @@ it does not invent a complementary strand. All original rows, source bytes and
 record indexes remain retained, and uncertain annotation mappings remain marked
 for review. See [migration profile](COLLAGENE_XML_COMPAT.md).
 
-MCP adds `import_compat_sequence`, `export_snapgene` and `export_gcg` (184 tools).
-Import profiles include explicit FASTA alphabet/declaration handling and text is capped at 4 MiB. Exports are immutable
-session artifacts, retrieved through the existing base64 chunk reader. Without
-explicit omission acknowledgment, a lossy export returns `review_required` and
-no artifact. These tools accept no filesystem paths and invoke no external
-programs. Binary worker/scientific schema versions are unchanged by these tools.
+Native/embedded MCP exposes text profiles through `import_compat_sequence` (4 MiB)
+and explicit binary profiles through `import_sequence_file` (8 MiB decoded).
+Binary choices are SnapGene DNA/protein, XDNA v0 with a supplied document name,
+ABIF, SCF and current native `.cg2`. Wrong profiles, malformed source data and
+oversized payloads refuse before any session documents are installed. Supported
+original attachments and parser notices remain in the immutable native documents.
+
+`export_snapgene`, `export_gcg` and `export_xdna` use the same core reference writers
+as the browser. `export_trace_scf` regenerates SCF 3.00 from actual retained SCF
+signals, original calls/peaks, four-channel accuracies and declared orientation;
+it cannot turn an edited sequence or ABIF scalar scores into a chromatogram.
+Precision is explicit. Missing/changed source evidence and precision loss refuse.
+Exports return `review_required` without an artifact when documentary omissions
+need acknowledgment, then use the existing base64 artifact reader after acceptance.
+These tools accept no filesystem paths, invoke no external programs and leave
+source documents unchanged. The native registry has 203 tools. Binary worker,
+scientific and workspace schema versions are unchanged by this MCP-only batch.
 
 The adapters and pure/source-binding fixtures are separate from application
 acceptance. Browser checks remain deferred until all in-scope code is complete;

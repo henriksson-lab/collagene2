@@ -5,7 +5,7 @@ The implementation goal is active. The working application covers substantial pa
 ## Current source and public preview
 
 Current source uses worker schema 121, candidate schema 31, draft schema 19
-and 200 native MCP tools. RNA chemistry/declaration review, protein liability
+and 203 native MCP tools. RNA chemistry/declaration review, protein liability
 screening and imported structure viewing are integrated. Antibody analysis now
 connects conditional human-reference IMGT/Kabat1991/Chothia1997 numbering and
 independently selected IMGT/Kabat1991/canonical-chart Chothia regions through
@@ -14,13 +14,13 @@ residue-level validation, broader reference/species coverage and North region
 definitions remain unfinished. This does not establish whole-application,
 installed-platform or visual acceptance.
 
-Public port 8082 now serves successful CI frontend `26a4ee5` (worker schema 120),
-including protein/alignment antibody overlays and separate IMGT/Kabat region
-selection with all three numbering choices. The current canonical-chart region
-option is newer source work and awaits its own frontend artifact. Publication
-checked the pinned artifact digest, 14 confined static assets/integrity references,
-WASM headers and exact listening-process ownership; no browser or application
-HTTP checks were run. The static server has no application filesystem API. The
+Public port 8082 now serves successful CI frontend `48a82bc` (worker schema 121),
+including protein/alignment antibody overlays and all three current region
+choices, including the canonical-chart Chothia profile. The newer MCP-only
+binary-exchange work does not change that frontend. Publication checked the
+pinned artifact digest, 14 confined static assets/integrity references, WASM
+headers and exact listening-process ownership; no browser or application HTTP
+checks were run. The static server has no application filesystem API. The
 checkpoints below retain evidence for each increment rather than describing the
 current preview.
 
@@ -2498,3 +2498,56 @@ The focused server member-registry harness now builds and all three cases pass
 with ordinary parallel execution. Combined with the canonical-definition batch,
 48 distinct focused native cases pass; the affected nine-case boundary recheck
 also passes. Production registry code and its refusal assertions are unchanged.
+
+
+### Native MCP binary sequence and chromatogram exchange
+
+MCP now connects existing format adapters directly to AI clients for local binary
+files. `import_sequence_file` accepts up to 8 MiB decoded with an explicit
+SnapGene DNA/protein, XDNA v0 (supplied name), ABIF, SCF or current native document
+profile. It checks profile/signature, decoded bounds and core validation before
+atomic immutable-session publication; supported original bytes, annotations,
+trace evidence and parser warnings survive. No text sniffing, host paths or
+external scientific programs are introduced.
+
+`export_xdna` reuses the current reference writer with structured loss review.
+`export_trace_scf` replays the document's actual retained SCF evidence, explicit
+precision and view orientation before emitting SCF 3.00. Missing/edited evidence,
+ABIF scalar scores, fabricated signals and precision loss refuse even after
+acknowledging documentary omissions. Reviews withhold artifacts until losses are
+accepted. Source documents and original attachments remain unchanged. The native
+registry has 203 tools; thin WebMCP permissions and core/worker/workspace formats
+are unchanged. [Interface and bounds](MCP.md).
+
+Representative foreign-producer corpora, real provider behavior, current browser
+acceptance and installed desktop workflows remain separate delivery requirements.
+These bridges add no new file dialect or broad vendor compatibility claim.
+
+All six selected MCP SDK cases pass (three new binary-exchange groups and three
+existing text/reference-export groups). Hand-authored SnapGene DNA/protein and
+ABIF/SCF sources verify original-byte retention, immutable native snapshots,
+reviewed XDNA output, literal SCF second-difference bytes, unchanged signal/quality/
+peak arrays, reverse orientation and stale-call/ABIF-score refusal. Invalid
+profiles/base64/names/fields, stale references and encoded size excess leave the
+session unchanged. The integrated native build passes with the existing shared
+cache. This batch changes only native MCP code and documentation; the preceding
+current-core/frontend WASM evidence is reused without another unchanged build.
+
+
+### Canonical profile in the public preview
+
+Port 8082 now serves CI frontend `48a82bc` / worker schema 121, including the
+canonical-chart Chothia region control on proteins and alignment rows. The pinned
+frontend artifact 15238657599 comes from successful frontend job 140791483437 in
+Desktop run 46084717977; archive SHA-256 is
+`89bca4dbf72a656a27576f3cd36762db96ef7939697f42922ee2eb02338f067e`.
+Its 14 confined assets total 147,983,404 bytes. Static integrity, WASM headers and
+the exact replacement process/socket were verified. No browser, screenshot or
+application HTTP checks were run. The static server exposes no filesystem API;
+private services remain untouched. The newer native MCP-only exchange code does
+not change this frontend.
+
+All three Desktop build/embedded-MCP smoke jobs for preview source `48a82bc`
+now pass on Windows, macOS and Linux (run 46084717977). This is build/headless
+MCP evidence; installed GUI/offline/remote acceptance remains outstanding. The
+new 203-tool native exchange code awaits its own exact-source CI after publication.

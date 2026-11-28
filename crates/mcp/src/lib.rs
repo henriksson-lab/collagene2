@@ -29,7 +29,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 200;
+pub const CURRENT_TOOL_COUNT: usize = 203;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -6421,11 +6421,70 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
         .await
     }
     #[tool(
+        description = "Import exact local sequence-file bytes as base64, at most 8 MiB decoded, with an explicit SnapGene DNA/protein, XDNA v0, ABIF, SCF or current native .cg2 profile. Uses the same bounded core parsers as the browser; format mismatch refuses without text sniffing or fallback. Preserves supported annotations, original file/trace evidence and parser warnings in immutable session documents. XDNA requires a bounded fallback name. No paths, URLs, external programs, browser edits or restored physical material authority. Use import_compat_sequence for explicit text profiles."
+    )]
+    async fn import_sequence_file(
+        &self,
+        Parameters(args): Parameters<sequence_exchange_tools::FileImportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        if args.data_base64.len() > sequence_exchange_tools::MAX_FILE_BYTES.div_ceil(3) * 4 {
+            return Err(bad("Sequence file exceeds 8 MiB decoded"));
+        }
+        let server = self.clone();
+        self.compute(move || {
+            let report = sequence_exchange_tools::import_file(args).map_err(bad)?;
+            server.insert_documents(report.molecules, report.warnings)
+        })
+        .await
+    }
+    #[tool(
+        description = "Review/export an exact immutable DNA or selected linear-protein document under the current XDNA v0 reference profile. Returns structured losses without an artifact until accept_omissions=true when fields cannot be represented. Refuses unsupported modified/physical/reference-only evidence even with acknowledgment. Reuses the bounded core writer; no stale opaque chunks, source mutation or cloned experimental history. Artifact is session-only."
+    )]
+    async fn export_xdna(
+        &self,
+        Parameters(args): Parameters<sequence_exchange_tools::ReferenceExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::xdna_export::{self,Policy};
+            let molecule=server.store.lock().unwrap().document(&args.document)?.clone();
+            let review=xdna_export::review(&molecule).map_err(bad)?;
+            if !args.accept_omissions&&!review.losses.is_empty() {
+                return output(json!({"document":args.document,"state":"review_required","review":review,"artifact_id":null}));
+            }
+            let report=xdna_export::export_xdna(&molecule,if args.accept_omissions{Policy::AllowOmissions}else{Policy::Strict}).map_err(bad)?;
+            let size=report.bytes.len();
+            let artifact=server.binary_artifact(report.bytes,"application/octet-stream","sequence.xdna")?;
+            output(json!({"document":args.document,"state":"prepared","profile":report.profile,"source_revision":report.source_revision,"losses":report.losses,"warnings":report.warnings,"artifact_id":artifact,"bytes":size,"filename":"sequence.xdna","mime_type":report.mime,"encoding":"base64","persistence":"session only"}))
+        }).await
+    }
+    #[tool(
+        description = "Review/export regenerated SCF 3.00 from an exact immutable linear DNA document's retained SCF attachment and explicit precision. Freshly checks source hash, actual signal/calls/peaks/four-channel accuracies and declared orientation. Sequence edits, missing trace evidence, ABIF scalar scores, fabricated signal or precision loss refuse even with accept_omissions=true. Returns documentary losses without an artifact until acknowledged; no basecalling, rescaling or invented qualities. Source and original bytes remain unchanged."
+    )]
+    async fn export_trace_scf(
+        &self,
+        Parameters(args): Parameters<sequence_exchange_tools::ScfExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move||{
+            use collagene_core::{scf_export::{self,Options,LossPolicy},traces};
+            let molecule=server.store.lock().unwrap().document(&args.document)?.clone();
+            let trace=traces::trace_from_molecule(&molecule).map_err(bad)?;
+            let report=scf_export::export(&trace,&Options{precision:args.precision,loss_policy:LossPolicy::AllowDocumentaryOmissions}).map_err(bad)?;
+            if !args.accept_omissions&&!report.losses.is_empty() {
+                return output(json!({"document":args.document,"state":"review_required","source_revision":molecule.revision(),"source_hash":report.source_hash,"orientation":report.orientation,"context_revision":report.context_revision,"sample_size":report.sample_size,"losses":report.losses,"warnings":report.warnings,"artifact_id":null}));
+            }
+            let size=report.bytes.len();
+            let artifact=server.binary_artifact(report.bytes,"application/octet-stream","trace.scf")?;
+            output(json!({"document":args.document,"state":"prepared","source_revision":molecule.revision(),"source_hash":report.source_hash,"orientation":report.orientation,"context_revision":report.context_revision,"sample_size":report.sample_size,"losses":report.losses,"warnings":report.warnings,"artifact_id":artifact,"bytes":size,"filename":"trace.scf","mime_type":"application/octet-stream","encoding":"base64","persistence":"session only"}))
+        }).await
+    }
+    #[tool(
         description = "Review/export an exact immutable document revision under the independently implemented SnapGene revision-15 reference profile (.dna or .prot). Returns structured omissions and no artifact until accept_omissions=true when loss exists. Refuses unsupported physical/reference-only material under both policies. Emits fresh supported packets, never stale original opaque chunks or cloned experimental history; artifact is session-only and source remains unchanged."
     )]
     async fn export_snapgene(
         &self,
-        Parameters(args): Parameters<sequence_exchange_tools::SnapGeneExportQuery>,
+        Parameters(args): Parameters<sequence_exchange_tools::ReferenceExportQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{

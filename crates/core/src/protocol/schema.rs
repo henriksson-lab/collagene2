@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 126;
+pub const WORKER_SCHEMA_VERSION: u16 = 127;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -976,6 +976,18 @@ pub enum AnalysisJob {
     RenderGelImage {
         request: crate::output::gel_export::Request,
     },
+    PrepareImageEvidence {
+        name: String,
+        association: crate::documents::image_evidence::Binding,
+        #[serde(
+            serialize_with = "collagene_model::decode::serialize_bytes",
+            deserialize_with = "collagene_model::decode::bounded_bytes::<_, { crate::documents::image_evidence::MAX_SOURCE_BYTES }>"
+        )]
+        original: Vec<u8>,
+    },
+    ReopenImageEvidence {
+        prepared: crate::documents::image_evidence::Prepared,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1178,6 +1190,8 @@ pub enum AnalysisResult {
     MaterialDigestProduct(crate::material::derivation::digest_export::Product),
     TraceDisplayPrepared(crate::review::reads::traces::display::PlotData),
     GelImageExported(crate::output::gel_export::Rendered),
+    ImageEvidencePrepared(crate::documents::image_evidence::Prepared),
+    ImageEvidencePreview(crate::documents::image_evidence::Preview),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

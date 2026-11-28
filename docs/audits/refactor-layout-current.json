@@ -1,11 +1,11 @@
 {
-  "scope": "Connected delivery Rust sources, tracked and unignored, excluding the separately authored unregistered image-evidence crate and core attachment module. Layout evidence only, not scientific/compiler verification.",
-  "files": 1265,
-  "directories": 221,
+  "scope": "Connected image-evidence delivery Rust sources; excludes the separately authored unregistered codon-design host foundation. Layout evidence only.",
+  "files": 1273,
+  "directories": 223,
   "largest_files": [
     {
       "path": "crates/web/src/app/mod.rs",
-      "lines": 2412
+      "lines": 2454
     },
     {
       "path": "crates/topo/src/lib.rs",
@@ -186,6 +186,10 @@
       "files": 14
     },
     {
+      "path": "crates/web/src/io",
+      "files": 14
+    },
+    {
       "path": "crates/web/src/reads",
       "files": 14
     },
@@ -199,10 +203,6 @@
     },
     {
       "path": "crates/core/tests/verification/preparation",
-      "files": 13
-    },
-    {
-      "path": "crates/mcp/tests/assembly",
       "files": 13
     }
   ],

@@ -430,6 +430,7 @@ impl Workspace {
             }
             charge(&mut expanded, attachment.bytes.len(), MAX_EXPANDED_BYTES)?;
         }
+        crate::documents::image_evidence::validate_workspace_records(self)?;
         crate::documents::rna_history::validate_workspace_records(self)?;
         crate::material::lineage::validate_workspace_runs(self)?;
         crate::material::derivation::validate_workspace_records(self)?;
@@ -1012,8 +1013,15 @@ pub fn is_workspace_archive(bytes: &[u8]) -> bool {
 }
 /// Load all data and validate graph/integrity before exposing any mutable application state.
 pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
-    collagene_model::decode::with_native_frame_budget(MAX_EXPANDED_BYTES, || {
+    let outcome = collagene_model::decode::with_native_frame_budget(MAX_EXPANDED_BYTES, || {
         load_workspace_inner(bytes)
+    });
+    outcome.value.map_err(|error| {
+        if outcome.resource_exhausted {
+            Error::TooLarge
+        } else {
+            error
+        }
     })
 }
 fn load_workspace_inner(bytes: &[u8]) -> Result<Workspace, Error> {

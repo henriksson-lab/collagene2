@@ -1,0 +1,12 @@
+[package]
+name = "collagene-image-evidence"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Bounded, source-preserving documentary image attachments"
+
+[dependencies]
+image = { version = "=0.25.10", default-features = false, features = ["jpeg", "png", "tiff"] }
+blake3.workspace = true
+thiserror.workspace = true

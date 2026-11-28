@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for Sequence {
             bases: String,
         }
         let raw = Raw::deserialize(deserializer)?;
-        Self::new(raw.alphabet, &raw.bases).map_err(serde::de::Error::custom)
+        Self::new(raw.alphabet, &raw.bases).map_err(decode::admission)
     }
 }
 

@@ -44,7 +44,27 @@ ignored HTTP/provider cases and is not an execution count. The initial execution
 caught and corrected dual-stop report validation and four new fixture diagnostic
 mistakes. No browser, application HTTP or live-provider acceptance ran.
 [Detailed current integration evidence](audits/features-security-current-integration.json).
-Exact-source CI/package production follows publication; final product review remains.
+At `5f72160`, desktop packaging succeeded on all three platforms and produced
+the requested portable executable, macOS installer/app and Debian package.
+[Exact package evidence](audits/desktop-packages-current.json). Scientific CI
+found four resource-error classification regressions in existing contig/CRISPR/
+methylation/codon transport cases: admission correctly rejects oversized models,
+but native decode must preserve `TooLarge` instead of reporting `Format`. The
+current connected batch fixes typed scope propagation; the tests remain strict.
+Final product review remains.
+
+## Image and resource-error follow-up
+
+The next connected batch implements documentary JPEG/PNG/TIFF/BigTIFF workspace
+attachments, worker127 preparation/reopening, exact-original download and three
+MCP tools (212total). Native/WASM checks and **302 unique focused cases pass**.
+Compared discovery preserves all1,449 preceding names in19 existing harnesses;
+expanded selected discovery has1,484 cases in21 harnesses, including35 new cases.
+This is selected discovery, not a claim that all preceding54 harnesses ran.
+[Current image integration evidence](audits/image-evidence-current-integration.json).
+The four scientific CI failures described above now pass unchanged, with typed
+resource status preserved through native decoding. Exact-source CI follows the
+publication checkpoint; browser/installed-GUI review remains deferred.
 
 ## Security findings
 
@@ -72,14 +92,15 @@ is not an additional missing feature. Keep compiler, scientific correctness and
 data-integrity checks proportional to the implementation changes.
 
 
-| Priority | Concrete source gap or connected batch | Required outcome |
+| Priority | Concrete source gap | Required outcome |
 | --- | --- | --- |
-| 4 | Hosted ordinary MCP | Implemented and checked: authenticated Streamable HTTP reuses scientific MCP handlers, with member/lab/workspace isolation, explicit capability storage and bounded scope lifecycles. Application HTTP acceptance remains deferred. |
-| 5 | PNG map/gel export | Implemented and checked: one portable Rust renderer with the bundled font, no external resources, bounded PNG dimensions/bytes, worker/MCP and web exports. TIFF/JPEG evidence-attachment import remains separate work. |
-| 6 | F18 genetic-code coverage | Implemented and checked: all 27 extant NCBI tables through one catalogue, including explicit dual-use sense/stop uncertainty for 27/28/31. Nine new scientific cases pass with native/WASM checks. |
-| 6b | Documentary image evidence | A separate unregistered Rust crate now admits bounded JPEG/PNG/classic TIFF/BigTIFF, preserves exact originals, and generates orientation-correct previews with explicit losses. Fourteen codec tests and seven workspace-owner tests are authored. The separate, unregistered attachment owner preserves historical document associations and stages an atomic application; module/worker/MCP/UI wiring and checks remain. No OpenGel comparison or measurement. |
-| 7 | F25 bounded CRISPR extensions | Current selected-record search uses ungapped Hamming distance. DNA/RNA bulge/variant models, further nuclease profiles and licensed calibrated scoring remain; deferred large-reference/BAM work does not gain priority. |
-| 8 | F26 host data and F34 calibration | Curated licensed host-frequency/expression profiles and broader independent antibody reference/species/residue validation remain. Protected codon ranges and North regions are implemented and should not be reopened. |
+| 1 | F26 host codon data | Integrate the unregistered bounded MG1655 CDS/GFF derivation, run its seven authored cases, emit a compact pinned runtime profile, and add UI/MCP profile selection. Source capture/checksums are verified; observed preferences must not imply calibrated expression. |
+| 2 | F25 bounded CRISPR extensions | Add DNA/RNA bulge/variant models, further supported nuclease profiles and licensed calibrated scoring where recorded in scope. Existing selected-record Hamming search is implemented; deferred large-reference/BAM work does not gain priority. |
+| 3 | F34 reference coverage | Broaden independently supported antibody reference/species coverage and biological calibration. Protected codon ranges and North regions are implemented and should not be reopened. |
+
+Hosted MCP, portable SVG/PNG export, the27-table genetic-code catalogue and
+image attachments are implemented with their verification scopes above. Their
+remaining graphical/live/platform acceptance is not another missing feature.
 
 The captured NCBI/DDBJ J02482.1 records provide real public-format input for the
 new offline import/provenance/native-save/GenBank-export and independent HaeIII

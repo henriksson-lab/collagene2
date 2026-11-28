@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **126**,
+same deterministic scientific engines. Current schemas are worker **127**,
 candidate **31** and native workspace plan **29**; the verifier is **science-35**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -303,6 +303,8 @@ when an internal enum layout changes.
 | 197 | `MaterializeMaterialDigestFragment` |
 | 198 | `PrepareTraceDisplay` |
 | 199 | `RenderGelImage` |
+| 200 | `PrepareImageEvidence` |
+| 201 | `ReopenImageEvidence` |
 
 ## Current result tags
 
@@ -501,6 +503,8 @@ when an internal enum layout changes.
 | 187 | `MaterialDigestProduct` |
 | 188 | `TraceDisplayPrepared` |
 | 189 | `GelImageExported` |
+| 190 | `ImageEvidencePrepared` |
+| 191 | `ImageEvidencePreview` |
 
 ## Current source and evidence contracts
 
@@ -607,3 +611,19 @@ product revision. Preview and installation reuse native annealing and annotation
 projection; installation independently repeats science and creates no primer
 orders or invented assembly target. Alternatives and incomplete searches remain
 conditional after selection and archive restart.
+
+## Documentary image evidence
+
+Worker 127 prepares a source/name/document-association-bound JPEG/PNG/TIFF packet
+with exact original bytes, an orientation-correct PNG preview and a versioned
+manifest. Request 200/result 190 and reopen request 201/result 191 retain ordinary
+32 MiB admission; none gains the compound-workspace allowance. Original sources
+are capped at 16 MiB, previews at 5 MiB. Canonical context methods on Binding and
+Summary bind transport responses; callers additionally check their live selected
+document and workspace CAS. Archived preview display requires fresh worker
+recomputation; a successful fresh preparation may display its hash-checked preview
+without decoding the source twice. UI/archive validation does not decode pixels.
+
+These records are documentary workspace attachments. Sequence, features, material
+origins, history events and experimental verification remain unchanged. No band
+comparison, quantification or OpenGel integration is performed.

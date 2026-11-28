@@ -129,7 +129,9 @@ fn current_layout_roundtrips_full_native_feature_capacity_and_optional_source_te
     m.features = vec![feature(); 100_000];
     let bytes = postcard::to_allocvec(&m).unwrap();
     let decoded: Molecule =
-        with_native_frame_budget(128 * 1024 * 1024, || postcard::from_bytes(&bytes)).unwrap();
+        with_native_frame_budget(128 * 1024 * 1024, || postcard::from_bytes(&bytes))
+            .value
+            .unwrap();
     assert_eq!(decoded, m);
     assert_eq!(
         postcard::to_allocvec(&decoded).unwrap(),
@@ -184,12 +186,14 @@ fn individually_valid_molecules_share_frame_qualifier_budget_and_error_restores_
         // an attack-sized fixture. The second molecule must share this budget.
         frame(|b| b.qualifier_count(999_999)).unwrap();
         postcard::from_bytes::<Vec<Molecule>>(&bytes)
-    });
+    })
+    .value;
     assert!(result.is_err());
     assert!(
         with_native_frame_budget(128 * 1024 * 1024, || postcard::from_bytes::<Vec<Molecule>>(
             &bytes
         ))
+        .value
         .is_ok()
     );
 }
@@ -204,6 +208,7 @@ fn workspace_scale_metadata_and_multiple_retained_sources_fit_frame_profile() {
         with_native_frame_budget(128 * 1024 * 1024, || postcard::from_bytes::<Vec<Molecule>>(
             &bytes
         ))
+        .value
         .unwrap(),
         rows
     );
@@ -214,11 +219,13 @@ fn workspace_scale_metadata_and_multiple_retained_sources_fit_frame_profile() {
         for _ in 0..33 {
             frame(|b| b.original(&chunk)).unwrap();
         }
-    });
+    })
+    .value;
     with_native_frame_budget(3, || {
         frame(|b| b.text("ab", 1024)).unwrap();
         assert!(frame(|b| b.original("cd")).is_err());
-    });
+    })
+    .value;
 }
 
 #[test]
@@ -253,17 +260,22 @@ fn retained_evidence_keys_preserve_large_attachments_without_generic_escape() {
 fn nested_frame_guards_share_counts_and_restore_after_panic() {
     with_native_frame_budget(128 * 1024 * 1024, || {
         frame(|b| b.metadata_count(1_000_000)).unwrap();
-        let result = with_native_frame_budget(128 * 1024 * 1024, || frame(|b| b.metadata_count(1)));
+        let result =
+            with_native_frame_budget(128 * 1024 * 1024, || frame(|b| b.metadata_count(1))).value;
         assert!(matches!(result, Err(Error::TooLarge)));
-    });
+    })
+    .value;
     let result = catch_unwind(AssertUnwindSafe(|| {
         with_native_frame_budget(128 * 1024 * 1024, || {
             frame(|b| b.metadata_count(1_000_000)).unwrap();
             panic!("deliberate decoder interruption");
         })
+        .value
     }));
     assert!(result.is_err());
-    with_native_frame_budget(128 * 1024 * 1024, || frame(|b| b.metadata_count(1_000_000))).unwrap();
+    with_native_frame_budget(128 * 1024 * 1024, || frame(|b| b.metadata_count(1_000_000)))
+        .value
+        .unwrap();
 }
 
 #[test]
@@ -278,6 +290,7 @@ fn simultaneous_native_frames_have_independent_thread_budgets() {
                     barrier.wait();
                     assert!(frame(|b| b.metadata_count(1)).is_err());
                 })
+                .value
             })
         })
         .collect::<Vec<_>>();
@@ -331,4 +344,113 @@ fn literal_current_postcard_records_keep_the_original_field_and_variant_order() 
         postcard::from_bytes::<Location>(&join).unwrap(),
         Location::Join(vec![Location::range(0, 1)])
     );
+}
+
+#[test]
+fn bounded_binary_octets_use_literal_current_bytes_and_canonical_json_arrays() {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Packet {
+        #[serde(
+            serialize_with = "super::serialize_bytes",
+            deserialize_with = "super::bounded_bytes::<_, 5>"
+        )]
+        bytes: Vec<u8>,
+    }
+    let packet = Packet {
+        bytes: vec![0, 127, 128, 255],
+    };
+    let encoded = postcard::to_allocvec(&packet).unwrap();
+    assert_eq!(encoded, [4, 0, 127, 128, 255]);
+    assert_eq!(encoded, postcard::to_allocvec(&packet.bytes).unwrap());
+    assert_eq!(
+        postcard::from_bytes::<Packet>(&encoded).unwrap().bytes,
+        packet.bytes
+    );
+    let json = serde_json::to_vec(&packet).unwrap();
+    assert_eq!(json, br#"{"bytes":[0,127,128,255]}"#);
+    assert_eq!(
+        serde_json::from_slice::<Packet>(&json).unwrap().bytes,
+        packet.bytes
+    );
+    assert!(serde_json::from_slice::<Packet>(br#"{"bytes":"abc"}"#).is_err());
+    assert!(postcard::from_bytes::<Packet>(&[6, 1, 2, 3, 4, 5, 6]).is_err());
+    assert!(serde_json::from_slice::<Packet>(br#"{"bytes":[1,2,3,4,5,{"#).is_err());
+}
+
+#[test]
+fn frame_outcomes_distinguish_resource_rejection_from_malformed_data_and_reset() {
+    let mut m = molecule("large-ordinary-source", 0);
+    m.metadata
+        .insert("source-evidence".into(), "x".repeat(1024 * 1024 + 1));
+    let bytes = postcard::to_allocvec(&m).unwrap();
+    let outcome = with_native_frame_budget(32 * 1024 * 1024, || {
+        postcard::from_bytes::<Molecule>(&bytes)
+    });
+    assert!(outcome.value.is_err());
+    assert!(outcome.resource_exhausted);
+    let malformed =
+        with_native_frame_budget(32 * 1024 * 1024, || postcard::from_bytes::<Molecule>(&[0]));
+    assert!(malformed.value.is_err());
+    assert!(!malformed.resource_exhausted);
+    let oversized_sequence =
+        postcard::to_allocvec(&(Alphabet::Dna, "A".repeat(crate::MAX_SEQUENCE_LEN + 1))).unwrap();
+    let sequence = with_native_frame_budget(32 * 1024 * 1024, || {
+        postcard::from_bytes::<Sequence>(&oversized_sequence)
+    });
+    assert!(sequence.value.is_err());
+    assert!(sequence.resource_exhausted);
+    let invalid_sequence = postcard::to_allocvec(&(Alphabet::Dna, "!invalid")).unwrap();
+    let sequence = with_native_frame_budget(32 * 1024 * 1024, || {
+        postcard::from_bytes::<Sequence>(&invalid_sequence)
+    });
+    assert!(sequence.value.is_err());
+    assert!(!sequence.resource_exhausted);
+    let nested = with_native_frame_budget(32 * 1024 * 1024, || {
+        let polled = Cell::new(0);
+        let inner = with_native_frame_budget(32 * 1024 * 1024, || {
+            bounded_vec::<_, u8, 1>(claimed(2, true, &polled))
+        });
+        assert!(inner.resource_exhausted);
+        assert!(inner.value.is_err());
+        assert_eq!(polled.get(), 0);
+    });
+    assert!(nested.resource_exhausted);
+    assert!(!with_native_frame_budget(32 * 1024 * 1024, || ()).resource_exhausted);
+    let panic = catch_unwind(AssertUnwindSafe(|| {
+        with_native_frame_budget(1, || {
+            assert!(frame(|b| b.text("xx", 2)).is_err());
+            panic!("resource rejection followed by unwind");
+        })
+    }));
+    assert!(panic.is_err());
+    assert!(!with_native_frame_budget(32 * 1024 * 1024, || ()).resource_exhausted);
+}
+
+#[test]
+fn binary_and_unknown_length_collection_admission_mark_resource_outcomes() {
+    #[derive(serde::Deserialize)]
+    struct Bytes {
+        #[serde(deserialize_with = "super::bounded_bytes::<_, 1>")]
+        _bytes: Vec<u8>,
+    }
+    let bytes = with_native_frame_budget(32, || postcard::from_bytes::<Bytes>(&[2, 1, 2]));
+    assert!(bytes.resource_exhausted);
+    assert!(bytes.value.is_err());
+    let polled = Cell::new(0);
+    let values =
+        with_native_frame_budget(32, || bounded_vec::<_, u8, 1>(claimed(2, false, &polled)));
+    assert!(values.resource_exhausted);
+    assert!(values.value.is_err());
+    let barrier = Arc::new(Barrier::new(2));
+    let other = barrier.clone();
+    let flagged = std::thread::spawn(move || {
+        with_native_frame_budget(1, || {
+            assert!(frame(|b| b.text("xx", 2)).is_err());
+            other.wait();
+        })
+        .resource_exhausted
+    });
+    let clean = with_native_frame_budget(1, || barrier.wait());
+    assert!(!clean.resource_exhausted);
+    assert!(flagged.join().unwrap());
 }

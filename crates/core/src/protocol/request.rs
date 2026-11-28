@@ -244,6 +244,26 @@ impl Request {
             AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
                 crate::material::review::request_revision(workspace, run_id)?;
             }
+            AnalysisJob::PrepareImageEvidence {
+                name,
+                association,
+                original,
+            } => {
+                if original.is_empty()
+                    || original.len() > crate::documents::image_evidence::MAX_SOURCE_BYTES
+                {
+                    return Err(Error::TooLarge);
+                }
+                let hash = blake3::hash(original).to_hex().to_string();
+                if association.preparation_revision(name, &hash)? != self.revision {
+                    return Err(Error::Format("Image preparation context differs".into()));
+                }
+            }
+            AnalysisJob::ReopenImageEvidence { prepared } => {
+                if prepared.summary()?.reopen_revision()? != self.revision {
+                    return Err(Error::Format("Image reopening context differs".into()));
+                }
+            }
             AnalysisJob::RenderMap { request } => request.validate()?,
             AnalysisJob::RenderGelImage { request } => {
                 if request.revision()? != self.revision {

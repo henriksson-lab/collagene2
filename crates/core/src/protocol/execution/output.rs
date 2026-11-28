@@ -459,3 +459,33 @@ pub(super) fn render_gel_image(
         .map(AnalysisResult::GelImageExported)
         .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
+
+pub(super) fn prepare_image_evidence(
+    context: &RequestContext,
+    name: String,
+    association: crate::documents::image_evidence::Binding,
+    original: Vec<u8>,
+) -> Result<AnalysisResult, Error> {
+    use crate::documents::image_evidence::{MAX_SOURCE_BYTES, Prepared};
+    if original.is_empty() || original.len() > MAX_SOURCE_BYTES {
+        return Err(Error::TooLarge);
+    }
+    let hash = blake3::hash(&original).to_hex().to_string();
+    if association.preparation_revision(&name, &hash)? != *context.revision {
+        return Err(Error::Format("Image preparation context changed".into()));
+    }
+    context.admit(None)?;
+    Prepared::new(&name, association, original).map(AnalysisResult::ImageEvidencePrepared)
+}
+pub(super) fn reopen_image_evidence(
+    context: &RequestContext,
+    prepared: crate::documents::image_evidence::Prepared,
+) -> Result<AnalysisResult, Error> {
+    if prepared.summary()?.reopen_revision()? != *context.revision {
+        return Err(Error::Format("Image reopening context changed".into()));
+    }
+    context.admit(None)?;
+    prepared
+        .reopen()
+        .map(|opened| AnalysisResult::ImageEvidencePreview(opened.into_preview()))
+}

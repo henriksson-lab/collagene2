@@ -1,5 +1,12 @@
 # Web and untrusted-input security audit
 
+The image/resource-error follow-up passes302 focused cases and native/WASM checks.
+`with_native_frame_budget` now returns an explicit `NativeFrameOutcome`: typed
+resource admission is carried separately from Serde diagnostics. Native decoding
+restores `TooLarge` for quota failures and preserves `Format` for malformed data,
+without matching error strings. Existing contig/CRISPR/methylation/codon assertions
+remain unchanged and pass. [Current evidence](image-evidence-current-integration.json).
+
 Integrated verification: native/WASM compilation and the connected **490-case**
 focused batch pass, including the relevant admission/owner/search regressions.
 [Exact case list and scope](features-security-current-integration.json).
@@ -118,6 +125,25 @@ CGP saves, and successful native 100,000-feature plus retained-evidence, 1,000-d
 workspace and ordinary candidate round trips. They remain unexecuted until the
 integrating parent's focused batch. No save-time roundtrip decoding is used.
 
+### Typed resource rejection through Serde
+
+The native admission scope now returns `NativeFrameOutcome`, retaining a typed
+resource-exhaustion flag alongside the closure result. Model-budget TooLarge,
+sequence length admission, collection hints and unknown-length overflow,
+location fanout/depth, and bounded binary byte admission mark this scoped status.
+The envelope maps a failed decode with that status to `Error::TooLarge`; malformed
+non-resource input remains `Error::Format`. This preserves scientific source
+bounds diagnostics when the bounded decoder rejects before later source checks.
+There is no matching of Serde error-message text. Archive loading consumes the
+same outcome while preserving its other existing typed errors. Nested scopes
+share admission state; errors/panics restore it and independent threads isolate it.
+
+Two focused model cases and one envelope case were added for typed classification,
+including oversized versus invalid sequences, source metadata versus malformed
+input, bulk bytes, unknown lengths and nested/panic/thread reset. They are source
+complete and await the integrating parent's existing combined recheck; no separate
+Cargo/build/test invocation was run by this worker.
+
 ## SW-02 — native candidate/snapshot list allocation before plan admission
 
 **Confirmed same-class availability defect. Parent owns the source correction and
@@ -130,7 +156,7 @@ The attack does not need a scientifically valid plan because rejection was late.
 
 `PlanningWorkspace.documents` was likewise only checked after full decode. Its
 models could also split an aggregate model budget across individually legal
-members. The parent is applying the reusable `decode::bounded_vec` resource
+members. The parent applied the reusable `decode::bounded_vec` resource
 visitor to the current DesignPlan, snapshot and operation source collections,
 using the existing canonical limits. No encoding version change is needed for
 these unchanged valid structures. A fixture can use a valid frame prefix with an

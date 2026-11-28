@@ -1,0 +1,2037 @@
+{
+  "date": "2026-11-28",
+  "source_scope": "Connected image-evidence and typed native resource-error batch; excludes the separately authored unregistered codon_design/hosts foundation.",
+  "base_commit": "5f7216087b7de7d3f065181a211bc1f5f3c96299",
+  "versions": {
+    "worker": 127,
+    "candidate": 31,
+    "desktop_sync": 5,
+    "scientific_engine": "science-35",
+    "image_engine": "documentary-image-1",
+    "native_mcp_tools": 212
+  },
+  "compilation": {
+    "native": "passed",
+    "web_worker_wasm": "passed",
+    "scope_note": "A final File-picker statement ordering change retains the File before clearing browser selection; exact source frontend rebuild follows in publication CI."
+  },
+  "execution": {
+    "unique_cases": 302,
+    "passed": 302,
+    "failed": 0,
+    "ignored_executed": 0,
+    "cases": [
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::binary_and_unknown_length_collection_admission_mark_resource_outcomes",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::bounded_binary_octets_use_literal_current_bytes_and_canonical_json_arrays",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::current_layout_roundtrips_full_native_feature_capacity_and_optional_source_text",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::declared_collection_limits_fail_before_reading_elements_or_reserving_the_claim",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::frame_outcomes_distinguish_resource_rejection_from_malformed_data_and_reset",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::individually_valid_molecules_share_frame_qualifier_budget_and_error_restores_it",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::literal_current_postcard_records_keep_the_original_field_and_variant_order",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::locations_bound_fanout_depth_and_standalone_qualifier_collections",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::native_text_and_metadata_fields_reject_excess_and_duplicates_without_changing_alphabet",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::nested_frame_guards_share_counts_and_restore_after_panic",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::retained_evidence_keys_preserve_large_attachments_without_generic_escape",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::simultaneous_native_frames_have_independent_thread_budgets",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::unknown_collection_lengths_still_stop_before_constructing_the_extra_value",
+        "exit_code": 0
+      },
+      {
+        "crate": "model",
+        "target": "collagene_model",
+        "test": "decode::tests::workspace_scale_metadata_and_multiple_retained_sources_fit_frame_profile",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "all_eight_orientations_have_independent_pixel_oracles",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "classic_and_big_tiff_both_byte_orders_preserve_exact_original",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "every_truncated_container_prefix_is_rejected_without_panicking",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "high_bit_original_is_retained_and_preview_precision_is_explicit",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "huge_png_dimensions_and_jpeg_sampling_are_rejected_before_decode",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "independent_png_and_jpeg_fixtures_decode_and_reexport",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "limits_reject_before_pixel_decoding_and_preview_is_bounded",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "malformed_tiff_ifds_counts_offsets_cycles_and_orientation_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "multipage_keeps_original_and_warns_without_claiming_other_pages_decoded",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "png_and_jpeg_exif_is_applied_once",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "png_crc_corruption_and_jpeg_missing_end_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "tiff_embedded_jpeg_cannot_override_outer_resource_admission",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "unsupported_limits_and_signatures_fail_explicitly",
+        "exit_code": 0
+      },
+      {
+        "crate": "image-evidence",
+        "target": "evidence",
+        "test": "valid_jpeg_compressed_tiff_uses_admitted_embedded_dimensions",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::contig_protocol::assemble_contigs_is_bound_to_ordered_read_roles_revisions_and_all_options",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::contig_protocol::assembly_source_bounds_precede_batch_hashing_and_stale_revision_comparison",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::contig_protocol::contig_job_and_result_require_schema_fifteen_before_body_deserialization",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::contig_protocol::recognized_assembly_evidence_requires_schema_fifteen_in_inline_workspaces",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::crispr_protocol::all_four_new_jobs_and_results_require_schema_eighteen_before_body_decode_and_stay_ordinary_sized",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::crispr_protocol::edit_template_design_and_independent_check_bind_supplied_donor_without_physical_edit_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::crispr_protocol::guide_and_selected_reference_worker_reports_bind_exact_roles_labels_options_and_coordinates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::crispr_protocol::scientific_source_bounds_precede_revision_hashes_and_stale_comparisons",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::methylation_protocol::bounded_source_evidence_precedes_revision_hashing",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::methylation_protocol::methylation_tags_require_schema_sixteen_before_body_decode_and_keep_ordinary_caps",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "biology::methylation_protocol::worker_assessment_binds_source_states_profiles_and_options_without_new_product_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_protocol::codon_source_evidence_is_bounded_before_revision_hashing",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_protocol::design_and_independent_check_are_source_options_and_candidate_bound",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_protocol::new_tags_reject_old_versions_before_payload_and_retain_ordinary_limits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::image_export::map_and_gel_image_jobs_share_current_stateless_session_and_reply_bounds",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::image_export::png_bounds_crc_compressed_stream_and_context_are_validated_without_unbounded_allocation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::image_export::png_map_contains_canonical_backbone_and_bundled_font_text_with_source_identity",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::image_export::predicted_gel_png_retains_linear_ladder_band_positions_and_unplaced_circle_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::circular_map_keeps_origin_crossing_and_uncertain_review_geometry",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::incomplete_drafts_retain_prior_products_and_scientific_limits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::large_protocol_text_and_input_count_fail_instead_of_silently_truncating",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::long_protocol_paginates_without_losing_final_steps_and_is_deterministic",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::pdf_reverifies_current_binding_and_marks_every_invalid_page",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::physical_pcr_and_ligation_steps_print_oligos_tails_chemistry_nicks_and_source_provenance",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::text_shaping_missing_glyphs_and_untrusted_pdf_syntax_are_explicit_data",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::pdf::verified_embedded_pdf_has_unicode_font_vector_map_and_independent_cross_reference",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::boundary_wells_replicates_capture_restart_and_all_three_exports_preserve_exact_ids",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::decoded_rows_and_resolved_receipts_cannot_change_native_bindings",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::duplicate_coordinates_ids_label_bounds_and_oversize_decode_do_not_capture",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::native_layout_count_limit_is_enforced_without_replacing_old_captures",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::planning_an_invalid_recorded_construct_does_not_approve_or_release_it",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::released_assignment_closes_whole_indivisible_manifest_without_unrelated_workspace",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::stale_preview_cannot_be_new_capture_and_archive_layout_survives_later_heads",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::three_eighty_four_last_well_and_empty_layout_are_explicit_not_automatic_fill",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout::wrong_declarations_construct_ids_and_released_equal_dna_event_aliases_refuse",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout_transport::actual_layout_preview_capture_and_three_documentary_exports_bind_exact_sources",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_layout_transport::changed_assignment_context_and_missing_dependencies_do_not_capture",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::candidate_fresh_alias_is_explicit_but_cannot_substitute_an_existing_receipt_or_native_run",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::current_canonical_record_and_actual_operation_material_references_are_required",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::declared_mass_and_quantized_molar_dilutions_keep_stock_volume_achieved_and_deviation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::deleted_candidate_does_not_hide_an_independent_saved_run_quantity_record",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::exact_balanced_quantities_capture_restart_and_three_exports_preserve_biology",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::historic_source_and_target_heads_may_advance_but_new_preview_context_changes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities::missing_is_not_zero_unallocated_and_overfilled_recipes_remain_documentary_drafts",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_composition::arithmetic_and_molecular_statuses_are_independent_and_neither_is_restored",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_composition::combined_exact_and_quantized_dilutions_keep_achieved_values_and_quantity_identity",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_composition::historic_exact_pins_survive_heads_while_changed_inputs_plan_or_hash_refuse",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_composition::saved_pcr_treatment_restart_exports_one_checked_protocol_with_exact_quantity_tables",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_transport::binary_mass_and_molar_dilutions_preserve_explicit_rounding_and_achieved_dimension",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_transport::candidate_deletion_keeps_discoverable_unavailable_receipt_without_reconstructing_a_fallback",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_transport::missing_quantities_are_drafts_and_equal_dna_events_or_stale_context_do_not_substitute",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::protocol_quantities_transport::native_saved_run_quantity_preview_capture_open_exports_keep_exact_events_and_status",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::quantity_protocol_composition_transport::complete_arithmetic_does_not_rescue_invalid_molecules_and_missing_amounts_do_not_rewrite_science",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::quantity_protocol_composition_transport::full_instructions_and_quantities_bind_original_events_after_both_heads_advance",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::adjacent_half_open_ranges_can_share_a_track_but_overlaps_cannot",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::complete_circle_ranges_are_drawn_with_two_arcs_and_empty_maps_are_valid",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::feature_span_and_label_limits_are_visible_and_deterministic",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::malformed_coordinates_fail_before_rendering_and_labels_stay_inside_plot",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::origin_spanning_complements_preserve_biological_part_order_and_terminal_direction",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::rna_and_protein_maps_have_correct_units_and_protein_has_no_strand_arrows",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::svg_is_xml_safe_and_has_no_executable_or_external_markup",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg::uncertain_ordered_and_unresolved_features_are_never_given_exact_arrows",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg_restriction::circular_origin_split_and_possible_reverse_sites_preserve_optional_cuts",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg_restriction::hostile_names_are_only_xml_text_and_full_names_remain_accessible",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg_restriction::labels_are_evenly_sampled_without_dropping_markers_and_output_cap_fails_closed",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg_restriction::linear_recognition_and_both_strand_boundaries_use_existing_axis_coordinates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "reports::svg_restriction::stale_invalid_and_duplicate_site_evidence_is_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::collagene_xml_compat::circular_wrap_is_reversed_in_order_and_gaps_or_ambiguous_ranges_stay_unresolved",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::collagene_xml_compat::malformed_or_over_budget_projects_fail_atomically_without_partial_record_recovery",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::collagene_xml_compat::ordinary_profile_is_identical_and_mixed_lower_project_requires_explicit_review",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::collagene_xml_compat::original_entities_long_attribute_spacing_and_unknown_workflow_are_retained_without_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::collagene_xml_compat::reversed_lower_reference_maps_only_literal_residue_footprints_and_keeps_oligos",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::edits_with_unmapped_reference_or_unknown_headers_are_not_exported_as_remapped",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::location_depth_and_reference_only_records_are_rejected_before_deep_parsing",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::modern_embl_preserves_compound_features_qualifiers_and_original_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::multi_record_evidence_is_not_multiplied_and_lengths_are_checked",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::native_export_and_legacy_id_round_trip_without_external_programs",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::regenerated_export_uses_current_annotations_and_retains_supported_headers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::embl::rna_encoding_is_explicit_and_proteins_are_not_misidentified",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::fasta_alphabet::conflicting_literal_name_tokens_cannot_change_the_actual_alphabet_after_export",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::fasta_alphabet::contradictory_header_declarations_and_profile_mismatches_refuse_atomically",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::fasta_alphabet::correct_canonical_headers_and_established_unmarked_dna_remain_unchanged",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::fasta_alphabet::escaped_label_text_is_not_reinterpreted_and_multirecord_profiles_keep_bounds",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::fasta_alphabet::explicit_unmarked_protein_and_rna_profiles_do_not_guess_from_letters_or_names",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::format_dispatch::explicit_single_stranded_genbank_is_retained_and_not_invented_as_a_duplex",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::format_dispatch::format_sniffing_preserves_text_record_terminators_and_provenance_exports",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::actual_declared_termini_product_and_all_restrictive_documentary_shapes_cannot_be_laundered",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::corrupt_counts_types_coordinates_alignment_and_annotated_sequences_are_not_silently_stripped",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::independent_checksum_wrap_rna_and_real_protein_stop_are_preserved",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::legacy_typed_checksum_alias_empty_source_id_and_immutable_original_hash_have_explicit_behavior",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::literal_wisconsin_oracle_imports_exact_calls_header_and_original_bytes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::protein_chemical_features_refuse_sequence_only_laundering_while_ordinary_domains_report_loss",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::source_header_and_sequence_limits_fail_without_partial_document",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::gcg_sequence::synthetic_export_requires_explicit_identity_and_documentary_date_and_reports_loss",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::genbank_rna::legacy_u_encoded_rna_remains_readable_and_canonical_export_does_not_count_encoding_as_an_edit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::genbank_rna::only_rna_declared_records_normalize_and_multi_record_sources_keep_their_own_originals",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::genbank_rna::rna_edit_replay_uses_normalized_baseline_and_remaps_citations_without_false_source_identity",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::genbank_rna::standard_t_encoded_rna_keeps_original_bytes_and_native_uracil_with_exact_feature_order",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::genbank_rna::synthetic_rna_export_uses_insdc_thymine_without_mutating_the_internal_sequence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::aligned_gap_columns_are_projected_without_fabricating_duplex_chemistry",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::coordinates_match_independent_circular_forward_slices_and_literal_reverse_complements",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::empty_unoriented_overflow_and_unknown_schema_are_not_silently_repaired",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::independent_xdna_base_headers_support_dna_rna_protein_and_origin_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::legacy_pair_mismatch_and_iupac_source_bug_never_grant_intact_duplex_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::lower_row_is_aligned_complement_not_ordered_reverse_complement",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::malicious_primer_target_arithmetic_and_nonzero_xdna_origin_do_not_guess_coordinates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::original_legacy_evidence_rejects_hash_tampering",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::original_serializer_schema_preserves_notes_names_features_and_primers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::uninterpreted_material_fields_cannot_erase_unknown_physical_states",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::xdna_extended_features_use_inclusive_reversed_and_wrapped_coordinates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::xdna_overhangs_are_retained_without_silent_blunting_or_phosphorylation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::xdna_truncation_unknown_flags_lengths_encoding_and_trailing_data_fail_atomically",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::legacy_formats::xml_single_writer_f_and_old_detector_sequence_wrapper_are_explicit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::blank_qualifier_line_flood_is_bounded_before_structural_allocation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::broken_location_shapes_never_become_prefix_ranges_or_unresolved_successes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::continued_genbank_locations_and_qualifier_lookalikes_keep_their_own_boundaries",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::insdc_local_examples_preserve_exact_tree_coordinates_and_roundtrip",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::location_like_and_signed_minimum_quoted_annotations_remain_literal_data",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::location_parser_consumes_every_numeric_compound_and_remote_token",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::location_resource_bounds_cover_depth_width_and_text_size",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::malformed_qualifiers_never_recover_as_feature_locations_or_panic",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::native_feature_fields_cannot_inject_flat_file_structure",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::ordered_repeated_qualifiers_flags_quotes_and_continuations_roundtrip",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::quoted_value_boundaries_preserve_literal_characters_without_writer_panics",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::raw_genbank_contig_descriptors_cannot_reach_an_unsafe_prefix_parser",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::raw_genbank_feature_locations_are_checked_before_any_prefix_can_be_accepted",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::raw_record_location_budgets_and_later_invalid_records_do_not_return_partial_success",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::signed_minima_and_unsigned_overflows_return_errors_without_panics",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::tab_separated_features_headers_receive_the_same_location_safety_checks",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::unsupported_valid_descriptors_retain_whole_text_without_local_sequence_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::location_integrity::valid_uninterpreted_locations_survive_complete_genbank_and_native_roundtrips",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::collection_validation_rejects_fabricated_computable_rows_or_source_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::csv_and_tsv_quotes_unicode_bom_and_multiline_extra_fields_retain_source",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::edited_calls_keep_original_quality_evidence_without_inventing_current_scores",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::explicit_quality_trim_and_reversal_keep_actual_original_score_coordinates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::fastq_encoding_is_selected_never_inferred_and_conversion_is_lossless_or_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::fastq_malformed_framing_scores_bases_and_header_mismatches_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::fastq_wrapped_records_descriptions_quality_markers_and_duplicates_roundtrip",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::independent_fastq_framing_matrix_keeps_at_and_plus_as_quality_characters",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::independent_quoted_cell_matrix_preserves_both_delimiters_and_record_ranges",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::mapped_inconsistency_missing_cells_and_unknown_sequence_notation_never_guess_dna",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::mapped_roles_duplicate_names_quantities_and_opaque_modifications_are_distinct",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::oligo_collection_json_roundtrip_preserves_mapped_quantities_and_validation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::order_sheet_quoting_and_formula_policy_do_not_erase_original_values",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::palindromic_reverse_complement_reverses_scores_and_other_identical_coordinate_transforms_stale",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_formats::table_limits_and_positive_case_sensitive_units_are_explicit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_orders::long_order_evidence_and_existing_field_bounds_do_not_fabricate_reusable_primers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::oligo_orders::named_single_and_pair_orders_preserve_literal_rows_tails_and_spreadsheet_policy",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::documentary_reply_validation_rejects_bad_context_profile_paths_and_container_shapes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::gcg_omission_warnings_stay_acknowledged_and_explicit_options_bind_the_context",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::physical_and_modified_protein_guards_are_never_overridden_by_acknowledgement",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::snapgene_review_and_prepared_bytes_share_exact_source_and_context_without_spurious_ack",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsolete_headers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::xdna_name_loss_requires_explicit_current_ack_and_preserves_current_sequence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::sequence_export_review_and_preparation_are_source_bound_profiles",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::dna_topology_and_source_evidence_are_exact_and_recoverable_after_edits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::gaps_and_bidirectional_features_are_not_claimed_as_exact_biological_locations",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::notes_are_untrusted_source_assertions_and_do_not_grant_verified_status",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::origin_spanning_reverse_compound_features_and_duplicate_qualifiers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::packets_need_not_follow_dna_and_fidelity_warning_truncation_is_explicit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::primers_history_and_chemical_flags_are_retained_but_not_promoted_to_chemistry",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::truncated_packets_duplicates_unknown_sequence_encodings_and_invalid_bases_fail",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene::xml_entities_nesting_and_invalid_coordinate_semantics_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::edited_import_never_reemits_old_sequence_history_or_opaque_packets_and_retains_exact_original_source",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::explicit_losses_do_not_silently_normalize_colors_arrows_fuzzy_features_or_metadata",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::invalid_xml_oversized_native_models_and_unresolved_locations_never_produce_silent_partial_files",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::linear_protein_uses_type_two_packet_twenty_one_and_refuses_circular_protein_or_rna",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::literal_cookie_uncompressed_current_dna_and_notes_have_independent_exact_bytes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::physical_reference_only_and_modified_protein_state_cannot_be_erased_by_allowing_omissions",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_export::reverse_origin_join_and_individually_reversed_parts_preserve_literal_biological_order_and_qualifiers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_protein::conflicting_compressed_duplicate_circular_or_invalid_protein_packets_are_refused",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_protein::current_protein_writer_roundtrip_is_secondary_to_literals_and_originals_survive_later_edits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_protein::extra_properties_and_opaque_protein_history_remain_source_only_and_block_free_chain_chemistry",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_protein::independent_literal_protein_cookie_packet_and_aa_features_retain_exact_source_and_no_chemical_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::snapgene_protein::protein_feature_coordinates_are_residues_and_reverse_wrap_or_chemical_interval_guesses_are_not_allowed",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::byte_field_and_feature_count_limits_never_wrap_or_silently_discard_a_tail",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::exact_forward_reverse_and_origin_wrap_have_literal_inclusive_v0_coordinates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::imported_protein_crosslinks_and_nonstandard_residues_cannot_be_omitted",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::losses_are_explicit_without_truncation_join_flattening_or_color_spelling_changes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::physical_reference_only_and_modified_protein_evidence_cannot_be_omitted_into_clean_references",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::plain_literal_header_and_zero_overhang_extension_match_the_selected_binary_contract",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::protein_type4_is_linear_and_rna_or_circular_protein_are_explicitly_refused",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::xdna_export::regenerated_current_edits_preserve_original_source_bytes_without_replaying_old_padding_or_flags",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::duplicate_content_commits_retain_exact_navigation_events_after_native_reopen",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::editing_after_undo_retains_the_old_branch_and_checkout_is_reversible",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::exact_navigation_and_cross_document_fork_do_not_conflate_repeated_content",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::invalid_commits_are_atomic_and_external_unrecorded_changes_are_detected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::native_navigation_rejects_missing_event_ids_instead_of_inventing_recovery_roots",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::navigation_window_does_not_destroy_older_revision_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history::shared_revisions_and_cross_document_parents_survive_restore_and_new_edits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history_derived::missing_source_and_reused_identity_are_rejected_without_mutation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history_derived::transformed_document_retains_exact_source_event_and_survives_archive_roundtrip",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history_multi_parent::bad_or_excessive_source_bindings_reject_without_mutating_any_source",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history_multi_parent::in_place_reference_transfer_keeps_both_events_and_undo_redo_after_reload",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history_multi_parent::multi_read_product_keeps_every_exact_event_and_source_navigation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::history_multi_parent::source_only_ancestry_is_reversible_and_bad_parent_fields_fail_atomically",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_exchange::library_machine_identifiers_survive_genbank_and_embl_physical_wrapping",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_exchange::original_annotation_download_survives_edits_and_rejects_tampered_metadata",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_exchange::text_exports_report_omitted_quality_and_annotation_sources",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_internal_edits::derived_source_row_proposal_batch_restart_release_and_native_replay_preserve_literal_target",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_internal_edits::saved_proposal_requires_actual_workspace_and_full_source_and_refuses_documentary_tampering",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_internal_edits::source_event_alias_and_declared_literal_limits_refuse_before_preparation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_internal_edits::substitutions_and_indels_have_independent_oriented_offsets_and_conflicts_are_not_reinterpreted",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::library_work_budget::original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unreserved_work",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::release_protocol::a_failed_row_or_stale_finish_destroys_the_private_prefix",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::release_protocol::fresh_rows_are_inspectable_privately_and_only_a_complete_session_can_publish",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::release_protocol::progress_and_inspection_keep_ordinary_limits_and_only_explicit_workspace_variants_expand",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::release_protocol::released_manifest_exports_through_the_worker_and_checks_archive_integrity",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::release_protocol::request_context_and_native_inspection_receipts_reject_stale_options_and_models",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::release_protocol::schema57_full_and_selector_only_prefixes_cannot_decode_new_release_payloads",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::binary_exchange_preserves_exact_document_revisions_and_origin_annotations",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::candidate_reconstructs_only_against_matching_current_documents",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::current_operation_collection_prefixes_admit_only_existing_semantic_capacities",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::invalid_step_indices_render_diagnostics_without_integer_overflow",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::native_candidate_and_planning_counts_reject_before_decoding_any_claimed_element",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::native_savers_preserve_import_scale_features_retained_sources_and_workspace_size",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::native_savers_reject_models_the_current_decoder_cannot_reopen",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::packages_reject_rebound_snapshots_and_do_not_promote_bad_science",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::transfer::unknown_json_counts_stop_at_the_bound_before_parsing_an_extra_element",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::bounded_deflate_input_is_supported_but_bad_crc_and_symlinks_are_not",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::branch_events_repeated_content_exact_navigation_and_opaque_evidence_survive",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::candidate_snapshots_deduplicate_sources_and_preserve_unresolved_targets_as_data",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::current_native_archive_requires_explicit_exact_navigation_events",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::independent_stored_zip_and_manifest_fixture_recovers_exact_molecule",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::invalid_revision_graph_navigation_and_attachment_hashes_fail_before_save",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::large_original_attachments_are_stored_once_across_revision_history",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::listed_but_unreachable_blobs_and_silently_ignored_feature_fields_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::manifest_versions_unknown_fields_duplicate_json_and_blob_tampering_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::native_zip_preserves_full_document_and_retained_revision_capacities",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::native_zip_preserves_import_scale_features",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::repair_candidate_roundtrips_with_only_the_current_workspace_plan_schema",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::tailing_candidate_preserves_current_schema_and_literal_operation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::truncation_and_workspace_dimensions_are_bounded",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace::zip_duplicate_names_paths_hidden_local_data_encryption_and_extreme_offsets_reject",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_alignment::archive_load_rejects_invalid_recognized_alignment_even_with_consistent_hash_and_zip_crc",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_alignment::exact_original_alignment_and_row_identity_survive_archive_exchange",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_alignment::opaque_unknown_attachments_remain_supported_but_known_alignment_media_type_is_explicit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_alignment::recognized_typed_json_tampering_is_rejected_even_when_attachment_hash_matches",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_protocol::current_nonworkspace_and_absolute_payload_bounds_precede_deserialization",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_protocol::current_workspace_and_search_frames_reject_unsupported_headers_and_invalid_workspace_data",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_protocol::large_workspace_roundtrip_has_its_own_cap_without_enlarging_document_or_scientific_jobs",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_protocol::trace_validation_worker_binds_reference_and_preserves_raw_quality_options",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_protocol::workspace_save_load_jobs_preserve_document_identity_history_and_request_binding",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "history",
+        "test": "workspace::workspace_protocol::workspace_stale_bindings_corruption_and_malformed_data_do_not_become_loaded_state",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "server::compute_lifecycle_tests::retired_compute_remains_pending_after_caller_abort_until_native_task_finishes",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::genome_store::tests::deleting_and_dropping_close_files_before_removing_owned_storage",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::genome_store::tests::handles_are_bound_to_their_manager_epoch_even_for_identical_dna",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::genome_store::tests::offsets_capacity_and_poison_cleanup_do_not_install_partial_datasets",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::genome_store::tests::source_hash_and_native_block_corruption_fail_before_publication",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::genome_store::tests::streamed_seventy_mib_fasta_and_over_thirty_two_mib_native_file_never_need_whole_file_ram",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::tests::finalized_workspace_atomic_capacity::both_finalization_artifacts_are_reserved_before_any_workspace_publication",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "session::tests::structure_artifact_tests::source_and_report_capacity_failure_publishes_neither_artifact",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "tools::assembly::recombination_tools::tests::report_and_reference_document_capacity_failure_is_atomic",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "tools::catalog::catalog_tools::tests::serialization_keeps_conflicting_values_and_requires_explicit_assay_context",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "tools::workspace::image_evidence::tests::failed_image_capacity_cannot_publish_workspace_or_receipt",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "tools::workspace::image_evidence::tests::oversized_inline_image_is_rejected_before_compute_or_decode",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "workspace",
+        "test": "image_evidence_tools::archived_image_preview_claims_need_fresh_decode_and_another_session_has_no_access",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "workspace",
+        "test": "image_evidence_tools::image_cas_and_association_refusals_publish_nothing_and_old_revisions_remain_discoverable",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "workspace",
+        "test": "image_evidence_tools::images_roundtrip_original_and_fresh_preview_without_mutating_source_or_chemistry",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "protocol",
+        "test": "review_map_tools::retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped_and_side_effect_free",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "io::image_evidence_model::tests::image_admission_binds_actual_file_bytes_name_size_and_selected_document",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "io::image_evidence_model::tests::workspace_epoch_active_document_and_unrelated_asset_edits_invalidate_image_cas",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::apply_rejects_conflicts_and_stale_selection_without_partial_insertion",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::current_worker_transport_pins_source_and_reopens_exact_archived_pixels",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::duplicate_preparation_is_idempotent_and_original_equal_preview_deduplicates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::forged_association_cannot_bind_another_documents_retained_revision",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::historical_image_binding_survives_changed_document_head",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::manifest_versions_hashes_and_attachment_roles_are_strict",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::native_workspace_roundtrip_retains_original_preview_and_historical_association",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::prepare_apply_list_reopen_and_exact_export_never_change_molecules_or_history",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::reopen_recomputes_and_rejects_plausible_but_forged_preview_metadata",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "documents::image_evidence::tests::transport_refuses_rebound_source_name_manifest_and_preview_bytes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "protocol::envelope::tests::native_model_resource_rejections_preserve_too_large_and_malformed_is_format",
+        "exit_code": 0
+      }
+    ]
+  },
+  "discovery": {
+    "baseline_total": 2675,
+    "baseline_harnesses": 54,
+    "compared_existing_harnesses": 19,
+    "compared_baseline_cases": 1449,
+    "current_selected_harnesses": 21,
+    "current_selected_cases": 1484,
+    "missing_in_compared_harnesses": [],
+    "added": [
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::apply_rejects_conflicts_and_stale_selection_without_partial_insertion"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::current_worker_transport_pins_source_and_reopens_exact_archived_pixels"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::duplicate_preparation_is_idempotent_and_original_equal_preview_deduplicates"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::forged_association_cannot_bind_another_documents_retained_revision"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::historical_image_binding_survives_changed_document_head"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::manifest_versions_hashes_and_attachment_roles_are_strict"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::native_workspace_roundtrip_retains_original_preview_and_historical_association"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::prepare_apply_list_reopen_and_exact_export_never_change_molecules_or_history"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::reopen_recomputes_and_rejects_plausible_but_forged_preview_metadata"
+      ],
+      [
+        "core/collagene_core",
+        "documents::image_evidence::tests::transport_refuses_rebound_source_name_manifest_and_preview_bytes"
+      ],
+      [
+        "core/collagene_core",
+        "protocol::envelope::tests::native_model_resource_rejections_preserve_too_large_and_malformed_is_format"
+      ],
+      [
+        "image-evidence/evidence",
+        "all_eight_orientations_have_independent_pixel_oracles"
+      ],
+      [
+        "image-evidence/evidence",
+        "classic_and_big_tiff_both_byte_orders_preserve_exact_original"
+      ],
+      [
+        "image-evidence/evidence",
+        "every_truncated_container_prefix_is_rejected_without_panicking"
+      ],
+      [
+        "image-evidence/evidence",
+        "high_bit_original_is_retained_and_preview_precision_is_explicit"
+      ],
+      [
+        "image-evidence/evidence",
+        "huge_png_dimensions_and_jpeg_sampling_are_rejected_before_decode"
+      ],
+      [
+        "image-evidence/evidence",
+        "independent_png_and_jpeg_fixtures_decode_and_reexport"
+      ],
+      [
+        "image-evidence/evidence",
+        "limits_reject_before_pixel_decoding_and_preview_is_bounded"
+      ],
+      [
+        "image-evidence/evidence",
+        "malformed_tiff_ifds_counts_offsets_cycles_and_orientation_are_rejected"
+      ],
+      [
+        "image-evidence/evidence",
+        "multipage_keeps_original_and_warns_without_claiming_other_pages_decoded"
+      ],
+      [
+        "image-evidence/evidence",
+        "png_and_jpeg_exif_is_applied_once"
+      ],
+      [
+        "image-evidence/evidence",
+        "png_crc_corruption_and_jpeg_missing_end_are_rejected"
+      ],
+      [
+        "image-evidence/evidence",
+        "tiff_embedded_jpeg_cannot_override_outer_resource_admission"
+      ],
+      [
+        "image-evidence/evidence",
+        "unsupported_limits_and_signatures_fail_explicitly"
+      ],
+      [
+        "image-evidence/evidence",
+        "valid_jpeg_compressed_tiff_uses_admitted_embedded_dimensions"
+      ],
+      [
+        "mcp/collagene_mcp",
+        "tools::workspace::image_evidence::tests::failed_image_capacity_cannot_publish_workspace_or_receipt"
+      ],
+      [
+        "mcp/collagene_mcp",
+        "tools::workspace::image_evidence::tests::oversized_inline_image_is_rejected_before_compute_or_decode"
+      ],
+      [
+        "mcp/workspace",
+        "image_evidence_tools::archived_image_preview_claims_need_fresh_decode_and_another_session_has_no_access"
+      ],
+      [
+        "mcp/workspace",
+        "image_evidence_tools::image_cas_and_association_refusals_publish_nothing_and_old_revisions_remain_discoverable"
+      ],
+      [
+        "mcp/workspace",
+        "image_evidence_tools::images_roundtrip_original_and_fresh_preview_without_mutating_source_or_chemistry"
+      ],
+      [
+        "model/collagene_model",
+        "decode::tests::binary_and_unknown_length_collection_admission_mark_resource_outcomes"
+      ],
+      [
+        "model/collagene_model",
+        "decode::tests::bounded_binary_octets_use_literal_current_bytes_and_canonical_json_arrays"
+      ],
+      [
+        "model/collagene_model",
+        "decode::tests::frame_outcomes_distinguish_resource_rejection_from_malformed_data_and_reset"
+      ],
+      [
+        "web/collagene-web",
+        "io::image_evidence_model::tests::image_admission_binds_actual_file_bytes_name_size_and_selected_document"
+      ],
+      [
+        "web/collagene-web",
+        "io::image_evidence_model::tests::workspace_epoch_active_document_and_unrelated_asset_edits_invalidate_image_cas"
+      ]
+    ],
+    "unbuilt_baseline_harnesses": [
+      "antibody-numbering/alternate_tracks",
+      "antibody-numbering/domain_tracks",
+      "antibody-numbering/north_regions",
+      "antibody-numbering/numbering_windows",
+      "core/assembly",
+      "core/cloning",
+      "core/materials",
+      "core/restriction",
+      "core/verification",
+      "desktop-sync-host/publication_controls",
+      "desktop-sync-host/removal_controls",
+      "desktop-sync-host/service",
+      "desktop-sync-protocol/discussion_frames",
+      "desktop-sync-protocol/publication_frames",
+      "desktop-sync-protocol/removal_frames",
+      "desktop-sync-protocol/wire",
+      "library-sharing/annealed_material_closure",
+      "library-sharing/material_derivation_closure",
+      "library-sharing/protocol_layout_closure",
+      "library-sharing/publication",
+      "library-sharing/saved_material_digest_closure",
+      "library-sharing/structure_publication",
+      "mcp/assembly",
+      "mcp/cloning",
+      "mcp/methods",
+      "mcp/publication",
+      "model/citation_sources",
+      "model/compatibility",
+      "model/genbank_edits",
+      "repository/folders",
+      "server/collagene-server",
+      "sources/addgene",
+      "sources/insdc",
+      "sources/provider_interoperability",
+      "sources/sources"
+    ]
+  },
+  "regressions_fixed": [
+    "Scientific CI four oversized-source cases preserve typed TooLarge before scientific hashing/stale comparisons.",
+    "Archive representability is preflighted before UI attachment install; stale/disposed requests cannot install.",
+    "Recorded revision must belong to its associated document, including retained historical events."
+  ],
+  "limits": [
+    "JPEG/PNG/TIFF including classic and BigTIFF;16MiB source,5MiB preview,1M preview pixels; conservative decoded/intermediate admission may reject large otherwise valid images.",
+    "Native MCP inline import is8MiB; larger originals can arrive in bounded native workspace archives.",
+    "No browser, application HTTP, live provider, GUI installer or physical experiment acceptance was executed.",
+    "MG1655 source acquisition is not evidence of a validated host profile."
+  ]
+}

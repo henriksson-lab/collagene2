@@ -15,12 +15,12 @@ type and its meaningful implementations together. Prefer inherent methods for
 operations that own or query its invariants. Split by genuine domain or
 lifecycle boundaries, never arbitrary chunks or a desire to hit a line count.
 
-The [current full inventory](refactor-layout-current.json) covers **1,265 connected Rust
-files / 221 directories** with **zero violations and zero size warnings**.
+The [current full inventory](refactor-layout-current.json) covers **1,273 connected Rust
+files / 223 directories** with **zero violations and zero size warnings**.
 The largest directory has **17** direct Rust files; the largest file is
-`web/src/app/mod.rs`, **2,412 lines**. The separate unregistered image sources
-are excluded from this published inventory; the working-tree gate also passes
-with all 1,269 files / 223 directories.
+`web/src/app/mod.rs`, **2,454 lines**. The unregistered codon-host foundation
+is excluded from this published inventory. The working-tree layout gate also
+passes with that separate source.
 The existing `/home/mahogny/github/claude/rust_refactor` release binary's read-only
 `module-size-check --include-generated` previously reported **667 compliant
 production files** at the earlier audit checkpoint. It excludes non-production files and supplements the

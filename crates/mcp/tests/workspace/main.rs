@@ -1,6 +1,7 @@
 //! MCP workspace integration tests, grouped by biological responsibility.
 
 mod cloning_output_tools;
+mod image_evidence_tools;
 mod legacy_step_evidence_tools;
 mod materials;
 mod read_check_tools;

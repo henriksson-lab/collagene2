@@ -243,7 +243,8 @@ mod tests {
                     .err()
                     .unwrap()
             },
-        );
+        )
+        .value;
         assert!(error.is_data(), "{error}");
         assert!(error.to_string().contains("resource budget"), "{error}");
         assert!(json_exact::<FeatureList>(input.as_bytes()).is_err());

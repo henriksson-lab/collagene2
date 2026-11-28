@@ -10,8 +10,46 @@ use std::{cell::RefCell, collections::BTreeMap, fmt, marker::PhantomData, rc::Rc
 const PARTS: usize = 16_384;
 const QUALIFIERS: usize = 16_384;
 
+/// Bulk binary bytes with the same Postcard length+octet encoding as Vec<u8>.
+/// Human-readable transport keeps its canonical numeric array representation.
+pub fn serialize_bytes<S: serde::Serializer>(bytes: &[u8], s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_bytes(bytes)
+}
+pub fn bounded_bytes<'de, D: Deserializer<'de>, const MAX: usize>(
+    d: D,
+) -> Result<Vec<u8>, D::Error> {
+    if d.is_human_readable() {
+        return bounded_vec::<D, u8, MAX>(d);
+    }
+    struct Bytes<const MAX: usize>;
+    impl<'de, const MAX: usize> Visitor<'de> for Bytes<MAX> {
+        type Value = Vec<u8>;
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "at most {MAX} binary octets")
+        }
+        fn visit_bytes<E: de::Error>(self, bytes: &[u8]) -> Result<Vec<u8>, E> {
+            if bytes.len() > MAX {
+                return Err(resource("native binary bytes exceed their resource budget"));
+            }
+            let mut result = Vec::new();
+            result
+                .try_reserve_exact(bytes.len())
+                .map_err(|_| resource("native byte allocation failed"))?;
+            result.extend_from_slice(bytes);
+            Ok(result)
+        }
+        fn visit_byte_buf<E: de::Error>(self, bytes: Vec<u8>) -> Result<Vec<u8>, E> {
+            if bytes.len() > MAX {
+                return Err(resource("native binary bytes exceed their resource budget"));
+            }
+            Ok(bytes)
+        }
+    }
+    d.deserialize_bytes(Bytes::<MAX>)
+}
+
 thread_local! {
-    static FRAME: RefCell<Option<ModelBudget>> = const { RefCell::new(None) };
+    static FRAME: RefCell<Option<Frame>> = const { RefCell::new(None) };
 }
 struct FrameGuard {
     root: bool,
@@ -24,7 +62,10 @@ impl FrameGuard {
             if slot.is_some() {
                 false
             } else {
-                *slot = Some(ModelBudget::native_frame(maximum_bytes));
+                *slot = Some(Frame {
+                    budget: ModelBudget::native_frame(maximum_bytes),
+                    resource_exhausted: false,
+                });
                 true
             }
         });
@@ -41,15 +82,55 @@ impl Drop for FrameGuard {
         }
     }
 }
-/// Share aggregate native resource limits across a synchronous decoded frame.
+/// Result of synchronous native-frame admission, including typed resource status.
+///
+/// The scope shares aggregate native resource limits across a decoded frame.
 /// Each collection kind is capped at one million; annotation and retained source
 /// text share the admitted envelope byte maximum. Per-model limits remain lower.
 /// Nested calls share the outer budget. The private non-Send guard never escapes
 /// this closure; error or panic restores the thread-local state. No borrow is
 /// held while invoking a deserializer, and no guard crosses an await point.
-pub fn with_native_frame_budget<T>(maximum_bytes: usize, decode: impl FnOnce() -> T) -> T {
+pub struct NativeFrameOutcome<T> {
+    pub value: T,
+    /// Set by typed resource admission, never inferred from Serde error text.
+    pub resource_exhausted: bool,
+}
+struct Frame {
+    budget: ModelBudget,
+    resource_exhausted: bool,
+}
+pub fn with_native_frame_budget<T>(
+    maximum_bytes: usize,
+    decode: impl FnOnce() -> T,
+) -> NativeFrameOutcome<T> {
     let _guard = FrameGuard::enter(maximum_bytes);
-    decode()
+    let value = decode();
+    let resource_exhausted = FRAME.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|frame| frame.resource_exhausted)
+    });
+    NativeFrameOutcome {
+        value,
+        resource_exhausted,
+    }
+}
+fn mark_resource() {
+    FRAME.with(|slot| {
+        if let Some(frame) = slot.borrow_mut().as_mut() {
+            frame.resource_exhausted = true;
+        }
+    });
+}
+fn resource<E: de::Error>(message: &str) -> E {
+    mark_resource();
+    E::custom(message)
+}
+pub(crate) fn admission<E: de::Error>(error: crate::Error) -> E {
+    if matches!(error, crate::Error::TooLarge) {
+        mark_resource();
+    }
+    E::custom(error)
 }
 fn frame(
     charge: impl FnOnce(&mut ModelBudget) -> Result<(), crate::Error>,
@@ -57,7 +138,13 @@ fn frame(
     FRAME.with(|slot| {
         let mut slot = slot.borrow_mut();
         match slot.as_mut() {
-            Some(budget) => charge(budget),
+            Some(frame) => {
+                let result = charge(&mut frame.budget);
+                if matches!(result, Err(crate::Error::TooLarge)) {
+                    frame.resource_exhausted = true;
+                }
+                result
+            }
             None => Ok(()),
         }
     })
@@ -95,7 +182,7 @@ impl Budget {
 }
 fn hint<E: de::Error>(hint: Option<usize>, maximum: usize) -> Result<(), E> {
     if hint.is_some_and(|size| size > maximum) {
-        return Err(E::custom(
+        return Err(resource(
             "native decoded collection exceeds its resource budget",
         ));
     }
@@ -110,7 +197,7 @@ impl<'de, T: Deserialize<'de>> DeserializeSeed<'de> for Element<T> {
     type Value = T;
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<T, D::Error> {
         if self.index >= self.maximum {
-            return Err(de::Error::custom(
+            return Err(resource(
                 "native decoded collection exceeds its resource budget",
             ));
         }
@@ -165,7 +252,7 @@ impl<'de> Visitor<'de> for Text<'_> {
     fn visit_str<E: de::Error>(self, value: &str) -> Result<String, E> {
         self.budget
             .text(value, self.cap, self.original)
-            .map_err(E::custom)?;
+            .map_err(admission)?;
         Ok(value.to_owned())
     }
     fn visit_borrowed_str<E: de::Error>(self, value: &'de str) -> Result<String, E> {
@@ -174,7 +261,7 @@ impl<'de> Visitor<'de> for Text<'_> {
     fn visit_string<E: de::Error>(self, value: String) -> Result<String, E> {
         self.budget
             .text(&value, self.cap, self.original)
-            .map_err(E::custom)?;
+            .map_err(admission)?;
         Ok(value)
     }
 }
@@ -384,7 +471,7 @@ struct FeatureSeed<'a>(&'a mut Budget);
 impl<'de> DeserializeSeed<'de> for FeatureSeed<'_> {
     type Value = Feature;
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Feature, D::Error> {
-        self.0.feature().map_err(de::Error::custom)?;
+        self.0.feature().map_err(admission)?;
         d.deserialize_struct(
             "Feature",
             &["kind", "location", "qualifiers", "needs_review"],
@@ -511,11 +598,9 @@ impl<'de> DeserializeSeed<'de> for Qualifier<'_> {
     type Value = (String, Option<String>);
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Self::Value, D::Error> {
         if self.index >= QUALIFIERS {
-            return Err(de::Error::custom(
-                "native feature qualifier count exceeds16384",
-            ));
+            return Err(resource("native feature qualifier count exceeds16384"));
         }
-        self.budget.qualifier().map_err(de::Error::custom)?;
+        self.budget.qualifier().map_err(admission)?;
         d.deserialize_tuple(2, self)
     }
 }
@@ -579,7 +664,7 @@ struct MetadataKey<'a>(&'a mut Budget);
 impl<'de> DeserializeSeed<'de> for MetadataKey<'_> {
     type Value = String;
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<String, D::Error> {
-        self.0.metadata().map_err(de::Error::custom)?;
+        self.0.metadata().map_err(admission)?;
         Text {
             budget: &mut *self.0,
             cap: 4096,
@@ -605,9 +690,9 @@ impl<'de> DeserializeSeed<'de> for Node<'_> {
     type Value = Location;
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Location, D::Error> {
         if self.depth >= crate::bounds::MAX_DEPTH {
-            return Err(de::Error::custom("location nesting exceeds32levels"));
+            return Err(resource("location nesting exceeds32levels"));
         }
-        self.budget.node().map_err(de::Error::custom)?;
+        self.budget.node().map_err(admission)?;
         d.deserialize_enum(
             "Location",
             &["Range", "Complement", "Join", "Order", "Unresolved"],
@@ -692,7 +777,7 @@ impl<'de> DeserializeSeed<'de> for Part<'_> {
     type Value = Location;
     fn deserialize<D: Deserializer<'de>>(self, d: D) -> Result<Location, D::Error> {
         if self.index >= PARTS {
-            return Err(de::Error::custom("native location parts exceed16384"));
+            return Err(resource("native location parts exceed16384"));
         }
         Node {
             budget: &mut *self.budget,

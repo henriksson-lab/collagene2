@@ -4,6 +4,10 @@ pub(crate) mod controller;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod download;
 #[cfg(target_arch = "wasm32")]
+pub(crate) mod image_evidence;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod image_evidence_model;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod map_export;
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod map_export_model;

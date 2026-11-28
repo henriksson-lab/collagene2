@@ -117,10 +117,16 @@ pub(super) fn decode_with_limit<T: for<'de> Deserialize<'de>>(
     if blake3::hash(&bytes[HEADER..]).as_bytes() != &bytes[10..42] {
         return Err(Error::Format("binary checksum mismatch".into()));
     }
-    let (result, rest) = collagene_model::decode::with_native_frame_budget(maximum, || {
+    let outcome = collagene_model::decode::with_native_frame_budget(maximum, || {
         postcard::take_from_bytes(&bytes[HEADER..])
-    })
-    .map_err(|e| Error::Format(e.to_string()))?;
+    });
+    let (result, rest) = outcome.value.map_err(|e| {
+        if outcome.resource_exhausted {
+            Error::TooLarge
+        } else {
+            Error::Format(e.to_string())
+        }
+    })?;
     if !rest.is_empty() {
         return Err(Error::Format("unexpected trailing payload".into()));
     }
@@ -148,4 +154,35 @@ pub(super) fn worker_limit(
         return Err(Error::TooLarge);
     }
     Ok(MAX_WORKSPACE_MESSAGE_BYTES)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use collagene_model::{Molecule, Topology};
+
+    #[test]
+    fn native_model_resource_rejections_preserve_too_large_and_malformed_is_format() {
+        let mut molecule = Molecule::dna("source", "A", Topology::Linear).unwrap();
+        molecule
+            .metadata
+            .insert("source-evidence".into(), "x".repeat(1024 * 1024 + 1));
+        // Construct a current, checksummed hostile frame directly, bypassing the
+        // public saver whose borrowed admission correctly refuses this model.
+        let oversized = encode(b"CG2\0", &molecule).unwrap();
+        assert!(matches!(
+            decode::<Molecule>(b"CG2\0", &oversized),
+            Err(Error::TooLarge)
+        ));
+        let malformed = encode(b"CG2\0", &0u8).unwrap();
+        assert!(matches!(
+            decode::<Molecule>(b"CG2\0", &malformed),
+            Err(Error::Format(_))
+        ));
+        let valid = Molecule::dna("valid", "A", Topology::Linear).unwrap();
+        assert_eq!(
+            decode::<Molecule>(b"CG2\0", &encode(b"CG2\0", &valid).unwrap()).unwrap(),
+            valid
+        );
+    }
 }

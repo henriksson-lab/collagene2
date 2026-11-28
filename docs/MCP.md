@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current source registry has 209 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current source registry has 212 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -317,6 +317,41 @@ The `.cg2plan` candidate and native workspace plan use the current internal enco
 `design_inverse_pcr` takes an immutable circular `document`, independent circular `target` and `InversePcrOptions`. It returns actual primers, computed diagnostics and a stored candidate `plan_revision` with explicit PCR, terminal phosphorylation and sealed circular ligation. Review/reverify that candidate before export/use. This stores a session proposal, not a project edit or experimental result. Full evidence is a JSON artifact.
 
 `predict_gel` takes bound `lanes` (label, document, preparation, optional loaded mass), explicit `Calibration`, and `image_format` (`"Svg"` or `{"Png":{"width":1600}}`). It returns full JSON and the selected image via `image_artifact_id`, with bounded lane summaries and image warnings/context. PNG is a source-report-bound static rendering, not an observed image. Uncut circular conformation, unsupported/error profiles and out-of-calibration fragments remain visible and unpositioned. `design_diagnostic_digest` takes immutable `documents` and `DiagnosticOptions`; ranked enzyme sets distinguish supported band profiles under that calibration and resolution, while unknown profiles stay unknown. Index-pair results refer to the ordered document list/source revisions. Search caps and completeness accompany all reports. There is no observed-gel comparison or OpenGel integration.
+
+### Documentary image attachments
+
+Three tools use exact immutable `workspace: {id, revision}` references and an
+explicit `document: {document_id, revision}` selection:
+
+- `list_image_evidence` returns a fresh `source_workspace_fingerprint` and pages
+  (`start`, `limit`; default20, maximum25) of metadata for that document. Images
+  attached to earlier retained revisions remain discoverable with their original
+  association; selecting a newer head never silently rebinds them.
+- `attach_image_evidence` additionally requires that fingerprint as
+  `expected_source_fingerprint`, a display `name`, and exact original
+  `data_base64` (JPEG/TIFF/PNG, at most8MiB decoded in this inline MCP profile).
+  The private compute owner prepares a bounded documentary preview. A NEW
+  immutable workspace and image-specific JSON receipt publish atomically;
+  original workspace, sequence/features, history and material stay unchanged.
+- `export_image_evidence` takes an exact `manifest_hash` and `representation`:
+  `"Original"` returns byte-exact retained source without asserting a fresh
+  decode; `"Preview"` freshly decodes the original under the current profile
+  and compares its descriptor/preview before producing PNG. The supplied
+  document/revision must equal that image's original association. Both return
+  artifact references for ordinary paginated `read_artifact`; neither writes a
+  filesystem path. Canonical PNG originals/previews may share one byte artifact.
+
+Codec work runs under the same native compute permit as other scientific tools.
+The existing workspace/session/artifact byte and item budgets still apply;
+capacity errors publish neither a workspace nor a receipt. Larger documentary
+images already carried in a supported native workspace can use the existing
+chunked workspace import, subject to those budgets; inline attachment remains
+explicitly capped. Image filenames are generated by the application; `name` is
+only display data. Decoder warnings, source orientation and original/preview
+hashes/dimensions remain visible. A photograph, manifest or preview cannot prove
+sequence identity, physical material, calibration, a successful experiment or
+verification. There is no predicted-versus-observed gel comparison.
+
 
 Model details: [Golden Gate](GOLDEN_GATE.md), [mutagenesis](MUTAGENESIS.md), [gel prediction](GEL_PREDICTION.md). All five tools use the same embedded core and immutable revision checks; schemas are available through `tools/list`. Export artifacts and proposals do not acquire browser/project-write authority.
 

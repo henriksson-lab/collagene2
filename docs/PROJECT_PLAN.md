@@ -75,6 +75,14 @@ source status and reports; a refuted folder-generation suspicion is closed.
 The finite DOM/HTML source review found no confirmed injection path in the
 inspected code; its report records the reviewed boundaries and limits.
 
+**Published checkpoint CI follow-up:** `5f72160` produced the Windows portable
+executable, macOS installer/app and Linux Debian package through successful CI
+jobs ([evidence](audits/desktop-packages-current.json)). Scientific CI exposed
+four existing oversized-source cases whose early native admission lost the typed
+`TooLarge` error and became `Format`. Preserve typed resource status through the
+scoped decoder outcome; do not weaken the early-admission/order assertions. This
+correction joins the image batch before its one combined compile/test pass.
+
 **Current connected source batch, checked:** the complete finite NCBI genetic-code
 catalogue (27 extant tables) retains context-dependent sense/stop uncertainty;
 portable PNG map/gel exports share one bounded Rust rasterizer; hosted ordinary
@@ -85,8 +93,13 @@ constructor invariants, with direct caller updates. The complete
 source/caller/schema/fixture batch passes native/WASM checks and 490 unique
 focused cases. Discovery preserves all 2,617 prior names (2,675 current cases /
 54 harnesses); ignored HTTP/provider tests were not executed. Exact-source CI
-and requested package production follow publication. Bounded TIFF/JPEG/PNG documentary evidence sources are authored
-in a separate, unregistered crate and attachment owner for the next connected batch; it does not add
+and requested package production follow publication. The image-evidence follow-up implements bounded JPEG/PNG/TIFF/BigTIFF attachments
+through native archives, worker127, web File → Images and three MCP tools
+(212total). Native/WASM checks and302 focused cases pass, including the unchanged
+four CI regressions. [Exact image evidence](audits/image-evidence-current-integration.json).
+The next feature batch is the unregistered MG1655 codon-reference owner: sources
+and checksums are captured, seven tests are authored, and fresh derivation,
+compact runtime data and UI/MCP integration remain. Image attachments add no
 OpenGel comparison or measurement. See the [current delivery queue](DELIVERY_AUDIT.md#current-implementation-queue).
 
 **Current organization audit, 28 November:** three parallel reviewers inspected

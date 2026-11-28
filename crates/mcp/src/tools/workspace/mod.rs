@@ -1,3 +1,5 @@
+mod image_evidence;
+
 use crate::session::references::MaterialDerivationOrigin;
 
 use crate::server::CollageneServer;

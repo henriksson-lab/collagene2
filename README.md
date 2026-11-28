@@ -38,6 +38,7 @@ These tables summarize implemented capabilities; see the linked profiles for lim
 | GenPept, UniProt | Annotated protein import/export |
 | SnapGene DNA/protein, XDNA v0, GCG | Selected import/export profiles |
 | ABIF, SCF | Trace import, original download; SCF regeneration |
+| JPEG, PNG, TIFF/BigTIFF | Documentary workspace attachments, previews and exact-original download |
 | Original Collagene XML | Import and original download |
 | PDB, mmCIF coordinates | Source-preserving import, 3D view and original download |
 | Aligned FASTA, CLUSTAL, Stockholm, PHYLIP, MSF, NEXUS, PIR, GDE, SELEX | Alignment import/export; no external aligner |
@@ -53,7 +54,7 @@ These tables summarize implemented capabilities; see the linked profiles for lim
 | Platform | Delivery |
 | --- | --- |
 | Windows, macOS, Linux browsers | Leptos/WASM web application with WebGL2 |
-| Windows, macOS, Linux desktop | Tauri; native CI builds, installed GUI acceptance in progress |
+| Windows, macOS, Linux desktop | Tauri; CI produces portable `.exe`, macOS installer/app and `.deb` ([packages](docs/DESKTOP_PACKAGING.md)); installed GUI review pending |
 | Shared lab server | Rust service with authenticated plasmid folders |
 | Mobile | Deferred |
 

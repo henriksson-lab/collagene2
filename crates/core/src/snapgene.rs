@@ -1,10 +1,8 @@
 //! Independently implemented, deliberately limited SnapGene DNA/protein packet/XML import.
 //! See docs/SNAPGENE_FORMAT.md for layout provenance, unsupported semantics and limits.
-use crate::{
-    formats::{ImportReport, MAX_IMPORT_BYTES},
-    *,
-};
+use crate::formats::{ImportReport, MAX_IMPORT_BYTES};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use roxmltree::{Document, Node, ParsingOptions};
 use std::collections::{BTreeMap, BTreeSet};
 

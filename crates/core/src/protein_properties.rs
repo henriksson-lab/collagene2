@@ -1,6 +1,6 @@
 //! Explicit unmodified-chain protein calculations, independently implemented.
 //! These are sequence/model estimates, not folding, activity, or experimental measurements.
-use crate::{Alphabet, Error, Molecule};
+use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
 
 pub const PROTEIN_ENGINE_VERSION: &str = "protein-properties-1";
@@ -64,7 +64,7 @@ impl ProteinOptions {
         if !self.charge_ph.is_finite()
             || !(0.0..=14.0).contains(&self.charge_ph)
             || self.max_residues == 0
-            || self.max_residues > crate::model::MAX_SEQUENCE_LEN
+            || self.max_residues > collagene_model::MAX_SEQUENCE_LEN
         {
             return Err(Error::Unsupported(
                 "protein pH must be finite in0..14 and residue limit in1..10,000,000".into(),
@@ -266,7 +266,7 @@ fn source_preflight(m: &Molecule) -> Result<(), Error> {
         Ok(())
     }
     fn location(
-        l: &crate::Location,
+        l: &collagene_model::Location,
         depth: usize,
         bytes: &mut usize,
         items: &mut usize,
@@ -276,14 +276,16 @@ fn source_preflight(m: &Molecule) -> Result<(), Error> {
         }
         reserve(bytes, items, 96)?;
         match l {
-            crate::Location::Complement(inner) => location(inner, depth + 1, bytes, items)?,
-            crate::Location::Join(parts) | crate::Location::Order(parts) => {
+            collagene_model::Location::Complement(inner) => {
+                location(inner, depth + 1, bytes, items)?
+            }
+            collagene_model::Location::Join(parts) | collagene_model::Location::Order(parts) => {
                 for part in parts {
                     location(part, depth + 1, bytes, items)?;
                 }
             }
-            crate::Location::Unresolved(text) => reserve(bytes, items, text.len())?,
-            crate::Location::Range { .. } => {}
+            collagene_model::Location::Unresolved(text) => reserve(bytes, items, text.len())?,
+            collagene_model::Location::Range { .. } => {}
         }
         Ok(())
     }

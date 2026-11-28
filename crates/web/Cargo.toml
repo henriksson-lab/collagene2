@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-model = { path = "../model" }
 collagene-core = { path = "../core" }
 collagene-design-exchange = { path = "../design-exchange" }
 collagene-view-layout = { path = "../view-layout" }

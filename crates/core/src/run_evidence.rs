@@ -1,6 +1,7 @@
 //! Documentary download of current recorded physical/reference evidence. Reading
 //! attachments never reconstructs material or establishes current verification.
-use crate::{Error, run_lineage, workspace::Workspace};
+use crate::{run_lineage, workspace::Workspace};
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const MAX_BYTES: usize = 32 * 1024 * 1024;

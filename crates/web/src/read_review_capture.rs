@@ -1,7 +1,10 @@
 //! Durable read-review decisions and optional revised reference; no restored verdict.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     read_review, run_lineage,
     workspace::Workspace,
 };

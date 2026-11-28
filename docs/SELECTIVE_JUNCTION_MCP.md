@@ -22,7 +22,7 @@ to `propose_overlap_assembly`, then inspect its fresh verifier and saved plan.
 Individual primer rankings do not establish exact amplification, cleavage,
 compatible chemistry, experimental yield or a unique biological outcome.
 
-The new `crates/mcp/tests/selective_junction_tools.rs` fixture declares a 68-base
+The new `crates/mcp/tests/assembly/selective_junction_tools.rs` fixture declares a 68-base
 three-source target before designing anything. It replans only row A after a `GC`
 junction insertion, preserves named manual PCR row B exactly, and preserves an
 EcoRV catalog-pinned row C with two actual flanking cuts. Junction homologies are

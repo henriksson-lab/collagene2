@@ -73,5 +73,5 @@ the existing JSON recipe enum gains this operation directly, without another
 record shape or compatibility reader. The application binary worker schema
 advances with the new typed preview job/result. Root integration provides worker,
 MCP and UI coverage; core fixtures live in
-`crates/core/tests/overlap_extension_material.rs`. Validation results belong in the
+`crates/core/tests/materials/overlap_extension/overlap_extension_material.rs`. Validation results belong in the
 implementation status after the integrated batch is checked.

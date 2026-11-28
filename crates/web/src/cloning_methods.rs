@@ -3,16 +3,19 @@ use crate::{
     app::prepare_download as download, golden_gate_pool_form::PoolForm, worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     chemistry::{EndRepairMethod, EndTreatment, FivePrime, Terminus, ThreePrime},
     overlap_profiles::{OverlapMethod, ProfileOptions, ProfileReport},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     tailing::TailingBase,
     tailing_recipe::{Action, Profile, ProfileStatus},
     transfer::Candidate,
     verification::PlanInput,
 };
+use collagene_model::Molecule;
 use leptos::{html, prelude::*};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -1935,7 +1938,7 @@ impl PoolReceipt {
     }
     fn diagnostics(
         &self,
-    ) -> Option<Result<collagene_core::assembly_diagnostics::Report, collagene_core::Error>> {
+    ) -> Option<Result<collagene_core::assembly_diagnostics::Report, collagene_model::Error>> {
         match self {
             Self::Prepared(r) => Some(collagene_core::assembly_diagnostics::ligation(&r.preview)),
             Self::Reaction(_) => None,

@@ -1,7 +1,7 @@
 //! Independently implemented coordinate projections. A segment maps source reference bases
 //! into a derived document; biological feature order is retained, not sorted by display position.
-use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology, model::MAX_SEQUENCE_LEN,
+use collagene_model::{
+    Alphabet, Error, Feature, Location, MAX_SEQUENCE_LEN, Molecule, Sequence, Topology,
 };
 use serde::{Deserialize, Serialize};
 
@@ -718,9 +718,9 @@ fn derived(
     // later generations with no new active recipe do not create new archives.
     if let Some(recipe) = result
         .metadata
-        .remove(crate::model::GENBANK_EDIT_RECIPE_KEY)
+        .remove(collagene_model::GENBANK_EDIT_RECIPE_KEY)
     {
-        if recipe.len() > crate::model::MAX_GENBANK_EDIT_RECIPE_BYTES {
+        if recipe.len() > collagene_model::MAX_GENBANK_EDIT_RECIPE_BYTES {
             return Err(Error::TooLarge);
         }
         retain(

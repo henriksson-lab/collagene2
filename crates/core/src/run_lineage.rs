@@ -1,10 +1,10 @@
 //! Retained cloning runs are historical evidence, never cached verification authority.
 use crate::{
-    Error, Molecule,
     transfer::Candidate,
     verification::{self, DesignPlan, Operation, Source, Status, VerificationReport},
     workspace::{RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const WORKSPACE_ATTACHMENT_KIND: &str = "cloning-run-v1";

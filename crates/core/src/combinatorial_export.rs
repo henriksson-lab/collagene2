@@ -4,7 +4,7 @@
 //! finishing route (reference, 5′ homology, or unsealed 3′ annealing) is rebuilt
 //! from independent declarations; export never replaces it with a reference merge.
 use crate::{
-    Error, combinatorial_batch as batch, combinatorial_design as design,
+    combinatorial_batch as batch, combinatorial_design as design,
     combinatorial_release::{self as release, Manifest, ReleasedRow},
     formats::{self, TextFormat},
     oligo_formats::Delimiter,
@@ -12,6 +12,7 @@ use crate::{
     verification::{self, Status},
     workspace::Workspace,
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,

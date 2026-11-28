@@ -96,8 +96,8 @@ pub fn feature_piece(
 
 /// Biological 3′ boundary in source coordinates. Complement reverses Join
 /// order; unordered/fuzzy endpoints do not acquire a definite arrowhead.
-pub fn terminal(location: &collagene_core::Location) -> Option<(usize, bool)> {
-    use collagene_core::Location;
+pub fn terminal(location: &collagene_model::Location) -> Option<(usize, bool)> {
+    use collagene_model::Location;
     fn walk(location: &Location, reverse: bool, depth: usize) -> Option<(usize, bool)> {
         if depth >= 32 {
             return None;
@@ -204,7 +204,7 @@ mod tests {
     }
     #[test]
     fn joined_origin_and_complement_heads_follow_biological_order() {
-        use collagene_core::Location;
+        use collagene_model::Location;
         let joined = Location::Join(vec![Location::range(90, 100), Location::range(0, 20)]);
         assert_eq!(terminal(&joined), Some((20, false)));
         assert_eq!(

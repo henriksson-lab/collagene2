@@ -1,6 +1,6 @@
 //! Independently implemented whole-template feature matching and reviewed annotation transfer.
 //! Source revisions identify provenance claims, not authenticated experimental truth.
-use crate::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
@@ -147,7 +147,7 @@ impl LibraryEntry {
         }
         self.source
             .location
-            .validate(crate::model::MAX_SEQUENCE_LEN)?;
+            .validate(collagene_model::MAX_SEQUENCE_LEN)?;
         if exact_size(&self.source.location)? != self.sequence.len() {
             return Err(invalid(
                 "library template length disagrees with its claimed source location",

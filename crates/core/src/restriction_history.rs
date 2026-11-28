@@ -2,13 +2,13 @@
 //! Installation reconstructs the product afresh. Imported recipe metadata is evidence only.
 pub use crate::run_lineage::EventBinding as SourceBinding;
 use crate::{
-    Error,
     analysis::Enzyme,
     history::DocumentHistory,
     restriction_inspection::{self, InspectionOptions},
     run_lineage,
     workspace::{self, Workspace},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 macro_rules! dto{($($x:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
 dto! {pub struct InstalledDigest{pub archive:Vec<u8>,pub source:SourceBinding,pub document_id:String,pub event_id:String,pub product_revision:String,pub batch_revision:String}}
@@ -51,7 +51,7 @@ pub fn source_role(b: &SourceBinding) -> Result<String, Error> {
     .to_hex()
     .to_string())
 }
-fn source<'a>(w: &'a Workspace, b: &SourceBinding) -> Result<&'a crate::Molecule, Error> {
+fn source<'a>(w: &'a Workspace, b: &SourceBinding) -> Result<&'a collagene_model::Molecule, Error> {
     binding_valid(b)?;
     let document = w
         .documents
@@ -79,7 +79,7 @@ fn source<'a>(w: &'a Workspace, b: &SourceBinding) -> Result<&'a crate::Molecule
 pub(crate) fn current_source<'a>(
     w: &'a Workspace,
     b: &SourceBinding,
-) -> Result<&'a crate::Molecule, Error> {
+) -> Result<&'a collagene_model::Molecule, Error> {
     w.validate()?;
     if w.active_document != b.document_id {
         return Err(bad("active source changed; rerun virtual digest"));
@@ -145,7 +145,7 @@ pub fn prepare_install(
 pub(crate) fn prepare_fresh_install(
     w: &Workspace,
     b: &SourceBinding,
-    product: crate::Molecule,
+    product: collagene_model::Molecule,
     batch_revision: String,
     description: String,
 ) -> Result<PreparedInstallation, Error> {

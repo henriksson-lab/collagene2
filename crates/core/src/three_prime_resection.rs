@@ -1,9 +1,7 @@
 //! Explicit ideal hydrolytic 3′→5′ shortening of free duplex strand ends.
 //! No enzyme identity, kinetic cut-length distribution, synthesis or ligation.
-use crate::{
-    Error, Sequence, Topology,
-    chemistry::{Duplex, Strand, StrandMapping, ThreePrime},
-};
+use crate::chemistry::{Duplex, Strand, StrandMapping, ThreePrime};
+use collagene_model::{Error, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "three-prime-resection-1";

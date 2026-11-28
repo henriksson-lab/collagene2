@@ -634,11 +634,11 @@ mod tests {
         source_identity::SourceInfo,
     };
     use collagene_core::{
-        Molecule, Topology,
         assembly_recipe::Preparation,
         chemistry::{EndTreatment, Terminus},
         workspace::Workspace,
     };
+    use collagene_model::{Molecule, Topology};
     use std::sync::Arc;
 
     fn source(name: &str, dna: &str) -> Arc<CapturedSource> {

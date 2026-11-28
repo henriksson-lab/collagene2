@@ -7,8 +7,7 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet,
-    protocol::AnalysisResult,
+    protocol::schema::AnalysisResult,
     run_lineage::{EventBinding, InputEventBinding},
     topo::{
         self,
@@ -18,6 +17,7 @@ use collagene_core::{
     topo_worker,
     transfer::Candidate,
 };
+use collagene_model::Alphabet;
 use leptos::prelude::*;
 use serde::Serialize;
 use std::{

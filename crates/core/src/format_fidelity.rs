@@ -1,6 +1,7 @@
 //! Shared restrictions for reference-only exchange profiles which cannot carry
 //! native physical evidence. This does not restrict reference alphabets/topology.
-use crate::{Alphabet, Error, Molecule, chemistry};
+use crate::chemistry;
+use collagene_model::{Alphabet, Error, Molecule};
 fn restricted_markers(m: &Molecule) -> bool {
     let producer = m.original_genbank.as_ref().is_some_and(|raw| {
         raw.lines()
@@ -47,7 +48,7 @@ fn restricted_markers(m: &Molecule) -> bool {
         });
     producer || marked || protein_state
 }
-pub(crate) fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
+pub fn reference_export_guard(m: &Molecule) -> Result<(), Error> {
     if restricted_markers(m) || chemistry::has_unmapped_physical_evidence(m) {
         return Err(Error::Unsupported("Physical, damaged, single/mixed-strand, modified or reference-only evidence cannot be preserved by this reference export profile. Retain a native archive; accepting omissions cannot erase this restriction.".into()));
     }

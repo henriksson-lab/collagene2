@@ -3,7 +3,8 @@ use crate::{
     primer_domain_edit::{self, Edit, Preview},
     primer_pair_model::{OligoDraft, PairDraft},
 };
-use collagene_core::{Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
 

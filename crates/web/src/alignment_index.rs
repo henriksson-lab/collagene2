@@ -1,5 +1,6 @@
 //! Compact immutable column-to-residue index. No full-alignment scan during painting.
-use collagene_core::{Error, alignment_formats::AlignmentDocument};
+use collagene_core::alignment_formats::AlignmentDocument;
+use collagene_model::Error;
 const BLOCK: usize = 256;
 #[derive(Debug)]
 pub struct PreparedAlignment {

@@ -67,7 +67,7 @@ under the same store lock. SVG uses the native2MiB ceiling and standard bounded
 
 ## Authored SDK coverage
 
-`mcp/tests/review_map_tools.rs` uses a real in-process MCP client/server transport
+`crates/mcp/tests/protocol/review_map_tools.rs` uses a real in-process MCP client/server transport
 and a literal saved PCR. It advances both source and independent-target heads,
 checks that review still binds their exact older events, validates downloaded
 full review/candidate artifacts, and explicitly calls fresh verification separately.

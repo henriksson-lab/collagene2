@@ -1,10 +1,10 @@
 //! Private live genome parser/verification/search state. Dataset bytes live with the host.
 //! Serializable progress is evidence only and cannot be used to restore a live cursor.
 use crate::{
-    Error,
     genome::{self, *},
     genome_crispr::{self, *},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 macro_rules! dto{($($x:tt)*)=>{#[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
@@ -213,10 +213,10 @@ impl GenomeSession {
     }
     pub fn process(
         &mut self,
-        job: crate::protocol::AnalysisJob,
+        job: crate::protocol::schema::AnalysisJob,
         revision: &str,
-    ) -> Result<crate::protocol::AnalysisResult, Error> {
-        use crate::protocol::{AnalysisJob as J, AnalysisResult as R};
+    ) -> Result<crate::protocol::schema::AnalysisResult, Error> {
+        use crate::protocol::schema::{AnalysisJob as J, AnalysisResult as R};
         match job {
             J::BeginGenomeFasta {
                 build,
@@ -609,10 +609,10 @@ fn proof_shape(
 }
 /// Lightweight transport binding. This never restores private parser/search authority.
 pub fn validate_result(
-    result: &crate::protocol::AnalysisResult,
+    result: &crate::protocol::schema::AnalysisResult,
     revision: &str,
 ) -> Result<(), Error> {
-    use crate::protocol::AnalysisResult as R;
+    use crate::protocol::schema::AnalysisResult as R;
     match result {
         R::GenomeImportStarted(r) => {
             if r.binding != revision || !token(&r.import_id) {

@@ -4,12 +4,15 @@ use crate::{
     app::prepare_download as download, run_origin_model::PinnedOrigin, worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology, analysis,
+    analysis,
     catalog_digest::{self, CatalogSelection, catalog},
     chemistry::{End, Polarity},
     digest_setups::{Recipe as SavedRecipe, Record as SavedDigest, Summary as SavedSummary},
     formats,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     restriction_history,
     restriction_inspection::{
         self, InspectionLimit, InspectionOptions, InspectionSite, RestrictionInspection,
@@ -17,6 +20,7 @@ use collagene_core::{
     },
     run_lineage::EventBinding,
 };
+use collagene_model::{Alphabet, Molecule, Topology};
 use leptos::prelude::*;
 use serde::Serialize;
 use std::{

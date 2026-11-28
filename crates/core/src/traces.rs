@@ -1,7 +1,8 @@
 //! Independently implemented ABIF/SCF readers from the vendor and Staden specifications.
 //! No basecalling, quality recalibration, implicit clipping or external programs.
-use crate::{Alphabet, Error, Molecule, Sequence, Topology, formats::MAX_IMPORT_BYTES};
+use crate::formats::MAX_IMPORT_BYTES;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -280,7 +281,7 @@ impl Trace {
                 if b == b'-' {
                     b'-'
                 } else {
-                    let c = crate::model::complement(b.to_ascii_uppercase(), Alphabet::Dna);
+                    let c = collagene_model::complement(b.to_ascii_uppercase(), Alphabet::Dna);
                     if b.is_ascii_lowercase() {
                         c.to_ascii_lowercase()
                     } else {

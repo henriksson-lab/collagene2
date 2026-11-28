@@ -11,7 +11,7 @@ pub enum ImportProfile {
     Fasta {
         /// None retains per-record declarations and defaults unmarked records to DNA.
         /// Some explicitly sets all records, refusing contradictory declarations.
-        alphabet: Option<collagene_core::Alphabet>,
+        alphabet: Option<collagene_model::Alphabet>,
     },
     CollageneXml {
         policy: collagene_xml_compat::ReferencePolicy,
@@ -54,8 +54,9 @@ pub struct FileImportQuery {
 }
 pub fn import_file(
     args: FileImportQuery,
-) -> Result<collagene_core::formats::ImportReport, collagene_core::Error> {
-    use collagene_core::{Error, formats, legacy_formats, protocol, snapgene, traces};
+) -> Result<collagene_core::formats::ImportReport, collagene_model::Error> {
+    use collagene_core::{formats, legacy_formats, protocol, snapgene, traces};
+    use collagene_model::Error;
     if args.data_base64.len() > MAX_FILE_BYTES.div_ceil(3) * 4 {
         return Err(Error::TooLarge);
     }

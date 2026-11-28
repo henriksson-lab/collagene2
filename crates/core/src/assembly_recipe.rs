@@ -2,13 +2,13 @@
 //! reconstruction remains the verifier's job; this module never slices a source
 //! document and calls that physical preparation, or searches toward a target.
 use crate::{
-    Alphabet, Error, Molecule, Topology,
     analysis::Primer,
     overlap_profiles::{self, ProfileOptions, ProfileReport},
     verification::{
         self, DesignPlan, Operation, OrientedSource, PlanInput, Source, VerificationReport,
     },
 };
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -387,7 +387,7 @@ pub(crate) fn validate_prepared_inputs(
     let mut ids = BTreeSet::new();
     for input in inputs {
         token(&input.id, 128)?;
-        crate::model::bounds::model_preflight(&[&input.molecule])?;
+        collagene_model::bounds::model_preflight(&[&input.molecule])?;
         if !ids.insert(input.id.as_str()) || input.revision != input.molecule.revision() {
             return Err(bad("original input binding changed"));
         }
@@ -867,7 +867,7 @@ fn preparation_preflight_inner(
     if let Some(target) = target {
         models.push(target);
     }
-    crate::model::bounds::model_preflight(&models)?;
+    collagene_model::bounds::model_preflight(&models)?;
     if let Some(target) = target {
         if target.sequence.alphabet() != Alphabet::Dna {
             return Err(bad("independent target must be DNA"));
@@ -1684,7 +1684,7 @@ fn finish_preview(
         }
     }
     let preparation_complete = available.len() == compiled.rows.len();
-    crate::model::bounds::model_preflight(&available)?;
+    collagene_model::bounds::model_preflight(&available)?;
     let mut bases = 0usize;
     for m in &available {
         bases = bases
@@ -1959,7 +1959,7 @@ impl Preview {
             .chain(self.verification.products.iter())
             .collect::<Vec<_>>();
         for model in models {
-            crate::model::bounds::model_preflight(&[model])?;
+            collagene_model::bounds::model_preflight(&[model])?;
         }
         for report in &self.verification.step_reports {
             if report.step_index >= self.compiled.plan.steps.len() {

@@ -3,7 +3,10 @@
 use crate::{assembly_batch_projection, assembly_draft_model::Draft, worker::CachedWorker};
 use collagene_core::{
     combinatorial_batch::{self as batch, Record, RowEvidence, RowRequest},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage,
     workspace::Workspace,
 };

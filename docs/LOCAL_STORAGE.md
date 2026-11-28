@@ -55,7 +55,7 @@ Focused native checks:
 
 ```sh
 cargo test --locked -p collagene-local-storage
-cargo test --locked -p collagene-mcp --test storage_root
+cargo test --locked -p collagene-mcp --test workspace storage_root::
 cargo test --locked -p collagene-mcp
 ```
 

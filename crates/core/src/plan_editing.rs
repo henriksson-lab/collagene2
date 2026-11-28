@@ -1,9 +1,7 @@
 //! Atomic edits of a typed plan's dependency graph. Original step identities are
 //! remapped explicitly; molecule content, targets and science are never evaluated.
-use crate::{
-    Error,
-    verification::{Operation, Source, operation_sources, operation_sources_mut},
-};
+use crate::verification::{Operation, Source, operation_sources, operation_sources_mut};
+use collagene_model::Error;
 use std::collections::BTreeSet;
 pub const MAX_INPUTS: usize = 1000;
 pub const MAX_STEPS: usize = 1000;

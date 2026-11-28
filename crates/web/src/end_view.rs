@@ -1,9 +1,7 @@
 //! Small diagrams over fresh typed physical ends; no new reconstruction or pairing.
 use crate::end_geometry::{self, Side};
-use collagene_core::{
-    Topology,
-    chemistry::{DuplexSummary, End, Polarity},
-};
+use collagene_core::chemistry::{DuplexSummary, End, Polarity};
+use collagene_model::Topology;
 use leptos::prelude::*;
 
 fn endpoint(end: Option<&End>, side: Side) -> AnyView {

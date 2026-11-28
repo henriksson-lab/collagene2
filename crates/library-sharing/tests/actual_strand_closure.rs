@@ -8,7 +8,7 @@ use collagene_core::{
     workspace::{self, RevisionEvent, Workspace, WorkspaceDocument},
 };
 use collagene_library_sharing::{self as sharing, Selection};
-fn adopt(w: &mut Workspace, target: collagene_core::Molecule, parents: Vec<String>) -> Selection {
+fn adopt(w: &mut Workspace, target: collagene_model::Molecule, parents: Vec<String>) -> Selection {
     let id = "independent-actual-strand-design".to_string();
     let revision = target.revision();
     let event = RevisionEvent::new(
@@ -42,10 +42,10 @@ fn actual_material_target_requires_existing_exact_parents_and_replays_their_owne
     let (mut w, selected, input, r) = fixture::fixture();
     let unrelated = DocumentHistory::new(
         "private-unrelated",
-        collagene_core::Molecule::dna(
+        collagene_model::Molecule::dna(
             "Unrelated private plasmid",
             "CCCCAAAATTTTGGGG",
-            collagene_core::Topology::Circular,
+            collagene_model::Topology::Circular,
         )
         .unwrap(),
     )
@@ -104,10 +104,10 @@ fn forged_unkeyed_descriptor_cannot_publish_private_event_or_claim_another_run()
     let (mut w, selected, input, r) = fixture::fixture();
     let private = DocumentHistory::new(
         "private-foreign-event",
-        collagene_core::Molecule::dna(
+        collagene_model::Molecule::dna(
             "Private sequence",
             "CCCCAAAATTTTGGGG",
-            collagene_core::Topology::Circular,
+            collagene_model::Topology::Circular,
         )
         .unwrap(),
     )

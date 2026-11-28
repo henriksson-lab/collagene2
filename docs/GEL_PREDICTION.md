@@ -40,4 +40,4 @@ The web **Gel** panel configures source lanes, uncut/digest/PCR preparation, opt
 
 ## Validation
 
-`cargo test -p collagene-core --test gel --locked` uses hand-derived blunt/staggered fragment lengths, independent log-coordinate midpoint calculations, mass accounting, circular versus cleaved references, actual tailed-PCR reconstruction, non-transitive co-migration fixtures, matched versus unknown diagnostic profiles, intensity-independent indistinguishability, budget limits and hostile-looking SVG labels. No other cloning application supplies expected results.
+`cargo test -p collagene-core --test restriction catalog::gel:: --locked` uses hand-derived blunt/staggered fragment lengths, independent log-coordinate midpoint calculations, mass accounting, circular versus cleaved references, actual tailed-PCR reconstruction, non-transitive co-migration fixtures, matched versus unknown diagnostic profiles, intensity-independent indistinguishability, budget limits and hostile-looking SVG labels. No other cloning application supplies expected results.

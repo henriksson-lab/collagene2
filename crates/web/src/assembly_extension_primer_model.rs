@@ -10,13 +10,13 @@ use crate::{
     },
 };
 use collagene_core::{
-    Molecule, Sequence, Topology,
     analysis::Primer,
     assembly_edit_intent, overlap_extension_primer_design as native,
     run_lineage::EventBinding,
     verification::VerificationReport,
     workspace::{RevisionEvent, Workspace},
 };
+use collagene_model::{Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Arc};
 const ENGINE_VERSION: &str = "assembly-extension-primer-proposal-2";
@@ -635,11 +635,11 @@ mod tests {
         source_identity::SourceInfo,
     };
     use collagene_core::{
-        Alphabet,
         chemistry::EndRepairMethod,
         run_lineage::InputEventBinding,
         verification::{DesignPlan, Operation, PlanInput, Source, Status},
     };
+    use collagene_model::Alphabet;
     const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
     fn event(frame: &Workspace, index: usize) -> EventBinding {
         let doc = &frame.documents[index];

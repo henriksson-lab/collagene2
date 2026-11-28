@@ -1,10 +1,10 @@
 //! Literal homology-donor design with an independent source/target/candidate checker.
 //! Sequence consistency is not a prediction of cellular HDR or experimental editing.
 use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology,
     annotations::{self, MappingSegment},
     crispr::{self, GuideCandidate, GuideOptions},
 };
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "edit-template-1";

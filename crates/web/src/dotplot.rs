@@ -3,11 +3,13 @@
 mod projection;
 use crate::{renderer::ResizeListener, worker::CachedWorker};
 use collagene_core::{
-    Alphabet, Molecule,
     dotplot::{self, DotHit, DotPlotOptions, DotPlotReport, Span},
-    model::complement,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::{Alphabet, Molecule, complement};
 use leptos::{html, prelude::*};
 use std::{
     cell::Cell,

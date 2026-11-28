@@ -2,13 +2,13 @@
 //! No template scanning, candidate search, or experimental success inference.
 use crate::primer_pair_model::PairDraft;
 use collagene_core::{
-    Alphabet, Location, Molecule, Sequence, Topology,
     analysis::{Primer, base_mask},
     mutagenesis::PcrReport,
     primers::BindingHit,
     run_lineage::EventBinding,
     verification::PcrDocument,
 };
+use collagene_model::{Alphabet, Location, Molecule, Sequence, Topology};
 use std::sync::Arc;
 
 pub const MAX_SPANS: usize = 1024;
@@ -87,7 +87,7 @@ fn source_guard(m: &Molecule, source: &EventBinding) -> Result<(), String> {
     {
         return Err("Overlay requires the exact source document/event/revision.".into());
     }
-    collagene_core::model::bounds::model_preflight(&[m]).map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&[m]).map_err(|e| e.to_string())?;
     m.validate().map_err(|e| e.to_string())?;
     if m.sequence.alphabet() != Alphabet::Dna
         || m.sequence.is_empty()
@@ -217,8 +217,7 @@ pub fn exact(
 ) -> Result<Overlay, String> {
     primer_guard(forward)?;
     primer_guard(reverse)?;
-    collagene_core::model::bounds::model_preflight(&[&product.molecule])
-        .map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&[&product.molecule]).map_err(|e| e.to_string())?;
     source_guard(m, source)?;
     let g = &product.geometry;
     if product.molecule.sequence != g.sequence
@@ -357,7 +356,7 @@ fn compare_domain(
         let pos = (start + if reverse { length - 1 - i } else { i }) % n;
         let reference = m.sequence.as_str().as_bytes()[pos];
         let reference = if reverse {
-            collagene_core::model::complement(reference, Alphabet::Dna)
+            collagene_model::complement(reference, Alphabet::Dna)
         } else {
             reference
         };

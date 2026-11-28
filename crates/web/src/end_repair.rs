@@ -4,12 +4,15 @@ use crate::{
     worker,
 };
 use collagene_core::{
-    Molecule,
     chemistry::{self, AnnealOptions, Duplex, EndRepairMethod, FivePrime, Terminus, ThreePrime},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     transfer::Candidate,
     verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::{
     Arc,

@@ -2,10 +2,11 @@
 //! Native checks rescan the full DNA and every affected CDS. No imported report
 //! constructs CheckedIntent; hosts additionally attest exact source events.
 use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology, analysis, assembly_recipe,
+    analysis, assembly_recipe,
     catalog_digest::{self, CatalogSelection},
     codon_design, mutation_intent, translation,
 };
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE_VERSION: &str = "source-cds-domestication-1";
@@ -166,7 +167,7 @@ pub fn feature_pin(source: &Molecule, index: usize) -> Result<FeaturePin, Error>
 /// Borrowed guards before scans or source copies; host event ownership is separate.
 pub fn preflight(source: &Molecule, r: &Request) -> Result<(), Error> {
     request_shape(r)?;
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if source.sequence.alphabet() != Alphabet::Dna
         || !concrete(source.sequence.as_str())
@@ -644,7 +645,7 @@ fn coding_text(source: &Molecule, positions: &[(usize, bool)]) -> String {
         .map(|(p, reverse)| {
             let b = source.sequence.as_str().as_bytes()[*p];
             if *reverse {
-                crate::model::complement(b, Alphabet::Dna) as char
+                collagene_model::complement(b, Alphabet::Dna) as char
             } else {
                 b as char
             }
@@ -678,7 +679,7 @@ fn flank(source: &Molecule, position: usize, reverse: bool, left: bool, length: 
         }
         let b = source.sequence.as_str().as_bytes()[p.rem_euclid(n as i64) as usize];
         out.push(if reverse {
-            crate::model::complement(b, Alphabet::Dna)
+            collagene_model::complement(b, Alphabet::Dna)
         } else {
             b
         });
@@ -849,7 +850,7 @@ pub fn propose(source: &Molecule, r: &Request) -> Result<Proposal, Error> {
             let mut bytes = current.sequence.as_str().as_bytes().to_vec();
             for ((p, reverse), b) in positions.iter().zip(candidate.sequence.as_str().bytes()) {
                 bytes[*p] = if *reverse {
-                    crate::model::complement(b, Alphabet::Dna)
+                    collagene_model::complement(b, Alphabet::Dna)
                 } else {
                     b
                 };

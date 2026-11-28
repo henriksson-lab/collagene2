@@ -801,7 +801,8 @@ mod tests {
         golden_gate_pool_form::{CandidateIntent, PoolForm},
         source_identity::SourceInfo,
     };
-    use collagene_core::{Molecule, Topology, run_lineage::EventBinding, workspace::Workspace};
+    use collagene_core::{run_lineage::EventBinding, workspace::Workspace};
+    use collagene_model::{Molecule, Topology};
     fn fixture() -> Draft {
         let mut draft = Draft::default();
         draft.circular = false;

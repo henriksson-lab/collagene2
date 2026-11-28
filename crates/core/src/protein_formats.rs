@@ -1,8 +1,8 @@
 //! Independent annotated protein flat-file adapters. Source text is documentary;
 //! these formats never establish native physical-material or verification authority.
 use crate::formats::{ExportReport, ImportReport};
-use crate::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use std::{collections::BTreeMap, fmt::Write};
 
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -753,7 +753,7 @@ pub fn import_bytes(bytes: &[u8], profile: Profile) -> Result<ImportReport, Erro
             return Err(Error::TooLarge);
         }
     }
-    crate::model::bounds::model_preflight(&report.molecules.iter().collect::<Vec<_>>())?;
+    collagene_model::bounds::model_preflight(&report.molecules.iter().collect::<Vec<_>>())?;
     Ok(report)
 }
 /// UniProt/Swiss-Prot CRC64: reflected ISO polynomial, initial0, final XOR0;
@@ -903,7 +903,7 @@ pub fn export_with_options(
     if molecules.is_empty() || molecules.len() > MAX_RECORDS {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(&molecules.iter().collect::<Vec<_>>())?;
+    collagene_model::bounds::model_preflight(&molecules.iter().collect::<Vec<_>>())?;
     let mut output = String::new();
     let mut warnings = vec!["Normalized protein export does not reproduce all source headers/citations and does not establish database review or physical-material authority; retain the native workspace and original attachment.".into()];
     for molecule in molecules {

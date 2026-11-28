@@ -2,7 +2,7 @@
 //! Cleavage remains the existing declared complete-cleavage model, never a
 //! methylation permission assessment or an experimental reaction claim.
 use crate::{
-    Error, Molecule, assembly_recipe,
+    assembly_recipe,
     catalog_digest::{self, CatalogRestrictionInspection, CatalogSelection, catalog},
     chemistry,
     modified_duplex::{self, ModificationSummary},
@@ -10,6 +10,7 @@ use crate::{
     run_material::Capsule,
     verification::{self, Status},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "run-catalog-digest-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -136,8 +137,8 @@ fn summary_shape(s: &ModificationSummary) -> Result<(), Error> {
         .ok_or(Error::TooLarge)?;
     if s.engine_version != modified_duplex::ENGINE_VERSION
         || !hex(&s.state_revision)
-        || s.top_length > crate::model::MAX_SEQUENCE_LEN
-        || s.bottom_length > crate::model::MAX_SEQUENCE_LEN
+        || s.top_length > collagene_model::MAX_SEQUENCE_LEN
+        || s.bottom_length > collagene_model::MAX_SEQUENCE_LEN
         || calls > total
         || s.generation.len() > 1000
         || s.generation.iter().any(|g| !hex(&g.source_revision))

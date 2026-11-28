@@ -6,6 +6,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-model = { path = "../model" }
 collagene-core = { path = "../core" }
 thiserror.workspace = true
 blake3.workspace = true

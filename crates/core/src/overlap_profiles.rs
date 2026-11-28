@@ -1,6 +1,6 @@
 //! Exact oriented overlap checks and explicitly advisory published method guidance.
 //! No reagent, kinetics, proprietary chemistry or reaction-mixture uniqueness model.
-use crate::{Alphabet, Error, Location, Molecule, Topology, model::complement};
+use collagene_model::{Alphabet, Error, Location, Molecule, Topology, complement};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -388,7 +388,7 @@ pub fn check_oriented_fragments(
         let length = source_bases
             .checked_sub(total_homology)
             .ok_or(Error::TooLarge)?;
-        if length == 0 || length > crate::model::MAX_SEQUENCE_LEN {
+        if length == 0 || length > collagene_model::MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
     }
@@ -505,7 +505,7 @@ impl ProfileReport {
             || self
                 .fragment_lengths
                 .iter()
-                .any(|n| *n == 0 || *n > crate::model::MAX_SEQUENCE_LEN)
+                .any(|n| *n == 0 || *n > collagene_model::MAX_SEQUENCE_LEN)
             || self
                 .fragment_lengths
                 .iter()
@@ -646,7 +646,7 @@ impl ProfileReport {
                 }
             }
             if self.source_bases - self.overlaps.iter().sum::<usize>()
-                > crate::model::MAX_SEQUENCE_LEN
+                > collagene_model::MAX_SEQUENCE_LEN
             {
                 return Err(Error::TooLarge);
             }

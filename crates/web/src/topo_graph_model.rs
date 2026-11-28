@@ -82,7 +82,7 @@ pub fn initial_request(
             origin: None,
         });
     }
-    collagene_core::model::bounds::model_preflight(&models).map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&models).map_err(|e| e.to_string())?;
     let request = graph::CaptureRequest {
         name,
         bindings,
@@ -96,7 +96,8 @@ pub fn initial_request(
 mod tests {
     use super::*;
     use crate::topo_preparation::{self as form, Draft, SourceMode};
-    use collagene_core::{Molecule, Topology, run_lineage::EventBinding, topo};
+    use collagene_core::{run_lineage::EventBinding, topo};
+    use collagene_model::{Molecule, Topology};
     fn event(w: &Workspace, index: usize) -> EventBinding {
         let d = &w.documents[index];
         EventBinding {

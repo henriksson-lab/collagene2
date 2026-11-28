@@ -1,10 +1,8 @@
 //! Real temporary native state; no shell, network, browser or credential service.
-use collagene_core::{
-    Molecule, Topology,
-    workspace::{self, Workspace},
-};
+use collagene_core::workspace::{self, Workspace};
 use collagene_desktop_host::{DesktopHost, WindowAccess, catalog_backup::DesktopCatalogBackups};
 use collagene_desktop_protocol::{self as w, library as b};
+use collagene_model::{Molecule, Topology};
 use std::{
     fs,
     path::PathBuf,

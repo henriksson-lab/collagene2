@@ -1,10 +1,13 @@
 //! User-owned feature libraries and reviewable automatic annotation proposals.
 use crate::worker;
 use collagene_core::{
-    Molecule,
     feature_library::{self, FeatureLibrary, ScanOptions, ScanReport},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::Molecule;
 use leptos::{html, prelude::*};
 use std::{
     collections::BTreeSet,

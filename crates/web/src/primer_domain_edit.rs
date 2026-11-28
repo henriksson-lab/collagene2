@@ -1,9 +1,8 @@
 //! Explicit edits to a selected reference interval, without binding searches.
 //! Retained literal calls are never silently replaced by template DNA.
 use crate::primer_pair_model::{Comparison, OligoDraft, SelectionAnchor, anchor_reference};
-use collagene_core::{
-    Molecule, Topology, analysis::base_mask, primers::MAX_OLIGO, run_lineage::EventBinding,
-};
+use collagene_core::{analysis::base_mask, primers::MAX_OLIGO, run_lineage::EventBinding};
+use collagene_model::{Molecule, Topology};
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

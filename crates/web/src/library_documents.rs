@@ -436,8 +436,8 @@ fn retain_branch(
 #[cfg(test)]
 mod documentary_review_tests {
     use super::*;
-    use collagene_core::{Molecule, Topology};
     use collagene_design_exchange as sbol;
+    use collagene_model::{Molecule, Topology};
     use serde_json::json;
     use std::{
         future::Future,

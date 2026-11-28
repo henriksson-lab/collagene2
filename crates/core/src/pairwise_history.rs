@@ -1,11 +1,11 @@
 //! Immutable event-bound pairwise comparison evidence. Saving retains a privately
 //! computed report; loading never replays it or establishes a current assessment.
 use crate::{
-    Error, Molecule,
     pairwise_review::Report,
     run_lineage::EventBinding,
     workspace::{self, Workspace, WorkspaceAttachment},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
@@ -81,14 +81,14 @@ fn workspace_guard(frame: &Workspace) -> Result<(), Error> {
             .ok_or(Error::TooLarge)?;
     }
     for molecule in frame.revisions.values() {
-        crate::model::bounds::model_preflight(&[molecule])?;
+        collagene_model::bounds::model_preflight(&[molecule])?;
     }
     for candidate in &frame.candidates {
         if candidate.plan.inputs.len() > 1000 || candidate.plan.steps.len() > 1000 {
             return Err(Error::TooLarge);
         }
         for input in &candidate.plan.inputs {
-            crate::model::bounds::model_preflight(&[&input.molecule])?;
+            collagene_model::bounds::model_preflight(&[&input.molecule])?;
         }
     }
     frame.validate()

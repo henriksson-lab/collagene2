@@ -10,11 +10,14 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    model::complement,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     view_tracks::*,
     *,
 };
+use collagene_model::{Alphabet, Location, Molecule, Topology, complement};
 use leptos::{html, prelude::*};
 use std::{
     collections::BTreeSet,

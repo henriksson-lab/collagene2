@@ -4,8 +4,16 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
+The current refactoring batch removes the core model facade, splits worker
+transport into cohesive owners, and groups 415 core/MCP integration targets into
+17 explicitly registered domain suites. It preserves 1,931 existing test cases;
+four new SDK cases exercise the completed native SBOL adapter. All 17 harnesses
+compile and expose all 1,935 cases; 158 focused native tests and the web/worker
+WASM check pass. The [refactoring plan](audits/CODE_ORGANIZATION.md)
+tracks the remaining directory/file violations and ownership changes.
+
 Current source uses worker schema 121, candidate schema 31, draft schema 19
-and 203 native MCP tools. RNA chemistry/declaration review, protein liability
+and 208 native MCP tools. RNA chemistry/declaration review, protein liability
 screening and imported structure viewing are integrated. Antibody analysis now
 connects conditional human-reference IMGT/Kabat1991/Chothia1997 numbering and
 independently selected IMGT/Kabat1991/canonical-chart Chothia regions through

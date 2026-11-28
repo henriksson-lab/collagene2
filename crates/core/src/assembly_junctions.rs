@@ -2,11 +2,12 @@
 //! Coordinate correspondence and translation never establish fusion function,
 //! experimental ligation, or reading-frame intent from feature labels.
 use crate::{
-    Error, Location, Molecule, Sequence, Topology, assembly_recipe,
+    assembly_recipe,
     chemistry::{Duplex, DuplexSummary, End, Nick},
     translation::{self, InitiationPolicy, TranslationOptions, TranslationReport},
     verification::{self, DesignPlan, Operation, OrientedSource, Source, VerificationReport},
 };
+use collagene_model::{Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "assembly-junctions-1";
@@ -89,7 +90,7 @@ pub fn source_preflight(plan: &DesignPlan, target: &Molecule) -> Result<(), Erro
     }
     let mut models = plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>();
     models.push(target);
-    crate::model::bounds::model_preflight(&models)?;
+    collagene_model::bounds::model_preflight(&models)?;
     let mut bases = 0usize;
     for m in models {
         bases = bases
@@ -757,7 +758,7 @@ fn coding_offset(parts: &[(usize, usize)], reverse: bool, position: usize) -> Op
 }
 fn local_cds(
     product: &Molecule,
-    feature: &crate::Feature,
+    feature: &collagene_model::Feature,
     boundary: usize,
     revision: &str,
     options: &Options,
@@ -877,7 +878,7 @@ pub fn inspect_plan(
         .products
         .last()
         .ok_or_else(|| bad("missing final reconstructed product"))?;
-    crate::model::bounds::model_preflight(&[product])?;
+    collagene_model::bounds::model_preflight(&[product])?;
     let product_revision = assembly_recipe::hash(product)?;
     report.product_revision = Some(product_revision.clone());
     report.product_length = Some(product.sequence.len());
@@ -1034,7 +1035,7 @@ impl Report {
             return Err(bad("verification context binding changed"));
         }
         for m in &self.verification.products {
-            crate::model::bounds::model_preflight(&[m])?;
+            collagene_model::bounds::model_preflight(&[m])?;
         }
         for report in &self.verification.step_reports {
             if report.step_index >= 1000 {

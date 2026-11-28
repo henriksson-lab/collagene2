@@ -1,11 +1,14 @@
 //! Export the exact currently reviewed graph; scientific work remains in a worker.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Molecule,
     oligo_formats::Delimiter,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::{self, DesignPlan},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

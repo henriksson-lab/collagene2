@@ -1,6 +1,7 @@
 //! Reference-free affine-overlap/read-layout consensus under explicit evidence thresholds.
 //! No external aligner, Phred calibration, laboratory identity or empirical uniqueness is inferred.
-use crate::{Alphabet, Error, Location, Molecule, Topology, analysis, oligo_formats, traces};
+use crate::{analysis, oligo_formats, traces};
+use collagene_model::{Alphabet, Error, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -269,7 +270,7 @@ impl Prepared {
     fn base(&self, at: usize, reverse: bool) -> u8 {
         let b = self.sequence[self.call(at, reverse)];
         if reverse {
-            crate::model::complement(b, Alphabet::Dna)
+            collagene_model::complement(b, Alphabet::Dna)
         } else {
             b
         }

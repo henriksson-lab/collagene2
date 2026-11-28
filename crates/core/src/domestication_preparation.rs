@@ -1,12 +1,13 @@
 //! Exact-source physical preparation for explicitly checked domestication.
 //! A reference-only recoded target never becomes an invented PCR template.
 use crate::{
-    Error, Molecule, Topology, assembly_recipe, domestication,
+    assembly_recipe, domestication,
     mutagenesis::{self, InversePcrOptions},
     run_material::MaterialOrigin,
     verification::{self, Operation, PlanInput, Source},
     workspace::Workspace,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
@@ -29,11 +30,11 @@ dto! {pub struct InverseRound {
 dto! {pub struct RoundEvidence {
     pub round:InverseRound,pub template:Source,pub source_origin:usize,pub options:InversePcrOptions,
     pub forward:crate::analysis::Primer,pub reverse:crate::analysis::Primer,
-    pub forward_location:crate::Location,pub reverse_location:crate::Location,pub retained_template_length:usize,
+    pub forward_location:collagene_model::Location,pub reverse_location:collagene_model::Location,pub retained_template_length:usize,
 }}
 dto! {pub struct Request {pub design:domestication::Request,pub selection:domestication::Selection,pub route:Route,#[serde(deserialize_with="crate::assembly_recipe::required_option")]pub origin:Option<MaterialOrigin>}}
 dto! {pub enum MethodEvidence {
-    InversePcr {options:InversePcrOptions,forward:crate::analysis::Primer,reverse:crate::analysis::Primer,forward_location:crate::Location,reverse_location:crate::Location,retained_template_length:usize},
+    InversePcr {options:InversePcrOptions,forward:crate::analysis::Primer,reverse:crate::analysis::Primer,forward_location:collagene_model::Location,reverse_location:collagene_model::Location,retained_template_length:usize},
     OverlapExtension {context_revision:String,source_frame:crate::overlap_extension_primer_design::SourceFrame,preparation:crate::overlap_extension_pcr::Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]designs:Vec<crate::primers::DesignReport>,search:Vec<crate::overlap_extension_primer_design::PairSearch>},
     InversePcrRounds {rounds:Vec<RoundEvidence>},
 }}
@@ -173,7 +174,7 @@ fn documentary_preflight(input: &PlanInput, request: &Request) -> Result<(), Err
             "the explicit template input and design must bind the same original source revision",
         ));
     }
-    crate::model::bounds::model_preflight(&[&input.molecule])?;
+    collagene_model::bounds::model_preflight(&[&input.molecule])?;
     if input.molecule.sequence.len() > MAX_SOURCE_BASES {
         return Err(Error::TooLarge);
     }
@@ -240,7 +241,7 @@ pub fn preflight(
     request: &Request,
     workspace: Option<&Workspace>,
 ) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[&input.molecule])?;
+    collagene_model::bounds::model_preflight(&[&input.molecule])?;
     crate::run_material::material_origins_preflight(request.origin.iter())?;
     if let Some(origin) = &request.origin {
         let workspace =
@@ -577,7 +578,7 @@ impl Prepared {
         self.target.validate()?;
         if self.target.topology != input.molecule.topology
             || self.target.sequence.len() != input.molecule.sequence.len()
-            || self.target.sequence.alphabet() != crate::Alphabet::Dna
+            || self.target.sequence.alphabet() != collagene_model::Alphabet::Dna
         {
             return Err(bad(
                 "substitution-only target must retain original topology/length",

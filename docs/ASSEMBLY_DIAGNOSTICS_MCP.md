@@ -31,7 +31,7 @@ without independently declaring compatible/sealed ends or experimental success.
 Full verifier findings and physical evidence remain authoritative within their
 explicit computational scope.
 
-`crates/mcp/tests/assembly_diagnostics_tools.rs` authors two actual SDK fixture
+`crates/mcp/tests/assembly/assembly_diagnostics_tools.rs` authors two actual SDK fixture
 groups for both existing tools: a failed middle PCR maps to the correct operation
 index. Ligation emits all preparation steps before end treatments, so the first
 row can have its PCR complete while its treatment remains blocked; later rows

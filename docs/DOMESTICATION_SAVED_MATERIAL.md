@@ -45,7 +45,7 @@ attachments use only `domestication-intent-v3`, version3. No previous internal
 shape is decoded or converted. Original source documents/heads, historical runs
 and their assessments remain unchanged by preparation.
 
-`core/tests/domestication_saved_material.rs` covers real Run/Derived restart,
+`crates/core/tests/verification/preparation/domestication_saved_material.rs` covers real Run/Derived restart,
 inverse and linear/circular OE, dynamic sequential-round dependencies, new-only
 primer orders, native saved-run replay and HTML/PDF, exact-owner/event refusals,
 actual nicked sources and a genuinely search-incomplete native origin. The integrated batch passes193 selected native/SDK/model cases and the web/worker

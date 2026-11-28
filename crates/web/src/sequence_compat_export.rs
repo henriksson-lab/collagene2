@@ -3,10 +3,11 @@ use crate::{
     sequence_export_model::{Capture, Mode, Review},
     worker::CachedWorker,
 };
-use collagene_core::{
-    Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+use collagene_core::protocol::{
+    request::Request,
+    schema::{AnalysisJob, AnalysisResult},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

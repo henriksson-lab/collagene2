@@ -1,5 +1,6 @@
 //! Document and feature editors commit against an explicit base revision.
-use collagene_core::{Error, editing, *};
+use collagene_core::{editing, *};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use leptos::prelude::*;
 type Commit = Callback<(String, Molecule), Result<(), String>>;
 

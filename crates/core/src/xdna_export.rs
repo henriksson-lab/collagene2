@@ -1,6 +1,6 @@
 //! Regenerated selected XDNA v0 reference profile, independently specified against
 //! our bounded v0 reader. No opaque original fields or physical state are replayed.
-use crate::{Alphabet, Error, Feature, Location, Molecule, Topology};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const PROFILE: &str = "collagene-xdna-reference-v0-1";
@@ -333,7 +333,7 @@ struct Prepared {
     features: Vec<EncodedFeature>,
 }
 fn prepare(m: &Molecule) -> Result<Prepared, Error> {
-    crate::model::bounds::model_preflight(&[m])?;
+    collagene_model::bounds::model_preflight(&[m])?;
     m.validate()?;
     crate::format_fidelity::reference_export_guard(m)?;
     // Known retained XDNA overhang evidence is restrictive even if a producer

@@ -3,10 +3,13 @@
 mod index;
 use crate::{renderer::ResizeListener, worker};
 use collagene_core::{
-    Alphabet, Molecule,
     alignment_formats::{self, AlignmentDocument, AlignmentExport, AlignmentFormat},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::{Alphabet, Molecule};
 use leptos::{html, prelude::*};
 use std::{
     collections::{BTreeMap, BTreeSet},

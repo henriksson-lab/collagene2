@@ -17,7 +17,10 @@ pub fn worker_renderer() -> Callback<RenderRequest, LocalResult<Rendered>> {
     Callback::new(move |request: RenderRequest| -> LocalResult<Rendered> {
         let id = counter.fetch_add(1, Ordering::Relaxed);
         Box::pin(async move {
-            use collagene_core::protocol::{AnalysisJob, AnalysisResult, Request};
+            use collagene_core::protocol::{
+                request::Request,
+                schema::{AnalysisJob, AnalysisResult},
+            };
             let context = request.context_revision.clone();
             let source_revision = request.source_revision.clone();
             let response = crate::worker::analyze(Request {

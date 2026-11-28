@@ -1,6 +1,6 @@
 //! Portable vector sequence maps built from a bounded, typed coordinate scene.
 //! SVG contains no scripts, external resources, raw markup, or executable qualifiers.
-use crate::{Alphabet, Error, Location, Molecule, Topology};
+use collagene_model::{Alphabet, Error, Location, Molecule, Topology};
 use std::{
     collections::{BTreeMap, BTreeSet},
     f64::consts::{FRAC_PI_2, TAU},

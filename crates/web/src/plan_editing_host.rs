@@ -1,13 +1,12 @@
 //! Explicit candidate editing preserves document-event choices, never chemistry.
 use crate::{plan_editing_sources, plan_editing_view::PlanEditingView};
 use collagene_core::{
-    Alphabet,
     history::DocumentHistory,
-    model::bounds::model_preflight,
     run_lineage::{EventBinding, InputEventBinding},
     transfer::Candidate,
     verification::{DesignPlan, PlanInput},
 };
+use collagene_model::{Alphabet, bounds::model_preflight};
 use leptos::prelude::*;
 use std::{collections::BTreeMap, sync::Arc};
 

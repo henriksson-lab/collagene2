@@ -1,5 +1,5 @@
 //! Atomic, source-bound edits of existing annotations. Sequence calls never change.
-use crate::{Alphabet, Error, Feature, Location, Molecule};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -71,7 +71,7 @@ fn coordinate_key(key: &str) -> bool {
 /// by the existing projection engine block a strand change rather than being
 /// silently reinterpreted. Type and color edits leave other qualifiers intact.
 pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if request.source_revision.len() != 64
         || !request
@@ -162,7 +162,7 @@ pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
             }
         }
     }
-    crate::model::bounds::model_preflight(&[&result])?;
+    collagene_model::bounds::model_preflight(&[&result])?;
     result.validate()?;
     Ok(result)
 }

@@ -1,10 +1,8 @@
 //! Persistent bounded browser-worker alignment collections. Decoded DTOs are
 //! historical descriptions; only the private Collection grants record access.
-use crate::{
-    Error, Molecule,
-    protocol::{AnalysisJob, AnalysisResult},
-    read_alignment_reference as reference, read_alignment_store as store,
-};
+use crate::protocol::schema::{AnalysisJob, AnalysisResult};
+use crate::{read_alignment_reference as reference, read_alignment_store as store};
+use collagene_model::{Error, Molecule};
 use collagene_read_alignments::{AuxValue, Record};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
@@ -136,7 +134,7 @@ pub fn page_revision(source: &str, start: usize, count: usize) -> Result<String,
 /// canonical JSON/hash and wire bounds are independently enforced in the worker.
 pub fn reference_preflight(molecule: &Molecule) -> Result<(), Error> {
     collagene_model::bounds::model_preflight(&[molecule])?;
-    if molecule.sequence.len() > crate::model::MAX_SEQUENCE_LEN {
+    if molecule.sequence.len() > collagene_model::MAX_SEQUENCE_LEN {
         return Err(Error::TooLarge);
     }
     molecule.validate()
@@ -452,7 +450,7 @@ impl Checked {
             || report.complete && !report.reference_bound
             || !report.reference_bound && (!report.columns.is_empty() || !report.runs.is_empty())
             || report.reference_length == 0
-            || report.reference_length > crate::model::MAX_SEQUENCE_LEN
+            || report.reference_length > collagene_model::MAX_SEQUENCE_LEN
             || report.reverse != (report.reported_flags & 16 != 0)
             || report.warnings.len() > 16
             || report.warnings.iter().any(|s| s.len() > 4096)

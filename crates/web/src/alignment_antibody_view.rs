@@ -6,7 +6,10 @@ use crate::{
 use collagene_core::antibody_numbering::domain_tracks as t;
 use collagene_core::{
     alignment_antibody as a,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
 use leptos::prelude::*;
 use std::{

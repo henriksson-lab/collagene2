@@ -1,7 +1,10 @@
 //! One guarded durable current/previous transaction; callers own cancellation and
 //! restore only after this function reaches the IndexedDB commit point.
 use crate::worker::CachedWorker;
-use collagene_core::protocol::{AnalysisJob, AnalysisResult, Request};
+use collagene_core::protocol::{
+    request::Request,
+    schema::{AnalysisJob, AnalysisResult},
+};
 use collagene_core::workspace::Workspace;
 use leptos::prelude::*;
 use std::{cell::RefCell, rc::Rc};

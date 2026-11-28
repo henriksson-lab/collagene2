@@ -32,7 +32,7 @@ Import limits are 32 MiB of source data, 2,000,000 samples per channel, 100,000 
 
 ## Validation and remaining fidelity work
 
-`cargo test -p collagene-core --test traces --locked` checks hand-authored ABIF directories/inline values, signed signals, edition isolation, four-channel labeling, SCF v2/v3 layouts, independently calculated 8-/16-bit second differences, score preservation, reverse complements, corruption/bounds failures, native attachment round trips, stale evidence rejection and attachment-size accounting. No other cloning application's reader or output is a test oracle.
+`cargo test -p collagene-core --test analysis reads::traces:: --locked` checks hand-authored ABIF directories/inline values, signed signals, edition isolation, four-channel labeling, SCF v2/v3 layouts, independently calculated 8-/16-bit second differences, score preservation, reverse complements, corruption/bounds failures, native attachment round trips, stale evidence rejection and attachment-size accounting. No other cloning application's reader or output is a test oracle.
 
 The fixtures are synthetic, not a representative instrument migration corpus. Real-file interoperability, additional ABIF variants, `RevC` handling and chromatogram viewing/selection still need validation. Correct parser fields alone do not establish complete trace-workflow parity.
 

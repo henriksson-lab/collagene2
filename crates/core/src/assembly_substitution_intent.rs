@@ -1,11 +1,11 @@
 //! Literal substitutions in original oriented contributions, never edited-target readback.
 use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology,
     assembly_intent::{self, ContributionPosition, PlacedFragment},
     assembly_junction_edit, assembly_recipe,
     verification::PlanInput,
     workspace::Workspace,
 };
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "assembly-substitution-intent-2";
@@ -324,7 +324,7 @@ impl Report {
         {
             return Err(bad("source/substitution context changed"));
         }
-        crate::model::bounds::model_preflight(&[&self.target])?;
+        collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         assembly_intent::validate_rows(&self.fragments, &self.request.base, &self.target)?;
         let desired = applied(&self.fragments, &self.request)?;

@@ -151,7 +151,7 @@ mod tests {
         let m = Molecule::dna(
             "reference-only capacity fixture",
             "ACGT",
-            collagene_core::Topology::Linear,
+            collagene_model::Topology::Linear,
         )
         .unwrap();
         {

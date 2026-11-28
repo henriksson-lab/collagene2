@@ -1,11 +1,11 @@
 //! Fresh native TOPO sources: original declarations, saved ordinary PCR templates,
 //! and exact retained elementary graph origins. No serialized graph supplies state.
 use crate::{
-    Error, Molecule,
     run_material::{self, MaterialOrigin},
     topo, topo_actions, topo_worker,
     verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "topo-native-sources-1";
 macro_rules! dto {($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -44,7 +44,7 @@ pub fn source_inputs(
     if sources.len() > 32 || sources.len() != molecules.len() {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(molecules)?;
+    collagene_model::bounds::model_preflight(molecules)?;
     for s in sources {
         if s.role.is_empty()
             || s.role.len() > 256

@@ -2,12 +2,12 @@
 //! Reaction reconstruction remains in the worker; this view never invents a target.
 use crate::pcr_overlay::{self, Overlay, Publication, Role};
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     oligo_formats::{self, Delimiter, TableExportMode},
     run_lineage::EventBinding,
     verification::PcrDocument,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::{
     Arc,

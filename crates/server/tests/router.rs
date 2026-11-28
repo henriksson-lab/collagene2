@@ -271,10 +271,10 @@ async fn binary_dispatch_cas_and_native_payloads_are_bound_to_startup_lab() {
         empty.context.as_ref().unwrap().name.as_str(),
         "Trusted startup lab"
     );
-    let molecule = collagene_core::Molecule::dna(
+    let molecule = collagene_model::Molecule::dna(
         "pExample",
         "AGTCCGATGCTA",
-        collagene_core::Topology::Circular,
+        collagene_model::Topology::Circular,
     )
     .unwrap();
     let bytes = collagene_core::protocol::save_document(&molecule).unwrap();
@@ -351,10 +351,10 @@ async fn binary_dispatch_cas_and_native_payloads_are_bound_to_startup_lab() {
 #[tokio::test]
 async fn workspace_saves_require_independently_approved_document_closure() {
     let (app, auth) = fixture(Limits::default());
-    let molecule = collagene_core::Molecule::dna(
+    let molecule = collagene_model::Molecule::dna(
         "Selected",
         "AGTCCGATGCTA",
-        collagene_core::Topology::Circular,
+        collagene_model::Topology::Circular,
     )
     .unwrap();
     let frame = collagene_core::workspace::Workspace::from_documents(
@@ -429,10 +429,10 @@ async fn workspace_saves_require_independently_approved_document_closure() {
             ..
         })
     ));
-    let unrelated = collagene_core::Molecule::dna(
+    let unrelated = collagene_model::Molecule::dna(
         "Unrelated private plasmid",
         "TTCGAATTCAGTC",
-        collagene_core::Topology::Linear,
+        collagene_model::Topology::Linear,
     )
     .unwrap();
     let frame = collagene_core::workspace::Workspace::from_documents(
@@ -728,10 +728,10 @@ async fn outgoing_frame_clones_and_slices_keep_the_native_response_admission_lea
         max_concurrent_library_requests: 1,
         ..Limits::default()
     });
-    let molecule = collagene_core::Molecule::dna(
+    let molecule = collagene_model::Molecule::dna(
         "Large retained reply",
         &"ACGT".repeat(256 * 1024),
-        collagene_core::Topology::Circular,
+        collagene_model::Topology::Circular,
     )
     .unwrap();
     let bytes = collagene_core::protocol::save_document(&molecule).unwrap();
@@ -860,7 +860,7 @@ async fn sync_call(
 }
 fn native_sync_payload(sequence: &str) -> wire::Payload {
     let molecule =
-        collagene_core::Molecule::dna("pReliable", sequence, collagene_core::Topology::Circular)
+        collagene_model::Molecule::dna("pReliable", sequence, collagene_model::Topology::Circular)
             .unwrap();
     let bytes = collagene_core::protocol::save_document(&molecule).unwrap();
     wire::Payload {
@@ -1254,7 +1254,7 @@ async fn sync_payload_validation_rejects_bad_native_bytes_without_creating_a_rec
 #[tokio::test]
 async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_document_sharing() {
     use collagene_library_sync as sync;
-    fn archived(documents: Vec<collagene_core::Molecule>) -> wire::Payload {
+    fn archived(documents: Vec<collagene_model::Molecule>) -> wire::Payload {
         let frame = collagene_core::workspace::Workspace::from_documents(
             "Selected publication",
             documents,
@@ -1280,10 +1280,10 @@ async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_documen
         }
     }
     let (app, auth) = fixture(Limits::default());
-    let selected = collagene_core::Molecule::dna(
+    let selected = collagene_model::Molecule::dna(
         "Selected",
         "AGTCCGATGCTA",
-        collagene_core::Topology::Circular,
+        collagene_model::Topology::Circular,
     )
     .unwrap();
     let valid = archived(vec![selected.clone()]);
@@ -1338,10 +1338,10 @@ async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_documen
             .as_ref()
             .map(|event| event.as_str())
     );
-    let private = collagene_core::Molecule::dna(
+    let private = collagene_model::Molecule::dna(
         "Unrelated private document",
         "TTCGAATTCAGTC",
-        collagene_core::Topology::Linear,
+        collagene_model::Topology::Linear,
     )
     .unwrap();
     let rejected = sync_mutation(
@@ -1599,10 +1599,10 @@ impl collagene_source_gateway::Backend for FixtureSource {
         }
         Ok(collagene_core::formats::ImportReport {
             molecules: vec![
-                collagene_core::Molecule::dna(
+                collagene_model::Molecule::dna(
                     "Fixture only",
                     &"ACGT".repeat(300_000),
-                    collagene_core::Topology::Circular,
+                    collagene_model::Topology::Circular,
                 )
                 .unwrap(),
             ],

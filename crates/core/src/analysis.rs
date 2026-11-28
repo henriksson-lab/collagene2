@@ -1,4 +1,4 @@
-use crate::model::*;
+use collagene_model::*;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

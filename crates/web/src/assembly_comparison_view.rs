@@ -9,7 +9,10 @@ use crate::{
 use collagene_core::{
     alignment::ComparisonOptions,
     pairwise_review,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
 use leptos::prelude::*;
 use std::{

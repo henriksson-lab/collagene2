@@ -47,7 +47,7 @@ pub fn layout(end: &End, side: Side) -> Result<Layout, String> {
     let n = end.overhang.len();
     // Check length before inspecting or copying any source letters. The display
     // allocates at most24 glyphs even for a maximum-sized declared protrusion.
-    if n > collagene_core::model::MAX_SEQUENCE_LEN {
+    if n > collagene_model::MAX_SEQUENCE_LEN {
         return Err("End overhang exceeds the core sequence-length bound.".into());
     }
     if (end.polarity == Polarity::Blunt) != (n == 0) {
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(text(&a), "nhdvbmkyRa");
         let huge = end(
             Polarity::FivePrime,
-            &"A".repeat(collagene_core::model::MAX_SEQUENCE_LEN + 1),
+            &"A".repeat(collagene_model::MAX_SEQUENCE_LEN + 1),
         );
         assert!(layout(&huge, Side::Left).is_err());
     }
@@ -267,16 +267,13 @@ mod tests {
         let maximum = layout(
             &end(
                 Polarity::FivePrime,
-                &"A".repeat(collagene_core::model::MAX_SEQUENCE_LEN),
+                &"A".repeat(collagene_model::MAX_SEQUENCE_LEN),
             ),
             Side::Right,
         )
         .unwrap();
         assert_eq!(maximum.glyphs.len(), 21);
-        assert_eq!(
-            maximum.overhang_length,
-            collagene_core::model::MAX_SEQUENCE_LEN
-        );
+        assert_eq!(maximum.overhang_length, collagene_model::MAX_SEQUENCE_LEN);
         assert_eq!(maximum.width_columns, 29);
     }
 }

@@ -1,10 +1,8 @@
 //! Independent bounded Wisconsin/GCG single-sequence exchange profile.
 //! Text evidence never creates native cloning history or chemical authority.
-use crate::{
-    Alphabet, Error, Molecule, Sequence, Topology,
-    formats::{ExportReport, ImportReport},
-};
+use crate::formats::{ExportReport, ImportReport};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, fmt::Write};
 pub const MAX_BYTES: usize = 4 * 1024 * 1024;
@@ -324,7 +322,7 @@ pub fn import_gcg(bytes: &[u8], options: &ImportOptions) -> Result<ImportReport,
     retain(&mut m, bytes);
     crate::formats::retain_digest_producer_comments(&mut m, text);
     m.validate()?;
-    crate::model::bounds::model_preflight(&[&m])?;
+    collagene_model::bounds::model_preflight(&[&m])?;
     let mut warnings=vec!["GCG imports sequence calls only. Linear display does not establish original topology; documentary headers remain exact native evidence, not mapped features or cloning history.".into()];
     if magic.is_none() {
         warnings.push("Typed legacy GCG dividing line imported without modern file magic.".into());
@@ -341,7 +339,7 @@ pub fn import_gcg(bytes: &[u8], options: &ImportOptions) -> Result<ImportReport,
     })
 }
 pub fn export_gcg(m: &Molecule, options: &ExportOptions) -> Result<ExportReport, Error> {
-    crate::model::bounds::model_preflight(&[m])?;
+    collagene_model::bounds::model_preflight(&[m])?;
     m.validate()?;
     if m.sequence.is_empty() || m.sequence.len() > MAX_SEQUENCE {
         return Err(Error::TooLarge);

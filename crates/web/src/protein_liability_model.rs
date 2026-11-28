@@ -1,5 +1,6 @@
 //! Ephemeral source/event guards around the single native options/report format.
-use collagene_core::{Molecule, protein_liabilities as native, run_lineage::EventBinding};
+use collagene_core::{protein_liabilities as native, run_lineage::EventBinding};
+use collagene_model::Molecule;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProvidedContext {
     pub source: EventBinding,
@@ -86,7 +87,8 @@ pub fn interval(start: &str, end: &str, length: usize) -> Result<(usize, usize),
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Alphabet, Sequence, Topology, workspace::Workspace};
+    use collagene_core::workspace::Workspace;
+    use collagene_model::{Alphabet, Sequence, Topology};
     fn molecule() -> Molecule {
         Molecule {
             name: "Protein".into(),

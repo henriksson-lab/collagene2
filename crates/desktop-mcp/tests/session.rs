@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     protocol,
     run_lineage::{self, EventBinding, InputEventBinding},
@@ -10,6 +9,7 @@ use collagene_core::{
 use collagene_desktop_mcp::{NativeSelection, create};
 use collagene_lab_library::{self as store, mutations as durable};
 use collagene_library_sharing::Selection;
+use collagene_model::{Molecule, Topology};
 use collagene_repository as repository;
 use rmcp::{ServiceExt, model::CallToolRequestParams};
 use serde_json::{Value, json};

@@ -1,10 +1,7 @@
 //! EMBL/ENA nucleotide flat-file framing with a shared INSDC feature grammar.
 //! This adapter is independently implemented; gb-io parses the common location/qualifier syntax.
-use crate::{
-    Alphabet, Error, Molecule, Sequence, Topology,
-    formats::{self, ImportReport, MAX_IMPORT_BYTES},
-    model::MAX_SEQUENCE_LEN,
-};
+use crate::formats::{self, ImportReport, MAX_IMPORT_BYTES};
+use collagene_model::{Alphabet, Error, MAX_SEQUENCE_LEN, Molecule, Sequence, Topology};
 use std::collections::BTreeSet;
 
 const ORIGINAL: &str = "embl.original_record";

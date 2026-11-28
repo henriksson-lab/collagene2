@@ -5,7 +5,8 @@
 //! Stored offsets are zero-based in the ORIGINAL contribution's construct
 //! orientation, before junction trims. Source documents are never modified.
 use crate::assembly_draft_model::Draft;
-use collagene_core::{Alphabet, Sequence, Topology, assembly_edit_intent::Edit};
+use collagene_core::assembly_edit_intent::Edit;
+use collagene_model::{Alphabet, Sequence, Topology};
 
 #[derive(Clone)]
 pub struct SourceReview {
@@ -431,7 +432,8 @@ pub fn declare(
 mod tests {
     use super::*;
     use crate::{assembly_draft_model::CapturedSource, source_identity::SourceInfo};
-    use collagene_core::{Molecule, run_lineage::EventBinding, workspace::Workspace};
+    use collagene_core::{run_lineage::EventBinding, workspace::Workspace};
+    use collagene_model::Molecule;
     use std::sync::Arc;
     fn fixture(topology: Topology) -> Draft {
         let molecule = Molecule::dna("Original", "AACCGGTT", topology).unwrap();

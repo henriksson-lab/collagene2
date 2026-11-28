@@ -1,6 +1,6 @@
 //! Bounded local annotation geometry shared by static display caches.
 //! Coordinates are source ranges, not biological extraction/validity claims.
-use collagene_core::{Location, Molecule};
+use collagene_model::{Location, Molecule};
 
 pub(crate) const MAX_FEATURES: usize = collagene_view_layout::MAX_ITEMS;
 pub(crate) const MAX_SPANS: usize = collagene_view_layout::MAX_INTERVALS;
@@ -129,7 +129,7 @@ pub fn prepare(molecule: &Molecule) -> Result<PreparedGeometry, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Topology, model::Feature};
+    use collagene_model::{Feature, Topology};
 
     fn range(a: usize, b: usize) -> Location {
         Location::range(a, b)

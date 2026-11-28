@@ -669,9 +669,9 @@ impl HomologyForm {
         let policy = Options {
             overlaps,
             topology: if circular {
-                collagene_core::Topology::Circular
+                collagene_model::Topology::Circular
             } else {
-                collagene_core::Topology::Linear
+                collagene_model::Topology::Linear
             },
             resection,
             outer_end_policy,
@@ -727,7 +727,8 @@ impl AnnealingForm {
         circular: bool,
         rows: usize,
     ) -> Result<collagene_core::homology_annealing::Options, String> {
-        use collagene_core::{Topology, homology_annealing::Options, three_prime_resection::Cuts};
+        use collagene_core::{homology_annealing::Options, three_prime_resection::Cuts};
+        use collagene_model::Topology;
         self.validate_raw()?;
         if rows == 1 && !circular {
             return Err("A single linear source has no annealing junction. Use an explicit 3′ resection step for standalone source processing.".into());
@@ -1359,7 +1360,7 @@ mod homology_tests {
         let mut form = HomologyForm::default();
         let policy = form.policy(vec![16], false, 2).unwrap();
         assert_eq!(policy.overlaps, vec![16]);
-        assert_eq!(policy.topology, collagene_core::Topology::Linear);
+        assert_eq!(policy.topology, collagene_model::Topology::Linear);
         assert!(matches!(policy.resection, Resection::ExactHomology));
         assert!(matches!(
             policy.outer_end_policy,
@@ -1399,7 +1400,7 @@ mod annealing_tests {
         assert!(form.policy(vec![16], false, 2).is_err());
         form.cuts = "2:19, 17:3".into();
         let policy = form.policy(vec![16], false, 2).unwrap();
-        assert_eq!(policy.topology, collagene_core::Topology::Linear);
+        assert_eq!(policy.topology, collagene_model::Topology::Linear);
         assert_eq!(policy.overlaps, vec![16]);
         assert_eq!((policy.cuts[0].left, policy.cuts[0].right), (2, 19));
         assert_eq!((policy.cuts[1].left, policy.cuts[1].right), (17, 3));

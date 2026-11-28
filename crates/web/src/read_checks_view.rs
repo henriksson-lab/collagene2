@@ -4,7 +4,10 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     read_checks,
     run_lineage::{self, EventBinding},
     trace_validation::{SiteState, TraceValidationReport},

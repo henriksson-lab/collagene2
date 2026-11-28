@@ -2,10 +2,10 @@
 //! treats a remote locator as authority, or replaces unrelated local documents.
 use crate::{Selection, inspect_document_closure};
 use collagene_core::{
-    Molecule,
     transfer::Candidate,
     workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
 };
+use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

@@ -608,7 +608,7 @@ impl<B: Backend> Gateway<B> {
                         "Source import result exceeds gateway limits.",
                     ));
                 }
-                collagene_core::model::bounds::model_preflight(
+                collagene_model::bounds::model_preflight(
                     &report.molecules.iter().collect::<Vec<_>>(),
                 )
                 .map_err(|_| {
@@ -700,7 +700,7 @@ impl<B: Backend> Gateway<B> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Molecule, Topology};
+    use collagene_model::{Molecule, Topology};
     use std::sync::atomic::{AtomicUsize, Ordering};
     const CATALOG: &str = r#"{"id":12345,"name":"Independent gateway catalog","sequences":{"public_user_full_sequences":[{"sequence_id":41,"sequence_description":"original reviewed record","length":16,"sequence":"aaaaccccggggtttt","genbank_api_url":"https://files.example.org/41.gb?signature=TRANSIENT_LINK_SECRET"}],"public_addgene_full_sequences":[],"public_user_partial_sequences":[],"public_addgene_partial_sequences":[]}}"#;
     const GB: &str = "LOCUS       GATEWAY_TEST              16 bp    DNA     circular SYN 01-JAN-2026\nDEFINITION  Independent source gateway fixture.\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaaaccccgg ggtttt\n//\n";

@@ -1,7 +1,6 @@
 //! Target-free native PCR, reciprocal extension, catalog-digest and end-repair derivations. Opaque, bounded recipe
 //! packages break typed recursion; only fresh native execution yields material.
 use crate::{
-    Alphabet, Error, Molecule,
     analysis::{self, Primer},
     catalog_digest::{self, CatalogSelection},
     chemistry,
@@ -14,6 +13,7 @@ use crate::{
     workspace::{Workspace, WorkspaceAttachment},
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -293,7 +293,7 @@ impl Request {
                     || selection.selected_index >= 10000
                     || !hex(&selection.expected_preview_revision)
                     || selection.geometry.sequence.is_empty()
-                    || selection.geometry.sequence.len() > crate::model::MAX_SEQUENCE_LEN
+                    || selection.geometry.sequence.len() > collagene_model::MAX_SEQUENCE_LEN
                     || selection.geometry.sequence.alphabet() != Alphabet::Dna
                     || selection
                         .geometry
@@ -317,7 +317,7 @@ impl Request {
                 if selection.selected_index >= 10000
                     || !hex(&selection.expected_preview_revision)
                     || selection.geometry.sequence.is_empty()
-                    || selection.geometry.sequence.len() > crate::model::MAX_SEQUENCE_LEN
+                    || selection.geometry.sequence.len() > collagene_model::MAX_SEQUENCE_LEN
                     || selection.geometry.sequence.alphabet() != Alphabet::Dna
                     || selection
                         .geometry
@@ -472,7 +472,7 @@ pub fn load_record(bytes: &[u8]) -> Result<Record, Error> {
     Ok(record)
 }
 fn original_reference_admission(source: &Molecule) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     crate::format_fidelity::reference_export_guard(source)?;
     if source.sequence.alphabet() != Alphabet::Dna {
@@ -513,7 +513,7 @@ pub(crate) fn fresh_source(
     source: &Molecule,
     origin: &SourceOrigin,
 ) -> Result<FreshMaterial, Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     let (tracked,incomplete,findings,total,truncated)=match origin {
         SourceOrigin::OriginalReference=>(original_source(source)?,false,vec!["Original source is an explicit intact DNA reference hypothesis with unknown source modifications and terminal groups; no measured stock chemistry or amplification success is inferred.".into()],1,false),
@@ -531,7 +531,7 @@ pub(crate) fn fresh_source(
 }
 fn request_source(source: &Molecule, request: &Request) -> Result<(), Error> {
     let template = request.template()?;
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     request.validate_shallow()?;
     if source.revision() != template.event.revision {
@@ -1087,7 +1087,7 @@ pub(crate) fn documentary_capsule_parts(
 ) -> Result<(String, Record), Error> {
     let (hash, record) = record_for(w, product)?;
     for source in &record.request.sources {
-        crate::model::bounds::model_preflight(&[run_material::resolve(w, &source.event)?])?;
+        collagene_model::bounds::model_preflight(&[run_material::resolve(w, &source.event)?])?;
     }
     run_material::resolve(w, product)?;
     Ok((hash, record))
@@ -1125,7 +1125,7 @@ fn replay_fields(
     source: &[SourceSnapshot],
     reference: &Molecule,
 ) -> Result<FreshMaterial, Error> {
-    crate::model::bounds::model_preflight(&[reference])?;
+    collagene_model::bounds::model_preflight(&[reference])?;
     if record.scientific_engine != verification::ENGINE_VERSION {
         return Err(bad(
             "historical record remains readable but requires current native reassessment before material reuse",
@@ -1165,8 +1165,8 @@ fn summary_shape(summary: &ModificationSummary) -> Result<(), Error> {
         || !hex(&summary.state_revision)
         || summary.top_length == 0
         || summary.bottom_length == 0
-        || summary.top_length > crate::model::MAX_SEQUENCE_LEN
-        || summary.bottom_length > crate::model::MAX_SEQUENCE_LEN
+        || summary.top_length > collagene_model::MAX_SEQUENCE_LEN
+        || summary.bottom_length > collagene_model::MAX_SEQUENCE_LEN
         || calls > total
         || summary.generation.len() > 1000
         || summary.generation.iter().any(|g| !hex(&g.source_revision))
@@ -1383,7 +1383,7 @@ pub fn pcr_preview_revision(
     reverse: &Primer,
     template_strand: chemistry::Strand,
 ) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     for primer in [forward, reverse] {
         if primer.annealing.len() > 1000 || primer.tail.len() > 1000 {
@@ -1442,7 +1442,7 @@ pub fn digest_inspection_revision(
     selection: &CatalogSelection,
     options: &InspectionOptions,
 ) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     options.validate()?;
     let catalog = catalog_digest::builtin_catalog()?;
@@ -1608,7 +1608,7 @@ dto! {pub struct RepairPreview{pub engine_version:String,pub context_revision:St
 pub source_duplex:chemistry::DuplexSummary,pub source_modifications:ModificationSummary,
 pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool}}
 fn source_origin_preflight(source: &Molecule, origin: &SourceOrigin) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     match origin {
         SourceOrigin::OriginalReference => {
@@ -1812,10 +1812,10 @@ fn preview_source_shape(
         || duplex.bottom_length != modifications.bottom_length
         || duplex.model.len() > 256
         || duplex.nicks.len() > 10000
-        || duplex.bottom_start.unsigned_abs() > crate::model::MAX_SEQUENCE_LEN as u64
+        || duplex.bottom_start.unsigned_abs() > collagene_model::MAX_SEQUENCE_LEN as u64
         || duplex.ends.as_ref().is_some_and(|(a, b)| {
-            a.overhang.len() > crate::model::MAX_SEQUENCE_LEN
-                || b.overhang.len() > crate::model::MAX_SEQUENCE_LEN
+            a.overhang.len() > collagene_model::MAX_SEQUENCE_LEN
+                || b.overhang.len() > collagene_model::MAX_SEQUENCE_LEN
         })
     {
         return Err(bad(
@@ -1873,10 +1873,10 @@ impl MismatchPreview {
             return Err(bad("mismatch preview report correspondence differs"));
         }
         for (document, geometry) in self.preview.documents.iter().zip(&report.products) {
-            crate::model::bounds::model_preflight(&[document])?;
+            collagene_model::bounds::model_preflight(&[document])?;
             document.validate()?;
             if document.sequence != geometry.sequence
-                || document.topology != crate::Topology::Linear
+                || document.topology != collagene_model::Topology::Linear
                 || document
                     .metadata
                     .get("source:material_derivation:preview_context")
@@ -2267,7 +2267,7 @@ impl TerminalProcessingPreview {
     /// executes endpoint processing, and cannot authorize installation on its own.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         run_material::event_shape(&self.source)?;
-        crate::model::bounds::model_preflight(&[&self.product])?;
+        collagene_model::bounds::model_preflight(&[&self.product])?;
         self.product.validate()?;
         summary_shape(&self.source_modifications)?;
         summary_shape(&self.modifications)?;
@@ -2297,8 +2297,8 @@ impl TerminalProcessingPreview {
             || self.product.sequence.alphabet() != Alphabet::Dna
             || self.product.sequence.len() != self.duplex.top_length
             || self.product.topology != self.duplex.topology
-            || self.duplex.topology != crate::Topology::Linear
-            || self.source_duplex.topology != crate::Topology::Linear
+            || self.duplex.topology != collagene_model::Topology::Linear
+            || self.source_duplex.topology != collagene_model::Topology::Linear
             || self.source_duplex.nicks != self.duplex.nicks
             || self.product.metadata.get("duplex_model")
                 != Some(&serde_json::to_string(&self.duplex).map_err(|_| Error::TooLarge)?)
@@ -2445,7 +2445,7 @@ fn distinct_parent_events(request: &Request) -> Vec<String> {
     parents
 }
 fn declared_oligo_source(molecule: &Molecule) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[molecule])?;
+    collagene_model::bounds::model_preflight(&[molecule])?;
     verification::declared_oligo(molecule)?;
     if molecule.sequence.is_empty() || molecule.sequence.len() > chemistry::MAX_ANNEAL_OLIGO_BASES {
         return Err(Error::TooLarge);
@@ -2474,7 +2474,7 @@ pub(crate) fn validate_source_snapshots(
                 "source snapshot role/order or revision differs from exact source event",
             ));
         }
-        crate::model::bounds::model_preflight(&[&snapshot.molecule])?;
+        collagene_model::bounds::model_preflight(&[&snapshot.molecule])?;
         snapshot.molecule.validate()?;
         if matches!(request.derivation, Derivation::AnnealedOligos { .. }) {
             declared_oligo_source(&snapshot.molecule)?;
@@ -2688,7 +2688,7 @@ impl AnnealedOligosPreview {
             if !candidate_id_shape(&candidate.id)
                 || !ids.insert(&candidate.id)
                 || product.sequence != candidate.duplex.top
-                || product.topology != crate::Topology::Linear
+                || product.topology != collagene_model::Topology::Linear
                 || product.metadata.get("anneal:top_revision")
                     != Some(&self.sources[0].event.revision)
                 || product.metadata.get("anneal:bottom_revision")

@@ -6,6 +6,7 @@ license = "MIT"
 rust-version = "1.88"
 description = "Framework-independent native desktop host for bounded Collagene IPC"
 [dependencies]
+collagene-model = { path = "../model" }
 blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
 cap-std = "=4.0.3"
 cap-fs-ext = "=4.0.3"

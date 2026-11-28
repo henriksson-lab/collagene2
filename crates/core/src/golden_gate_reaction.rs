@@ -1,13 +1,13 @@
 //! Explicit whole-template, whole-amplicon and isolated-substrate reaction inputs.
 //! The final native enumeration is captured once, including failed probe selection.
 use crate::{
-    Alphabet, Error, Molecule,
     assembly_recipe::{self, FragmentSpec, Preparation},
     chemistry::EndTreatment,
     golden_gate::{self, GoldenGateOptions, GoldenGateReport},
     prepared_golden_gate::{Assessment, Selection, SelectionReport},
     verification::{self, DesignPlan, Operation, PlanInput, Source, VerificationReport},
 };
+use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "golden-gate-reaction-1";
@@ -98,7 +98,7 @@ pub fn preflight(
     )?;
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
     models.push(target);
-    crate::model::bounds::model_preflight(&models)?;
+    collagene_model::bounds::model_preflight(&models)?;
     let mut bases = 0usize;
     let mut ids = BTreeSet::new();
     for (id, m) in inputs {
@@ -385,7 +385,7 @@ impl Report {
             return Err(bad("reaction plan/preparation receipt changed"));
         }
         for product in &self.verification.products {
-            crate::model::bounds::model_preflight(&[product])?;
+            collagene_model::bounds::model_preflight(&[product])?;
             product.validate()?;
             if product.metadata.get("plan_revision") != Some(&self.verification.plan_revision) {
                 return Err(bad("preparation product belongs to another plan"));
@@ -438,7 +438,7 @@ impl Report {
             for c in &pool.candidates {
                 c.duplex.validate()?;
                 if c.restriction_site_free != c.recut_sites.is_empty()
-                    || (c.duplex.topology == crate::Topology::Circular)
+                    || (c.duplex.topology == collagene_model::Topology::Circular)
                         != self.request.options.circular
                 {
                     return Err(bad("reaction candidate topology or recut scope changed"));

@@ -1,10 +1,10 @@
 //! Bounded recognition inspection and lazy, assumed-complete duplex products.
 //! Recognition evidence is separate from substrate geometry and experimental cleavage.
 use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology,
     analysis::{self, Enzyme},
     chemistry,
 };
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "restriction-inspection-1";
@@ -161,7 +161,7 @@ pub fn source_preflight(
     if !role_valid(role) {
         return Err(bad("invalid source role"));
     }
-    if m.sequence.len() > crate::model::MAX_SEQUENCE_LEN
+    if m.sequence.len() > collagene_model::MAX_SEQUENCE_LEN
         || m.features.len() > 100_000
         || m.metadata.len() > 100_000
     {
@@ -682,7 +682,7 @@ impl RestrictionInspection {
         if !version(&self.engine_version)
             || !role_valid(&self.source_role)
             || self.source_length == 0
-            || self.source_length > crate::model::MAX_SEQUENCE_LEN
+            || self.source_length > collagene_model::MAX_SEQUENCE_LEN
             || ![
                 &self.source_revision,
                 &self.options_revision,
@@ -873,7 +873,7 @@ impl DigestProduct {
             return Err(bad("derived product/evidence contradiction"));
         }
         source_preflight(&self.source_role, m, &enzymes(&self.enzymes), &self.options)?;
-        summary_valid(&self.summary, crate::model::MAX_SEQUENCE_LEN)?;
+        summary_valid(&self.summary, collagene_model::MAX_SEQUENCE_LEN)?;
         let metadata = |key: &str, value: &str| m.metadata.get(key).is_some_and(|v| v == value);
         if !metadata("restriction_inspection:engine", &self.engine_version)
             || !metadata(

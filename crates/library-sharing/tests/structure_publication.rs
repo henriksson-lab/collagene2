@@ -1,9 +1,9 @@
 use collagene_core::{
-    Molecule, Topology,
     structure_view::{self, coordinates::Format},
     workspace::{self, Workspace, WorkspaceAttachment},
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Molecule, Topology};
 const PDB:&[u8]=b"REMARK   1 UNLINKED PRIVATE COORDINATE SOURCE\r\nATOM      1  CA  ALA A   1      11.104  13.207   2.100  1.00 20.00           C  \r\nEND\r\n";
 const CIF:&[u8]=b"data_unlinked\n# UNLINKED PRIVATE COORDINATE SOURCE\nloop_\n_atom_site.group_PDB\n_atom_site.id\n_atom_site.type_symbol\n_atom_site.label_atom_id\n_atom_site.label_comp_id\n_atom_site.label_asym_id\n_atom_site.label_seq_id\n_atom_site.Cartn_x\n_atom_site.Cartn_y\n_atom_site.Cartn_z\nATOM 1 C CA ALA A 1 11.104 13.207 2.100\n";
 fn fixture() -> (Workspace, Selection) {

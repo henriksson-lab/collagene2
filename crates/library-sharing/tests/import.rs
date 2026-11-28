@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     run_lineage::{self, EventBinding, InputEventBinding},
     run_material,
@@ -7,6 +6,7 @@ use collagene_core::{
     workspace::{RevisionEvent, Workspace, WorkspaceDocument},
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Molecule, Topology};
 // Module registration is parent-owned until the current coordinated native batch
 // ends. This test target then imports the normal public module.
 use collagene_library_sharing::import::{

@@ -1,8 +1,8 @@
 //! Independent literal activated-vector declaration shared by integration fixtures.
 use collagene_core::{
-    Molecule, Topology, run_lineage::EventBinding, topo as t, topo_graph_history as g,
-    workspace::Workspace,
+    run_lineage::EventBinding, topo as t, topo_graph_history as g, workspace::Workspace,
 };
+use collagene_model::{Molecule, Topology};
 use t::physical as p;
 pub const FINAL: &str = "AGGGGCATCCCTTCGAATGA";
 pub fn event(w: &Workspace, i: usize) -> EventBinding {

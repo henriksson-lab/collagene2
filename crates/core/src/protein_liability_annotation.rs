@@ -1,5 +1,6 @@
 //! Literal sequence-risk candidates, never measured modification annotations.
-use crate::{Error, Feature, Location, Molecule, protein_liabilities as native};
+use crate::protein_liabilities as native;
+use collagene_model::{Error, Feature, Location, Molecule};
 pub fn candidate(
     source: &Molecule,
     options: &native::Options,

@@ -3,7 +3,10 @@ use crate::worker::CachedWorker;
 use collagene_core::{
     catalog_digest::CatalogSelection,
     material_derivation::{self, Derivation, SourceOrigin},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     restriction_history::SourceBinding,
     restriction_inspection::InspectionOptions,
     run_lineage,

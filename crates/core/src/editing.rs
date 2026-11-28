@@ -1,5 +1,5 @@
 //! Validated annotation editing and explicit reference-document metadata changes.
-use crate::{Error, Feature, Location, Molecule, Topology};
+use collagene_model::{Error, Feature, Location, Molecule, Topology};
 
 pub fn set_feature(
     molecule: &Molecule,

@@ -198,7 +198,8 @@ mod tests {
         assembly_role_ids::Role,
         cloning_methods_model::{Mode, Treatment},
     };
-    use collagene_core::{Molecule, Topology, catalog_digest, pcr_digest_inspection};
+    use collagene_core::{catalog_digest, pcr_digest_inspection};
+    use collagene_model::{Molecule, Topology};
 
     fn select(name: &str) -> collagene_core::catalog_digest::CatalogSelection {
         let catalog = catalog_digest::builtin_catalog().unwrap();
@@ -483,11 +484,11 @@ impl InspectionRequest {
     }
     pub(crate) fn revision(
         &self,
-        source: &collagene_core::Molecule,
+        source: &collagene_model::Molecule,
         origin: Option<&collagene_core::run_material::MaterialOrigin>,
         workspace: Option<&collagene_core::workspace::Workspace>,
-    ) -> Result<String, collagene_core::Error> {
-        use collagene_core::Error;
+    ) -> Result<String, collagene_model::Error> {
+        use collagene_model::Error;
         match self {
             Self::Exact(r) => match origin {
                 Some(o) => {
@@ -519,11 +520,11 @@ impl InspectionRequest {
     }
     pub(crate) fn into_job(
         self,
-        molecule: collagene_core::Molecule,
+        molecule: collagene_model::Molecule,
         origin: Option<collagene_core::run_material::MaterialOrigin>,
         workspace: Option<collagene_core::workspace::Workspace>,
-    ) -> Result<collagene_core::protocol::AnalysisJob, String> {
-        use collagene_core::protocol::AnalysisJob;
+    ) -> Result<collagene_core::protocol::schema::AnalysisJob, String> {
+        use collagene_core::protocol::schema::AnalysisJob;
         Ok(match self {
             Self::Exact(request) => match origin {
                 Some(origin) => AnalysisJob::InspectMaterialPcrDigest {
@@ -575,7 +576,7 @@ impl InspectionPreview {
             Self::Extension(p) => InspectionRequest::Extension(p.request.clone()),
         }
     }
-    pub(crate) fn validate_binding(&self, r: &str) -> Result<(), collagene_core::Error> {
+    pub(crate) fn validate_binding(&self, r: &str) -> Result<(), collagene_model::Error> {
         match self {
             Self::Material(p) => p.validate_binding(r),
             Self::Exact(p) => p.validate_binding(r),
@@ -583,7 +584,7 @@ impl InspectionPreview {
             Self::Extension(p) => p.validate_binding(r),
         }
     }
-    pub(crate) fn amplicon(&self) -> Option<&collagene_core::Molecule> {
+    pub(crate) fn amplicon(&self) -> Option<&collagene_model::Molecule> {
         match self {
             Self::Material(p) => p.preview.amplicon.as_ref(),
             Self::Exact(p) => p.amplicon.as_ref(),
@@ -800,7 +801,8 @@ pub(crate) fn apply_inspection(
 #[cfg(test)]
 mod mismatch_digest_tests {
     use super::*;
-    use collagene_core::{Molecule, Topology, catalog_digest, mismatch_pcr_digest_inspection};
+    use collagene_core::{catalog_digest, mismatch_pcr_digest_inspection};
+    use collagene_model::{Molecule, Topology};
     const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
     const MUTANT: &str = "AGACCGATGCTACGTAGGACTTCAGACCTGGA";
     fn fixture() -> (MethodsState, Molecule, InspectionRequest) {
@@ -1011,9 +1013,9 @@ mod overlap_extension_digest_tests {
         cloning_methods_model::{ExtensionPrimerInput, Mode, OverlapExtensionPcrInput, Treatment},
     };
     use collagene_core::{
-        Molecule, Topology, catalog_digest, overlap_extension_digest_inspection as native,
-        verification::Status,
+        catalog_digest, overlap_extension_digest_inspection as native, verification::Status,
     };
+    use collagene_model::{Molecule, Topology};
     const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
     const MUTANT: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
     fn oligo(name: &str, annealing: &str, tail: &str) -> ExtensionPrimerInput {

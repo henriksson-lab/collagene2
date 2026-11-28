@@ -5,11 +5,14 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     rna_chemistry as rna, rna_history,
     run_lineage::EventBinding,
 };
+use collagene_model::{Alphabet, Molecule, Topology};
 use leptos::prelude::*;
 use std::{
     rc::Rc,

@@ -28,7 +28,7 @@ Limits are 4,096 mapping segments, one million traversal/intersection work units
 
 ## Validation
 
-`cargo test -p collagene-core --test annotations --locked` covers independently specified biological extraction/orientation, circular-origin rotations versus linear cuts, partial exon deletion and new exon permutations, fuzzy/order/unresolved semantics, coordinate-qualifier failures, source-header preservation, native evidence round trips and trace orientation. These tests do not use another cloning application's output as an oracle.
+`cargo test -p collagene-core --test sequence annotations::annotations:: --locked` covers independently specified biological extraction/orientation, circular-origin rotations versus linear cuts, partial exon deletion and new exon permutations, fuzzy/order/unresolved semantics, coordinate-qualifier failures, source-header preservation, native evidence round trips and trace orientation. These tests do not use another cloning application's output as an oracle.
 
 ## Reconstructed cloning products
 
@@ -38,7 +38,7 @@ A one-fragment overlap closure identifies two source homology copies. Its intern
 
 Product metadata retains unprojectable features by source revision rather than copying arbitrary input attachments into every intermediate. The immutable plan inputs/intermediates carry source evidence. An annotation absent from a digest fragment's top reference but present on its opposite-strand protrusion is currently not restored automatically when that protrusion later becomes top reference after reversal; the original graph and omission warning remain available. Restoring it requires explicit ancestral strand provenance.
 
-`cargo test -p collagene-core --test annotation_verification --locked` covers manually specified PCR tail origins and competing geometries, circular digest clipping, reversed staggered ligation, linear/circular overlap closure, self-circular homology collapse, unresolved source evidence and bounded metadata duplication.
+`cargo test -p collagene-core --test sequence annotations::annotation_verification:: --locked` covers manually specified PCR tail origins and competing geometries, circular digest clipping, reversed staggered ligation, linear/circular overlap closure, self-circular homology collapse, unresolved source evidence and bounded metadata duplication.
 
 ## MCP annotation exchange, including GTF
 

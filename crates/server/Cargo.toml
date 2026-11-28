@@ -7,6 +7,7 @@ rust-version = "1.88"
 description = "Native same-origin server for an authenticated shared plasmid library"
 
 [dependencies]
+collagene-model = { path = "../model" }
 collagene-source-gateway = { path = "../source-gateway" }
 collagene-lab-library = { path = "../lab-library" }
 collagene-library-protocol = { path = "../library-protocol" }

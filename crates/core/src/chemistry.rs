@@ -1,10 +1,8 @@
 //! Exact two-strand restriction and ordered-ligation geometry.
 //! Strands are stored 5′→3′; bottom_start is the left boundary of the antiparallel
 //! bottom strand in top-reference coordinates. No kinetics or methylation inference.
-use crate::{
-    analysis::{self, Enzyme},
-    *,
-};
+use crate::analysis::{self, Enzyme};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -232,7 +230,7 @@ impl Duplex {
         exact_dna(&self.top)?;
         exact_dna(&self.bottom)?;
         let n = self.top.len() as i64;
-        if self.bottom_start.unsigned_abs() > model::MAX_SEQUENCE_LEN as u64 {
+        if self.bottom_start.unsigned_abs() > collagene_model::MAX_SEQUENCE_LEN as u64 {
             return Err(Error::TooLarge);
         }
         let start = self.bottom_start.max(0);
@@ -252,7 +250,9 @@ impl Duplex {
         let bottom = self.bottom.as_str().as_bytes();
         for i in start..end {
             let b = bottom[self.bottom.len() - 1 - (i - self.bottom_start) as usize];
-            if self.top.as_str().as_bytes()[i as usize] != model::complement(b, Alphabet::Dna) {
+            if self.top.as_str().as_bytes()[i as usize]
+                != collagene_model::complement(b, Alphabet::Dna)
+            {
                 return Err(invalid("duplex strands disagree within the paired region"));
             }
         }
@@ -414,7 +414,7 @@ fn extract(
     circular: bool,
     reference_start: i64,
 ) -> Result<Sequence, Error> {
-    if length == 0 || length > model::MAX_SEQUENCE_LEN {
+    if length == 0 || length > collagene_model::MAX_SEQUENCE_LEN {
         return Err(Error::TooLarge);
     }
     if circular {
@@ -693,7 +693,9 @@ pub fn ligate(fragments: &[Duplex], circular: bool, allow_nicked: bool) -> Resul
         .iter()
         .try_fold(0usize, |n, f| n.checked_add(f.bottom.len()))
         .ok_or(Error::TooLarge)?;
-    if total_top > model::MAX_SEQUENCE_LEN || total_bottom > model::MAX_SEQUENCE_LEN {
+    if total_top > collagene_model::MAX_SEQUENCE_LEN
+        || total_bottom > collagene_model::MAX_SEQUENCE_LEN
+    {
         return Err(Error::TooLarge);
     }
     let mut top = String::new();
@@ -706,7 +708,7 @@ pub fn ligate(fragments: &[Duplex], circular: bool, allow_nicked: bool) -> Resul
                 "ligation substrates must be linear duplex fragments",
             ));
         }
-        if top.len().saturating_add(fragment.top.len()) > model::MAX_SEQUENCE_LEN {
+        if top.len().saturating_add(fragment.top.len()) > collagene_model::MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
         let offset = top.len() as i64;
@@ -907,7 +909,9 @@ pub fn repair_ends(source: &Duplex, method: EndRepairMethod) -> Result<EndRepair
     };
     let new_bottom_start = if change_left { 0 } else { s };
     let new_bottom_length = (e - new_bottom_start) as usize;
-    if new_top_length > model::MAX_SEQUENCE_LEN || new_bottom_length > model::MAX_SEQUENCE_LEN {
+    if new_top_length > collagene_model::MAX_SEQUENCE_LEN
+        || new_bottom_length > collagene_model::MAX_SEQUENCE_LEN
+    {
         return Err(Error::TooLarge);
     }
     let total = source
@@ -1098,7 +1102,10 @@ pub fn anneal_oligos(
             report.comparisons += 1;
             let bottom_index = (m - 1 - (coordinate - start)) as usize;
             if top.as_str().as_bytes()[coordinate as usize]
-                != model::complement(bottom.as_str().as_bytes()[bottom_index], Alphabet::Dna)
+                != collagene_model::complement(
+                    bottom.as_str().as_bytes()[bottom_index],
+                    Alphabet::Dna,
+                )
             {
                 complementary = false;
                 break;

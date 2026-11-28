@@ -1,11 +1,12 @@
 //! Finite Golden Gate alternatives from the same fresh preparation verifier pass.
 //! Serialized summaries and pool duplexes never restore source physical authority.
 use crate::{
-    Error, Molecule, Topology, assembly_recipe,
+    assembly_recipe,
     golden_gate::{self, GoldenGateOptions, GoldenGateReport},
     ligation_recipe,
     verification::{self, DesignPlan, Operation, PlanInput, Source},
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE_VERSION: &str = "prepared-golden-gate-1";
@@ -353,7 +354,7 @@ impl Report {
         if !hex(expected) || self.context_revision != expected {
             return Err(bad("inspection context changed"));
         }
-        crate::model::bounds::model_preflight(&[&self.target])?;
+        collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         let inputs = &self.preview.compiled.plan.inputs;
         if self.preview.verification.target_revision != assembly_recipe::hash(&self.target)?
@@ -530,7 +531,7 @@ impl SelectionReport {
         {
             return Err(bad("invalid selection context or native plan shape"));
         }
-        crate::model::bounds::model_preflight(
+        collagene_model::bounds::model_preflight(
             &self
                 .plan
                 .inputs

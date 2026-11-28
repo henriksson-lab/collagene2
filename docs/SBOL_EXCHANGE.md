@@ -1,5 +1,14 @@
 # SBOL 3.1 structural JSON-LD exchange
 
+Native MCP exposes `import_sbol`, `inspect_sbol`, `project_sbol`,
+`export_sbol_graph`, and `export_sbol`. Import retains an immutable original
+graph; projection requires explicit component/sequence selection and omission
+review. Sources are either imported evidence handles or an exact workspace's
+original-graph attachment. Original/expanded graph export creates no cloning
+authority. Native reference export uses the same physical-evidence refusal guard
+as the web dialog. The current integration batch has dedicated SDK cases;
+validation is recorded in the implementation status.
+
 `collagene-design-exchange` is an independently implemented MIT Rust crate using
 only the shared `collagene-model`, serde/JSON, hashing and error types. It is
 portable to WASM and native targets. There is no external executable, RDF server,

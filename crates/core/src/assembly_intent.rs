@@ -2,7 +2,6 @@
 //! Native source replay identifies actual input strands; no planned assembly or
 //! desired target supplies their bases, chemistry or source authority.
 use crate::{
-    Alphabet, Error, Molecule, Sequence, Topology,
     annotations::{self, MappingSegment},
     assembly_recipe,
     chemistry::Strand,
@@ -11,6 +10,7 @@ use crate::{
     verification::PlanInput,
     workspace::Workspace,
 };
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE_VERSION: &str = "assembly-intent-2";
@@ -220,7 +220,7 @@ pub fn preflight(
     if inputs.is_empty() || inputs.len() > MAX_ROWS {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(&inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>())?;
+    collagene_model::bounds::model_preflight(&inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>())?;
     run_material::material_origins_preflight(r.material_bindings.iter().map(|b| &b.origin))?;
     assembly_recipe::hash(&(inputs, r))?;
     let mut seen = BTreeSet::new();
@@ -755,7 +755,7 @@ pub(crate) fn build_layout(
                 feature.qualifiers.push(("note".into(),Some("Actual strand calls differ from displayed-top ambiguity; review source sequence/function assertions.".into())));
             }
         }
-        let mut budget = crate::model::bounds::ModelBudget::default();
+        let mut budget = collagene_model::bounds::ModelBudget::default();
         if budget
             .molecule(&target)
             .and_then(|()| budget.features(&features))
@@ -818,7 +818,7 @@ pub(crate) fn build_layout(
     if dna.bytes().any(|b| !b"ACGT".contains(&b)) {
         warnings.push("IUPAC ambiguity is retained as requested reference notation, without establishing concrete primer calls or unique material.".into());
     }
-    crate::model::bounds::model_preflight(&[&target])?;
+    collagene_model::bounds::model_preflight(&[&target])?;
     Ok((target, rows, warnings))
 }
 pub fn build(inputs: &[PlanInput], r: &Request, w: Option<&Workspace>) -> Result<Report, Error> {
@@ -878,8 +878,8 @@ pub fn material_source_descriptors(m: &Molecule) -> Result<Vec<MaterialDescripto
             || !hex(&r.state_revision)
             || r.top_length == 0
             || r.bottom_length == 0
-            || r.top_length > crate::model::MAX_SEQUENCE_LEN
-            || r.bottom_length > crate::model::MAX_SEQUENCE_LEN
+            || r.top_length > collagene_model::MAX_SEQUENCE_LEN
+            || r.bottom_length > collagene_model::MAX_SEQUENCE_LEN
         {
             return Err(bad("invalid material source descriptor"));
         }
@@ -1032,7 +1032,7 @@ pub(crate) fn validate_rows(
 impl Report {
     pub fn validate(&self) -> Result<(), Error> {
         shape(&self.request)?;
-        crate::model::bounds::model_preflight(&[&self.target])?;
+        collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         validate_rows(&self.fragments, &self.request, &self.target)?;
         if !hex(&self.context_revision)
@@ -1163,7 +1163,7 @@ pub fn digest_material_selector(
     fragment: &DigestGeometry,
     reverse: bool,
 ) -> Result<Selector, Error> {
-    let max = crate::model::MAX_SEQUENCE_LEN;
+    let max = collagene_model::MAX_SEQUENCE_LEN;
     if source.top_length == 0
         || source.bottom_length == 0
         || source.top_length > max

@@ -118,11 +118,11 @@ pub(crate) fn selected_difference(
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         alignment::{ComparisonOptions, DifferenceKind},
         analysis::Primer,
         verification::{DesignPlan, Operation, PlanInput, Source, Status},
     };
+    use collagene_model::{Molecule, Topology};
     fn snapshot(target: &str, circular: bool) -> Snapshot {
         let source =
             Molecule::dna("Original source", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();

@@ -1,11 +1,11 @@
 //! Embedded, deterministic, printable protocol PDF. No filesystem or subprocess use.
 //! PDF syntax/font objects use pdf-writer; scientific content is reverified here.
 use crate::{
-    Error, Molecule, Topology,
     chemistry::DuplexSummary,
     svg::{self, MapScene},
     verification::{self, DesignPlan, Operation, Source, Status},
 };
+use collagene_model::{Error, Molecule, Topology};
 use pdf_writer::types::{CidFontType, FontFlags, SystemInfo, UnicodeCmap};
 use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref, Str, TextStr};
 use std::{

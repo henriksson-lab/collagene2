@@ -1,7 +1,8 @@
 //! Independent, reference-bound GFF3/BED/GTF annotation exchange.
 //! Original input is evidence; external annotations are never scientific verification.
-use crate::{Alphabet, Error, Feature, Location, Molecule, Topology, formats::ExportReport};
+use crate::formats::ExportReport;
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 mod gtf;

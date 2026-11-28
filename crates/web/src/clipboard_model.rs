@@ -1,6 +1,6 @@
 //! Clipboard text/edit descriptions scoped to the exact displayed molecule.
 //! This module performs no document mutation, browser access or history writes.
-use collagene_core::{Molecule, Sequence};
+use collagene_model::{Molecule, Sequence};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Edit {
@@ -114,7 +114,7 @@ pub fn paste(
         .len()
         .checked_sub(end - start)
         .and_then(|retained| retained.checked_add(normalized.len()))
-        .filter(|length| *length <= collagene_core::model::MAX_SEQUENCE_LEN)
+        .filter(|length| *length <= collagene_model::MAX_SEQUENCE_LEN)
         .ok_or("Pasted sequence would exceed the core sequence-length bound.")?;
     let caret = start
         .checked_add(normalized.len())
@@ -155,7 +155,7 @@ pub fn insert(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Alphabet, Feature, Location, Topology};
+    use collagene_model::{Alphabet, Feature, Location, Topology};
     fn dna(letters: &str) -> Molecule {
         Molecule::dna("Displayed reference", letters, Topology::Linear).unwrap()
     }
@@ -311,7 +311,7 @@ mod tests {
         let edit = paste(&protein, None, Some((1, 3)), &[], false, false, " f\ny* ").unwrap();
         assert_eq!(edit.replacement, "FY*");
         assert_eq!(edit.caret, 4);
-        let full = dna(&"A".repeat(collagene_core::model::MAX_SEQUENCE_LEN));
+        let full = dna(&"A".repeat(collagene_model::MAX_SEQUENCE_LEN));
         assert!(paste(&full, None, Some((0, 0)), &[], false, false, "G").is_err());
         assert!(
             paste(

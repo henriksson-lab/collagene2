@@ -1,11 +1,11 @@
 //! Prepare an exact retained run for editing/reverification, never physical replay.
 use crate::{
-    Error, Molecule,
     run_lineage::{self, EventBinding, InputEventBinding, RecordedAssessment},
     transfer::Candidate,
     verification::{self, Operation},
     workspace::Workspace,
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 

@@ -2,11 +2,14 @@
 //! stays in a private worker; the host capture callback guards before cloning.
 use crate::{assembly_junction_navigation_model::Kind, worker::CachedWorker};
 use collagene_core::{
-    Molecule,
     assembly_junctions::{self, Frame, Method, Options, Report},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::DesignPlan,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,
@@ -267,7 +270,7 @@ pub(crate) fn AssemblyJunctionsPanel(
             let homology_evidence=shown.clone();
             let no_homology=junction.homology.is_empty();
             let product_end=shown.report.product_length.unwrap_or(0);
-            let before=if shown.report.product_topology==Some(collagene_core::Topology::Circular)&&junction.boundary==product_end{0}else{junction.boundary};
+            let before=if shown.report.product_topology==Some(collagene_model::Topology::Circular)&&junction.boundary==product_end{0}else{junction.boundary};
             let boundary_label=if before==product_end{format!("After product base {product_end}")}else{format!("Before product base {}",before+1)};
             let dna=junction.window.dna.clone();let boundary=junction.window.boundary_offset;let marked=dna.split_at_checked(boundary).map(|(left,right)|format!("{left}|{right}")).unwrap_or_else(||dna.clone());
             view!{<article class="assembly-junction"><h4>{format!("Junction {} · {} {} → {}{}",junction.index+1,if is_golden{"selected path part"}else{"fragment"},junction.upstream+1,junction.downstream+1,if junction.closing{" · circle closure"}else{""})}</h4><p>{boundary_label}</p><p>{format!("DNA window product ranges: {}",junction.window.parts.iter().map(|r|format!("{}–{}",r.start+1,r.end)).collect::<Vec<_>>().join(", "))}</p><p class="helper">{format!("One-based inclusive product ranges; {} left / {} right bases; window clipped: {}",junction.window.left_bases,junction.window.right_bases,junction.window.clipped)}</p><pre>{format!("Window 5′→3′: {marked}\n| marks the junction at window offset {boundary}")}</pre><p>{format!("Homology product ranges: {}",if junction.homology.is_empty(){"none".into()}else{junction.homology.iter().map(|r|format!("{}–{}",r.start+1,r.end)).collect::<Vec<_>>().join(", ")})}</p>

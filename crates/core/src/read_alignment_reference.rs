@@ -1,6 +1,7 @@
 //! Explicit source-bound checking of sealed imported SAM/BAM alignment assertions.
 //! No reference-name/URI lookup, variant calling, consensus or uniqueness inference.
-use crate::{Alphabet, Error, Molecule, Topology, analysis::base_mask};
+use crate::analysis::base_mask;
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 use collagene_read_alignments::{
     CigarKind, Format, Header, QueryProjection, Record, SequenceSymbol,
 };

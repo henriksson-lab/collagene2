@@ -1,9 +1,10 @@
 //! Portable, versioned revision snapshots at the browser/MCP boundary.
 //! Packages carry data only. Verification status is always recomputed by the recipient.
 use crate::{
-    Error, Molecule, protocol,
+    protocol,
     verification::{DesignPlan, plan_revision},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -113,16 +114,16 @@ impl Candidate {
 
 pub fn save_workspace(workspace: &PlanningWorkspace) -> Result<Vec<u8>, Error> {
     workspace.validate()?;
-    protocol::encode(b"CGD\0", workspace)
+    protocol::envelope::encode(b"CGD\0", workspace)
 }
 pub fn load_workspace(bytes: &[u8]) -> Result<PlanningWorkspace, Error> {
-    let workspace: PlanningWorkspace = protocol::decode(b"CGD\0", bytes)?;
+    let workspace: PlanningWorkspace = protocol::envelope::decode(b"CGD\0", bytes)?;
     workspace.validate()?;
     Ok(workspace)
 }
 pub fn save_candidate(candidate: &Candidate) -> Result<Vec<u8>, Error> {
     candidate.validate()?;
-    protocol::encode(b"CGP\0", candidate)
+    protocol::envelope::encode(b"CGP\0", candidate)
 }
 pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
     let candidate = decode_candidate_shallow(bytes)?;
@@ -132,5 +133,5 @@ pub fn load_candidate(bytes: &[u8]) -> Result<Candidate, Error> {
 /// Bounded current-envelope decode only. The mixed-origin ledger charges and
 /// validates each plan without recursively reentering Candidate::validate.
 pub(crate) fn decode_candidate_shallow(bytes: &[u8]) -> Result<Candidate, Error> {
-    protocol::decode(b"CGP\0", bytes)
+    protocol::envelope::decode(b"CGP\0", bytes)
 }

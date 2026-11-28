@@ -1,5 +1,6 @@
 //! Explicit source/alphabet review for formats which cannot safely be guessed.
-use collagene_core::{Alphabet, formats::ImportReport};
+use collagene_core::formats::ImportReport;
+use collagene_model::Alphabet;
 use leptos::prelude::*;
 use std::sync::Arc;
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -65,7 +66,7 @@ pub fn SequenceCompatImport(
                         ),
                     }
                 }
-                Err(_) => Err(collagene_core::Error::Format(
+                Err(_) => Err(collagene_model::Error::Format(
                     "FASTA must be UTF-8 text.".into(),
                 )),
             },

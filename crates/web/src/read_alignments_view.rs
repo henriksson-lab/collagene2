@@ -2,11 +2,14 @@
 //! Imported CIGAR/MAPQ/flags are assertions, never coverage or variant evidence.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Alphabet, Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     read_alignment_reference::{self as reference, Operation, Relation},
     read_alignment_session::{self as session, FileFormat},
 };
+use collagene_model::{Alphabet, Molecule};
 use leptos::prelude::*;
 use std::{
     rc::Rc,

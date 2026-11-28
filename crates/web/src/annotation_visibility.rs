@@ -223,7 +223,7 @@ mod tests {
     }
     #[test]
     fn native_archive_preferences_require_the_exact_owner_event_and_feature_count() {
-        use collagene_core::{Feature, Location, Molecule, Topology};
+        use collagene_model::{Feature, Location, Molecule, Topology};
         let mut molecule = Molecule::dna("source", "ACGT", Topology::Linear).unwrap();
         molecule.features.push(Feature {
             kind: "gene".into(),

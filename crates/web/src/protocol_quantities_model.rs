@@ -671,13 +671,13 @@ pub fn same_source(a: &Source, b: &Source) -> bool {
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         analysis::Primer,
         history::DocumentHistory,
         run_lineage,
         transfer::Candidate,
         verification::{self, DesignPlan, Operation, PlanInput},
     };
+    use collagene_model::{Molecule, Topology};
     fn fixture() -> (Workspace, DesignPlan, Binding) {
         let source = Molecule::dna("Stock", "AGTCCGATGCTACGTA", Topology::Linear).unwrap();
         let target =

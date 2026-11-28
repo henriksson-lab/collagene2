@@ -1,6 +1,7 @@
 //! Bounded sequence-context assessment under explicit source-generation assumptions.
 //! No physical modified-base propagation, reaction prediction or supplier substitution.
-use crate::{Alphabet, Error, Location, Molecule, Topology, analysis};
+use crate::analysis;
+use collagene_model::{Alphabet, Error, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "methylation-1";
@@ -371,7 +372,7 @@ pub fn assess(m: &Molecule, o: &MethylationOptions) -> Result<MethylationReport,
     let mut evidence_bytes = 0usize;
     'scan: for p in r.profiles.clone() {
         let enzyme = enzymes.iter().find(|e| e.name == p.enzyme).unwrap();
-        let rc = crate::Sequence::dna(&p.recognition)?
+        let rc = collagene_model::Sequence::dna(&p.recognition)?
             .reverse_complement()?
             .as_str()
             .as_bytes()

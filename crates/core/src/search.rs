@@ -1,8 +1,6 @@
 //! Bounded, source-bound searches. Coordinates are zero-based half-open.
-use crate::{
-    analysis::{base_mask, starter_enzymes},
-    model::*,
-};
+use crate::analysis::{base_mask, starter_enzymes};
+use collagene_model::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,7 +111,7 @@ impl SearchReport {
         self.options.validate()?;
         let bad = || Error::Format("invalid search report bounds or identity".into());
         if self.source_length == 0
-            || self.source_length > crate::model::MAX_SEQUENCE_LEN
+            || self.source_length > collagene_model::MAX_SEQUENCE_LEN
             || self.source_feature_count > 100_000
             || self.source_revision.len() != 64
             || !self.source_revision.bytes().all(|b| b.is_ascii_hexdigit())

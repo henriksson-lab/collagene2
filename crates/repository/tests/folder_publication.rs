@@ -1,7 +1,8 @@
-use collagene_core::{Molecule, Topology, protocol};
+use collagene_core::protocol;
 use collagene_lab_library::{self as store, mutations as durable};
 use collagene_library_protocol as wire;
 use collagene_library_sync as sync;
+use collagene_model::{Molecule, Topology};
 use collagene_repository::{
     self as repo, Channel, Error, RemoteConfig, RemoteTransport, Repository, SyncResult,
     TransportError,

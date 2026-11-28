@@ -75,10 +75,8 @@ pub fn ensure_public_document_request(request: &wire::Request) -> Result<(), Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{
-        Molecule, Topology,
-        workspace::{self, WorkspaceAttachment},
-    };
+    use collagene_core::workspace::{self, WorkspaceAttachment};
+    use collagene_model::{Molecule, Topology};
     pub(super) fn fixture() -> Workspace {
         let raw=br#"{"@context":{"sbol":"http://sbols.org/v3#"},"@graph":[{"@id":"https://private.invalid/original","@type":"https://private.invalid/Activity","https://private.invalid/note":"LOCAL-ORIGINAL-MUST-SURVIVE"}]}"#.to_vec();
         let mut molecule = Molecule::dna(

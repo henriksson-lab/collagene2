@@ -8,14 +8,17 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     chemistry::EndRepairMethod,
     material_derivation as native,
     mutagenesis::PcrOptions,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     workspace::Workspace,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use serde::Serialize;
 use std::{

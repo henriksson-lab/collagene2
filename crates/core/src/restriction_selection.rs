@@ -3,10 +3,8 @@
 //! This neither scans sequence nor establishes physical cleavage. In particular,
 //! `Inside` never upgrades possible recognition evidence or an incomplete scan.
 
-use crate::{
-    Error, Location, Topology,
-    restriction_inspection::{InspectionSite, SiteDiagnostic},
-};
+use crate::restriction_inspection::{InspectionSite, SiteDiagnostic};
+use collagene_model::{Error, Location, Topology};
 
 /// Maximum input chunks accepted when constructing a union. Chunks may overlap.
 pub const MAX_REGION_SPANS: usize = 10_000;
@@ -41,7 +39,7 @@ fn bad(message: &str) -> Error {
 /// fuzzy endpoints, `Order` and unresolved locations cannot define this filter.
 /// Repeated/overlapping spans are allowed and are merged by `Region` constructors.
 pub fn footprint(location: &Location, length: usize) -> Result<Vec<(usize, usize)>, Error> {
-    if length == 0 || length > crate::model::MAX_SEQUENCE_LEN {
+    if length == 0 || length > collagene_model::MAX_SEQUENCE_LEN {
         return Err(bad("invalid reference length"));
     }
     fn visit(
@@ -116,7 +114,7 @@ impl Region {
         topology: Topology,
         spans: impl IntoIterator<Item = (usize, usize)>,
     ) -> Result<Self, Error> {
-        if length == 0 || length > crate::model::MAX_SEQUENCE_LEN {
+        if length == 0 || length > collagene_model::MAX_SEQUENCE_LEN {
             return Err(bad("invalid reference length"));
         }
         let mut chunks = Vec::new();

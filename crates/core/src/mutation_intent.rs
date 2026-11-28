@@ -1,5 +1,6 @@
 //! Explicit reference edit intent, independent of every molecular preparation engine.
-use crate::{Alphabet, Error, Molecule, Sequence, Topology, annotations, assembly_recipe};
+use crate::{annotations, assembly_recipe};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "mutation-intent-1";
@@ -66,7 +67,7 @@ pub fn source_preflight(source: &Molecule, request: &Request) -> Result<(), Erro
     if source.sequence.len() > MAX_SOURCE {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if source.sequence.alphabet() != Alphabet::Dna {
         return Err(bad("mutation reference intent requires DNA"));
@@ -241,7 +242,7 @@ impl Report {
         {
             return Err(Error::TooLarge);
         }
-        crate::model::bounds::model_preflight(&[&self.target])?;
+        collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         if !self.deleted.is_empty() && Sequence::dna(&self.deleted)?.as_str() != self.deleted {
             return Err(bad("deleted calls changed"));

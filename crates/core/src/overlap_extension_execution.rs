@@ -1,7 +1,6 @@
 //! One native target-free OE execution path shared by reusable material and digest inspection.
 //! Private execution takes only freshly reconstructed source strands; reports never supply state.
 use crate::{
-    Error, Molecule,
     annotations::{self, MappingSegment},
     assembly_recipe, chemistry,
     modified_duplex::TrackedDuplex,
@@ -11,6 +10,7 @@ use crate::{
     pcr_digest_inspection::GeometrySummary,
     verification::{self, PcrDocument},
 };
+use collagene_model::{Error, Molecule};
 use std::collections::BTreeSet;
 const MAX_GEOMETRIES: usize = 10_000;
 fn bad(s: &str) -> Error {
@@ -32,7 +32,7 @@ pub(crate) fn preflight(
     source: &Molecule,
     preparation: &overlap_extension_pcr::Request,
 ) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if preparation.work(source.sequence.len())?.0 > 100_000_000 {
         return Err(Error::TooLarge);
@@ -273,9 +273,9 @@ pub(crate) fn validate_evidence(
             if g.template_strand != expected_strand
                 || g.index != index
                 || g.product_length == 0
-                || g.product_length > crate::model::MAX_SEQUENCE_LEN
-                || g.forward_start > crate::model::MAX_SEQUENCE_LEN
-                || g.reverse_start > crate::model::MAX_SEQUENCE_LEN
+                || g.product_length > collagene_model::MAX_SEQUENCE_LEN
+                || g.forward_start > collagene_model::MAX_SEQUENCE_LEN
+                || g.reverse_start > collagene_model::MAX_SEQUENCE_LEN
             {
                 return Err(bad("invalid native PCR geometry summary"));
             }
@@ -322,11 +322,11 @@ pub(crate) fn validate_evidence(
         ));
     }
     if let Some(m) = &product {
-        crate::model::bounds::model_preflight(&[m])?;
+        collagene_model::bounds::model_preflight(&[m])?;
         m.validate()?;
         let outer = &stages[2];
         let amplicon_revision = m.revision();
-        if m.topology != crate::Topology::Linear
+        if m.topology != collagene_model::Topology::Linear
             || outer.product_length != Some(m.sequence.len())
             || outer.product_revision.as_deref() != Some(amplicon_revision.as_str())
             || m.metadata.get("pcr:template_revision") != Some(&outer.template_revision)

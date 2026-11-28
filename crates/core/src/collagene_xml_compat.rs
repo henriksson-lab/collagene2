@@ -2,11 +2,11 @@
 //! Ordinary migration is delegated unchanged to legacy_formats. No complementary
 //! strand, termini, history or material authority is synthesized by this adapter.
 use crate::{
-    Error, Location, Molecule, Topology,
     formats::{ImportReport, MAX_IMPORT_BYTES},
     legacy_formats as legacy,
 };
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::{Error, Location, Molecule, Topology};
 use roxmltree::{Document, Node, ParsingOptions};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -94,7 +94,7 @@ fn rows<'a>(record: Node<'a, 'a>) -> Result<(Node<'a, 'a>, &'a str, &'a str), Er
         .ok_or_else(|| bad("Collagene sequence lacks lower row"))?;
     if upper.is_empty()
         || upper.len() != lower.len()
-        || upper.len() > crate::model::MAX_SEQUENCE_LEN
+        || upper.len() > collagene_model::MAX_SEQUENCE_LEN
     {
         return Err(bad(
             "Collagene aligned row lengths differ, are empty or exceed bounds",
@@ -200,7 +200,7 @@ fn temporary_lower_record(
     }
     Ok(output)
 }
-fn source_interval(feature: &crate::Feature) -> Result<(i64, i64, &str), Error> {
+fn source_interval(feature: &collagene_model::Feature) -> Result<(i64, i64, &str), Error> {
     let range = feature
         .qualifiers
         .iter()

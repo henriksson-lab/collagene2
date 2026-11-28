@@ -4,7 +4,7 @@ use crate::{
     pcr_overlay::Overlay,
     pcr_overlay_draw, restriction_map,
 };
-use collagene_core::{Molecule, Topology, model::Feature};
+use collagene_model::{Feature, Molecule, Topology};
 use js_sys::Float32Array;
 use std::{
     cell::RefCell,
@@ -1149,7 +1149,7 @@ fn prepare_terminals(
         .located
         .iter()
         .map(|feature| {
-            if molecule.sequence.alphabet() == collagene_core::Alphabet::Protein {
+            if molecule.sequence.alphabet() == collagene_model::Alphabet::Protein {
                 None
             } else {
                 collagene_core::tracks::terminal_span(&molecule.features[feature.index].location)

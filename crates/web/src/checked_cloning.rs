@@ -1,7 +1,6 @@
 //! Explicit source-generation declarations for checked restriction planning.
-use collagene_core::{
-    Molecule, methylation::MethylationState, modified_duplex::GenerationAssumptions,
-};
+use collagene_core::{methylation::MethylationState, modified_duplex::GenerationAssumptions};
+use collagene_model::Molecule;
 use leptos::prelude::*;
 
 #[derive(Clone, Copy)]

@@ -1,8 +1,11 @@
 //! Explicit background translation/ORF tools with source-event-bound outputs.
 use crate::{digest::SourceInfo, worker};
 use collagene_core::{
-    Alphabet, Feature, Location, Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request, Response},
+    protocol::{
+        request::Request,
+        response::Response,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
     translation::{
         self, IncompletePolicy, InitiationPolicy, OrfOptions, OrfReport, StartPolicy,
@@ -13,6 +16,7 @@ use collagene_core::{
         Selection as TranslationSelection,
     },
 };
+use collagene_model::{Alphabet, Feature, Location, Molecule};
 use leptos::prelude::*;
 use std::sync::{
     Arc,

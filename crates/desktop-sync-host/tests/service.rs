@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     run_lineage::{self, EventBinding, InputEventBinding},
     run_material,
@@ -13,6 +12,7 @@ use collagene_lab_library::{self as store, mutations as durable};
 use collagene_library_protocol as library;
 use collagene_library_sharing::Selection;
 use collagene_library_sync as sync;
+use collagene_model::{Molecule, Topology};
 use collagene_repository::{
     self as repository, Channel, RemoteConfig, RemoteTransport, Repository, TransportError,
 };

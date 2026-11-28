@@ -1,9 +1,9 @@
 //! Source-bound batch annotation editing and separate local visibility controls.
 use collagene_core::{
-    Molecule,
     annotation_batch::{ColorEdit, Request},
     editing,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::collections::BTreeSet;
 

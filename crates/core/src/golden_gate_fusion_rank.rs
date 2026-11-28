@@ -1,9 +1,10 @@
 //! Conditional published-profile ranking of retained source-bound fusion sets.
 //! Ranking never changes a recipe, chooses a reaction winner or grants physical authority.
 use crate::{
-    Error, Molecule, Sequence, assembly_recipe, golden_gate_fusion_design as fusion,
-    ligation_profiles as profiles, verification::PlanInput,
+    assembly_recipe, golden_gate_fusion_design as fusion, ligation_profiles as profiles,
+    verification::PlanInput,
 };
+use collagene_model::{Error, Molecule, Sequence};
 use serde::{Deserialize, Serialize};
 use std::{
     cmp::Ordering,

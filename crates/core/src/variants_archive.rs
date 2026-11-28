@@ -1,6 +1,7 @@
 //! Raw VCF/BCF source attachments, without restored parser/reference authority.
 //! Kind/media describe the caller's declared format; neither proves file validity.
-use crate::{Error, variants_session::FileFormat as Format, workspace::WorkspaceAttachment};
+use crate::{variants_session::FileFormat as Format, workspace::WorkspaceAttachment};
+use collagene_model::Error;
 
 pub const VCF_SOURCE_KIND: &str = "vcf-source-v1";
 pub const BCF_SOURCE_KIND: &str = "bcf-source-v1";

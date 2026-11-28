@@ -1,5 +1,6 @@
 //! Text exchange of the actual reviewed product, using the native format writers.
-use collagene_core::{Molecule, formats, model::bounds::model_preflight};
+use collagene_core::formats;
+use collagene_model::{Molecule, bounds::model_preflight};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -96,7 +97,8 @@ pub(crate) fn prepare(source: &Molecule, format: Format) -> Result<Prepared, Str
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Alphabet, Feature, Location, Sequence, Topology, chemistry};
+    use collagene_core::chemistry;
+    use collagene_model::{Alphabet, Feature, Location, Sequence, Topology};
 
     fn actual_product() -> Molecule {
         let pcr = chemistry::Duplex::exact_pcr(&Sequence::dna("AACCGGTT").unwrap()).unwrap();

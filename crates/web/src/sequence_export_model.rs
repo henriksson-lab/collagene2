@@ -1,5 +1,6 @@
 //! Pure context and approval checks for worker-prepared reference exports.
-use collagene_core::{Molecule, gcg_sequence, sequence_export};
+use collagene_core::{gcg_sequence, sequence_export};
+use collagene_model::Molecule;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
@@ -97,7 +98,8 @@ impl Review {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Topology, sequence_export};
+    use collagene_core::sequence_export;
+    use collagene_model::Topology;
     fn source() -> Molecule {
         Molecule::dna("literal", "ACGTACGT", Topology::Circular).unwrap()
     }

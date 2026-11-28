@@ -2,10 +2,10 @@
 //! Every surviving covalent strand remains separate. The contour is a reference
 //! coordinate system, never a synthesized/sealed construct or host-rescue model.
 use crate::{
-    Error, Sequence, Topology,
     chemistry::{Duplex, FivePrime, Nick, Strand, ThreePrime},
     three_prime_resection::{self as resection, Cuts},
 };
+use collagene_model::{Error, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "homology-annealing-2";
 pub const MAX_SOURCES: usize = 32;
@@ -175,9 +175,9 @@ fn contour(p: &Duplex) -> Result<String, Error> {
     let (end, _, _) = domain(p)?;
     let mut text = p.top.as_str().to_owned();
     for x in p.top.len()..end {
-        text.push(crate::model::complement(
+        text.push(collagene_model::complement(
             p.bottom.as_str().as_bytes()[end - 1 - x],
-            crate::Alphabet::Dna,
+            collagene_model::Alphabet::Dna,
         ) as char);
     }
     Ok(text)
@@ -452,7 +452,7 @@ impl Report {
             || self.source_geometry_revisions.len() != n
             || self.segments.len() != 2 * n
             || self.junctions.len() != self.options.overlaps.len()
-            || self.reference.alphabet() != crate::Alphabet::Dna
+            || self.reference.alphabet() != collagene_model::Alphabet::Dna
             || self.reference.len() > MAX_SOURCE_BASES / 2
             || self.comparisons > self.options.max_comparisons
             || self.warnings.len() > 1000
@@ -565,8 +565,10 @@ impl Report {
                         || if strand == Strand::Top {
                             reference[at % length] != b
                         } else {
-                            crate::model::complement(reference[at % length], crate::Alphabet::Dna)
-                                != b
+                            collagene_model::complement(
+                                reference[at % length],
+                                collagene_model::Alphabet::Dna,
+                            ) != b
                         }
                     {
                         return Err(bad(
@@ -612,7 +614,7 @@ impl Report {
             let a = &self.preparations[i].product.bottom.as_str().as_bytes()[..h];
             if a.iter()
                 .zip(junction.homology.as_bytes().iter().rev())
-                .any(|(&a, &b)| a != crate::model::complement(b, crate::Alphabet::Dna))
+                .any(|(&a, &b)| a != collagene_model::complement(b, collagene_model::Alphabet::Dna))
             {
                 return Err(bad("declared homology differs from actual exposed tails"));
             }
@@ -664,7 +666,7 @@ impl Report {
                 .as_str()
                 .bytes()
                 .zip(reference[left..].iter().rev())
-                .any(|(a, &b)| a != crate::model::complement(b, crate::Alphabet::Dna))
+                .any(|(a, &b)| a != collagene_model::complement(b, collagene_model::Alphabet::Dna))
             {
                 return Err(bad("diagnostic bottom sequence changed"));
             }

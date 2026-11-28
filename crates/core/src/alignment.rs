@@ -1,7 +1,8 @@
 //! Independently implemented affine-gap nucleotide pairwise alignment.
 //! All coordinates are zero-based and half-open on the input reference/query.
 //! This module invokes no external alignment engine and does not infer read quality.
-use crate::{Alphabet, Error, Molecule, Sequence, Topology, analysis};
+use crate::analysis;
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

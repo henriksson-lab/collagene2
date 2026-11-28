@@ -5,7 +5,10 @@ use crate::{
     storage, worker,
 };
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::{self, EventBinding, InputEventBinding},
     verification::{DesignPlan, Operation, Source},
     workspace::Workspace,

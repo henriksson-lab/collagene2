@@ -1,6 +1,5 @@
 //! Actual saved-native PCR publication, opaque acknowledgement and durable retry.
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     cloning_outputs,
     run_lineage::{EventBinding, InputEventBinding},
@@ -16,6 +15,7 @@ use collagene_library_sharing::{
     sbol_subset::{PublicationChoices, RECEIPT_KIND, SUBSET_KIND},
 };
 use collagene_library_sync as sync;
+use collagene_model::{Molecule, Topology};
 use collagene_repository::{
     self as repo, Channel, RemoteConfig, RemoteTransport, Repository, SyncResult, TransportError,
 };

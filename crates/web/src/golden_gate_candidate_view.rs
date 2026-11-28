@@ -1,9 +1,9 @@
 //! Read-only projections of native finite-pool evidence; no verification is invented here.
 use collagene_core::{
-    Topology,
     chemistry::End,
     golden_gate::{GoldenGateFragment, GoldenGateReport},
 };
+use collagene_model::Topology;
 use leptos::prelude::*;
 use std::sync::Arc;
 

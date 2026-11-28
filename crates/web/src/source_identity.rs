@@ -1,5 +1,6 @@
 //! Read-only identity and display fields for an exact retained source event.
-use collagene_core::{Alphabet, Topology, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::{Alphabet, Topology};
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceInfo {

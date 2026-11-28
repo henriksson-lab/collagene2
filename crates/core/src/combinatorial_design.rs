@@ -1,7 +1,7 @@
 //! Explicit source alternatives over existing preparation compilers.
 //! This is a design-choice layer, independent of reaction-product enumeration.
 use crate::{
-    Error, Molecule, Topology, assembly_edit_intent, assembly_intent, assembly_junction_edit,
+    assembly_edit_intent, assembly_intent, assembly_junction_edit,
     assembly_recipe::{self, OverlapFinishing},
     assembly_substitution_intent,
     chemistry::EndTreatment,
@@ -13,6 +13,7 @@ use crate::{
     verification::PlanInput,
     workspace::Workspace,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
@@ -355,7 +356,7 @@ pub fn source_preflight(design: &Design, workspace: &Workspace) -> Result<(), Er
     )?;
     for c in design.bins.iter().flat_map(|b| &b.choices) {
         let m = resolve_event(workspace, &c.source)?;
-        if m.sequence.alphabet() != crate::Alphabet::Dna {
+        if m.sequence.alphabet() != collagene_model::Alphabet::Dna {
             return Err(bad("DNA source required"));
         }
         if let assembly_intent::Selector::ReferenceRange { start, end, .. } = &c.selector {
@@ -402,7 +403,7 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
                 }
                 if !label(&primer.name, 256)
                     || primer.name.trim() != primer.name
-                    || primer.annealing.alphabet() != crate::Alphabet::Dna
+                    || primer.annealing.alphabet() != collagene_model::Alphabet::Dna
                 {
                     return Err(bad("invalid explicit primer"));
                 }
@@ -658,7 +659,7 @@ pub fn validate_design(design: &Design) -> Result<(), Error> {
             if !identifier(&choice.id)
                 || !choice_ids.insert(&choice.id)
                 || !label(&choice.label, 256)
-                || choice.selector.length()? > crate::model::MAX_SEQUENCE_LEN
+                || choice.selector.length()? > collagene_model::MAX_SEQUENCE_LEN
             {
                 return Err(bad(
                     "invalid/duplicate choice identity or original contribution",
@@ -1089,7 +1090,7 @@ pub(crate) fn resolve_validated(
     for (_, choice) in &choices {
         let molecule = resolve_event(workspace, &choice.source)?;
         let n = molecule.sequence.len();
-        if molecule.sequence.alphabet() != crate::Alphabet::Dna
+        if molecule.sequence.alphabet() != collagene_model::Alphabet::Dna
             || matches!(&choice.selector,
             assembly_intent::Selector::ReferenceRange{start,end,..} if *start>=n || end.checked_sub(*start).is_none_or(|k|k==0 || k>n) || (molecule.topology==Topology::Linear && *end>n))
         {
@@ -1155,7 +1156,7 @@ pub(crate) fn resolve_validated(
     };
     if matches!(method, Method::MultiSiteReference { .. }) {
         if let Some(target) = existing {
-            if target.sequence.alphabet() != crate::Alphabet::Dna
+            if target.sequence.alphabet() != collagene_model::Alphabet::Dna
                 || (target.topology == Topology::Circular) != circular
             {
                 return Err(bad(
@@ -1168,7 +1169,7 @@ pub(crate) fn resolve_validated(
     if let Some(target) = existing {
         borrowed.push(target);
     }
-    crate::model::bounds::model_preflight(&borrowed)?;
+    collagene_model::bounds::model_preflight(&borrowed)?;
     let identities = choices
         .iter()
         .map(|(bin, choice)| source_role_ids(&design.id, &construct.id, &bin.id, &choice.id))
@@ -1691,8 +1692,8 @@ pub fn inspect_multisite_revision(
     crate::multisite_recombination::source_preflight(&parents, request)?;
     if let TargetDeclaration::Existing(binding) = &construct.target {
         let target = resolve_event(workspace, binding)?;
-        crate::model::bounds::model_preflight(&[target])?;
-        if target.sequence.alphabet() != crate::Alphabet::Dna
+        collagene_model::bounds::model_preflight(&[target])?;
+        if target.sequence.alphabet() != collagene_model::Alphabet::Dna
             || (target.topology == Topology::Circular) != circular
         {
             return Err(bad(

@@ -1,9 +1,7 @@
 //! Independent basic oligo calculations and anchored primer selection.
 //! This is not Primer3, a folding engine or an experimental PCR-success predictor.
-use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology,
-    analysis::{self, Primer},
-};
+use crate::analysis::{self, Primer};
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_OLIGO: usize = 200;
@@ -515,7 +513,7 @@ pub fn design_primers_view(
         || !source_revision
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-        || molecule.sequence.len() > crate::model::MAX_SEQUENCE_LEN
+        || molecule.sequence.len() > collagene_model::MAX_SEQUENCE_LEN
     {
         return Err(Error::TooLarge);
     }

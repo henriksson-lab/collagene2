@@ -1,5 +1,6 @@
 //! RNA form edits and exact-source response guards; no alternate saved encoding.
-use collagene_core::{Molecule, Topology, rna_chemistry as rna, run_lineage::EventBinding};
+use collagene_core::{rna_chemistry as rna, run_lineage::EventBinding};
+use collagene_model::{Molecule, Topology};
 pub fn blank(revision: String, topology: Topology) -> rna::Declaration {
     rna::Declaration {
         version: rna::DECLARATION_VERSION,
@@ -153,7 +154,7 @@ impl Capture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Alphabet, Feature, Location, Sequence};
+    use collagene_model::{Alphabet, Feature, Location, Sequence};
     fn source() -> Molecule {
         Molecule {
             name: "RNA".into(),

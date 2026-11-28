@@ -71,9 +71,9 @@ pub(crate) fn capture(snapshot: &Snapshot, options: Options) -> Result<Capture, 
     let product = snapshot.product_at(snapshot.plan.steps.len() - 1)?;
     // Recheck borrowed bounds before hashing the full current molecule. Snapshot
     // validation is a construction receipt, not permission to trust later edits.
-    collagene_core::model::bounds::model_preflight(&[product]).map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&[product]).map_err(|e| e.to_string())?;
     product.validate().map_err(|e| e.to_string())?;
-    if product.sequence.alphabet() != collagene_core::Alphabet::Dna {
+    if product.sequence.alphabet() != collagene_model::Alphabet::Dna {
         return Err("Junction navigation requires an actual reconstructed DNA product.".into());
     }
     let product_revision = product.revision();
@@ -177,7 +177,7 @@ pub(crate) fn select(
         .parts
         .first()
         .ok_or("The junction window is empty.")?;
-    let circular = actual.topology == collagene_core::Topology::Circular;
+    let circular = actual.topology == collagene_model::Topology::Circular;
     let ordered = match window.parts.as_slice() {
         [_] => true,
         [left, right] => circular && left.end == n && right.start == 0,
@@ -256,10 +256,10 @@ pub(crate) fn validate_selection(
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         chemistry::{EndTreatment, Terminus},
         verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
     };
+    use collagene_model::{Molecule, Topology};
     fn input(id: &str, text: &str) -> PlanInput {
         let molecule = Molecule::dna(id, text, Topology::Linear).unwrap();
         PlanInput {
@@ -455,8 +455,8 @@ mod tests {
         // reaches the explicit DNA guard rather than the circular-protein ban.
         let (mut snapshot, _, _) = overlap(false, false);
         let product = snapshot.report.products.last_mut().unwrap();
-        product.sequence = collagene_core::Sequence::new(
-            collagene_core::Alphabet::Protein,
+        product.sequence = collagene_model::Sequence::new(
+            collagene_model::Alphabet::Protein,
             product.sequence.as_str(),
         )
         .unwrap();

@@ -6,7 +6,10 @@ use crate::{
 };
 use collagene_core::{
     overlap_extension_primer_design as native,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::Status,
     workspace::Workspace,
 };

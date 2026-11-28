@@ -1,12 +1,12 @@
 //! Atomic, presentation-aware output capture. Historical run products are never pruned.
 use crate::{
-    Error, Molecule,
     history::DocumentHistory,
     plan_oligos,
     run_lineage::{self, EventBinding, InputEventBinding, RunReceipt},
     verification::DesignPlan,
     workspace::{self, Workspace, WorkspaceAttachment},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "cloning-outputs-1";

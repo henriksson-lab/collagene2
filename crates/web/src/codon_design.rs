@@ -1,12 +1,15 @@
 //! Source-bound codon design with a separate independent candidate-check job.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Alphabet, Molecule, Topology,
     codon_design::{
         CheckReport, CodonWeight, DesignOptions, DesignReport, DesignStatus, GcBounds, WindowGc,
     },
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::{Alphabet, Molecule, Topology};
 use leptos::prelude::*;
 use std::{
     rc::Rc,

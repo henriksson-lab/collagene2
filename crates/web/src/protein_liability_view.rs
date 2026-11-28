@@ -5,10 +5,14 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule, protein_liabilities as native,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protein_liabilities as native,
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

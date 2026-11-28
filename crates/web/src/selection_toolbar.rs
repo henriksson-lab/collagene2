@@ -1,6 +1,6 @@
 //! Contextual actions over the existing reference selection. No edits or source
 //! copies happen here; the app owns annotation/primer dialogs and history.
-use collagene_core::{Alphabet, Location, Molecule, Topology};
+use collagene_model::{Alphabet, Location, Molecule, Topology};
 #[cfg(target_arch = "wasm32")]
 use leptos::prelude::*;
 
@@ -390,7 +390,7 @@ mod tests {
                 Location::range(0, 3),
             ]),
         ] {
-            molecule.features = vec![collagene_core::Feature {
+            molecule.features = vec![collagene_model::Feature {
                 kind: "misc_feature".into(),
                 location,
                 qualifiers: vec![],

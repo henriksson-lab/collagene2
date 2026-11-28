@@ -5,7 +5,8 @@ use crate::{
     cloning_methods_model::OverlapInput,
     digest::SourceInfo,
 };
-use collagene_core::{Alphabet, Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::{Alphabet, Molecule};
 use leptos::prelude::*;
 use std::sync::Arc;
 const PAGE: usize = 10;

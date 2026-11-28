@@ -8,10 +8,10 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule,
     run_lineage::{self, EventBinding},
     workspace::Workspace,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     cell::{Cell, RefCell},

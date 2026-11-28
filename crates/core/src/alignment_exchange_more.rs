@@ -6,7 +6,7 @@ use crate::alignment_formats::{
     AlignmentMetadata, AlignmentRow, MAX_ALIGNMENT_ANNOTATIONS, MAX_ALIGNMENT_BYTES,
     MAX_ALIGNMENT_CELLS, MAX_ALIGNMENT_LINE, MAX_ALIGNMENT_ROWS,
 };
-use crate::{Alphabet, Error, Sequence};
+use collagene_model::{Alphabet, Error, Sequence};
 use std::collections::{BTreeMap, BTreeSet};
 type Rows = Vec<(String, String, String)>;
 fn bad(message: &str) -> Error {

@@ -53,7 +53,7 @@ inspection. Complete strand sequences, geometry/state, all bounds and source pin
 are available in nested details; no product-acceptance action or target-success
 claim is added to this panel.
 
-`core/tests/ligation_outcomes_pdf.rs` authors independent PDF text/CMap/xref and
+`crates/core/tests/cloning/ligation/ligation_outcomes_pdf.rs` authors independent PDF text/CMap/xref and
 length-delimited attachment readers. Literal PCR→phosphorylation→blunt circular
 ligation checks both the independently specified intended sequence
 `AGTCCGGACTGA` and reversed-insert alternative `AGTCCGTCAGTC`, and byte-equivalent

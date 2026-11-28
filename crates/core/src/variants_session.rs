@@ -1,10 +1,8 @@
 //! Bounded persistent variant exchange. DTOs are readonly descriptions: decoding
 //! one never restores the private completed Collection or authorizes an edit.
-use crate::{
-    Alphabet, Error, Molecule,
-    protocol::{AnalysisJob, AnalysisResult},
-    variant_reference as reference,
-};
+use crate::protocol::schema::{AnalysisJob, AnalysisResult};
+use crate::variant_reference as reference;
+use collagene_model::{Alphabet, Error, Molecule};
 use reference::exchange;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -173,7 +171,7 @@ fn options_preflight(o: &reference::Options) -> Result<(), Error> {
 /// Borrowed resource guard before a host clones an actual mapped DNA document.
 pub fn reference_preflight(m: &Molecule, o: &reference::Options) -> Result<(), Error> {
     options_preflight(o)?;
-    crate::model::bounds::model_preflight(&[m])?;
+    collagene_model::bounds::model_preflight(&[m])?;
     if m.sequence.alphabet() != Alphabet::Dna {
         return Err(bad("mapped reference must be DNA"));
     }
@@ -374,7 +372,7 @@ impl Previewed {
                 &self.options,
             )?,
         )?;
-        crate::model::bounds::model_preflight(&[&self.preview.molecule])?;
+        collagene_model::bounds::model_preflight(&[&self.preview.molecule])?;
         self.preview.molecule.validate()?;
         if self.preview.report.outcome != reference::Outcome::ReferenceAlleleMatches
             || self

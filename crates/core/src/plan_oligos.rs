@@ -1,7 +1,6 @@
 //! Declared oligos from an exact plan, independently of reaction verification.
 //! Generated order tables are reference data, never stock, quantities or proof.
 use crate::{
-    Alphabet, Error, Molecule, Sequence, Topology,
     analysis::Primer,
     chemistry::{Strand, Terminus},
     formats::ExportReport,
@@ -12,6 +11,7 @@ use crate::{
     verification::{self, DesignPlan, Operation, Source},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

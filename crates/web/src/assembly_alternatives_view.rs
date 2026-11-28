@@ -2,7 +2,7 @@
 //! dock. Every action remains a guarded edit of the same assembly draft.
 use crate::{
     assembly_alternatives::{self as alternatives, Choice},
-    assembly_workspace::Draft,
+    assembly_draft_model::Draft,
 };
 use leptos::prelude::*;
 use std::sync::Arc;

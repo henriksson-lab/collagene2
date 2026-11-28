@@ -5,7 +5,10 @@ use collagene_core::{
     cloning_outputs,
     combinatorial_batch::{self as batch, RowRequest},
     combinatorial_release::{self as release, Inspection, ReleasedRow},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage,
     workspace::Workspace,
 };

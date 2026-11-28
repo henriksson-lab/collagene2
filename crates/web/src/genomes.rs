@@ -6,7 +6,6 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Topology,
     crispr::{self, GuideOptions, GuideQuery},
     genome::{
         self, BuildInfo, EncodedBlock, ExpectedComponent, FinishedReference, GenomicInterval,
@@ -17,8 +16,12 @@ use collagene_core::{
         GenomeIntervalReadOptions, GenomeOffTargetHit, GenomeSearchOptions, GenomeSearchProgress,
     },
     genome_session::{self, GenomeRef, ImportStarted, RegisteredGenome, SearchPage},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::Topology;
 use leptos::{html, prelude::*};
 use serde::Serialize;
 use std::{

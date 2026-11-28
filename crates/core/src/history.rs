@@ -1,9 +1,7 @@
 //! Immutable revision events with reversible navigation and retained branches.
 //! Navigation never establishes scientific verification or executes event descriptions.
-use crate::{
-    Error, Molecule,
-    workspace::{RevisionEvent, Workspace, WorkspaceDocument},
-};
+use crate::workspace::{RevisionEvent, Workspace, WorkspaceDocument};
+use collagene_model::{Error, Molecule};
 use std::{
     collections::{BTreeMap, BTreeSet},
     io,

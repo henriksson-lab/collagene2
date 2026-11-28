@@ -1,6 +1,5 @@
 //! Selected adapter publication retains both exact oligo events, never private heads.
 use collagene_core::{
-    Feature, Location, Molecule, Topology,
     chemistry::{AnnealOptions, EndTreatment, FivePrime, Terminus, ThreePrime},
     material_derivation::{self as native, BoundSource, Derivation, SourceOrigin, SourceRole},
     run_lineage::EventBinding,
@@ -8,6 +7,7 @@ use collagene_core::{
     workspace::{self, RevisionEvent, Workspace},
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Feature, Location, Molecule, Topology};
 fn event(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];
     EventBinding {

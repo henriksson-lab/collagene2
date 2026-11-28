@@ -1,13 +1,14 @@
 //! Choose one actual catalog-digested fragment by explicit cut instances/free ends.
 //! This adapter never merges reference pieces into a purported physical product.
 use crate::{
-    Error, Molecule, Topology, assembly_recipe,
+    assembly_recipe,
     catalog_digest::{
         self, CatalogDigestProduct, CatalogRestrictionInspection, CatalogSelection,
         InspectionOptions, catalog,
     },
     restriction_inspection::{FragmentSummary, RestrictionInspection},
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "digest-cut-selection-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -59,7 +60,7 @@ pub fn selection_revision(
     expected_batch_revision: &str,
     choice: &Choice,
 ) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     catalog_digest::source_preflight(catalog, selection, source_role, source, options)?;
     choice_shape(choice, source.topology, options.max_sites)?;
     if !hex(expected_batch_revision) {
@@ -231,7 +232,7 @@ pub(crate) fn source_geometry_preflight(
         || s.top_length != r.source_length
         || s.topology != r.topology
         || s.bottom_length == 0
-        || s.bottom_length > crate::model::MAX_SEQUENCE_LEN
+        || s.bottom_length > collagene_model::MAX_SEQUENCE_LEN
         || s.nicks.len() > 10_000
     {
         return Err(bad("source duplex geometry differs from inspection"));
@@ -276,7 +277,7 @@ pub(crate) fn source_geometry_preflight(
         ] {
             if end.polarity != polarity
                 || end.overhang.len() as u64 != length
-                || end.overhang.len() > crate::model::MAX_SEQUENCE_LEN
+                || end.overhang.len() > collagene_model::MAX_SEQUENCE_LEN
                 || !end.overhang.bytes().all(|b| b"ACGT".contains(&b))
             {
                 return Err(bad("source overhang geometry changed"));
@@ -359,7 +360,7 @@ pub fn preview(
 impl Report {
     /// Readonly receipt checks. No digest rerun or restoration of physical state.
     pub fn validate(&self) -> Result<(), Error> {
-        crate::model::bounds::model_preflight(&[&self.product.product.molecule])?;
+        collagene_model::bounds::model_preflight(&[&self.product.product.molecule])?;
         self.inspection.validate()?;
         self.product.validate()?;
         if self.inspection.engine_version != catalog_digest::ENGINE_VERSION

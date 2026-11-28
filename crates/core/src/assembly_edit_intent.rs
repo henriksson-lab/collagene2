@@ -1,11 +1,11 @@
 //! Original oriented-contribution indels, independent of preparation/assembly products.
 use crate::{
-    Alphabet, Error, Molecule, Topology,
     assembly_intent::{self, PlacedFragment, Selector},
     assembly_junction_edit, assembly_recipe, assembly_substitution_intent,
     verification::PlanInput,
     workspace::Workspace,
 };
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "assembly-edit-intent-2";
 pub const MAX_EDITS: usize = 256;
@@ -343,7 +343,7 @@ impl Report {
         {
             return Err(bad("source/edit context changed"));
         }
-        crate::model::bounds::model_preflight(&[&self.target])?;
+        collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         assembly_intent::validate_rows(&self.fragments, &self.request.base.base, &self.target)?;
         let desired = applied(&self.fragments, &self.request)?;

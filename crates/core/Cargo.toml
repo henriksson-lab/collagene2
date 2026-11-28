@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "collagene-core"
 version.workspace = true
 edition.workspace = true
@@ -37,3 +38,39 @@ json-schema = ["dep:schemars", "collagene-model/json-schema", "collagene-recombi
 [dependencies.schemars]
 version = "1.2"
 optional = true
+
+[[test]]
+name = "analysis"
+path = "tests/analysis/main.rs"
+
+[[test]]
+name = "assembly"
+path = "tests/assembly/main.rs"
+
+[[test]]
+name = "cloning"
+path = "tests/cloning/main.rs"
+
+[[test]]
+name = "formats"
+path = "tests/formats/main.rs"
+
+[[test]]
+name = "history"
+path = "tests/history/main.rs"
+
+[[test]]
+name = "materials"
+path = "tests/materials/main.rs"
+
+[[test]]
+name = "restriction"
+path = "tests/restriction/main.rs"
+
+[[test]]
+name = "sequence"
+path = "tests/sequence/main.rs"
+
+[[test]]
+name = "verification"
+path = "tests/verification/main.rs"

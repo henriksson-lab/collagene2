@@ -1,5 +1,4 @@
 use collagene_core::{
-    Feature, Location, Molecule, Topology,
     assembly_intent::Selector,
     assembly_recipe::{Preparation, RunPreparation},
     catalog_digest,
@@ -11,6 +10,7 @@ use collagene_core::{
     verification::{DesignPlan, Operation, PlanInput, Source, Status},
     workspace::{self, Workspace},
 };
+use collagene_model::{Feature, Location, Molecule, Topology};
 pub const EXPECTED: &str = "AATTCGTAAG";
 pub fn event(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];

@@ -1,7 +1,9 @@
 use crate::*;
 use serde::Serialize;
 use std::io::Write;
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
 pub struct ExportIds {
     pub namespace: String,
     pub component: String,

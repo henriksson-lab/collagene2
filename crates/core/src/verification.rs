@@ -3,9 +3,9 @@ use crate::{
     analysis::{self, Primer},
     annotations::{self, MappingSegment},
     chemistry::{self, Duplex, EndTreatment},
-    model::*,
     modified_duplex::{self, CheckedDigestOptions, GenerationAssumptions, TrackedDuplex},
 };
+use collagene_model::*;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -394,8 +394,8 @@ impl MaterialStateEvidence {
             || self.modifications.engine_version != modified_duplex::ENGINE_VERSION
             || self.duplex.top_length == 0
             || self.duplex.bottom_length == 0
-            || self.duplex.top_length > crate::model::MAX_SEQUENCE_LEN
-            || self.duplex.bottom_length > crate::model::MAX_SEQUENCE_LEN
+            || self.duplex.top_length > collagene_model::MAX_SEQUENCE_LEN
+            || self.duplex.bottom_length > collagene_model::MAX_SEQUENCE_LEN
             || self.modifications.top_length != self.duplex.top_length
             || self.modifications.bottom_length != self.duplex.bottom_length
             || count > total
@@ -909,7 +909,7 @@ pub fn topo_inputs(
 /// A declaration may constrain an original intact reference hypothesis only.
 /// This guard never interprets producer summaries as chemical authority.
 pub fn declared_source_termini_preflight(source: &Molecule) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if source.topology != Topology::Linear
         || source.sequence.alphabet() != Alphabet::Dna

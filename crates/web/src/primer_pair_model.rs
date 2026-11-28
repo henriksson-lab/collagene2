@@ -1,11 +1,11 @@
 //! Editable sequence reuse only. Anchors describe an explicit selected reference,
 //! never physical oligo identity, current binding, or successful amplification.
 use collagene_core::{
-    Alphabet, Location, Molecule, Sequence, Topology,
     analysis::{Primer, base_mask},
     primers::{BindingHit, MAX_OLIGO},
     run_lineage::EventBinding,
 };
+use collagene_model::{Alphabet, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_NAME_BYTES: usize = 256;
@@ -127,7 +127,7 @@ pub fn anchor_reference(
     {
         return Err("Choose one nonempty DNA domain of at most 200 bases and one circular turn, with its start inside the source.".into());
     }
-    collagene_core::model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
     molecule.validate().map_err(|e| e.to_string())?;
     if molecule.revision() != source.revision {
         return Err("The selected source changed; resolve its exact retained event again.".into());
@@ -385,7 +385,8 @@ impl PairDraft {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Topology, workspace::Workspace};
+    use collagene_core::workspace::Workspace;
+    use collagene_model::Topology;
     fn source(dna: &str) -> (Molecule, EventBinding) {
         source_topology(dna, Topology::Linear)
     }

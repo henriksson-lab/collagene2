@@ -1,8 +1,7 @@
 //! Bounded synonymous DNA design and an independent sequence/constraint checker.
 //! Preferences are declared integer scores, not expression or organism fitness models.
-use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology, analysis::base_mask, translation,
-};
+use crate::{analysis::base_mask, translation};
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 

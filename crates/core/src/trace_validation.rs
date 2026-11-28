@@ -1,11 +1,11 @@
 //! Trace-to-reference evidence under explicit native-score thresholds. No basecaller,
 //! calibrated Phred conversion, external aligner or silent reference-filled consensus.
 use crate::{
-    Alphabet, Error, Molecule, Sequence, Topology,
     alignment::{self, Alignment, AlignmentMode, AlignmentOptions, Scoring},
     analysis,
     traces::{self, QualityEvidence, Trace, TraceOrientation},
 };
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

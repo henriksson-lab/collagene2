@@ -4,7 +4,10 @@ use crate::worker::CachedWorker;
 use collagene_core::{
     combinatorial_export::{self, Archive, Options},
     combinatorial_release::{self, Manifest},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     workspace::Workspace,
 };
 use leptos::prelude::*;

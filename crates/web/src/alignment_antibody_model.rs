@@ -114,10 +114,8 @@ pub fn description(report: &a::Report, candidate: usize, column: usize) -> Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{
-        Alphabet,
-        alignment_formats::{AlignmentFormat, import_alignment},
-    };
+    use collagene_core::alignment_formats::{AlignmentFormat, import_alignment};
+    use collagene_model::Alphabet;
     #[test]
     fn focused_columns_keep_row_scope_but_equal_rows_foreign_epochs_and_stale_settings_do_not() {
         let seq = "EVQLLESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYCARDYGMDVWGQGTLVTVSS";

@@ -2,10 +2,10 @@
 //! Draft semantics belong to the host. Declared source pins are checked against
 //! retained native events; neither a record nor its hash restores scientific evidence.
 use crate::{
-    Error,
     run_lineage::{self, EventBinding},
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 

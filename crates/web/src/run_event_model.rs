@@ -1,11 +1,11 @@
 //! Read-only exact-version navigation from a retained cloning run. Opening a
 //! version never restores a scientific assessment or changes a document head.
 use collagene_core::{
-    Molecule,
     history::DocumentHistory,
     run_lineage::{self, EventBinding},
     workspace::{self, Workspace},
 };
+use collagene_model::Molecule;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -89,14 +89,14 @@ fn preflight(frame: &Workspace, request: &Request) -> Result<(), String> {
             .ok_or("The retained workspace exceeds its expanded byte budget.")?;
     }
     for molecule in frame.revisions.values() {
-        collagene_core::model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
+        collagene_model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
     }
     for candidate in &frame.candidates {
         if candidate.plan.inputs.len() > 1000 || candidate.plan.steps.len() > 1000 {
             return Err("The retained candidate exceeds its native bounds.".into());
         }
         for input in &candidate.plan.inputs {
-            collagene_core::model::bounds::model_preflight(&[&input.molecule])
+            collagene_model::bounds::model_preflight(&[&input.molecule])
                 .map_err(|e| e.to_string())?;
         }
     }
@@ -195,11 +195,11 @@ pub fn fork(frame: &Workspace, request: &Request, new_id: &str) -> Result<Worksp
 mod tests {
     use super::*;
     use collagene_core::{
-        Topology,
         analysis::Primer,
         run_lineage::InputEventBinding,
         verification::{DesignPlan, Operation, PlanInput, Source},
     };
+    use collagene_model::Topology;
 
     const ORIGINAL: &str = "ACGACCCCGGGGTAAC";
 

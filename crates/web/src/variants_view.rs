@@ -2,11 +2,14 @@
 //! A source genotype never chooses or installs an allele automatically.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Alphabet, Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     variant_reference::{self as reference, Outcome},
     variants_session::{self as session, ExportFormat, FileFormat},
 };
+use collagene_model::{Alphabet, Molecule};
 use leptos::prelude::*;
 use serde::Serialize;
 use std::{
@@ -404,7 +407,7 @@ pub fn VariantPanel(
         }
         // Borrowed native-model guard precedes canonical hashing; the app getter
         // applies its borrowed policy before making the owned source copy too.
-        if let Err(error) = collagene_core::model::bounds::model_preflight(&[&reference]) {
+        if let Err(error) = collagene_model::bounds::model_preflight(&[&reference]) {
             status.set(error.to_string());
             return;
         }
@@ -474,7 +477,7 @@ pub fn VariantPanel(
                         if value.revision == revision {
                             Ok(())
                         } else {
-                            Err(collagene_core::Error::Unsupported(
+                            Err(collagene_model::Error::Unsupported(
                                 "Variant response revision changed".into(),
                             ))
                         }
@@ -558,7 +561,7 @@ pub fn VariantPanel(
                             if value.revision == revision {
                                 Ok(())
                             } else {
-                                Err(collagene_core::Error::Unsupported(
+                                Err(collagene_model::Error::Unsupported(
                                     "Variant preview revision changed".into(),
                                 ))
                             }

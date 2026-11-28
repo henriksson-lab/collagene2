@@ -1,11 +1,11 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     protocol_quantities as q,
     run_lineage::{self, EventBinding, InputEventBinding},
     verification::{self, DesignPlan, Operation, PlanInput, Source},
     workspace::{RevisionEvent, Workspace},
 };
+use collagene_model::{Molecule, Topology};
 pub fn pin(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];
     EventBinding {

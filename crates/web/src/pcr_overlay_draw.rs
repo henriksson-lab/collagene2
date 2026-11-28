@@ -3,7 +3,7 @@ use crate::{
     map_labels::{self, View},
     pcr_overlay::{Kind, Overlay, Role},
 };
-use collagene_core::Topology;
+use collagene_model::Topology;
 use std::f64::consts::{PI, TAU};
 use web_sys::CanvasRenderingContext2d as Ctx;
 

@@ -1,6 +1,7 @@
 //! Read-only source annotation/CDS context on an already computed alignment.
 //! Codons are translated in complete source-feature order, never per page or gap.
-use crate::{Error, Feature, Location, Molecule, pairwise_review::Report, translation};
+use crate::{pairwise_review::Report, translation};
+use collagene_model::{Error, Feature, Location, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io;
 
@@ -41,7 +42,7 @@ pub fn preflight(
     query: &Molecule,
     _translate: bool,
 ) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[reference, query])?;
+    collagene_model::bounds::model_preflight(&[reference, query])?;
     let a = &report.comparison.alignment;
     if a.reference_aligned.len() > crate::alignment::MAX_ALIGNMENT_COLUMNS
         || a.query_aligned.len() > crate::alignment::MAX_ALIGNMENT_COLUMNS
@@ -393,8 +394,8 @@ impl Context {
             || !digest(&self.comparison_revision)
             || self.reference_length == 0
             || self.query_length == 0
-            || self.reference_length > crate::model::MAX_SEQUENCE_LEN
-            || self.query_length > crate::model::MAX_SEQUENCE_LEN
+            || self.reference_length > collagene_model::MAX_SEQUENCE_LEN
+            || self.query_length > collagene_model::MAX_SEQUENCE_LEN
             || self.alignment_columns > crate::alignment::MAX_ALIGNMENT_COLUMNS
             || self.prefixes.len() != self.alignment_columns.div_ceil(PAGE_COLUMNS).max(1)
             || self.tracks.len() > 4096
@@ -605,10 +606,10 @@ impl Context {
 mod tests {
     use super::*;
     use crate::{
-        Topology,
         alignment::{self, AlignmentOptions, ComparisonOptions, MoleculeComparison},
         pairwise_review::{self, Options},
     };
+    use collagene_model::Topology;
     fn cds(location: Location) -> Feature {
         Feature {
             kind: "CDS".into(),
@@ -660,7 +661,7 @@ mod tests {
             .push(cds(Location::Complement(Box::new(Location::range(3, 12)))));
         let options = Options::Whole(ComparisonOptions::default());
         let alignment = alignment::align(
-            &crate::Sequence::dna("ATGAAATAACCC").unwrap(),
+            &collagene_model::Sequence::dna("ATGAAATAACCC").unwrap(),
             &q.sequence.reverse_complement().unwrap(),
             &options.alignment(),
         )

@@ -1,6 +1,7 @@
 //! Explicit source-backed preparation declarations over the existing TOPO engine.
 //! Compiling a declaration neither activates a stock nor adds unrequested DNA.
-use crate::{Error, analysis::Primer, tailing::TailingBase, topo};
+use crate::{analysis::Primer, tailing::TailingBase, topo};
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 use topo::physical::{self as physical, projection};
@@ -216,13 +217,13 @@ fn compile_original(
                 .len()
                 .checked_add(primer.tail.len())
                 .is_none_or(|length| length > crate::primers::MAX_OLIGO)
-            || primer.annealing.alphabet() != crate::Alphabet::Dna
+            || primer.annealing.alphabet() != collagene_model::Alphabet::Dna
         {
             return Err(bad("supply actual bounded named ordered DNA primers"));
         }
         // Validate literal tail notation without adding, trimming or replacing it.
         if !primer.tail.is_empty() {
-            if crate::Sequence::dna(&primer.tail)?.as_str() != primer.tail {
+            if collagene_model::Sequence::dna(&primer.tail)?.as_str() != primer.tail {
                 return Err(bad(
                     "primer tails must be explicit canonical DNA; no whitespace or sequence is silently rewritten",
                 ));

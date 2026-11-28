@@ -1,13 +1,13 @@
 //! Explicit selected outputs from freshly reconstructed conditional mismatch PCR.
 //! The host separately binds immutable source events and its current editable draft.
 use crate::{
-    Error, Molecule, Topology,
     analysis::Primer,
     mutagenesis::{MutantPcrProduct, PcrOptions, PcrReport},
     oligo_formats::OligoTable,
     pcr_outputs::Options,
     verification,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "mismatch-pcr-outputs-1";
 macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -58,7 +58,7 @@ fn options(value: &PcrOptions) -> Result<(), Error> {
 }
 /// Bounded content identity, not authority for a historical event or physical PCR.
 pub fn revision(request: &Request) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[&request.source])?;
+    collagene_model::bounds::model_preflight(&[&request.source])?;
     request.source.validate()?;
     request.outputs.validate()?;
     options(&request.options)?;
@@ -201,7 +201,7 @@ impl Prepared {
             return Err(bad("invalid selected native geometry bounds"));
         }
         if let Some(product) = &self.product {
-            crate::model::bounds::model_preflight(&[product])?;
+            collagene_model::bounds::model_preflight(&[product])?;
             product.validate()?;
             if product.sequence != g.sequence
                 || product.topology != Topology::Linear

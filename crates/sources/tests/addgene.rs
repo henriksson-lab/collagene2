@@ -1,6 +1,7 @@
 //! Independently authored provider fixtures use the public OpenAPI field definitions, not live
 //! account data or another cloning application's output. No authenticated network is required.
-use collagene_core::{Topology, protocol};
+use collagene_core::protocol;
+use collagene_model::Topology;
 use collagene_sources::*;
 use serde_json::{Value, json};
 

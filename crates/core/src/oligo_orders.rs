@@ -1,10 +1,10 @@
 //! Literal named oligos converted into the existing bounded order/collection format.
 //! No binding, synthesis, physical material or experimental success is inferred.
 use crate::{
-    Alphabet, Error,
     analysis::Primer,
     oligo_formats::{self, ColumnMapping, Delimiter, OligoImportOptions, OligoTable},
 };
+use collagene_model::{Alphabet, Error};
 use std::io::{self, Write};
 
 const TABLE_CELL_BYTES: usize = 8192; // Existing oligo_formats cell profile.

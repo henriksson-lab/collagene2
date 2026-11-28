@@ -1,12 +1,13 @@
 //! Exact-event installation of independently checked substitution intent.
 //! Opening a candidate does not retain positive reaction verification.
 use collagene_core::{
-    Molecule, domestication as design, domestication_preparation as physical,
+    domestication as design, domestication_preparation as physical,
     history::DocumentHistory,
     run_lineage::{EventBinding, InputEventBinding},
     transfer::Candidate,
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::Molecule;
 #[derive(Clone)]
 pub struct Open {
     pub source: EventBinding,
@@ -24,7 +25,7 @@ pub struct Staged {
     pub inputs: Vec<InputEventBinding>,
     pub candidate: Option<Candidate>,
 }
-fn fingerprint(value: &impl serde::Serialize) -> Result<String, collagene_core::Error> {
+fn fingerprint(value: &impl serde::Serialize) -> Result<String, collagene_model::Error> {
     struct Writer {
         hash: blake3::Hasher,
         bytes: usize,
@@ -47,7 +48,7 @@ fn fingerprint(value: &impl serde::Serialize) -> Result<String, collagene_core::
         hash: blake3::Hasher::new(),
         bytes: 0,
     };
-    serde_json::to_writer(&mut writer, value).map_err(|_| collagene_core::Error::TooLarge)?;
+    serde_json::to_writer(&mut writer, value).map_err(|_| collagene_model::Error::TooLarge)?;
     Ok(writer.hash.finalize().to_hex().to_string())
 }
 /// Attest an independently captured material selection against the exact native
@@ -242,7 +243,8 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Feature, Location, Topology, catalog_digest, codon_design};
+    use collagene_core::{catalog_digest, codon_design};
+    use collagene_model::{Feature, Location, Topology};
     fn fixture() -> (Workspace, Open) {
         let mut source = Molecule::dna(
             "original annotated plasmid",
@@ -648,7 +650,7 @@ mod tests {
                 design::candidate_id(&protected, &protected_selection.patches).unwrap();
             assert!(design::check(&source, &protected, &protected_selection).is_err());
             let mut wrong = opened;
-            wrong.target.sequence = collagene_core::Sequence::dna("TTTTCCCCAAAAGGGG").unwrap();
+            wrong.target.sequence = collagene_model::Sequence::dna("TTTTCCCCAAAAGGGG").unwrap();
             assert!(stage(&frame, &wrong).is_err());
         }
     }
@@ -776,7 +778,7 @@ mod tests {
             Primer::new("Seed stock forward", &source.sequence.as_str()[..8], "").unwrap();
         let reverse = Primer::new(
             "Seed stock reverse",
-            collagene_core::Sequence::dna(&source.sequence.as_str()[source.sequence.len() - 8..])
+            collagene_model::Sequence::dna(&source.sequence.as_str()[source.sequence.len() - 8..])
                 .unwrap()
                 .reverse_complement()
                 .unwrap()
@@ -960,7 +962,7 @@ mod tests {
         alias.contribute(&mut alias_frame).unwrap();
         assert!(stage(&alias_frame, &alias_open).is_err());
         let mut wrong = opened;
-        wrong.target.sequence = collagene_core::Sequence::dna("AAAACCCC").unwrap();
+        wrong.target.sequence = collagene_model::Sequence::dna("AAAACCCC").unwrap();
         assert!(stage(&frame, &wrong).is_err());
     }
 }

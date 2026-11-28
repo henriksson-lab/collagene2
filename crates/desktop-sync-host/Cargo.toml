@@ -6,6 +6,7 @@ license = "MIT"
 rust-version = "1.88"
 description = "Native saved-repository remote control service for bounded desktop IPC"
 [dependencies]
+collagene-model = { path = "../model" }
 getrandom = "=0.4.3"
 collagene-repository = { path = "../repository" }
 collagene-desktop-sync-protocol = { path = "../desktop-sync-protocol" }

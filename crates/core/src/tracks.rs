@@ -1,5 +1,5 @@
 //! Bounded interval index for visible reference annotation tracks.
-use crate::{Error, Molecule};
+use collagene_model::{Error, Molecule};
 use std::collections::BTreeSet;
 pub const MAX_INDEX_SPANS: usize = 1_000_000;
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,24 +70,24 @@ impl FeatureIndex {
 /// The final biological span, with its direction, only when every part has an
 /// exact ordered location. Unknown-strand/order/fuzzy evidence must not acquire
 /// a directional arrow merely because its reference intervals are drawable.
-pub fn terminal_span(location: &crate::Location) -> Option<(usize, usize, bool)> {
-    fn exact(location: &crate::Location) -> bool {
+pub fn terminal_span(location: &collagene_model::Location) -> Option<(usize, usize, bool)> {
+    fn exact(location: &collagene_model::Location) -> bool {
         match location {
-            crate::Location::Range {
+            collagene_model::Location::Range {
                 before: false,
                 after: false,
                 ..
             } => true,
-            crate::Location::Complement(inner) => exact(inner),
-            crate::Location::Join(parts) => !parts.is_empty() && parts.iter().all(exact),
+            collagene_model::Location::Complement(inner) => exact(inner),
+            collagene_model::Location::Join(parts) => !parts.is_empty() && parts.iter().all(exact),
             _ => false,
         }
     }
-    fn last(location: &crate::Location, reverse: bool) -> Option<(usize, usize, bool)> {
+    fn last(location: &collagene_model::Location, reverse: bool) -> Option<(usize, usize, bool)> {
         match location {
-            crate::Location::Range { start, end, .. } => Some((*start, *end, reverse)),
-            crate::Location::Complement(inner) => last(inner, !reverse),
-            crate::Location::Join(parts) => last(
+            collagene_model::Location::Range { start, end, .. } => Some((*start, *end, reverse)),
+            collagene_model::Location::Complement(inner) => last(inner, !reverse),
+            collagene_model::Location::Join(parts) => last(
                 if reverse {
                     parts.first()?
                 } else {

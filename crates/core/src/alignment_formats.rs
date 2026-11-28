@@ -1,6 +1,6 @@
 //! Bounded alignment exchange. This module does not compute alignments.
-use crate::{Alphabet, Error, Molecule, Sequence, Topology};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

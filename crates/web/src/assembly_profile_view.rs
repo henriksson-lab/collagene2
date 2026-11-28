@@ -3,7 +3,10 @@ use crate::worker::CachedWorker;
 use collagene_core::{
     golden_gate_fusion_design as fusion, golden_gate_fusion_rank as rank,
     ligation_profiles as profiles,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::PlanInput,
 };
 use leptos::prelude::*;

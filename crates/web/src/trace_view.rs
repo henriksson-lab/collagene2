@@ -1,9 +1,7 @@
 //! Virtualized Canvas2D chromatogram. Derived views always come from validated original evidence.
 use crate::renderer::ResizeListener;
-use collagene_core::{
-    Molecule,
-    traces::{self, QualityEvidence, Trace, TraceChannels},
-};
+use collagene_core::traces::{self, QualityEvidence, Trace, TraceChannels};
+use collagene_model::Molecule;
 use leptos::{html, prelude::*};
 use std::sync::Arc;
 use wasm_bindgen::{JsCast, closure::Closure};

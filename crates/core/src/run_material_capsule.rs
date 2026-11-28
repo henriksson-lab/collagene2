@@ -1,7 +1,7 @@
 //! Bounded existing typed-plan packages preserve an origin's reconstruction scope.
 //! Embedded bytes are recipes, never serialized material or verifier authority.
 use crate::{
-    Error, Molecule, cloning_outputs,
+    cloning_outputs,
     modified_duplex::{self, TrackedDuplex},
     run_lineage::{self, EventBinding, InputEventBinding, ProductBinding},
     run_material::{self, Selection},
@@ -9,6 +9,7 @@ use crate::{
     verification::{self, DesignPlan, Operation, Source, Status, VerificationReport},
     workspace::Workspace,
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -169,7 +170,7 @@ struct Budget {
     steps: usize,
     bases: usize,
     inputs: usize,
-    models: crate::model::bounds::ModelBudget,
+    models: collagene_model::bounds::ModelBudget,
 }
 impl Budget {
     fn model(&mut self, molecule: &Molecule) -> Result<(), Error> {
@@ -1309,7 +1310,7 @@ impl ReplayEvidence {
         let mut bases = 0;
         for product in &report.products {
             add(&mut bases, product.sequence.len(), 32_000_000)?;
-            crate::model::bounds::model_preflight(&[product])?;
+            collagene_model::bounds::model_preflight(&[product])?;
             product.validate()?;
         }
         let candidate = transfer::decode_candidate_shallow(&self.origin.candidate)?;

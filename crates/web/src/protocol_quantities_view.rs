@@ -1,7 +1,10 @@
 //! Documentary quantities: exact arithmetic, immutable event pins and native ACK.
 use crate::{protocol_quantities_model as model, worker::CachedWorker};
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     protocol_quantities as native,
     workspace::Workspace,
 };

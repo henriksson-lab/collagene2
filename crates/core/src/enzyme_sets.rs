@@ -2,11 +2,11 @@
 //! These preferences never validate a digest. Missing or changed geometry requires
 //! explicit review; resolving a set returns only exact supported matches.
 use crate::{
-    Error,
     catalog_digest::catalog,
     restriction_inspection::EnzymeSpec,
     workspace::{self, Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeSet,
@@ -235,14 +235,14 @@ fn workspace_guard(frame: &Workspace) -> Result<(), Error> {
             .ok_or(Error::TooLarge)?;
     }
     for m in frame.revisions.values() {
-        crate::model::bounds::model_preflight(&[m])?;
+        collagene_model::bounds::model_preflight(&[m])?;
     }
     for c in &frame.candidates {
         if c.plan.inputs.len() > 1000 || c.plan.steps.len() > 1000 {
             return Err(Error::TooLarge);
         }
         for i in &c.plan.inputs {
-            crate::model::bounds::model_preflight(&[&i.molecule])?;
+            collagene_model::bounds::model_preflight(&[&i.molecule])?;
         }
     }
     frame.validate()

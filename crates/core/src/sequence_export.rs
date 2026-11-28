@@ -1,6 +1,7 @@
 //! Source-bound reviewed reference-file exports. No UI, paths, clocks, scientific
 //! reconstruction or physical-authority restoration belongs in this facade.
-use crate::{Alphabet, Error, Molecule, Topology, gcg_sequence, snapgene_export, xdna_export};
+use crate::{gcg_sequence, snapgene_export, xdna_export};
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "sequence-export-1";
@@ -54,7 +55,7 @@ fn digest(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 fn source_preflight(m: &Molecule, format: &Format) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[m])?;
+    collagene_model::bounds::model_preflight(&[m])?;
     m.validate()?;
     crate::format_fidelity::reference_export_guard(m)?;
     match format {

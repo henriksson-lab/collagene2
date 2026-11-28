@@ -1,12 +1,10 @@
-use collagene_core::{
-    Topology,
-    workspace::{self, Workspace, WorkspaceAttachment},
-};
+use collagene_core::workspace::{self, Workspace, WorkspaceAttachment};
 use collagene_design_exchange::{self as sbol, ProjectionPolicy};
 use collagene_library_sharing::{
     self as sharing, Selection,
     sbol_subset::{self as review, PublicationChoices, Receipt},
 };
+use collagene_model::Topology;
 use serde_json::{Value, json};
 fn original() -> Vec<u8> {
     serde_json::to_vec(&json!({"@context":{"sbol":sbol::SBOL},"@graph":[
@@ -165,12 +163,12 @@ fn extra_subset_object_and_overlapping_receipts_fail_closed() {
 #[test]
 fn documentary_projection_preserves_real_native_run_and_fresh_capsule_pcr_reuse() {
     use collagene_core::{
-        Molecule,
         analysis::Primer,
         run_lineage::{self, EventBinding, InputEventBinding},
         run_material,
         verification::{DesignPlan, Operation, PlanInput, Source, Status},
     };
+    use collagene_model::Molecule;
     let (mut w, _, original) = setup();
     let stock = w.revisions[&w.documents[0].head].clone();
     let target = Molecule::dna(

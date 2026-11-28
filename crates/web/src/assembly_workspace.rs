@@ -1,7 +1,8 @@
 //! Persistent declared assembly slots. Frozen intent/scientific evidence is
 //! component-private and is never restored from a serialized draft.
-pub use crate::assembly_draft_model::{CapturedSource, DigestGeometry, Draft, set_digest_fragment};
-use crate::assembly_draft_model::{edit_request, inputs_request};
+use crate::assembly_draft_model::{
+    CapturedSource, Draft, IntentIdentity, edit_request, inputs_request,
+};
 use crate::{
     assembly_review::IntendedReference,
     cloning_methods::{
@@ -12,14 +13,18 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology, assembly_edit_intent, assembly_intent, assembly_junction_edit,
-    assembly_substitution_intent, golden_gate_junction_edit, primer_reuse,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    assembly_edit_intent, assembly_intent, assembly_junction_edit, assembly_substitution_intent,
+    golden_gate_junction_edit, primer_reuse,
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
     selective_junction_edit,
     transfer::Candidate,
     verification::PlanInput,
 };
+use collagene_model::{Alphabet, Molecule, Topology};
 use leptos::prelude::*;
 use std::{
     rc::Rc,
@@ -29,85 +34,6 @@ use std::{
     },
 };
 use wasm_bindgen_futures::spawn_local;
-impl Draft {
-    fn identity(&self) -> IntentIdentity {
-        IntentIdentity {
-            name: self.name.clone(),
-            circular: self.circular,
-            roles: self.methods.source_roles.clone().or_else(|| {
-                (self.methods.mode == Mode::MultiSiteReference)
-                    .then(|| self.methods.role_ids(self.slots.len()).ok())
-                    .flatten()
-            }),
-            combination: crate::assembly_alternatives::identity(self),
-            junction_edits: self.junction_edits.clone(),
-            substitutions: self.substitutions.clone(),
-            edits: self.edits.clone(),
-            material_origins: self
-                .slots
-                .iter()
-                .map(|slot| slot.material_origin.clone())
-                .collect(),
-            paired_rows: self
-                .methods
-                .rows
-                .iter()
-                .enumerate()
-                .filter_map(|(i, row)| {
-                    (row.preparation == OverlapPreparation::AnnealedOligos).then_some(i)
-                })
-                .collect(),
-            secondary_sources: self
-                .slots
-                .iter()
-                .map(|slot| slot.anneal_bottom.as_ref().map(|s| s.source.clone()))
-                .collect(),
-            slots: self
-                .slots
-                .iter()
-                .map(|s| {
-                    (
-                        s.label.clone(),
-                        s.captured.as_ref().map(|c| c.source.clone()),
-                        s.selector.clone(),
-                        s.digest_geometry.clone(),
-                    )
-                })
-                .collect(),
-        }
-    }
-}
-fn same_declaration(current: &Draft, applied: &Draft) -> bool {
-    // The active slot is view state, not a change to the declared design.
-    current.version == applied.version
-        && current.name == applied.name
-        && current.circular == applied.circular
-        && current.slots == applied.slots
-        && current.methods == applied.methods
-        && current.junction_edits == applied.junction_edits
-        && current.substitutions == applied.substitutions
-        && current.edits == applied.edits
-        && current.alternatives == applied.alternatives
-}
-#[derive(Clone, PartialEq, Eq)]
-struct IntentIdentity {
-    name: String,
-    circular: bool,
-    roles: Option<Vec<crate::assembly_role_ids::Role>>,
-    combination: Option<(String, String, Vec<String>)>,
-    junction_edits: Vec<assembly_junction_edit::Edit>,
-    substitutions: Vec<assembly_substitution_intent::Substitution>,
-    edits: Vec<assembly_edit_intent::Edit>,
-    material_origins: Vec<Option<crate::run_origin_model::PinnedOrigin>>,
-    paired_rows: Vec<usize>,
-    secondary_sources: Vec<Option<SourceInfo>>,
-    slots: Vec<(
-        String,
-        Option<SourceInfo>,
-        collagene_core::assembly_intent::Selector,
-        Option<DigestGeometry>,
-    )>,
-}
 #[derive(Clone)]
 pub struct SelectionNavigation {
     pub source: EventBinding,
@@ -1004,15 +930,15 @@ pub fn AssemblyWorkspace(
         <crate::assembly_substitution_view::SubstitutionEditor draft active_source selected_region on_navigate source_review/>
         <crate::assembly_edit_view::ContributionEditEditor draft active_source selected_region on_navigate source_review/>
         <Show when=move||draft.with(|d|!matches!(d.methods.mode,Mode::Tailing|Mode::Ligation)&&d.substitutions.is_empty()&&d.edits.is_empty())><details class="assembly-junction-options"><summary>"Edit intended junctions"</summary><JunctionEditor draft epoch on_apply=apply_junction/></details></Show>
-        <Show when=move||undo_junction.with(|undo|undo.is_some())><button class="text-tool" disabled=move||undo_junction.with(|undo|undo.as_ref().is_none_or(|(_,applied)|!same_declaration(&draft.get(),applied))) on:click=move|_|{
+        <Show when=move||undo_junction.with(|undo|undo.is_some())><button class="text-tool" disabled=move||undo_junction.with(|undo|undo.as_ref().is_none_or(|(_,applied)|!draft.get().same_declaration(applied))) on:click=move|_|{
             if let Some((mut previous,applied))=undo_junction.get_untracked(){
                 let current=draft.get_untracked();
-                if !same_declaration(&current,&applied){status.set("Undo is available only before further draft changes. Your later changes were preserved.".into());return;}
+                if !current.same_declaration(&applied){status.set("Undo is available only before further draft changes. Your later changes were preserved.".into());return;}
                 if current.active_slot<previous.slots.len(){previous.active_slot=current.active_slot;}
                 methods.set(previous.methods.clone());draft.set(previous);frozen.set(None);undo_junction.set(None);status.set("Previous assembly draft restored. Review its intent and recompute evidence; no positive result was restored.".into());
             }
         }>"Undo applied junction edit"</button></Show>
-        <Show when=move||undo_junction.with(|undo|undo.as_ref().is_some_and(|(_,applied)|!same_declaration(&draft.get(),applied)))><p class="helper">"Undo available before further draft changes. Later source, primer or design edits are preserved."</p></Show>
+        <Show when=move||undo_junction.with(|undo|undo.as_ref().is_some_and(|(_,applied)|!draft.get().same_declaration(applied)))><p class="helper">"Undo available before further draft changes. Later source, primer or design edits are preserved."</p></Show>
         {move||frozen.get().map(|bound|view!{<FrozenWorkspace bound draft methods epoch snapshot workspace_busy on_navigate on_review on_finalize on_products primer_sources list_primers resolve_primer/>})}
     </Show></section>}
 }
@@ -1087,11 +1013,7 @@ fn FrozenWorkspace(
                         i,
                         format!(
                             "{} · {}",
-                            f.identity
-                                .slots
-                                .get(i)
-                                .map(|slot| slot.0.as_str())
-                                .unwrap_or("Bottom oligo"),
+                            f.identity.slot_label(i).unwrap_or("Bottom oligo"),
                             c.source.name
                         ),
                     )
@@ -1102,7 +1024,7 @@ fn FrozenWorkspace(
     let get_query = Callback::new(move |i: usize| {
         bound.with_value(|f| {
             f.sources.get(i).and_then(|c| {
-                collagene_core::model::bounds::model_preflight(&[&c.molecule])
+                collagene_model::bounds::model_preflight(&[&c.molecule])
                     .ok()
                     .map(|_| c.molecule.clone())
             })
@@ -1257,7 +1179,7 @@ fn FrozenWorkspace(
     let reference_inputs = Callback::new(move |()| -> Result<Vec<PlanInput>, String> {
         reference_guard.run(())?;
         bound.with_value(|f| {
-            collagene_core::model::bounds::model_preflight(
+            collagene_model::bounds::model_preflight(
                 &f.sources.iter().map(|s| &s.molecule).collect::<Vec<_>>(),
             )
             .map_err(|e| e.to_string())?;
@@ -1281,15 +1203,15 @@ fn FrozenWorkspace(
     });
     view! {<section class="assembly-intended-review"><details class="assembly-intent-details"><summary>{bound.with_value(|f|format!("Intended construct: {} · {} bp",f.intent.target().name,f.intent.target().sequence.len()))}</summary><h3>"2. Review the intended construct"</h3><p>{bound.with_value(|f|format!("{} · {} bp · {}",f.intent.target().name,f.intent.target().sequence.len(),if f.intent.target().topology==Topology::Circular{"circular"}else{"linear"}))}</p><p class="helper">"This sequence is your declared design requirement, assembled from chosen source regions and explicit junction or internal sequence edits. It is separate from any simulated cloning outcome. Editing a slot clears this review."</p>
         {bound.with_value(|f|match &f.intent{IntendedReference::Junctions(intent)=>Some(view!{<p class="helper">{format!("{} explicit junction edits are included. Ribbon output spans include each adjusted source core and its outgoing synthetic insert; source navigation selects only the adjusted original-source core.",intent.edits.len())}</p>}),_=>None})}
-        <div class="assembly-fragment-ribbon" role="group" aria-label="Intended construct fragments">{bound.with_value(|f|f.intent.fragments().iter().enumerate().map(|(i,fragment)|view!{<button class="assembly-ribbon-fragment" on:click=move|_|navigate.run(i)>{format!("{}{} · {} bp · {}–{}",f.identity.slots[i].0,match &fragment.selector{assembly_intent::Selector::ReferenceRange{reverse:true,..}|assembly_intent::Selector::MaterialStrandRange{strand:collagene_core::chemistry::Strand::Bottom,..}=>" ←",_=>" →"},fragment.output_end-fragment.output_start,fragment.output_start+1,fragment.output_end)}</button>}).collect_view())}</div>
-        {bound.with_value(|f|{let count=f.intent.fragments().len().saturating_sub(1)+usize::from(f.intent.target().topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.intent.fragments().len();let boundary=f.intent.fragments()[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slots[i].0,f.identity.slots[next].0,if i+1==f.intent.fragments().len(){" · circle closure"}else{""})}</h4><pre>{intended_window(f.intent.target(),boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target().sequence.len()&&f.intent.target().topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
+        <div class="assembly-fragment-ribbon" role="group" aria-label="Intended construct fragments">{bound.with_value(|f|f.intent.fragments().iter().enumerate().map(|(i,fragment)|view!{<button class="assembly-ribbon-fragment" on:click=move|_|navigate.run(i)>{format!("{}{} · {} bp · {}–{}",f.identity.slot_label(i).expect("Frozen intent source slot"),match &fragment.selector{assembly_intent::Selector::ReferenceRange{reverse:true,..}|assembly_intent::Selector::MaterialStrandRange{strand:collagene_core::chemistry::Strand::Bottom,..}=>" ←",_=>" →"},fragment.output_end-fragment.output_start,fragment.output_start+1,fragment.output_end)}</button>}).collect_view())}</div>
+        {bound.with_value(|f|{let count=f.intent.fragments().len().saturating_sub(1)+usize::from(f.intent.target().topology==Topology::Circular);if count==0{return view!{<p>"One linear fragment has no internal junction."</p>}.into_any();}view!{<div class="assembly-intended-junction">{move||bound.with_value(|f|{let i=junction.get().min(count-1);let next=(i+1)%f.intent.fragments().len();let boundary=f.intent.fragments()[i].output_end;view!{<h4>{format!("Intended junction {} · {} → {}{}",i+1,f.identity.slot_label(i).expect("Frozen intent source slot"),f.identity.slot_label(next).expect("Frozen intent downstream slot"),if i+1==f.intent.fragments().len(){" · circle closure"}else{""})}</h4><pre>{intended_window(f.intent.target(),boundary)}</pre><p class="helper">{format!("| marks intended product boundary {} (zero-based). These letters are not a digest/ligation/homology validation.",if boundary==f.intent.target().sequence.len()&&f.intent.target().topology==Topology::Circular{0}else{boundary})}</p><button class="text-tool" on:click=move|_|navigate.run(i)>"View upstream source"</button><button class="text-tool" on:click=move|_|navigate.run(next)>"View downstream source"</button>}})}<div class="method-row-actions"><button class="text-tool" disabled=move||junction.get()==0 on:click=move|_|junction.update(|i|*i=i.saturating_sub(1))>"Previous intended junction"</button><button class="text-tool" disabled=move||{junction.get()+1>=count} on:click=move|_|junction.update(|i|*i=(*i+1).min(count-1))>"Next intended junction"</button></div></div>}.into_any()})}
         </details>
         {bound.with_value(|f|warnings(&f.intent).iter().map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
         <h3>{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"3. Reconstruct and choose a reference component"}else{"3. Prepare fragments and verify the method"})}</h3><p class="helper">{move||draft.with(|d|if d.methods.mode==Mode::MultiSiteReference{"Reconstruct the whole original parents under the reviewed site profile, then choose a reciprocal component explicitly. The intended reference remains a separate requirement; sequence agreement does not establish physical recombination."}else{"PCR rows begin with no primer sequences. Suggest and explicitly apply primers, or choose another declared preparation. The pinned original sources remain the inputs; the intended reference is never used as physical source material."})}</p>
         <Show when=move||draft.with(|d|d.methods.mode==Mode::MultiSiteReference)><crate::assembly_multisite_view::MultisiteReview draft epoch busy=workspace_busy snapshot capture=reference_inputs guard=reference_guard target_revision=bound.with_value(|f|f.target_revision.clone()) on_review=review on_finalize=finalize/></Show>
         {bound.with_value(|f| {
             let edited=matches!(&f.intent,IntendedReference::Edits(_)|IntendedReference::Substitutions(_));
-            let material=f.identity.slots.iter().any(|slot|matches!(&slot.2,assembly_intent::Selector::MaterialStrandRange{..}));
+            let material=f.identity.has_material_sources();
             if !edited&&!material{return None;}
             let selected_intent=StoredValue::new(Arc::new(f.intent.clone()));
             Some(view!{
@@ -1298,7 +1220,7 @@ fn FrozenWorkspace(
                 <Show when=move||edited><crate::assembly_extension_primer_view::ExtensionPrimerProposalView draft intent=selected_intent.get_value() epoch snapshot current=reference_current guard=reference_guard on_use=use_extension_primers/></Show>
             })
         })}
-        <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer active_row=Some(active_preparation) on_edit_row=Some(edit_preparation) fixed_sources=true get_workspace=Some(snapshot) disable_plain_primer_design=bound.with_value(|f|!f.identity.junction_edits.is_empty()||!f.identity.substitutions.is_empty()||!f.identity.edits.is_empty()||f.identity.slots.iter().any(|slot|matches!(&slot.2,assembly_intent::Selector::MaterialStrandRange{..}))) on_source=Some(diagnostic_source)/></Show>
+        <Show when=move||draft.with(|d|d.methods.mode!=Mode::MultiSiteReference)>        <CloningMethodsPanel molecule=target query_options get_query source_info target_info selected_region=Callback::new(|()|None) config=methods epoch on_candidate=review on_finalize=Some(finalize) on_products primer_sources list_primers resolve_primer active_row=Some(active_preparation) on_edit_row=Some(edit_preparation) fixed_sources=true get_workspace=Some(snapshot) disable_plain_primer_design=bound.with_value(|f|f.identity.has_sequence_edits()||f.identity.has_material_sources()) on_source=Some(diagnostic_source)/></Show>
         <p role="status">{move||status.get()}</p>
     </section>}
 }
@@ -1445,7 +1367,7 @@ impl JunctionReport {
             Self::Fusion { report, .. } => &report.warnings,
         }
     }
-    fn validate_binding(&self, revision: &str) -> Result<(), collagene_core::Error> {
+    fn validate_binding(&self, revision: &str) -> Result<(), collagene_model::Error> {
         match self {
             Self::Overlap(r) => r.validate_binding(revision),
             Self::GoldenGate(r) => r.validate_binding(revision),

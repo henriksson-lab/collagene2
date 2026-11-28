@@ -106,7 +106,7 @@ revision and freshly reconstruct before treating any preparation as current.
 
 ## Source-authored fixtures
 
-`core/tests/golden_gate_primer_design.rs` covers literal forward BsaI/BsmBI/BbsI/
+`crates/core/tests/assembly/primer_design/golden_gate_primer_design.rs` covers literal forward BsaI/BsmBI/BbsI/
 SapI tails and strand ends, reverse BsaI/SapI stagger handling, circular-origin
 source intervals, independent wrong targets leaving proposed oligos unchanged,
 internal motifs, binding alternatives, stale source revisions, invalid fusions/

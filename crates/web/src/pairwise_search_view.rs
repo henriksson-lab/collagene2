@@ -2,7 +2,10 @@
 use crate::{compare::Navigation, pairwise_result_view::Review, worker::CachedWorker};
 use collagene_core::{
     pairwise_search::{self, Matches, Mode, Options, Row, Rows},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
 use leptos::prelude::*;
 use std::{

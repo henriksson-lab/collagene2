@@ -6,7 +6,7 @@
 //! use ordinary atomic assembly staging before installing the returned candidate.
 use crate::assembly_draft_model::Draft;
 use collagene_core::{
-    Molecule, Topology, assembly_edit_intent, assembly_substitution_intent,
+    assembly_edit_intent, assembly_substitution_intent,
     mutagenesis::{self, InversePcrDesign, InversePcrOptions, InversePcrPreparation},
     mutation_intent,
     run_lineage::EventBinding,
@@ -14,6 +14,7 @@ use collagene_core::{
     verification::{Operation, PlanInput, Source, VerificationReport},
     workspace::Workspace,
 };
+use collagene_model::{Molecule, Topology};
 use serde::{Deserialize, Serialize};
 
 const ENGINE_VERSION: &str = "assembly-inverse-pcr-proposal-1";
@@ -194,7 +195,7 @@ pub fn capture<I: IntendedEdit + ?Sized>(
     workspace: Option<&Workspace>,
 ) -> Result<Capture, String> {
     draft.validate()?;
-    collagene_core::model::bounds::model_preflight(&[frozen_target]).map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&[frozen_target]).map_err(|e| e.to_string())?;
     frozen_target.validate().map_err(|e| e.to_string())?;
     if frozen_target.sequence.len() > 8 << 20 {
         return Err("The frozen target exceeds the ordinary assembly size bound.".into());
@@ -484,10 +485,11 @@ mod tests {
         source_identity::SourceInfo,
     };
     use collagene_core::{
-        Alphabet, analysis,
+        analysis,
         verification::{self, Status},
         workspace::Workspace,
     };
+    use collagene_model::Alphabet;
     use std::sync::Arc;
     /// Native fixture/reference path: the expensive molecular reconstruction runs
     /// once. The web UI uses request → existing worker → from_design instead.
@@ -687,7 +689,7 @@ mod tests {
         stale.event_id = "0".repeat(64);
         assert!(propose(&draft, &intent, &stale, &intent.target, &options, None).is_err());
         let mut wrong = intent.target.clone();
-        wrong.sequence = collagene_core::Sequence::dna(&"A".repeat(wrong.sequence.len())).unwrap();
+        wrong.sequence = collagene_model::Sequence::dna(&"A".repeat(wrong.sequence.len())).unwrap();
         assert!(propose(&draft, &intent, &event, &wrong, &options, None).is_err());
         wrong = intent.target.clone();
         wrong.metadata.insert("changed".into(), "yes".into());
@@ -880,7 +882,11 @@ mod tests {
     }
     #[test]
     fn existing_binary_worker_uses_native_context_and_returns_bound_preparation() {
-        use collagene_core::protocol::{self, AnalysisJob, AnalysisResult, Request};
+        use collagene_core::protocol::{
+            self,
+            request::Request,
+            schema::{AnalysisJob, AnalysisResult},
+        };
         let (draft, intent, event, options) = fixture("11", "11", "AACG");
         let (capture, source, native) =
             request(&draft, &intent, &event, &intent.target, &options, None).unwrap();
@@ -901,8 +907,11 @@ mod tests {
                 options: native,
             },
         };
-        let raw = protocol::process_request(&protocol::encode_request(&request).unwrap()).unwrap();
-        let response = protocol::decode_response(&raw).unwrap();
+        let raw = protocol::execution::process_request(
+            &protocol::request::Request::encode(&request).unwrap(),
+        )
+        .unwrap();
+        let response = protocol::response::Response::decode(&raw).unwrap();
         assert_eq!(response.id, 721);
         assert_eq!(response.revision, request.revision);
         let AnalysisResult::InversePcr(report) = response.result else {
@@ -930,11 +939,20 @@ mod tests {
         let mut stale = request;
         stale.revision = intent.target.revision();
         assert_ne!(stale.revision, event.revision);
-        assert!(protocol::process_request(&protocol::encode_request(&stale).unwrap()).is_err());
+        assert!(
+            protocol::execution::process_request(
+                &protocol::request::Request::encode(&stale).unwrap()
+            )
+            .is_err()
+        );
     }
     #[test]
     fn point_substitution_keeps_its_original_intent_through_binary_worker_and_rebound_review() {
-        use collagene_core::protocol::{self, AnalysisJob, AnalysisResult, Request};
+        use collagene_core::protocol::{
+            self,
+            request::Request,
+            schema::{AnalysisJob, AnalysisResult},
+        };
         let (mut draft, _, event, mut options) = fixture("11", "11", "AACG");
         draft.edits.clear();
         draft.sync_rows();
@@ -999,8 +1017,11 @@ mod tests {
                     options: native,
                 },
             };
-            let response = protocol::decode_response(
-                &protocol::process_request(&protocol::encode_request(&binary).unwrap()).unwrap(),
+            let response = protocol::response::Response::decode(
+                &protocol::execution::process_request(
+                    &protocol::request::Request::encode(&binary).unwrap(),
+                )
+                .unwrap(),
             )
             .unwrap();
             assert_eq!(response.id, binary.id);
@@ -1269,7 +1290,7 @@ mod tests {
                     .is_err()
             );
             let mut wrong = intent.target.clone();
-            wrong.sequence = collagene_core::Sequence::dna("TTTTCCCCAAAAGGGG").unwrap();
+            wrong.sequence = collagene_model::Sequence::dna("TTTTCCCCAAAAGGGG").unwrap();
             assert!(propose(&draft, &intent, &event, &wrong, &options, Some(&reopened)).is_err());
             assert_eq!(serde_json::to_vec(&reopened).unwrap(), before);
         }

@@ -1,5 +1,6 @@
 //! Immutable large-reference blocks and streaming FASTA ingestion, independent of Molecule.
-use crate::{Error, Topology, analysis};
+use crate::analysis;
+use collagene_model::{Error, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const BLOCK_BASES: usize = 65_536;

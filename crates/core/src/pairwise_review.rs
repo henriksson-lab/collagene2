@@ -1,11 +1,9 @@
 //! Source-bound pairwise review using the existing native affine algorithms.
 //! Stored receipts and coordinate maps are reference evidence, not sample proof.
-use crate::{
-    Error, Molecule, Topology,
-    alignment::{
-        self, Alignment, AlignmentMode, AlignmentOptions, ComparisonOptions, MoleculeComparison,
-    },
+use crate::alignment::{
+    self, Alignment, AlignmentMode, AlignmentOptions, ComparisonOptions, MoleculeComparison,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 
 pub const ENGINE_VERSION: &str = "pairwise-review-1";
@@ -79,11 +77,11 @@ pub fn revision(
     query: &Molecule,
     options: &Options,
 ) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[reference, query])?;
+    collagene_model::bounds::model_preflight(&[reference, query])?;
     reference.validate()?;
     query.validate()?;
     options.validate()?;
-    if reference.sequence.alphabet() == crate::Alphabet::Protein
+    if reference.sequence.alphabet() == collagene_model::Alphabet::Protein
         || reference.sequence.alphabet() != query.sequence.alphabet()
     {
         return Err(bad("matching DNA or RNA alphabets are required"));
@@ -131,8 +129,8 @@ impl Report {
             || self.query_revision != c.query_revision
             || self.reference_length == 0
             || self.query_length == 0
-            || self.reference_length > crate::model::MAX_SEQUENCE_LEN
-            || self.query_length > crate::model::MAX_SEQUENCE_LEN
+            || self.reference_length > collagene_model::MAX_SEQUENCE_LEN
+            || self.query_length > collagene_model::MAX_SEQUENCE_LEN
             || c.reference_origin >= self.reference_length
             || (c.reference_topology != Topology::Circular && c.reference_origin != 0)
             || c.evaluated_candidates == 0

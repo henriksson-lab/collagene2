@@ -1,13 +1,14 @@
 //! Explicit caller decisions over fresh read evidence. No original call or source
 //! document is edited, and a reviewed reference is never physical sample proof.
 use crate::{
-    Error, Molecule, Topology, assembly_recipe,
+    assembly_recipe,
     history::DocumentHistory,
     read_checks,
     run_lineage::{self, EventBinding},
     trace_validation::{ColumnKind, SiteState, TraceValidationReport},
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -139,7 +140,7 @@ pub fn source_preflight(w: &Workspace, r: &Request) -> Result<(), Error> {
     if source.sequence.len() > 8 << 20 {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     let mut bytes = Count(0);
     serde_json::to_writer(&mut bytes, source).map_err(|_| Error::TooLarge)?;
     if bytes
@@ -476,7 +477,7 @@ fn apply(
     ] {
         target.metadata.insert(key.into(), value);
     }
-    crate::model::bounds::model_preflight(&[&target])?;
+    collagene_model::bounds::model_preflight(&[&target])?;
     target.validate()?;
     Ok(Some(target))
 }
@@ -807,7 +808,7 @@ fn target_guard(
     edits: &[Edit],
     stable: Option<&str>,
 ) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[m])?;
+    collagene_model::bounds::model_preflight(&[m])?;
     m.validate()?;
     let n = m
         .metadata

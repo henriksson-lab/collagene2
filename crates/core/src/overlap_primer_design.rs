@@ -2,13 +2,13 @@
 //! Original source intervals determine all sequence; the independent target is
 //! bound for later verification and never selects domains, tails or endpoints.
 use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology,
     assembly_recipe::{self, FragmentSpec, Preparation, Recipe},
     chemistry,
     overlap_profiles::ProfileOptions,
     primers::{self, DesignOptions, DesignReport},
     verification::PlanInput,
 };
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE_VERSION: &str = "overlap-primer-design-1";
@@ -156,7 +156,7 @@ pub fn preflight(
     }
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
     models.push(target);
-    crate::model::bounds::model_preflight(&models)?;
+    collagene_model::bounds::model_preflight(&models)?;
     if target.sequence.alphabet() != Alphabet::Dna {
         return Err(bad("independent target must be DNA"));
     }

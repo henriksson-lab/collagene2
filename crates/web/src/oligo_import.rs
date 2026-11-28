@@ -27,7 +27,7 @@ pub fn OligoImport(
         .unwrap_or_default();
     let initial_source = existing.as_ref().map(|t| {
         t.original_bytes().and_then(|b| {
-            String::from_utf8(b).map_err(|e| collagene_core::Error::Format(e.to_string()))
+            String::from_utf8(b).map_err(|e| collagene_model::Error::Format(e.to_string()))
         })
     });
     let initial_error = initial_source

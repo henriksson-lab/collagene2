@@ -1,10 +1,11 @@
 //! Exact-event RNA hypotheses. Archives store declarations, never cached quantities
 //! or a material/experimental certificate. Reopening requires explicit analysis.
 use crate::{
-    Error, Molecule, rna_chemistry as rna,
+    rna_chemistry as rna,
     run_lineage::EventBinding,
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 pub const KIND: &str = "rna-declaration-v1";

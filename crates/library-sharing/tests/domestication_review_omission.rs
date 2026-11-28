@@ -1,12 +1,13 @@
 #[path = "../../core/tests/common/domestication_oe.rs"]
 mod fixture;
 use collagene_core::{
-    Molecule, Topology, domestication_preparation as preparation,
+    domestication_preparation as preparation,
     run_lineage::{self, EventBinding, InputEventBinding},
     verification::Status,
     workspace::{self, Workspace, WorkspaceAttachment},
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];
     EventBinding {

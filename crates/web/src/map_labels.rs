@@ -1,8 +1,8 @@
 //! Source-bound measured map labels. Full text and one actual-part anchor are
 //! cached once; camera frames copy only small numeric layout inputs.
 use crate::annotation_geometry::PreparedGeometry;
-use collagene_core::{Molecule, Topology};
 use collagene_map_label_layout as label_layout;
+use collagene_model::{Molecule, Topology};
 use label_layout::{
     Column, Label, Options, Outcome, OverflowReason, Point, Rect, Side, Size, Viewport,
 };
@@ -437,7 +437,7 @@ impl Cache {
             }
             let mut arc_start = part.0 as f64 / molecule.sequence.len() as f64;
             let mut arc_end = part.1 as f64 / molecule.sequence.len() as f64;
-            if molecule.sequence.alphabet() != collagene_core::Alphabet::Protein
+            if molecule.sequence.alphabet() != collagene_model::Alphabet::Protein
                 && collagene_core::tracks::terminal_span(&feature.location) == Some(part)
             {
                 if let Some((_, base)) =

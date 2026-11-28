@@ -1,9 +1,9 @@
 //! Exact event/options guards for ephemeral conditional antibody analysis.
 use collagene_core::{
-    Molecule,
     antibody_numbering::{self as n, domain_candidates as d, domain_tracks},
     run_lineage::EventBinding,
 };
+use collagene_model::Molecule;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Capture {
     pub epoch: u64,
@@ -104,7 +104,8 @@ impl Capture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Alphabet, Sequence, Topology, workspace::Workspace};
+    use collagene_core::workspace::Workspace;
+    use collagene_model::{Alphabet, Sequence, Topology};
     #[test]
     fn identical_documents_different_events_epochs_and_settings_do_not_retarget_replies() {
         let m = Molecule {

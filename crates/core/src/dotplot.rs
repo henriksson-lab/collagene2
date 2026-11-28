@@ -1,5 +1,5 @@
 //! Source-bound, bounded window dot plots. No alignment path or biological ancestry is inferred.
-use crate::{Alphabet, Error, Location, Molecule, Topology};
+use collagene_model::{Alphabet, Error, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeMap, io::Write};
 

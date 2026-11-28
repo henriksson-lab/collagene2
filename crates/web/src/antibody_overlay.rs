@@ -156,10 +156,8 @@ pub fn color(r: &n::Region) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{
-        Alphabet, Molecule, Sequence, Topology, antibody_numbering::domain_tracks,
-        run_lineage::EventBinding,
-    };
+    use collagene_core::{antibody_numbering::domain_tracks, run_lineage::EventBinding};
+    use collagene_model::{Alphabet, Molecule, Sequence, Topology};
     const V: &str = "EVQLLESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYC";
     const J: &str = "WGQGTLVTVSS";
     fn fixture(sequence: &str) -> (Capture, domain_tracks::Report) {

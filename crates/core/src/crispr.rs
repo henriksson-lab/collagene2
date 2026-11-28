@@ -1,6 +1,7 @@
 //! Bounded guide/PAM geometry and selected-record Hamming off-target search.
 //! No empirical efficiency score, external aligner, bulge model or physical cleavage products.
-use crate::{Alphabet, Error, Location, Molecule, Sequence, Topology, analysis};
+use crate::analysis;
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -348,7 +349,7 @@ fn original(n: usize, at: usize, reverse: bool) -> usize {
 fn call(m: &Molecule, at: usize, reverse: bool) -> u8 {
     let b = m.sequence.as_str().as_bytes()[original(m.sequence.len(), at, reverse)];
     if reverse {
-        crate::model::complement(b, Alphabet::Dna)
+        collagene_model::complement(b, Alphabet::Dna)
     } else {
         b
     }
@@ -1009,7 +1010,7 @@ impl GuideReport {
             || self.options_revision != hash(&self.options)?
             || self.profile_revision != profile_revision(&self.options.profile)?
             || self.source_length == 0
-            || self.source_length > crate::model::MAX_SEQUENCE_LEN
+            || self.source_length > collagene_model::MAX_SEQUENCE_LEN
             || self.candidates.len() > self.options.max_candidates
             || self.comparisons > self.options.max_comparisons
             || self.limits.len() > 8
@@ -1125,7 +1126,7 @@ impl OffTargetReport {
                 || !hex(&r.revision)
                 || r.name.len() > 4096
                 || r.length == 0
-                || r.length > crate::model::MAX_SEQUENCE_LEN
+                || r.length > collagene_model::MAX_SEQUENCE_LEN
                 || r.build.as_ref().is_some_and(|s| !label(s, 4096))
                 || r.accession.as_ref().is_some_and(|s| !label(s, 4096))
             {

@@ -35,7 +35,7 @@ same independently retained target. A selected self-ligation background can be a
 real reconstructed product while still being an invalid match to that target.
 No target or original source is rewritten to make it pass.
 
-The SDK fixture in `crates/mcp/tests/prepared_golden_gate_tools.rs` imports a literal
+The SDK fixture in `crates/mcp/tests/methods/golden_gate/prepared_golden_gate_tools.rs` imports a literal
 circular 40-base target before primer design. Two 20-base originals share an
 `ATGA` end convention, producing self-A, self-B and two-fragment physical groups.
 It checks distinct background/target summaries, complete evidence bindings,

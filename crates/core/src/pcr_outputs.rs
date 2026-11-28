@@ -2,11 +2,11 @@
 //! These references and order tables assert neither an independent target check
 //! nor physical terminal chemistry. Hosts bind them to exact source history events.
 use crate::{
-    Alphabet, Error, Molecule,
     analysis::{PcrProduct, Primer},
     oligo_formats::OligoTable,
     verification,
 };
+use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
 
 pub const ENGINE_VERSION: &str = "pcr-outputs-1";
@@ -55,7 +55,7 @@ pub(crate) fn primer(value: &Primer) -> Result<(), Error> {
     // The existing geometry engine supports IUPAC tails as reference bases;
     // uncertainty in a synthetic tail does not create ambiguous template binding.
     if !value.tail.trim().is_empty() {
-        crate::Sequence::dna(&value.tail)?;
+        collagene_model::Sequence::dna(&value.tail)?;
     }
     Ok(())
 }
@@ -74,7 +74,7 @@ impl Options {
 /// Bounded identity over all source content, oligos, selected preview and choices.
 /// Source history events remain the host's separate binding responsibility.
 pub fn revision(request: &Request) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[&request.source])?;
+    collagene_model::bounds::model_preflight(&[&request.source])?;
     request.source.validate()?;
     primer(&request.forward)?;
     primer(&request.reverse)?;
@@ -158,11 +158,11 @@ impl Prepared {
             return Err(bad("output receipt does not match its request"));
         }
         if let Some(product) = &self.product {
-            crate::model::bounds::model_preflight(&[product])?;
+            collagene_model::bounds::model_preflight(&[product])?;
             product.validate()?;
             name(&product.name)?;
             if product.sequence != self.geometry.sequence
-                || product.topology != crate::Topology::Linear
+                || product.topology != collagene_model::Topology::Linear
             {
                 return Err(bad("output sequence does not match selected geometry"));
             }

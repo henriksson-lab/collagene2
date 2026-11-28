@@ -6,7 +6,10 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request as WorkerRequest},
+    protocol::{
+        request::Request as WorkerRequest,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     read_checks,
     read_review::{self, Choice, Decision, EvidenceKey, Request},
     run_lineage::EventBinding,

@@ -2,7 +2,6 @@
 //! Identity pins and supplier observations are documentary producer data, never reaction validation.
 pub use crate::restriction_inspection::InspectionOptions;
 use crate::{
-    Error, Molecule,
     analysis::Enzyme,
     restriction_history::{self, InstalledDigest, PreparedInstallation, SourceBinding},
     restriction_inspection::{self, DigestProduct, EnzymeSpec, RestrictionInspection},
@@ -10,6 +9,7 @@ use crate::{
     workspace::{self, Workspace},
 };
 pub use collagene_enzyme_catalog as catalog;
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "catalog-digest-1";

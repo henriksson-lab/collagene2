@@ -20,7 +20,7 @@ const MAX_REFERENCE_EDGES: usize = 1_000_000;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("native workspace validation: {0}")]
-    Native(#[from] collagene_core::Error),
+    Native(#[from] collagene_model::Error),
     #[error("selected native document/head/event does not match")]
     Selection,
     #[error("unsupported attachment reference contract: {0}")]

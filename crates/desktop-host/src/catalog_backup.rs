@@ -1189,7 +1189,6 @@ mod id {
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         analysis::Primer,
         cloning_outputs,
         run_lineage::{EventBinding, InputEventBinding},
@@ -1197,6 +1196,7 @@ mod tests {
         verification::{DesignPlan, Operation, PlanInput, Source},
         workspace::{self, Workspace},
     };
+    use collagene_model::{Molecule, Topology};
     use std::sync::atomic::{AtomicU64, Ordering};
     use store::mutations::{Applied, MutationOperation};
     struct Temp(PathBuf);

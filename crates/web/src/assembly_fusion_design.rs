@@ -348,16 +348,16 @@ mod tests {
         let original = draft.clone();
         let request = base_request(&draft, base.clone(), edits.clone(), &[true, true]).unwrap();
         assert_eq!(request.terminal_right_overhang.as_deref(), Some("CGTA"));
-        let source_a = collagene_core::Molecule::dna(
+        let source_a = collagene_model::Molecule::dna(
             "A",
             &"ACGT".repeat(20),
-            collagene_core::Topology::Linear,
+            collagene_model::Topology::Linear,
         )
         .unwrap();
-        let source_b = collagene_core::Molecule::dna(
+        let source_b = collagene_model::Molecule::dna(
             "B",
             &"TGCA".repeat(20),
-            collagene_core::Topology::Linear,
+            collagene_model::Topology::Linear,
         )
         .unwrap();
         let originals = [

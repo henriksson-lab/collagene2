@@ -11,10 +11,8 @@ use crate::{
     assembly_draft_model::{self, Draft},
     source_identity::SourceInfo,
 };
-use collagene_core::{
-    Molecule,
-    workspace::{Workspace, WorkspaceAttachment},
-};
+use collagene_core::workspace::{Workspace, WorkspaceAttachment};
+use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
@@ -531,7 +529,7 @@ fn hydration_preflight(resolver: &Resolver<'_>, draft: &Value) -> Result<(), Str
     for value in source_values(draft)? {
         let reference = source_reference(value)?;
         let molecule = resolver.resolve(&reference.source)?;
-        collagene_core::model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
+        collagene_model::bounds::model_preflight(&[molecule]).map_err(|e| e.to_string())?;
         let original = json_size(value, MAX_PAYLOAD)?;
         let full = json_size(
             &BorrowedCapture {
@@ -640,7 +638,8 @@ mod tests {
         assembly_edit_model, assembly_substitution_model,
         cloning_methods_model::{Mode, OverlapPreparation},
     };
-    use collagene_core::{Topology, history::DocumentHistory, run_lineage::EventBinding};
+    use collagene_core::{history::DocumentHistory, run_lineage::EventBinding};
+    use collagene_model::Topology;
     use std::sync::Arc;
     fn captured(frame: &Workspace, index: usize) -> Arc<CapturedSource> {
         let doc = &frame.documents[index];
@@ -987,7 +986,7 @@ mod tests {
         }
         let mut changed = draft;
         let mut source = changed.slots[0].captured.as_ref().unwrap().as_ref().clone();
-        source.molecule.sequence = collagene_core::Sequence::dna("AAAAAAAA").unwrap();
+        source.molecule.sequence = collagene_model::Sequence::dna("AAAAAAAA").unwrap();
         changed.slots[0].captured = Some(Arc::new(source));
         assert!(save(&frame, "Changed snapshot", &changed).is_err());
     }
@@ -1085,9 +1084,9 @@ mod tests {
     #[test]
     fn repeated_source_references_are_bounded_before_rich_hydration_copies() {
         let mut molecule = Molecule::dna("Rich original", "AACCGGTT", Topology::Linear).unwrap();
-        molecule.features.push(collagene_core::Feature {
+        molecule.features.push(collagene_model::Feature {
             kind: "misc_feature".into(),
-            location: collagene_core::Location::range(0, 8),
+            location: collagene_model::Location::range(0, 8),
             qualifiers: (0..3)
                 .map(|i| (format!("note{i}"), Some("x".repeat(1_000_000))))
                 .collect(),

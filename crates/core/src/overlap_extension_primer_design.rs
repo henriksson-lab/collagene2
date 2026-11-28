@@ -2,7 +2,6 @@
 //! separately declared literal edits. No intended-product sequence is an input.
 use crate::pcr_source::Template;
 use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology,
     assembly_edit_intent::Edit,
     assembly_recipe, overlap_extension,
     overlap_extension_pcr::{self, PrimerPair},
@@ -10,6 +9,7 @@ use crate::{
     primers::{self, DesignOptions, DesignReport},
     verification::{self, DesignPlan, PlanInput, Source, Status, VerificationReport},
 };
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "overlap-extension-primer-design-2";
@@ -228,7 +228,7 @@ fn bounds<'a>(source: Frame<'_>, r: &'a Request) -> Result<Bounds<'a>, Error> {
     if r.edits.is_empty() || r.edits.len() > crate::assembly_edit_intent::MAX_EDITS {
         return Err(bad("declare1..256 literal contribution edits"));
     }
-    crate::model::bounds::model_preflight(&[source.reference])?;
+    collagene_model::bounds::model_preflight(&[source.reference])?;
     if source.sequence.alphabet() != Alphabet::Dna
         || source.sequence.is_empty()
         || source.sequence.len() > MAX_SOURCE_BASES
@@ -297,7 +297,7 @@ fn bounds<'a>(source: Frame<'_>, r: &'a Request) -> Result<Bounds<'a>, Error> {
             };
             let raw = source.sequence.as_str().as_bytes()[(f.start + offset) % n];
             let actual = if f.reverse {
-                crate::model::complement(raw, Alphabet::Dna)
+                collagene_model::complement(raw, Alphabet::Dna)
             } else {
                 raw
             };
@@ -448,7 +448,7 @@ fn reserved_work(
 /// Borrowed source, literal-edit, geometry and aggregate work guards before any
 /// full source is cloned or native primer/PCR search is started.
 pub(crate) fn documentary_preflight(source: &Molecule, request: &Request) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     crate::run_material::material_origins_preflight(
         request.material_binding.iter().map(|b| &b.origin),
     )?;
@@ -544,7 +544,7 @@ fn segment(source: Frame<'_>, f: &Fragment, start: usize, end: usize, out: &mut 
 fn replacement(out: &mut String, e: &Edit, reverse: bool) {
     if reverse {
         for b in e.replacement.bytes().rev() {
-            out.push(crate::model::complement(b, Alphabet::Dna) as char);
+            out.push(collagene_model::complement(b, Alphabet::Dna) as char);
         }
     } else {
         out.push_str(&e.replacement);
@@ -1449,7 +1449,7 @@ impl Report {
             ));
         }
         for p in &self.verification.products {
-            crate::model::bounds::model_preflight(&[p])?;
+            collagene_model::bounds::model_preflight(&[p])?;
         }
         bytes(self, MAX_REPORT_BYTES)
     }

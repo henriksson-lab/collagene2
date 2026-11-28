@@ -1,11 +1,11 @@
 //! Immutable read-assembly evidence. Loading checks structure and exact source
 //! events, never restores a scientific result as current verification authority.
 use crate::{
-    Error,
     contig::{ContigReport, ReadInput},
     run_lineage::InputEventBinding,
     workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

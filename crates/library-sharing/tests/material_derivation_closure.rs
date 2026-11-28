@@ -1,6 +1,5 @@
 //! Actual target-free PCR→digest followed by a separately verified physical run.
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     catalog_digest, cloning_outputs, homology_assembly,
     material_derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
@@ -11,6 +10,7 @@ use collagene_core::{
     workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
 const FINAL: &str = "CACGTTCGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
 fn input(id: &str, molecule: Molecule) -> PlanInput {

@@ -414,7 +414,8 @@ mod tests {
 
     #[test]
     fn runnable_ui_limits_agree_with_native_reaction_preflight() {
-        use collagene_core::{Molecule, Topology, golden_gate_reaction as reaction};
+        use collagene_core::golden_gate_reaction as reaction;
+        use collagene_model::{Molecule, Topology};
         let source = Molecule::dna("source", "ACGT", Topology::Linear).unwrap();
         let target = Molecule::dna("target", "ACGT", Topology::Linear).unwrap();
         for (field, number) in [

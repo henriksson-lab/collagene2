@@ -1,13 +1,16 @@
 //! Exact-event-bound reference exchange. Positive chemistry remains outside this model.
 use crate::{digest::SourceInfo, worker};
 use collagene_core::{
-    Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
+    protocol::{
+        request::Request as WireRequest,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     recombination::{self, ProfileSnapshot, RecombinationReport, Selection, reference},
     run_lineage::{EventBinding, InputEventBinding},
     transfer::Candidate,
     verification::{DesignPlan, Operation, PlanInput, Source},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::{
     Arc,

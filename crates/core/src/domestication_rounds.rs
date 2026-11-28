@@ -2,13 +2,13 @@
 //! frames supply primer literals only; physical PCR always consumes the preceding
 //! actual plan step. No intermediate reference is installed as a template stock.
 use crate::{
-    Error, Sequence, Topology,
     chemistry::EndTreatment,
     domestication::Patch,
     domestication_preparation::{InverseRound, RoundEvidence},
     mutagenesis::{self, InversePcrOptions},
     verification::{Operation, OrientedSource, PlanInput, Source},
 };
+use collagene_model::{Error, Sequence, Topology};
 const MAX_ROUNDS: usize = 32;
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("sequential domestication: {s}"))

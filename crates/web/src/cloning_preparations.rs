@@ -1,6 +1,7 @@
 //! Shared conversion of editable preparation rows to existing typed recipes.
 use crate::cloning_methods_model::{MethodsState, OverlapPreparation};
-use collagene_core::{Molecule, analysis::Primer, verification::PlanInput};
+use collagene_core::{analysis::Primer, verification::PlanInput};
+use collagene_model::Molecule;
 
 pub(crate) fn prepared_rows(
     state: &MethodsState,
@@ -232,7 +233,8 @@ mod tailing_tests {
         assembly_role_ids::Role,
         cloning_methods_model::{Mode, Treatment},
     };
-    use collagene_core::{Topology, chemistry::EndTreatment, tailing::TailingBase};
+    use collagene_core::{chemistry::EndTreatment, tailing::TailingBase};
+    use collagene_model::Topology;
     #[test]
     fn pinned_tailing_request_uses_rows_and_exact_role_ids() {
         let mut state = MethodsState::default();
@@ -540,7 +542,8 @@ mod tailing_tests {
 mod annealed_tests {
     use super::*;
     use crate::cloning_methods_model::{Mode, Treatment};
-    use collagene_core::{Topology, assembly_intent, catalog_digest, verification::Status};
+    use collagene_core::{assembly_intent, catalog_digest, verification::Status};
+    use collagene_model::Topology;
     #[test]
     fn two_reference_contributions_keep_three_original_sources_through_ligation() {
         let catalog = catalog_digest::builtin_catalog().unwrap();
@@ -712,12 +715,13 @@ mod overlap_extension_tests {
     use super::*;
     use crate::cloning_methods_model::{ExtensionPrimerInput, Mode, OverlapExtensionPcrInput};
     use collagene_core::{
-        Topology, assembly_recipe, cloning_outputs,
+        assembly_recipe, cloning_outputs,
         run_lineage::{EventBinding, InputEventBinding},
         run_material,
         verification::{DesignPlan, Operation, Source, Status},
         workspace::Workspace,
     };
+    use collagene_model::Topology;
     const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
     const EDITED: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA";
     const FINAL: &str = "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCAGGCTAACCGTTA";
@@ -1063,10 +1067,10 @@ mod source_generation_tests {
     use super::*;
     use crate::cloning_methods_model::SourceGenerationInput;
     use collagene_core::{
-        Molecule, Topology,
         modified_duplex::ModificationSummary,
         verification::{self, DesignPlan, Operation, PlanInput},
     };
+    use collagene_model::{Molecule, Topology};
     #[test]
     fn original_generation_precedes_pcr_and_new_strands_do_not_copy_modifications() {
         let source = Molecule::dna(

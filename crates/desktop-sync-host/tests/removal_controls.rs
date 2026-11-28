@@ -1,8 +1,9 @@
-use collagene_core::{Molecule, Topology, workspace::Workspace};
+use collagene_core::workspace::Workspace;
 use collagene_desktop_credentials as credentials;
 use collagene_desktop_sync_host::{SyncAdapter, SyncHost};
 use collagene_desktop_sync_protocol as wire;
 use collagene_lab_library::{self as store, mutations as durable};
+use collagene_model::{Molecule, Topology};
 use collagene_repository::{
     self as repository, Channel, RemoteConfig, RemoteTransport, Repository, TransportError,
 };

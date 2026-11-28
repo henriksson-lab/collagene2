@@ -1,0 +1,11 @@
+// Integration tests grouped by scientific responsibility.
+mod overlap_extension_catalog_protocol;
+mod overlap_extension_catalog_recipe;
+mod overlap_extension_digest_inspection;
+mod overlap_extension_material;
+mod overlap_extension_primer_design;
+mod overlap_extension_primer_design_protocol;
+mod overlap_extension_protocol;
+mod overlap_extension_recipe;
+mod overlap_extension_recipe_protocol;
+mod overlap_extension_tracking;

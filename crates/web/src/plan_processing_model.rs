@@ -73,11 +73,11 @@ pub(crate) fn reference_only_steps(plan: &DesignPlan) -> Vec<bool> {
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         analysis::Primer,
         chemistry::ThreePrime,
         verification::{self, PhysicalProcessingEvidence, PlanInput, Status},
     };
+    use collagene_model::{Molecule, Topology};
     const STOCK: &str = "AGTCCGATGCTACGTAGGACTTCA";
     const TRIMMED: &str = "AGTCCGATGCTACGTAGGA";
     fn fixture() -> (DesignPlan, Molecule) {

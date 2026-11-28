@@ -9,7 +9,8 @@
 //! once per unique pair only when every pair is estimable. Counts are interpreted
 //! literally as directed observations; no transpose, pseudocount or abundance
 //! weighting is invented. Correct complementarity is not an efficiency estimate.
-use crate::{Error, assembly_recipe};
+use crate::assembly_recipe;
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const MODEL: &str = "directed-count-pooled-physical-pairs-1";

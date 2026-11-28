@@ -7,6 +7,7 @@ rust-version = "1.88"
 description = "Bounded retry-safe library mutation protocol and native dispatch"
 
 [dependencies]
+collagene-model = { path = "../model" }
 collagene-library-protocol = { path = "../library-protocol" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

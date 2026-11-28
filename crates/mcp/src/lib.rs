@@ -2,13 +2,14 @@
 //! Client text and feature notes are data; no tool accepts paths, shell commands or permissions.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
-    Molecule, alignment, alignment_formats,
+    alignment, alignment_formats,
     analysis::{self, Primer},
     annotation_formats, chemistry, feature_library, formats, oligo_formats, primers,
     trace_validation, transfer, translation,
     verification::{self, DesignPlan, Operation, PlanInput},
     workspace,
 };
+use collagene_model::Molecule;
 use rmcp::{
     ErrorData, RoleServer, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -29,7 +30,7 @@ use std::{
 };
 
 /// Number of tools in the current native registry (historical manifests remain literal).
-pub const CURRENT_TOOL_COUNT: usize = 203;
+pub const CURRENT_TOOL_COUNT: usize = 208;
 
 const MAX_STORE_BYTES: usize = 64 * 1024 * 1024;
 const MAX_ITEMS: usize = 128;
@@ -263,7 +264,7 @@ pub struct AlignmentImport {
     /// Exact file bytes as base64, at most8MiB decoded. No paths, URLs or aligner invocation.
     pub data_base64: String,
     pub format: alignment_formats::AlignmentFormat,
-    pub alphabet: collagene_core::Alphabet,
+    pub alphabet: collagene_model::Alphabet,
     pub name: String,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -1978,6 +1979,7 @@ struct Store {
     read_alignments: BTreeMap<String, Arc<collagene_core::read_alignment_store::Collection>>,
     variants: BTreeMap<String, Arc<collagene_core::variant_reference::exchange::Collection>>,
     contig_reports: BTreeMap<String, String>,
+    sbol_sources: BTreeSet<String>,
 }
 impl Store {
     fn variants(
@@ -2164,7 +2166,7 @@ fn capture_variant(
     }
     let collection = store.variants(&args.collection)?;
     let reference = store.document(&args.reference)?;
-    collagene_core::model::bounds::model_preflight(&[reference]).map_err(bad)?;
+    collagene_model::bounds::model_preflight(&[reference]).map_err(bad)?;
     if collection.record(args.record_index).is_none() {
         return Err(bad("variant record index unavailable"));
     }
@@ -2304,10 +2306,10 @@ impl CollageneServer {
         let target = target.map(|t| store.document(t)).transpose()?;
         let mut aggregate = borrowed.clone();
         aggregate.extend(target);
-        collagene_core::model::bounds::model_preflight(&aggregate).map_err(bad)?;
+        collagene_model::bounds::model_preflight(&aggregate).map_err(bad)?;
         let mut bases = 0usize;
         for molecule in &borrowed {
-            if molecule.sequence.alphabet() != collagene_core::Alphabet::Dna {
+            if molecule.sequence.alphabet() != collagene_model::Alphabet::Dna {
                 return Err(bad("TOPO requires explicit DNA sources"));
             }
             bases = bases
@@ -2316,7 +2318,7 @@ impl CollageneServer {
                 .ok_or_else(|| bad("TOPO source aggregate exceeds100000 bases"))?;
         }
         if target.is_some_and(|m| {
-            m.sequence.len() > 100_000 || m.sequence.alphabet() != collagene_core::Alphabet::Dna
+            m.sequence.len() > 100_000 || m.sequence.alphabet() != collagene_model::Alphabet::Dna
         }) {
             return Err(bad("TOPO independent target requires bounded DNA"));
         }
@@ -3021,7 +3023,7 @@ impl CollageneServer {
             .revisions
             .get(&event.revision)
             .ok_or_else(|| bad("material source revision is absent"))?;
-        collagene_core::model::bounds::model_preflight(&[source]).map_err(bad)?;
+        collagene_model::bounds::model_preflight(&[source]).map_err(bad)?;
         Ok(source)
     }
     fn restore_workspace(
@@ -4116,7 +4118,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let(source,target,donor)={let store=server.store.lock().unwrap();let source=store.document(&args.source)?;let target=store.document(&args.target)?;
                 collagene_core::edit_template::source_preflight(source,target,&args.options,args.guide.as_ref()).map_err(bad)?;
                 let donor=store.document(&args.donor)?;
-                if donor.sequence.alphabet()!=collagene_core::Alphabet::Dna || donor.topology!=collagene_core::Topology::Linear || donor.sequence.len()>collagene_core::edit_template::MAX_DONOR{return Err(bad("donor candidate must be bounded linear DNA"));}
+                if donor.sequence.alphabet()!=collagene_model::Alphabet::Dna || donor.topology!=collagene_model::Topology::Linear || donor.sequence.len()>collagene_core::edit_template::MAX_DONOR{return Err(bad("donor candidate must be bounded linear DNA"));}
                 (source.clone(),target.clone(),donor.sequence.as_str().to_owned())};
             let report=collagene_core::edit_template::check(&source,&target,&args.options,args.guide.as_ref(),&donor).map_err(bad)?;
             report.validate_bindings_for(&source,&target,&args.options,args.guide.as_ref(),&donor).map_err(bad)?;
@@ -4529,7 +4531,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
                 let store=server.store.lock().unwrap();
                 let collection=store.variants(&EvidenceRef{id:args.source_id.clone(),revision:args.source_id.clone()})?;
                 let reference=store.document(&args.reference)?;let design=store.document(&args.design)?;
-                collagene_core::model::bounds::model_preflight(&[reference,design]).map_err(bad)?;
+                collagene_model::bounds::model_preflight(&[reference,design]).map_err(bad)?;
                 (collection,reference.clone(),design.clone())
             };
             let replay=collagene_core::variant_reference::replay_preview(&collection,&reference,&design).map_err(bad)?;
@@ -4704,12 +4706,12 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             let (collection,reference)={
                 let store=server.store.lock().unwrap();let collection=store.read_alignments(&args.collection)?;
                 let reference=store.document(&args.reference)?;
-                collagene_core::model::bounds::model_preflight(&[reference]).map_err(bad)?;
+                collagene_model::bounds::model_preflight(&[reference]).map_err(bad)?;
                 let record=collection.record(args.record_index).ok_or_else(||bad("unknown read alignment record index"))?;
                 let named=collection.header().reference(&args.reference_name).ok_or_else(||bad("explicit reference name is absent from imported dictionary"))?;
                 if record.fields().reference.as_ref().is_some_and(|name|name!=&args.reference_name)
                     || named.length as usize!=reference.sequence.len()
-                    || named.circular!=(reference.topology==collagene_core::Topology::Circular) {
+                    || named.circular!=(reference.topology==collagene_model::Topology::Circular) {
                     return Err(bad("read alignment dictionary/reference mapping differs"));
                 }
                 (collection,reference.clone())
@@ -5544,7 +5546,7 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
-            let source={let store=server.store.lock().unwrap();let source=store.document(&reference)?;collagene_core::model::bounds::model_preflight(&[source]).map_err(bad)?;source.clone()};
+            let source={let store=server.store.lock().unwrap();let source=store.document(&reference)?;collagene_model::bounds::model_preflight(&[source]).map_err(bad)?;source.clone()};
             let rendered=collagene_core::svg_export::render(&collagene_core::svg_export::Request{source,source_revision:reference.revision.clone(),restriction_sites:None}).map_err(bad)?;
             rendered.validate_binding(&reference.revision).map_err(bad)?;
             let size=rendered.svg.len();let artifact=blake3::hash(rendered.svg.as_bytes()).to_hex().to_string();
@@ -6350,7 +6352,8 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move || {
-            use collagene_core::{Alphabet,protein_formats};
+            use collagene_core::protein_formats;
+use collagene_model::Alphabet;
             let molecule=server.store.lock().unwrap().document(&args.document)?.clone();
             let protein=molecule.sequence.alphabet()==Alphabet::Protein;
             let (report,profile,filename)=match args.format {
@@ -6419,6 +6422,56 @@ Replace ALL angle-bracket pins with exact native values, never names or equal-DN
             server.insert_documents(report.molecules, report.warnings)
         })
         .await
+    }
+    #[tool(
+        description = "Import up to 4 MiB of SBOL 3.1 structural JSON-LD as immutable documentary graph evidence. No remote contexts/URLs are fetched. Returns an exact original-source handle, bounded Component/linked-Sequence previews and a full typed graph/issue artifact. Does not choose a sequence, flatten hierarchy, create documents or restore cloning/material/verification authority. Use inspect_sbol for further pages and project_sbol for explicitly reviewed reference creation."
+    )]
+    async fn import_sbol(
+        &self,
+        Parameters(args): Parameters<sbol_tools::ImportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || server.sbol_import(args)).await
+    }
+    #[tool(
+        description = "Freshly inspect a retained SBOL graph from an exact imported-source handle or exact native workspace attachment. Pages Components with their actual linked Sequence choices; full typed objects, foreign properties and issues remain in an artifact. No network, implicit choices, source edits or scientific authority. Page bounds are explicit."
+    )]
+    async fn inspect_sbol(
+        &self,
+        Parameters(args): Parameters<sbol_tools::InspectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || server.sbol_inspect(args)).await
+    }
+    #[tool(
+        description = "Project one explicitly selected SBOL Component and one of its linked Sequences into a native reference. Requires exact graph source and native selection/topology policy; never assembles child sequences. Unsupported/unsafe physical types still refuse. Representation losses produce review_required with a full documentary report until accept_omissions=true. Creation atomically retains the reference, original graph attachment and full projection receipt in a NEW immutable native workspace. No target fitting, source edits or inherited verification/material authority. Preserve the workspace for source-graph fidelity."
+    )]
+    async fn project_sbol(
+        &self,
+        Parameters(args): Parameters<sbol_tools::ProjectQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || server.sbol_project(args)).await
+    }
+    #[tool(
+        description = "Export explicitly requested Original or Expanded bytes from an exact retained SBOL graph source or exact native workspace attachment. Original preserves supplied bytes; Expanded preserves the complete supported retained graph including foreign properties, without RDF canonicalization. This is full local graph exchange, not a selected lab-library publication grant. No network, sequence flattening, source edits or scientific verification."
+    )]
+    async fn export_sbol_graph(
+        &self,
+        Parameters(args): Parameters<sbol_tools::GraphExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || server.sbol_export_graph(args)).await
+    }
+    #[tool(
+        description = "Export an exact immutable native reference as SBOL 3.1 structural JSON-LD using explicit namespace/Component/Sequence identities. Reuses the existing core adapter and the shared reference-export restriction guard used by the browser. Losses require accept_omissions=true; physical, tracked, modified or reference-only state cannot be erased through acknowledgment. Emits reviewed design data only, never imported experimental history or material/verification authority. Source remains unchanged."
+    )]
+    async fn export_sbol(
+        &self,
+        Parameters(args): Parameters<sbol_tools::NativeExportQuery>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || server.sbol_export_native(args)).await
     }
     #[tool(
         description = "Import exact local sequence-file bytes as base64, at most 8 MiB decoded, with an explicit SnapGene DNA/protein, XDNA v0, ABIF, SCF or current native .cg2 profile. Uses the same bounded core parsers as the browser; format mismatch refuses without text sniffing or fallback. Preserves supported annotations, original file/trace evidence and parser warnings in immutable session documents. XDNA requires a bounded fallback name. No paths, URLs, external programs, browser edits or restored physical material authority. Use import_compat_sequence for explicit text profiles."
@@ -8875,7 +8928,7 @@ mod finalized_workspace_atomic_capacity {
                 );
             }
         }
-        let source = Molecule::dna("source", "ACGT", collagene_core::Topology::Linear).unwrap();
+        let source = Molecule::dna("source", "ACGT", collagene_model::Topology::Linear).unwrap();
         let workspace =
             workspace::Workspace::from_documents("Atomic fixture", vec![source], 0).unwrap();
         let native = workspace::save_workspace(&workspace).unwrap();
@@ -8945,6 +8998,7 @@ mod structure_artifact_tests {
     }
 }
 
+mod sbol_tools;
 mod sequence_exchange_tools;
 
 mod quantity_tools;

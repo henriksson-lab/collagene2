@@ -185,7 +185,8 @@ impl Proposal {
 mod tests {
     use super::*;
     use crate::{assembly_draft_model::CapturedSource, source_identity::SourceInfo};
-    use collagene_core::{Molecule, Topology, history::DocumentHistory};
+    use collagene_core::history::DocumentHistory;
+    use collagene_model::{Molecule, Topology};
     use std::sync::Arc;
     fn draft() -> Draft {
         let source = DocumentHistory::new(

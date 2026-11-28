@@ -1,6 +1,5 @@
 //! Explicit per-row hold/add-tail TA/GC recipes; no implied commercial chemistry.
 use crate::{
-    Error, Molecule,
     assembly_recipe::{self as preparation, FragmentSpec, PreparedRow},
     chemistry::{Duplex, DuplexSummary, EndTreatment, Polarity},
     tailing::TailingBase,
@@ -8,6 +7,7 @@ use crate::{
         self, DesignPlan, Operation, OrientedSource, PlanInput, Source, VerificationReport,
     },
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "tailing-recipe-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -339,7 +339,7 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
             .checked_add(molecule.sequence.len())
             .filter(|n| *n <= preparation::MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
-        crate::model::bounds::model_preflight(&[molecule])?;
+        collagene_model::bounds::model_preflight(&[molecule])?;
         let raw = match &row.prepared_source {
             Source::Step(i) => trace.get(*i).and_then(Option::as_ref).cloned(),
             Source::Input(_) => Duplex::from_molecule(molecule).ok(),

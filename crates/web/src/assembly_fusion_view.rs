@@ -6,7 +6,10 @@ use crate::{
 };
 use collagene_core::{
     golden_gate_fusion_design as fusion, golden_gate_junction_edit,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::PlanInput,
 };
 use leptos::prelude::*;

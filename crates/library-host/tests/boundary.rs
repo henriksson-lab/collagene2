@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     protocol,
     run_lineage::{EventBinding, InputEventBinding},
@@ -9,6 +8,7 @@ use collagene_core::{
 use collagene_lab_library as store;
 use collagene_library_host::{self as host, ArchiveInventory, PublicationScope};
 use collagene_library_protocol as wire;
+use collagene_model::{Molecule, Topology};
 use std::collections::BTreeSet;
 fn native(name: &str, text: &str) -> wire::Payload {
     let bytes =

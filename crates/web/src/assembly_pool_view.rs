@@ -9,7 +9,10 @@ use collagene_core::{
     combinatorial_batch::RowRequest,
     combinatorial_design::{self as design, Recipe},
     golden_gate_reaction as reaction,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage,
     workspace::Workspace,
 };
@@ -489,7 +492,7 @@ pub fn AssemblyPoolView(
             </section>}
         })}
         {move||inspected.get().and_then(|index|evidence.get().and_then(|saved|saved.report.pool.as_ref().and_then(|pool|pool.candidates.get(index)).map(|candidate|(saved.clone(),index,candidate.duplex.top.as_str().to_string(),candidate.duplex.topology)))).map(|(saved,index,dna,topology)|{
-            match collagene_core::Molecule::dna("Candidate top-strand reference",&dna,topology){
+            match collagene_model::Molecule::dna("Candidate top-strand reference",&dna,topology){
                 Ok(product)=>view!{<p class="helper">"Read-only top-strand reference from this pinned discovery. Physical-state identity is retained separately in the candidate keys; this view does not assert laboratory success."</p><crate::golden_gate_candidate_view::GoldenGateCandidateView pool=saved.pool.as_ref().expect("selected candidate pool retained").clone() index/><crate::assembly_product_view::ReferenceCanvas product identity=format!("{}:{index}",saved.report.context_revision) current on_message=Callback::new(move|message|status.set(message))/>}.into_any(),
                 Err(error)=>view!{<p>{error.to_string()}</p>}.into_any(),
             }

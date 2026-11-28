@@ -2,7 +2,7 @@
 //! No target-driven deletion, implicit repair, or advisory-plan handoff.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    protocol::AnalysisResult,
+    protocol::schema::AnalysisResult,
     topo::{
         self,
         physical::{self, processing},

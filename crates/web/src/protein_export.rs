@@ -1,9 +1,9 @@
 //! Explicit annotated-protein exchange, isolated from cloning/material authority.
 use collagene_core::{
-    Molecule,
     formats::ExportReport,
     protein_formats::{self, ExportOptions, InsdcDate, Profile},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
 use wasm_bindgen_futures::spawn_local;

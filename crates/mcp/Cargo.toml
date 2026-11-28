@@ -1,4 +1,5 @@
 [package]
+autotests = false
 name = "collagene-mcp"
 version.workspace = true
 edition.workspace = true
@@ -6,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-model = { path = "../model" }
+collagene-design-exchange = { path = "../design-exchange", features = ["json-schema"] }
 collagene-library-sharing = { path = "../library-sharing" }
 collagene-local-storage = { path = "../local-storage" }
 collagene-core = { path = "../core", features = ["json-schema"] }
@@ -25,3 +28,35 @@ zip = { version = "=4.6.1", default-features = false, features = ["deflate-flate
 
 [dependencies.base64]
 version = "0.22"
+
+[[test]]
+name = "sequence"
+path = "tests/sequence/main.rs"
+
+[[test]]
+name = "analysis"
+path = "tests/analysis/main.rs"
+
+[[test]]
+name = "cloning"
+path = "tests/cloning/main.rs"
+
+[[test]]
+name = "assembly"
+path = "tests/assembly/main.rs"
+
+[[test]]
+name = "methods"
+path = "tests/methods/main.rs"
+
+[[test]]
+name = "workspace"
+path = "tests/workspace/main.rs"
+
+[[test]]
+name = "publication"
+path = "tests/publication/main.rs"
+
+[[test]]
+name = "protocol"
+path = "tests/protocol/main.rs"

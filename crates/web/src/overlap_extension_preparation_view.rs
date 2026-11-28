@@ -152,7 +152,7 @@ pub fn OverlapExtensionOligoFields(
 /// Target-free material uses the same literal six-oligo form as assembly preparation.
 #[component]
 pub fn ReusableOverlapExtensionMaterialView(
-    source: Memo<Option<collagene_core::Molecule>>,
+    source: Memo<Option<collagene_model::Molecule>>,
     source_info: Memo<Option<crate::source_identity::SourceInfo>>,
     epoch: RwSignal<u64>,
     get_workspace: Callback<(), Result<collagene_core::workspace::Workspace, String>>,

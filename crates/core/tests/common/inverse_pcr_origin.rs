@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     catalog_digest,
     chemistry::EndTreatment,
@@ -10,6 +9,7 @@ use collagene_core::{
     verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
     workspace::Workspace,
 };
+use collagene_model::{Molecule, Topology};
 pub const STOCK: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
 pub const INTENDED: &str = "AGTGGAGATGCTACGTAGGACTTCAGACCTGTA";
 pub fn options() -> InversePcrOptions {

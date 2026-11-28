@@ -1,5 +1,5 @@
 //! Presentation-only document navigation. IDs, histories and scientific state stay with the app.
-use collagene_core::{Alphabet, Topology};
+use collagene_model::{Alphabet, Topology};
 use leptos::prelude::*;
 use wasm_bindgen::{JsCast, closure::Closure};
 

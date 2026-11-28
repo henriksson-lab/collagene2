@@ -1,14 +1,17 @@
 //! Ordered parent contributions, explicit full-context profiles and reference-only results.
 use crate::{digest::SourceInfo, worker};
 use collagene_core::{
-    Molecule,
     multisite_recombination::{self as science, Request, Selection},
-    protocol::{AnalysisJob, AnalysisResult, Request as WireRequest},
+    protocol::{
+        request::Request as WireRequest,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     recombination::{ProfileSnapshot, reference},
     run_lineage::{EventBinding, InputEventBinding},
     transfer::Candidate,
     verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::{
     Arc,

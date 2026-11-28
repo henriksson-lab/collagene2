@@ -1,6 +1,7 @@
 //! Bounded worker bindings for fresh TOPO science. Revision helpers hash borrowed
 //! inputs only; readonly decoded reports cannot restore graph authority.
-use crate::{Alphabet, Error, Molecule, Topology, topo};
+use crate::topo;
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::Serialize;
 use std::{collections::BTreeSet, io::Write};
 use topo::physical::{self, projection};

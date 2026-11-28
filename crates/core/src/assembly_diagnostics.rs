@@ -1,11 +1,11 @@
 //! Readonly structural locations from bound current-engine recipe receipts.
 //! No molecular operation is rerun; no human finding text determines a location.
 use crate::{
-    Error, Molecule,
     assembly_recipe::{self, PreparedRow},
     ligation_recipe,
     verification::{self, DesignPlan, Operation, Source, Status, VerificationReport},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -291,9 +291,9 @@ fn span_matches(m: &Molecule, span: &crate::overlap_profiles::ReferenceSpan, tex
     }
     text.bytes().enumerate().all(|(i, b)| {
         let actual = if span.reverse {
-            crate::model::complement(
+            collagene_model::complement(
                 m.sequence.as_str().as_bytes()[span.end - 1 - i],
-                crate::Alphabet::Dna,
+                collagene_model::Alphabet::Dna,
             )
         } else {
             m.sequence.as_str().as_bytes()[span.start + i]
@@ -378,14 +378,14 @@ pub fn overlap(p: &assembly_recipe::Preview) -> Result<Report, Error> {
             fragments, policy, ..
         } => (
             fragments,
-            policy.topology == crate::Topology::Circular,
+            policy.topology == collagene_model::Topology::Circular,
             &policy.overlaps,
         ),
         Operation::HomologyAnnealing {
             fragments, policy, ..
         } => (
             fragments,
-            policy.topology == crate::Topology::Circular,
+            policy.topology == collagene_model::Topology::Circular,
             &policy.overlaps,
         ),
         _ => return Err(bad("expected final overlap operation")),

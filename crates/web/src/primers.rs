@@ -1,11 +1,15 @@
 //! Worker-backed oligo evidence and anchored candidate selection.
 use crate::worker;
 use collagene_core::{
-    Alphabet, Feature, Molecule,
     analysis::Primer,
     primers::{BindingOptions, DesignOptions, DesignReport, PrimerAnalysis, ThermoConditions},
-    protocol::{AnalysisJob, AnalysisResult, PrimerEvidence, Request, Response},
+    protocol::{
+        request::Request,
+        response::Response,
+        schema::{AnalysisJob, AnalysisResult, PrimerEvidence},
+    },
 };
+use collagene_model::{Alphabet, Feature, Molecule};
 use leptos::{html, prelude::*};
 use std::sync::{
     Arc,
@@ -21,7 +25,7 @@ fn parse<T: std::str::FromStr>(value: String, label: &str) -> Result<T, String> 
 }
 pub(crate) fn annotation(
     primer: &Primer,
-    location: collagene_core::Location,
+    location: collagene_model::Location,
     metrics: &PrimerAnalysis,
     review: bool,
     source_revision: &str,

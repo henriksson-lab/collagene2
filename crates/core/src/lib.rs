@@ -1,19 +1,16 @@
-//! Portable scientific model and independently implemented cloning algorithms.
+//! Portable independently implemented cloning algorithms over collagene-model.
 //! No UI, filesystem, subprocess, network or async runtime dependencies.
 
 pub mod analysis;
 pub mod catalog_digest;
 pub mod chemistry;
 pub mod formats;
-pub mod model;
 pub mod protocol;
 pub mod recombination;
 pub mod restriction_inspection;
 pub mod restriction_selection;
 pub mod transfer;
 pub mod verification;
-
-pub use model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 
 pub mod embl;
 pub mod scf_export;
@@ -233,7 +230,7 @@ pub mod collagene_xml_compat;
 pub mod gcg_sequence;
 pub mod snapgene_export;
 
-mod format_fidelity;
+pub mod format_fidelity;
 
 pub mod material_derivation;
 pub mod material_pcr;

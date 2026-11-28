@@ -1,16 +1,20 @@
 //! Revision-bound reference gel predictions and diagnostic digest ranking.
 use crate::worker;
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     digest_setups::Recipe,
     gel::{
         self, Calibration, CalibrationPoint, DiagnosticOptions, DiagnosticReport, GelReport,
         LaneInput, Preparation,
     },
-    protocol::{AnalysisJob, AnalysisResult, Request, Response},
+    protocol::{
+        request::Request,
+        response::Response,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::{
     Arc,

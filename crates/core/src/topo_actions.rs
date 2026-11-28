@@ -1,9 +1,9 @@
 //! Source-backed processed TOPO material. A fresh paired-contour proof can bridge
 //! only chemistry represented faithfully by the ordinary two-strand model.
 use crate::{
-    Error, Molecule, Topology, assembly_recipe, chemistry, modified_duplex as tracked, topo,
-    topo_annotations, topo_worker,
+    assembly_recipe, chemistry, modified_duplex as tracked, topo, topo_annotations, topo_worker,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use topo::physical::{self, projection};

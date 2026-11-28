@@ -1,7 +1,6 @@
 //! Exact selected locations retain biological order and strand independently of highlights.
-use collagene_core::{
-    Location, Molecule, restriction_selection::footprint, run_lineage::EventBinding,
-};
+use collagene_core::{restriction_selection::footprint, run_lineage::EventBinding};
+use collagene_model::{Location, Molecule};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DirectedSelection {
@@ -107,7 +106,7 @@ pub fn origin<'a>(
         .revisions
         .get(&protein.revision)
         .ok_or("The protein revision is unavailable.")?;
-    if molecule.sequence.alphabet() != collagene_core::Alphabet::Protein
+    if molecule.sequence.alphabet() != collagene_model::Alphabet::Protein
         || molecule.metadata.get("translation:source_document") != Some(&requested.document_id)
         || molecule.metadata.get("translation:source_event") != Some(&requested.event_id)
         || molecule.metadata.get("translation:source_revision") != Some(&requested.revision)
@@ -133,7 +132,7 @@ pub fn origin<'a>(
                 .revisions
                 .get(&requested.revision)
                 .ok_or("The translation origin revision is unavailable.")?;
-            if source.sequence.alphabet() == collagene_core::Alphabet::Protein {
+            if source.sequence.alphabet() == collagene_model::Alphabet::Protein {
                 return Err("A translation origin must be a nucleotide reference.".into());
             }
             return Ok(source);
@@ -146,7 +145,7 @@ pub fn origin<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Feature, Topology};
+    use collagene_model::{Feature, Topology};
     fn source(m: &Molecule) -> EventBinding {
         EventBinding {
             document_id: "doc".into(),
@@ -224,7 +223,7 @@ mod tests {
         };
         let mut protein = Molecule::dna("protein", "ATGGCT", Topology::Linear).unwrap();
         protein.sequence =
-            collagene_core::Sequence::new(collagene_core::Alphabet::Protein, "MA").unwrap();
+            collagene_model::Sequence::new(collagene_model::Alphabet::Protein, "MA").unwrap();
         protein.metadata.insert(
             "translation:source_document".into(),
             original.document_id.clone(),

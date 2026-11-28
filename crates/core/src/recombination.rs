@@ -1,9 +1,7 @@
 //! Reference-only adapter for the independently bounded reciprocal-exchange engine.
 //! Exact sequence maps support annotation projection, never inherited physical state.
-use crate::{
-    Error, Feature, Location, Molecule, Topology,
-    annotations::{self, MappingSegment},
-};
+use crate::annotations::{self, MappingSegment};
+use collagene_model::{Error, Feature, Location, Molecule, Topology};
 pub use collagene_recombination as reference;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -627,7 +625,7 @@ impl ProductDocument {
         let Some(component) = self.reciprocal_components.get(self.selection.component_id) else {
             return Err(bad("missing selected component"));
         };
-        if self.molecule.sequence.alphabet() != crate::Alphabet::Dna
+        if self.molecule.sequence.alphabet() != collagene_model::Alphabet::Dna
             || component.reference_revision != self.reference_product_revision
             || component.length != self.molecule.sequence.len()
             || component.topology != self.molecule.topology

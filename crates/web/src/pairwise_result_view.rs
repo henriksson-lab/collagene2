@@ -9,8 +9,8 @@ use std::{io, sync::Arc};
 
 pub struct Review {
     pub record: Record,
-    pub reference: Arc<collagene_core::Molecule>,
-    pub query: Arc<collagene_core::Molecule>,
+    pub reference: Arc<collagene_model::Molecule>,
+    pub query: Arc<collagene_model::Molecule>,
     pub reference_name: String,
     pub query_name: String,
     pub fresh: bool,

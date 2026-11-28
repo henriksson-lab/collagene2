@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     chemistry::Terminus,
     material_derivation as material,
@@ -9,6 +8,7 @@ use collagene_core::{
     workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Molecule, Topology};
 const DNA: &str = "AGTCCGATGCTAGAATTCGACTTCAGACCTGTAGATCGTCA";
 fn event(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];

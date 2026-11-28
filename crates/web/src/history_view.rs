@@ -1,7 +1,8 @@
 //! Bounded event-DAG navigation and retained workspace collections.
 #[path = "history_graph.rs"]
 mod graph;
-use collagene_core::{Molecule, history::HistorySummary};
+use collagene_core::history::HistorySummary;
+use collagene_model::Molecule;
 use graph::{GraphIndex, PAGE_SIZE, ROW_HEIGHT};
 use leptos::prelude::*;
 use std::collections::BTreeMap;

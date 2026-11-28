@@ -1,4 +1,4 @@
-use collagene_core::protocol::{self, Request, Response};
+use collagene_core::protocol::{self, request::Request, response::Response};
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{JsCast, closure::Closure};
 
@@ -49,7 +49,7 @@ async fn analyze_inner(
     request: Request,
     alive: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 ) -> Result<Response, String> {
-    let bytes = protocol::encode_request(&request).map_err(|e| e.to_string())?;
+    let bytes = protocol::request::Request::encode(&request).map_err(|e| e.to_string())?;
     let worker = web_sys::Worker::new(&worker_url()?)
         .map_err(|_| "Cannot start analysis worker".to_string())?;
     let (sender, receiver) = futures_channel::oneshot::channel();
@@ -77,11 +77,11 @@ async fn analyze_inner(
             } else if let Some(sender) = sender.borrow_mut().take() {
                 let array = js_sys::Uint8Array::new(&event.data());
                 let result = if array.length() as usize
-                    > collagene_core::protocol::MAX_WORKSPACE_MESSAGE_BYTES + 42
+                    > collagene_core::protocol::envelope::MAX_WORKSPACE_MESSAGE_BYTES + 42
                 {
                     Err("Analysis result is too large".into())
                 } else {
-                    protocol::decode_response(&array.to_vec()).map_err(|e| e.to_string())
+                    protocol::response::Response::decode(&array.to_vec()).map_err(|e| e.to_string())
                 };
                 let _ = sender.send(result);
             }
@@ -209,7 +209,8 @@ impl CachedWorker {
                     {
                         Err("Track report is too large".into())
                     } else {
-                        protocol::decode_response(&array.to_vec()).map_err(|e| e.to_string())
+                        protocol::response::Response::decode(&array.to_vec())
+                            .map_err(|e| e.to_string())
                     };
                     if let Some(tx) = state.borrow_mut().pending.take() {
                         let _ = tx.send(result);
@@ -249,7 +250,7 @@ impl CachedWorker {
     pub async fn ask(&self, request: Request) -> Result<Response, String> {
         let id = request.id;
         let revision = request.revision.clone();
-        let bytes = protocol::encode_request(&request).map_err(|e| e.to_string())?;
+        let bytes = protocol::request::Request::encode(&request).map_err(|e| e.to_string())?;
         let (tx, rx) = futures_channel::oneshot::channel();
         let ready = {
             let mut state = self.state.borrow_mut();

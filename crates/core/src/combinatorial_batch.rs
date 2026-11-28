@@ -1,7 +1,7 @@
 //! Private sequential batch computation and immutable historical summaries.
 //! No decoded record/session flag can authorize fresh science or product release.
 use crate::{
-    Error, assembly_recipe,
+    assembly_recipe,
     combinatorial_design::{
         self as design, ChoiceSelection, Design, SelectedConstruct, SelectedMatrix,
     },
@@ -9,6 +9,7 @@ use crate::{
     verification::{self, Status},
     workspace::{self, Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 pub const KIND: &str = "combinatorial-batch-record-v2";

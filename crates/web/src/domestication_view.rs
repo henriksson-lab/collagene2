@@ -7,11 +7,15 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule, domestication as design, domestication_preparation as physical,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    domestication as design, domestication_preparation as physical,
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::PlanInput,
     workspace::Workspace,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,
@@ -66,7 +70,7 @@ const PEPTIDE_PAGE: usize = 600;
 fn pages(total: usize, limit: usize) -> usize {
     total.max(1).div_ceil(limit)
 }
-fn feature_name(feature: &collagene_core::Feature, index: usize) -> String {
+fn feature_name(feature: &collagene_model::Feature, index: usize) -> String {
     feature
         .qualifiers
         .iter()
@@ -224,7 +228,7 @@ pub fn DomesticationView(
         let source = source.get_untracked();
         let settings = form.get_untracked();
         let (original, request) = molecule.with_untracked(|original| -> Result<_, String> {
-            collagene_core::model::bounds::model_preflight(&[original])
+            collagene_model::bounds::model_preflight(&[original])
                 .map_err(|error| error.to_string())?;
             let request = settings.request(original)?;
             if request.source_revision != source.binding.revision {

@@ -1,10 +1,10 @@
 //! Independently implemented reference-only gel predictions and diagnostic digest ranking.
 //! No observed images, empirical topology inference, external software or provider datasets.
 use crate::{
-    Alphabet, Error, Molecule, Topology,
     analysis::{self, Primer},
     chemistry::{self, Duplex},
 };
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::fmt::Write;
@@ -68,7 +68,7 @@ impl Calibration {
         }
         for p in &self.points {
             if !p.size_bp.is_finite()
-                || !(1.0..=crate::model::MAX_SEQUENCE_LEN as f64).contains(&p.size_bp)
+                || !(1.0..=collagene_model::MAX_SEQUENCE_LEN as f64).contains(&p.size_bp)
                 || !p.migration.is_finite()
                 || !(0.0..=1.0).contains(&p.migration)
             {
@@ -450,7 +450,7 @@ pub fn predict_gel(inputs: &[LaneInput], calibration: &Calibration) -> Result<Ge
     }
     for input in inputs {
         if let Preparation::CatalogDigest { recipe } = &input.preparation {
-            crate::model::bounds::model_preflight(&[&input.molecule])?;
+            collagene_model::bounds::model_preflight(&[&input.molecule])?;
             recipe.validate()?;
         }
         input.molecule.validate()?;

@@ -1,5 +1,6 @@
 //! Optional current-browser WebMCP read/navigation tools. No scientific or storage authority.
-use collagene_core::{Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
 
 const MAX_REQUEST_BYTES: usize = 16 * 1024;
@@ -203,7 +204,7 @@ mod tests {
     fn document() -> DocumentHistory {
         DocumentHistory::new(
             "live-document",
-            Molecule::dna("live", "ACGTACGT", collagene_core::Topology::Linear).unwrap(),
+            Molecule::dna("live", "ACGTACGT", collagene_model::Topology::Linear).unwrap(),
         )
         .unwrap()
     }
@@ -358,7 +359,7 @@ mod tests {
         let long = Molecule::dna(
             "long",
             &"A".repeat(MAX_RANGE + 1),
-            collagene_core::Topology::Linear,
+            collagene_model::Topology::Linear,
         )
         .unwrap();
         let args = serde_json::json!({"expected":pin,"start":0,"end":MAX_RANGE+1}).to_string();

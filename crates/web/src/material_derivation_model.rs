@@ -1,7 +1,6 @@
 //! Pure source/preview pins for explicit reusable PCR/digest installation.
 //! This module never edits a workspace, writes recovery storage or reports commit.
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     material_derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
     run_lineage::EventBinding,
@@ -9,6 +8,7 @@ use collagene_core::{
     verification::PcrDocument,
     workspace::Workspace,
 };
+use collagene_model::Molecule;
 use serde::Serialize;
 use std::{io::Write, sync::Arc};
 
@@ -62,7 +62,7 @@ impl SourcePin {
         source: &Molecule,
         origin: Option<Arc<MaterialOrigin>>,
     ) -> Result<Self, String> {
-        collagene_core::model::bounds::model_preflight(&[source]).map_err(|e| e.to_string())?;
+        collagene_model::bounds::model_preflight(&[source]).map_err(|e| e.to_string())?;
         source.validate().map_err(|e| e.to_string())?;
         if !identifier(&event.document_id)
             || !identifier(&event.event_id)
@@ -577,9 +577,10 @@ impl RepairChoice {
 mod tests {
     use super::*;
     use collagene_core::{
-        Topology, catalog_digest, restriction_history, restriction_inspection::InspectionOptions,
+        catalog_digest, restriction_history, restriction_inspection::InspectionOptions,
         verification,
     };
+    use collagene_model::Topology;
     fn event(workspace: &Workspace) -> EventBinding {
         let doc = &workspace.documents[0];
         EventBinding {
@@ -906,7 +907,8 @@ mod tests {
 #[cfg(test)]
 mod mismatch_repair_tests {
     use super::*;
-    use collagene_core::{Topology, chemistry::EndRepairMethod, mutagenesis::PcrOptions};
+    use collagene_core::{chemistry::EndRepairMethod, mutagenesis::PcrOptions};
+    use collagene_model::Topology;
     fn binding(frame: &Workspace) -> EventBinding {
         let doc = frame
             .documents
@@ -1085,9 +1087,8 @@ mod mismatch_repair_tests {
 #[cfg(test)]
 mod overlap_extension_tests {
     use super::*;
-    use collagene_core::{
-        Topology, chemistry::Strand, overlap_extension, overlap_extension_pcr, workspace,
-    };
+    use collagene_core::{chemistry::Strand, overlap_extension, overlap_extension_pcr, workspace};
+    use collagene_model::Topology;
     const SOURCE: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
     const PRODUCT: &str = "ATGCGAATTCAGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCAGAATTCGCAT";
     fn event(frame: &Workspace) -> EventBinding {
@@ -1277,11 +1278,11 @@ mod overlap_extension_tests {
 mod terminal_processing_tests {
     use super::*;
     use collagene_core::{
-        Topology,
         chemistry::{EndTreatment, FivePrime, Polarity, Strand, ThreePrime},
         tailing::TailingBase,
         workspace,
     };
+    use collagene_model::Topology;
     const DNA: &str = "AGTCCGATGCTAGACT";
     fn event(frame: &Workspace) -> EventBinding {
         let doc = &frame.documents[0];
@@ -1490,7 +1491,8 @@ mod terminal_processing_tests {
 #[cfg(test)]
 mod annealed_material_tests {
     use super::*;
-    use collagene_core::{Topology, chemistry::AnnealOptions, workspace};
+    use collagene_core::{chemistry::AnnealOptions, workspace};
+    use collagene_model::Topology;
     fn event(w: &Workspace, i: usize) -> EventBinding {
         let d = &w.documents[i];
         EventBinding {

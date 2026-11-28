@@ -1,10 +1,10 @@
 //! Bounded readonly views of a host-supplied fresh reconstruction snapshot.
 //! Prefix documents never grant final-product, installation or material authority.
 use collagene_core::{
-    Molecule,
     chemistry::DuplexSummary,
     verification::{self, DesignPlan, Operation, Source, Status, VerificationReport},
 };
+use collagene_model::Molecule;
 fn clip(value: &str, limit: usize) -> String {
     let mut chars = value.chars();
     let text = chars.by_ref().take(limit).collect::<String>();
@@ -136,7 +136,7 @@ pub(crate) fn operation_label(operation: &Operation) -> String {
         } => format!(
             "Reconstruct homology-assembly strands · {} fragments · {} · joining homology {:?} bp",
             fragments.len(),
-            if policy.topology == collagene_core::Topology::Circular {
+            if policy.topology == collagene_model::Topology::Circular {
                 "circular"
             } else {
                 "linear"
@@ -236,7 +236,7 @@ impl Snapshot {
                 );
             }
             let products = report.products.iter().collect::<Vec<_>>();
-            collagene_core::model::bounds::model_preflight(&products).map_err(|e| e.to_string())?;
+            collagene_model::bounds::model_preflight(&products).map_err(|e| e.to_string())?;
             for molecule in &report.products {
                 molecule.validate().map_err(|e| e.to_string())?;
                 if molecule.metadata.get("plan_revision") != Some(&plan_revision)
@@ -319,8 +319,9 @@ impl Snapshot {
 mod tests {
     use super::*;
     use collagene_core::{
-        Topology, analysis::Primer, catalog_digest, tailing::TailingBase, verification::PlanInput,
+        analysis::Primer, catalog_digest, tailing::TailingBase, verification::PlanInput,
     };
+    use collagene_model::Topology;
     fn fixture(blocked: bool) -> (DesignPlan, Molecule, VerificationReport) {
         let source =
             Molecule::dna("Original parent", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();

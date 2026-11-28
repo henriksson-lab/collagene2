@@ -13,12 +13,10 @@
 //! source strands; newly synthesized spans are standard-unmodified. A subsequent
 //! ordinary PCR must consume that private result and the supplied outer primers.
 //! A serialized Geometry must never be used to restore that private state.
-use crate::{
-    Error, Topology,
-    chemistry::{
-        self, Duplex, EndRepairMethod, EndRepairReport, Strand, StrandMapping, Terminus, ThreePrime,
-    },
+use crate::chemistry::{
+    self, Duplex, EndRepairMethod, EndRepairReport, Strand, StrandMapping, Terminus, ThreePrime,
 };
+use collagene_model::{Error, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 
@@ -519,10 +517,10 @@ pub fn geometry(left: &Duplex, right: &Duplex, options: &Options) -> Result<Geom
 mod tests {
     use super::*;
     use crate::{
-        Molecule, Sequence,
         analysis::{self, Primer},
         chemistry::{FivePrime, Nick},
     };
+    use collagene_model::{Molecule, Sequence};
     const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
     const LEFT: &str = "AGTCCGATGCTACGTATTTTCAGACC";
     const RIGHT: &str = "GCTACGTATTTTCAGACCTGTAGATCGTCA";

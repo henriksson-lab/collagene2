@@ -3,7 +3,10 @@
 use crate::{assembly_output_model::PrimerCapability, worker::CachedWorker};
 use collagene_core::{
     cloning_outputs::{self, Options},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::{self, EventBinding, InputEventBinding},
     verification::DesignPlan,
     workspace::Workspace,

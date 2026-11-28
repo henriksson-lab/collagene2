@@ -11,3 +11,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 blake3 = "1"
+[features]
+default = []
+json-schema = ["dep:schemars", "collagene-model/json-schema"]
+[dependencies.schemars]
+version = "1.2"
+optional = true

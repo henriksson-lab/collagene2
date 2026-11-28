@@ -1,9 +1,7 @@
 //! Explicit ideal single-nucleotide 3′ tailing of an established blunt duplex.
 //! This is endpoint geometry, not polymerase kinetics or a commercial kit model.
-use crate::{
-    Error, Sequence, Topology,
-    chemistry::{Duplex, Strand, StrandMapping, ThreePrime},
-};
+use crate::chemistry::{Duplex, Strand, StrandMapping, ThreePrime};
+use collagene_model::{Error, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 
 pub const TAILING_ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/tailing-1");
@@ -127,7 +125,7 @@ pub fn tail_blunt_duplex(source: &Duplex, base: TailingBase) -> Result<TailingRe
         .top
         .len()
         .checked_add(1)
-        .filter(|n| *n <= crate::model::MAX_SEQUENCE_LEN)
+        .filter(|n| *n <= collagene_model::MAX_SEQUENCE_LEN)
         .ok_or(Error::TooLarge)?;
     let precharged = json_size(source)?
         .checked_mul(2)

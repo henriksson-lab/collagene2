@@ -26,7 +26,7 @@ Oligos are limited to 200 ordered bases. Candidate annealing lengths are 8–80 
 
 ## Validation
 
-`cargo test -p collagene-core --test primers --locked` includes manually summed dinucleotide/terminal/symmetry parameters, sodium/concentration checks, GC ambiguity bounds, exhaustive independent short-interval complementarity oracles, strand-oriented mismatch/3′ fixtures, circular origin binding, visibly truncated enumerations, deterministic ranked selection and independent PCR reconstruction of selected tailed primers. No other cloning application's output is a correctness oracle.
+`cargo test -p collagene-core --test verification primers::primers:: --locked` includes manually summed dinucleotide/terminal/symmetry parameters, sodium/concentration checks, GC ambiguity bounds, exhaustive independent short-interval complementarity oracles, strand-oriented mismatch/3′ fixtures, circular origin binding, visibly truncated enumerations, deterministic ranked selection and independent PCR reconstruction of selected tailed primers. No other cloning application's output is a correctness oracle.
 
 ## Web workflow
 

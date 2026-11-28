@@ -1,6 +1,9 @@
 use crate::{structure_camera::Camera, structure_renderer::Renderer};
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     structure_view::{
         self as native,
         coordinates::{

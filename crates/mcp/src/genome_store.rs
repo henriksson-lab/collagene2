@@ -1,12 +1,12 @@
 //! Opaque session-owned reference files. No caller-controlled filesystem paths.
 use collagene_core::{
-    Error,
     genome::{
         self, BlockVerifier, BuildInfo, EncodedBlock, FastaBuilder, FinishedReference,
         IngestOptions, SemanticValidator,
     },
     genome_crispr::BlockRequest,
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,

@@ -1,8 +1,8 @@
 use collagene_core::{
-    Molecule, Topology, catalog_digest, codon_design, domestication as design,
-    domestication_preparation as physical, overlap_extension_primer_design,
-    verification::PlanInput,
+    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
+    overlap_extension_primer_design, verification::PlanInput,
 };
+use collagene_model::{Molecule, Topology};
 pub const ORIGINAL: &str = "AGTCCGATGCTACGTAGAATTCCAGACCTGTAGATCGTCA";
 pub const INTENDED: &str = "AGTCCGATGCTACGTAGACTTCCAGACCTGTAGATCGTCA";
 pub fn fixture(topology: Topology) -> (PlanInput, physical::Request) {

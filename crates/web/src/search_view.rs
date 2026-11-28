@@ -1,10 +1,13 @@
 //! Revision-bound unified search. Results are navigation evidence, never edits.
 use crate::worker;
 use collagene_core::{
-    Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     search::{SearchHit, SearchMode, SearchOptions, SearchReport},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use wasm_bindgen_futures::spawn_local;
 

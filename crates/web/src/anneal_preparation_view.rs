@@ -5,11 +5,14 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule,
     chemistry::{self, AnnealOptions, FivePrime},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     verification::AnnealPreview,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

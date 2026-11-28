@@ -4,7 +4,10 @@ use crate::{
     worker,
 };
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage,
     run_review::PreparedReview,
     verification::{PhysicalProcessingEvidence, VerificationReport},

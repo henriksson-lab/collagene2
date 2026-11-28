@@ -3,7 +3,7 @@ use crate::{
     app::prepare_download as download,
     assembly_product_export_model::{self as model, Format, Prepared},
 };
-use collagene_core::Molecule;
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
 

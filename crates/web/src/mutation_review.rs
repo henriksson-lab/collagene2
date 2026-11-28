@@ -85,7 +85,7 @@ pub fn stage(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Molecule, Topology};
+    use collagene_model::{Molecule, Topology};
     fn fixture() -> (Workspace, EventBinding, Report) {
         let source = Molecule::dna("original", "ACGTCAGT", Topology::Circular).unwrap();
         let frame = Workspace::from_documents("mutation", vec![source.clone()], 0).unwrap();
@@ -155,7 +155,7 @@ mod tests {
     fn forged_target_or_wrong_event_cannot_install_and_equal_dna_alias_keeps_distinct_ancestry() {
         let (frame, source, report) = fixture();
         let mut forged = report.clone();
-        forged.target.sequence = collagene_core::Sequence::dna("AAAAAAAA").unwrap();
+        forged.target.sequence = collagene_model::Sequence::dna("AAAAAAAA").unwrap();
         assert!(stage(&frame, &source, &forged).is_err());
         let mut wrong = source.clone();
         wrong.event_id = format!("event-{}", "0".repeat(64));

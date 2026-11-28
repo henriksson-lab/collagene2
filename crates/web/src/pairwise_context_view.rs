@@ -2,7 +2,10 @@
 use crate::{pairwise_result_view::Review, worker::CachedWorker};
 use collagene_core::{
     pairwise_context::{self, Context, Page},
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
 use leptos::prelude::*;
 use std::{

@@ -1,6 +1,5 @@
 //! Shared literal source fixture, not a production origin resolver.
 use collagene_core::{
-    Molecule, Topology,
     assembly_intent::{self, Contribution, MaterialBinding, Selector},
     chemistry::{AnnealOptions, Strand, Terminus},
     cloning_outputs,
@@ -9,6 +8,7 @@ use collagene_core::{
     verification::{DesignPlan, Operation, PlanInput, Source},
     workspace::Workspace,
 };
+use collagene_model::{Molecule, Topology};
 pub fn event(w: &Workspace, i: usize) -> EventBinding {
     let d = &w.documents[i];
     EventBinding {

@@ -146,10 +146,8 @@ mod tests {
         cloning_methods_model::{Mode, OverlapPreparation},
         source_identity::SourceInfo,
     };
-    use collagene_core::{
-        Molecule, Topology,
-        workspace::{RevisionEvent, WorkspaceAttachment},
-    };
+    use collagene_core::workspace::{RevisionEvent, WorkspaceAttachment};
+    use collagene_model::{Molecule, Topology};
     use std::sync::Arc;
     fn fixture() -> (Workspace, Draft) {
         let mut frame = Workspace::from_documents(

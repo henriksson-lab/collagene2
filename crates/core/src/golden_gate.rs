@@ -1,6 +1,5 @@
 //! Independent finite Golden Gate reaction geometry. No external software or kinetics.
 use crate::{
-    Error, Molecule, Topology,
     analysis::{Enzyme, Match},
     chemistry::{self, Duplex, End, FivePrime, Polarity, ThreePrime},
     methylation::Outcome,
@@ -8,6 +7,7 @@ use crate::{
         self, CheckedCleavageEvidence, CheckedDigestOptions, CleavageBudget, TrackedDuplex,
     },
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -155,7 +155,7 @@ fn complementary(a: &str, b: &str) -> bool {
     a.len() == b.len()
         && a.bytes()
             .zip(b.bytes().rev())
-            .all(|(x, y)| x == crate::model::complement(y, crate::Alphabet::Dna))
+            .all(|(x, y)| x == collagene_model::complement(y, collagene_model::Alphabet::Dna))
 }
 fn joins(right: &End, left: &End) -> bool {
     right.polarity == left.polarity
@@ -464,7 +464,7 @@ pub fn simulate(
     if inputs.is_empty() || inputs.len() > 32 {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(&inputs.iter().collect::<Vec<_>>())?;
+    collagene_model::bounds::model_preflight(&inputs.iter().collect::<Vec<_>>())?;
     let substrates = inputs
         .iter()
         .map(|m| TrackedDuplex::from_unknown_duplex(&Duplex::from_molecule(m)?))
@@ -504,7 +504,7 @@ pub fn simulate_tracked(
             "Golden Gate needs 1–32 inputs, fragment bounds 1–32, products 1–1000 and search states 1–1,000,000",
         ));
     }
-    crate::model::bounds::model_preflight(&inputs.iter().collect::<Vec<_>>())?;
+    collagene_model::bounds::model_preflight(&inputs.iter().collect::<Vec<_>>())?;
     crate::assembly_recipe::hash(&(inputs, substrates))?;
     let mut report=GoldenGateReport{model:MODEL.into(),options:options.clone(),profile_revision:modified_duplex::profile_revision(),source_cleavage:vec![],products_determined:true,comparisons:budget.used(),sources:vec![],fragments:vec![],carryover_sources:vec![],candidates:vec![],enumeration_complete:true,exhaustive_mixture_search:false,states_examined:0,truncation_reasons:vec![],stable_physical_product_count:0,warnings:vec![
         "Positional checked cleavage uses actual inherited/synthesized modification states under pinned current profiles. Sealed complementary ligation, supplier conditions, fidelity and kinetics remain separate assumptions; this is not experimental success.".into(),

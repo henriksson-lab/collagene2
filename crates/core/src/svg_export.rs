@@ -1,5 +1,6 @@
 //! Bounded portable reference-map export, independent of viewport rendering.
-use crate::{Error, Molecule, restriction_inspection::InspectionSite, svg};
+use crate::{restriction_inspection::InspectionSite, svg};
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -20,7 +21,7 @@ pub struct Rendered {
 }
 impl Request {
     pub fn validate(&self) -> Result<(), Error> {
-        crate::model::bounds::model_preflight(&[&self.source])?;
+        collagene_model::bounds::model_preflight(&[&self.source])?;
         self.source.validate()?;
         if self.source_revision != self.source.revision() {
             return Err(Error::Format("Map export source revision changed".into()));

@@ -1,16 +1,15 @@
 //! Independently implemented, explicit primer-encoded substitutions and inverse-PCR plans.
 //! Sequence compatibility is conditional evidence; no mismatch kinetics or kit outcome is inferred.
 use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology,
     analysis::{self, Primer},
     chemistry,
-    model::MAX_SEQUENCE_LEN,
     primers::{self, BindingHit, BindingOptions, BindingReport},
     run_material::MaterialOrigin,
     verification::{
         self, DesignPlan, Operation, OrientedSource, PlanInput, Source, VerificationReport,
     },
 };
+use collagene_model::{Alphabet, Error, Location, MAX_SEQUENCE_LEN, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io;
 
@@ -429,7 +428,7 @@ fn inverse_source_preflight(
     source: &Molecule,
     origin: Option<&MaterialOrigin>,
 ) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     crate::run_material::material_origins_preflight(origin.into_iter())?;
     source.validate()?;
     if source.sequence.alphabet() != Alphabet::Dna || source.topology != Topology::Circular {
@@ -546,7 +545,7 @@ pub fn inverse_pcr_revision(
     origin: Option<&MaterialOrigin>,
     options: &InversePcrOptions,
 ) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[source, target])?;
+    collagene_model::bounds::model_preflight(&[source, target])?;
     // Serialize borrowed inputs under the aggregate envelope bound before
     // source/origin hashing, cloning, normalization or molecular work.
     serde_json::to_writer(&mut SizeLimit(65536), &(source, target, origin, options))
@@ -701,7 +700,7 @@ fn validate_inverse_fields(
         return Err(bad());
     }
     crate::run_material::plan_preflight(plan)?;
-    crate::model::bounds::model_preflight(&[&plan.inputs[0].molecule])?;
+    collagene_model::bounds::model_preflight(&[&plan.inputs[0].molecule])?;
     let source = &plan.inputs[0].molecule;
     if source.revision() != source_revision
         || plan.name != format!("Inverse-PCR replacement in {}", source.name)

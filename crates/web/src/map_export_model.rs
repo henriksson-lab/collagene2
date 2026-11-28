@@ -1,7 +1,6 @@
 //! Exact source/view capture for portable maps. Exporting never changes biology.
-use collagene_core::{
-    Molecule, Topology, restriction_inspection::InspectionSite, run_lineage::EventBinding, svg,
-};
+use collagene_core::{restriction_inspection::InspectionSite, run_lineage::EventBinding, svg};
+use collagene_model::{Molecule, Topology};
 use serde::Serialize;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -74,8 +73,7 @@ fn identifier(s: &str) -> bool {
 }
 impl Capture {
     pub fn new(snapshot: Snapshot) -> Result<Self, String> {
-        collagene_core::model::bounds::model_preflight(&[&snapshot.source])
-            .map_err(|e| e.to_string())?;
+        collagene_model::bounds::model_preflight(&[&snapshot.source]).map_err(|e| e.to_string())?;
         snapshot.source.validate().map_err(|e| e.to_string())?;
         let n = snapshot.source.sequence.len();
         if !identifier(&snapshot.event.document_id)

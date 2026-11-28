@@ -1,12 +1,12 @@
 //! Exact-PCR reference previews from freshly replayed, explicitly selected native
 //! material. No target is fabricated and no serialized state grants chemistry.
 use crate::{
-    Error, Molecule,
     analysis::Primer,
     pcr_outputs,
     run_material::{MaterialOrigin, MaterialSelection},
     verification,
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "material-pcr-1";
 pub const ORIGIN_METADATA: &str = "pcr:material_origin";
@@ -36,7 +36,7 @@ fn preflight(
     forward: &Primer,
     reverse: &Primer,
 ) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     crate::run_material_capsule::material_origins_preflight([origin])?;
     source.validate()?;
     if source.revision() != origin.event().revision {
@@ -180,7 +180,7 @@ pub(crate) fn simulate_from_fresh(
         if receipt.origin_findings_truncated {
             preview.findings.push(format!("Origin findings are an excerpt: {} of {} entries; displayed text may also be truncated.",receipt.origin_findings.len(),receipt.origin_findings_total));
         }
-        crate::model::bounds::model_preflight(&[&preview.molecule])?;
+        collagene_model::bounds::model_preflight(&[&preview.molecule])?;
         bytes = bytes
             .checked_add(
                 serde_json::to_vec(preview)

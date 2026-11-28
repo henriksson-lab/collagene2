@@ -179,7 +179,8 @@ pub fn append_slot(draft: &Draft) -> Result<Draft, String> {
 mod tests {
     use super::*;
     use crate::{assembly_draft_model::CapturedSource, source_identity::SourceInfo};
-    use collagene_core::{Molecule, Topology, run_lineage::EventBinding, workspace::Workspace};
+    use collagene_core::{run_lineage::EventBinding, workspace::Workspace};
+    use collagene_model::{Molecule, Topology};
     use std::sync::Arc;
     fn draft(topology: Topology) -> Draft {
         let molecule = Molecule::dna("Original source", "AACCGGTT", topology).unwrap();

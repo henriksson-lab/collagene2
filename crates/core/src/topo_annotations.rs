@@ -1,13 +1,13 @@
 //! Annotation correspondence through fresh TOPO preparation and paired-contour
 //! top-call provenance. This is not chemical ancestry or biological validation.
 use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Topology,
     annotations::{self, MappingSegment},
     topo::{
         self, Origin, PreparationEvidence,
         physical::projection::{ContourTopology, DuplexView},
     },
 };
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -113,7 +113,7 @@ fn preflight(
     }
     let mut borrowed: Vec<_> = inputs.iter().map(|i| &i.molecule).collect();
     borrowed.push(d);
-    crate::model::bounds::model_preflight(&borrowed)?;
+    collagene_model::bounds::model_preflight(&borrowed)?;
     let mut roles = BTreeSet::new();
     let mut bases = 0usize;
     for input in inputs {
@@ -156,7 +156,7 @@ fn preflight(
         .as_str()
         .bytes()
         .zip(v.bottom.as_str().bytes().rev())
-        .all(|(a, b)| a == crate::model::complement(b, Alphabet::Dna))
+        .all(|(a, b)| a == collagene_model::complement(b, Alphabet::Dna))
     {
         return Err(bad(
             "view bottom is not the top-reference reverse complement",
@@ -289,7 +289,7 @@ pub fn project(
                             check.source_start + k
                         }];
                         let call = if check.reverse {
-                            crate::model::complement(call, Alphabet::Dna)
+                            collagene_model::complement(call, Alphabet::Dna)
                         } else {
                             call
                         };
@@ -349,7 +349,7 @@ pub fn project(
                             check.source_start + k
                         }];
                         let call = if check.reverse {
-                            crate::model::complement(call, Alphabet::Dna)
+                            collagene_model::complement(call, Alphabet::Dna)
                         } else {
                             call
                         };
@@ -415,7 +415,7 @@ pub fn project(
         }
         for k in 0..run.length {
             if destination.sequence.as_str().as_bytes()[run.reference_start + k]
-                != crate::model::complement(
+                != collagene_model::complement(
                     bottom.sequence.as_str().as_bytes()[be - 1 - k],
                     Alphabet::Dna,
                 )

@@ -99,7 +99,7 @@ impl CollageneServer {
             if let Some(t) = target {
                 reference::model_preflight(&[t]).map_err(bad)?;
                 t.validate().map_err(bad)?;
-                if t.sequence.alphabet() != collagene_core::Alphabet::Dna {
+                if t.sequence.alphabet() != collagene_model::Alphabet::Dna {
                     return Err(bad("independent target must be DNA"));
                 }
             }

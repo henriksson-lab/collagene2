@@ -1,11 +1,11 @@
 //! Independently implemented typed oligo-table and explicit-encoding FASTQ adapters.
 //! Source records are evidence, never authority for physical chemistry or verification.
 use crate::{
-    Error, Feature, Location, Molecule, Sequence, Topology,
     analysis::Primer,
     formats::{ExportReport, ImportReport, MAX_IMPORT_BYTES},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -733,7 +733,7 @@ fn parse_fastq(bytes: &[u8], encoding: QualityEncoding) -> Result<Vec<Read>, Err
                     "FASTQ sequence contains whitespace, RNA, gaps or unsupported bases",
                 ));
             }
-            if bases.len().saturating_add(line.len()) > crate::model::MAX_SEQUENCE_LEN {
+            if bases.len().saturating_add(line.len()) > collagene_model::MAX_SEQUENCE_LEN {
                 return Err(Error::TooLarge);
             }
             bases.push_str(line);
@@ -759,7 +759,7 @@ fn parse_fastq(bytes: &[u8], encoding: QualityEncoding) -> Result<Vec<Read>, Err
             return Err(Error::TooLarge);
         }
         total = total.checked_add(sequence.len()).ok_or(Error::TooLarge)?;
-        if total > crate::model::MAX_SEQUENCE_LEN {
+        if total > collagene_model::MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
         reads.push(Read {

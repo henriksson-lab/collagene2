@@ -1,11 +1,11 @@
 //! Durable revision/workspace archive. ZIP is an in-memory container, never a filesystem action.
 //! Content hashes bind evidence, not permission, trusted chemistry or scientific verification.
 use crate::{
-    Alphabet, Error, Feature, Molecule, Sequence, Topology,
     transfer::Candidate,
     verification::{DesignPlan, Operation, PlanInput},
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Feature, Molecule, Sequence, Topology};
 use serde::{
     Deserialize, Serialize,
     de::{DeserializeOwned, MapAccess, SeqAccess, Visitor},

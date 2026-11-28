@@ -165,7 +165,8 @@ mod tests {
     #[test]
     fn source_event_selector_and_physical_settings_are_exact_but_bodies_are_not_exposed() {
         use crate::{assembly_draft_model::CapturedSource, source_identity::SourceInfo};
-        use collagene_core::{Molecule, Topology, history::DocumentHistory};
+        use collagene_core::history::DocumentHistory;
+        use collagene_model::{Molecule, Topology};
         let mut draft = Draft::default();
         let doc = DocumentHistory::new(
             "original",

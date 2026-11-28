@@ -6,9 +6,10 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule, catalog_digest,
-    protocol::{AnalysisResult, Request},
+    catalog_digest,
+    protocol::{request::Request, schema::AnalysisResult},
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

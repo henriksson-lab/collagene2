@@ -6,11 +6,14 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule,
     antibody_numbering::domain_tracks as n,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

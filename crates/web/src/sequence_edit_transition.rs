@@ -140,7 +140,7 @@ impl Tracker {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Molecule, Topology};
+    use collagene_model::{Molecule, Topology};
     fn doc(id: &str) -> DocumentHistory {
         DocumentHistory::new(
             id,

@@ -1,6 +1,6 @@
 //! Fresh, explicit VCF/BCF allele-to-DNA checking. File calls are declarations,
 //! not proof of build identity, genotype or function.
-use crate::{Alphabet, Error, Molecule};
+use collagene_model::{Alphabet, Error, Molecule};
 pub use collagene_variants as exchange;
 use serde::{Deserialize, Serialize};
 const MAX_ALLELE: usize = 65_536;
@@ -47,7 +47,7 @@ fn validate(options: &Options, reference: &Molecule) -> Result<(), Error> {
     {
         return Err(bad("invalid source/reference/alternative binding"));
     }
-    crate::model::bounds::model_preflight(&[reference])?;
+    collagene_model::bounds::model_preflight(&[reference])?;
     if reference.sequence.alphabet() != Alphabet::Dna {
         return Err(bad("the explicitly mapped reference must be DNA"));
     }
@@ -219,7 +219,7 @@ pub fn replay_preview(
     reference: &Molecule,
     claimed: &Molecule,
 ) -> Result<ReplayedPreview, Error> {
-    crate::model::bounds::model_preflight(&[reference, claimed])?;
+    collagene_model::bounds::model_preflight(&[reference, claimed])?;
     claimed.validate()?;
     if claimed.sequence.alphabet() != Alphabet::Dna {
         return Err(bad("historical design must be DNA"));

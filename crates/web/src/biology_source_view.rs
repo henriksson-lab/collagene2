@@ -1,5 +1,6 @@
 //! Historical translation origin is a reference view, not current protein validation.
-use collagene_core::{Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::Molecule;
 use leptos::prelude::*;
 
 #[component]

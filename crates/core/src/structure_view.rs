@@ -1,5 +1,6 @@
 //! Documentary structure viewing; no source-to-sequence or material authority.
-use crate::{Error, workspace::WorkspaceAttachment};
+use crate::workspace::WorkspaceAttachment;
+use collagene_model::Error;
 pub use collagene_structures as coordinates;
 use coordinates::{
     Atom, Format, ImportNotes,

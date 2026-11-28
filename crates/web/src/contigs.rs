@@ -1,13 +1,16 @@
 //! Reference-free read assembly with exact source-event binding and fresh replay before use.
 use crate::{renderer::ResizeListener, worker::CachedWorker};
 use collagene_core::{
-    Molecule,
     contig::{
         self, ConsensusState, Contig, ContigOptions, ContigReport, ContigTrimOptions,
         OverlapScoring, ReadInput,
     },
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::Molecule;
 use leptos::{html, prelude::*};
 use std::{
     rc::Rc,

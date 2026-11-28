@@ -1,8 +1,8 @@
 use collagene_core::{
-    Alphabet, Molecule, Sequence, Topology, rna_chemistry as rna, rna_history,
-    run_lineage::EventBinding, workspace::Workspace,
+    rna_chemistry as rna, rna_history, run_lineage::EventBinding, workspace::Workspace,
 };
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 #[test]
 fn only_declarations_on_retained_exact_events_follow_selected_document_sharing() {
     let m = Molecule {

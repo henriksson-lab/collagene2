@@ -1,9 +1,7 @@
 //! Annotation-preserving reference transfers. These operations declare sequence
 //! intent, not molecular cleavage, ligation or prepared physical material.
-use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology,
-    annotations::{self, MappingSegment},
-};
+use crate::annotations::{self, MappingSegment};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 
@@ -106,7 +104,7 @@ fn retain(molecule: &mut Molecule, key: String, value: String) -> Result<(), Err
     )
 }
 fn preflight(source: &Molecule) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     crate::assembly_recipe::hash(source)?;
     Ok(())
@@ -121,7 +119,7 @@ impl Selection {
             depth: usize,
             parts: &mut Vec<Part>,
         ) -> Result<(), Error> {
-            if depth > crate::model::bounds::MAX_DEPTH || parts.len() >= MAX_PARTS {
+            if depth > collagene_model::bounds::MAX_DEPTH || parts.len() >= MAX_PARTS {
                 return Err(Error::TooLarge);
             }
             match location {
@@ -182,7 +180,7 @@ impl Selection {
             }
             total = total
                 .checked_add(part.end - part.start)
-                .filter(|n| *n <= crate::model::MAX_SEQUENCE_LEN)
+                .filter(|n| *n <= collagene_model::MAX_SEQUENCE_LEN)
                 .ok_or(Error::TooLarge)?;
         }
         let mut sorted = self
@@ -372,7 +370,7 @@ pub fn copy(request: &RequestCopy) -> Result<Fragment, Error> {
     Ok(fragment)
 }
 pub fn paste_revision(request: &RequestPaste) -> Result<String, Error> {
-    crate::model::bounds::model_preflight(&[&request.source, &request.destination])?;
+    collagene_model::bounds::model_preflight(&[&request.source, &request.destination])?;
     request.source.validate()?;
     request.destination.validate()?;
     request.selection.validate(
@@ -526,9 +524,9 @@ pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
 impl Fragment {
     /// Readonly structure guard; paste reconstructs from the actual original source.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
-        crate::model::bounds::model_preflight(&[&self.molecule])?;
-        crate::model::bounds::feature_preflight(&[&self.unmapped_features])?;
-        if self.source_length > crate::model::MAX_SEQUENCE_LEN {
+        collagene_model::bounds::model_preflight(&[&self.molecule])?;
+        collagene_model::bounds::feature_preflight(&[&self.unmapped_features])?;
+        if self.source_length > collagene_model::MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
         let length = self
@@ -562,8 +560,8 @@ impl Fragment {
 impl Report {
     /// Readonly structure guard, not authority for imported clipboard content.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
-        crate::model::bounds::model_preflight(&[&self.product])?;
-        crate::model::bounds::feature_preflight(&[&self.unmapped_features])?;
+        collagene_model::bounds::model_preflight(&[&self.product])?;
+        collagene_model::bounds::feature_preflight(&[&self.unmapped_features])?;
         self.product.validate()?;
         let source_bound = self
             .selection
@@ -572,7 +570,7 @@ impl Report {
             .map(|part| part.end)
             .max()
             .unwrap_or(0);
-        if source_bound > crate::model::MAX_SEQUENCE_LEN {
+        if source_bound > collagene_model::MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
         let inserted_length = self

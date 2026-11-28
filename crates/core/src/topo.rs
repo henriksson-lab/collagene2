@@ -1,6 +1,7 @@
 //! Source-backed preparation declarations and fresh physical TOPO reconstruction.
 //! No sequence-record metadata establishes activation, end chemistry or kit state.
-use crate::{Alphabet, Error, Molecule, Sequence, Topology, analysis, chemistry, tailing};
+use crate::{analysis, chemistry, tailing};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 pub use collagene_topo as physical;
 use physical::projection;
 use serde::{Deserialize, Serialize};

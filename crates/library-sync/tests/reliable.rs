@@ -180,8 +180,9 @@ fn intent_pins_operation_cas_native_bytes_and_sharing_but_not_retry_nonce() {
 #[cfg(not(target_arch = "wasm32"))]
 mod native_tests {
     use super::*;
-    use collagene_core::{Molecule, Topology, protocol};
+    use collagene_core::protocol;
     use collagene_lab_library::{LabAccess, Library};
+    use collagene_model::{Molecule, Topology};
     fn native_payload(name: &str, dna: &str) -> Payload {
         let mol = Molecule::dna(name, dna, Topology::Circular).unwrap();
         payload(&protocol::save_document(&mol).unwrap())

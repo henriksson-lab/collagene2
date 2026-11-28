@@ -1,10 +1,8 @@
 #[path = "../src/alignment_index.rs"]
 mod alignment_index;
 use alignment_index::PreparedAlignment;
-use collagene_core::{
-    Alphabet,
-    alignment_formats::{AlignmentFormat, import_alignment},
-};
+use collagene_core::alignment_formats::{AlignmentFormat, import_alignment};
+use collagene_model::Alphabet;
 #[test]
 fn every_gap_pattern_has_literal_residue_coordinates() {
     for mask in 0..256 {

@@ -1,12 +1,12 @@
 //! Named exact-event digest recipes with retained historical inspection evidence.
 //! Capture and reopening never scan DNA or restore a fresh scientific assessment.
 use crate::{
-    Error, Molecule,
     catalog_digest::{CatalogRestrictionInspection, CatalogSelection, InspectionOptions, catalog},
     restriction_history,
     run_lineage::EventBinding,
     workspace::{self, Workspace, WorkspaceAttachment},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
@@ -139,7 +139,7 @@ fn resolve<'a>(frame: &'a Workspace, source: &EventBinding) -> Result<&'a Molecu
         .revisions
         .get(&source.revision)
         .ok_or_else(|| bad("original source revision is unavailable"))?;
-    crate::model::bounds::model_preflight(&[molecule])?;
+    collagene_model::bounds::model_preflight(&[molecule])?;
     Ok(molecule)
 }
 fn historical_binding(frame: &Workspace, record: &Record) -> Result<(), Error> {

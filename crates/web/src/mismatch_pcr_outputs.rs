@@ -6,15 +6,18 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     mismatch_pcr_outputs,
     mutagenesis::PcrReport,
     oligo_formats::{self, Delimiter, TableExportMode},
     pcr_outputs::Options,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

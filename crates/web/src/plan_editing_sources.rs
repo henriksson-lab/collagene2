@@ -1,9 +1,8 @@
 //! Exact-event source choices for manual plan editing. Equal content supplies
 //! display metadata only; it never combines or chooses distinct event identities.
 use crate::source_identity::SourceInfo;
-use collagene_core::{
-    Alphabet, Molecule, Topology, history::DocumentHistory, run_lineage::EventBinding,
-};
+use collagene_core::{history::DocumentHistory, run_lineage::EventBinding};
+use collagene_model::{Alphabet, Molecule, Topology};
 use std::collections::{BTreeMap, BTreeSet};
 pub const MAX_DOCUMENTS: usize = 1000;
 pub const MAX_EVENTS: usize = 50_000;

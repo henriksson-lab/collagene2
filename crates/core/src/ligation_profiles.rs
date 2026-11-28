@@ -2,7 +2,8 @@
 //! Original third-party data is CC-BY-4.0; this independent importer/scorer is MIT.
 //! These are published pair-frequency entries, not independent raw directional
 //! sequencing observations. No optimizer implementation or Excel runtime is used.
-use crate::{Error, assembly_recipe, golden_gate::GoldenGateEnzyme, ligation_fidelity as numeric};
+use crate::{assembly_recipe, golden_gate::GoldenGateEnzyme, ligation_fidelity as numeric};
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

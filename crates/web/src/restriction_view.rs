@@ -1,13 +1,16 @@
 //! One source-bound recognition scan shared by sequence, map and enzyme picker.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Alphabet, Molecule,
     analysis::Enzyme,
     catalog_digest, enzyme_sets,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     restriction_inspection::{self, InspectionOptions, InspectionSite},
     restriction_selection::{self, Basis, Region, Relation},
 };
+use collagene_model::{Alphabet, Molecule};
 use leptos::prelude::*;
 use std::{
     collections::BTreeMap,

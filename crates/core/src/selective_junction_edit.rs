@@ -1,7 +1,7 @@
 //! Selective proposals preserve every unselected preparation literally. Intended
 //! DNA stays source/edit-declared, independent of the later complete recipe check.
 use crate::{
-    Error, Molecule, Sequence, assembly_intent,
+    assembly_intent,
     assembly_junction_edit::{self as junction, Edit, Intent},
     assembly_recipe::{self, FragmentSpec, Preparation},
     overlap_primer_design,
@@ -9,6 +9,7 @@ use crate::{
     primers::{self, DesignOptions, DesignReport},
     verification::PlanInput,
 };
+use collagene_model::{Error, Molecule, Sequence};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "selective-junction-edit-1";
@@ -605,7 +606,7 @@ impl Report {
                         junction::location_guard(&candidate.location)?;
                         if p.name.len() > 256
                             || p.annealing.len() + p.tail.len() > 200
-                            || p.annealing.alphabet() != crate::Alphabet::Dna
+                            || p.annealing.alphabet() != collagene_model::Alphabet::Dna
                             || !p
                                 .annealing
                                 .as_str()

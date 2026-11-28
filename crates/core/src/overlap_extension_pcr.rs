@@ -1,11 +1,11 @@
 //! Flat declaration of two PCR branches, reciprocal extension, then outer PCR.
 //! This module compiles supplied oligos; it never derives material from a target.
 use crate::{
-    Alphabet, Error,
     analysis::Primer,
     overlap_extension,
     verification::{Operation, OrientedSource, Source},
 };
+use collagene_model::{Alphabet, Error};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

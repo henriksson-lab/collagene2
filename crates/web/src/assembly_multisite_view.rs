@@ -8,7 +8,10 @@ use crate::{
 };
 use collagene_core::{
     combinatorial_design as design, multisite_recombination as science,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     recombination::reference,
     run_lineage,
     transfer::Candidate,

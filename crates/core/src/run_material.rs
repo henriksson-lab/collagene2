@@ -3,12 +3,13 @@
 //! Historical product metadata is compared for identity, never deserialized into
 //! material. The only physical state returned here comes from a new verifier pass.
 use crate::{
-    Error, Molecule, cloning_outputs,
+    cloning_outputs,
     modified_duplex::TrackedDuplex,
     run_lineage::{self, EventBinding},
     verification::{self, Status, VerificationReport},
     workspace::Workspace,
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 

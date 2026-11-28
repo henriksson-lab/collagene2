@@ -1,8 +1,7 @@
 //! Audited genetic-code translation and bounded ORF candidates, independent of external engines.
 //! Coordinates are zero-based half-open; proteins use '*' for stop and 'X' for unresolved ambiguity.
-use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology, analysis::base_mask,
-};
+use crate::analysis::base_mask;
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 
 const STANDARD: &[u8; 64] = b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
@@ -354,7 +353,7 @@ fn cds_sequence(sequence: &Sequence, location: &Location) -> Result<Sequence, Er
             Location::Complement(inner) => return length(inner),
             Location::Join(parts) => parts.iter().try_fold(0usize, |n, p| {
                 n.checked_add(length(p)?)
-                    .filter(|sum| *sum <= crate::model::MAX_SEQUENCE_LEN)
+                    .filter(|sum| *sum <= collagene_model::MAX_SEQUENCE_LEN)
                     .ok_or(Error::TooLarge)
             })?,
             _ => {
@@ -363,7 +362,7 @@ fn cds_sequence(sequence: &Sequence, location: &Location) -> Result<Sequence, Er
                 ));
             }
         };
-        if n > crate::model::MAX_SEQUENCE_LEN {
+        if n > collagene_model::MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
         Ok(n)
@@ -376,7 +375,7 @@ fn cds_sequence(sequence: &Sequence, location: &Location) -> Result<Sequence, Er
                     text.extend(
                         part.bytes()
                             .rev()
-                            .map(|b| crate::model::complement(b, sequence.alphabet()) as char),
+                            .map(|b| collagene_model::complement(b, sequence.alphabet()) as char),
                     );
                 } else {
                     text.push_str(part);
@@ -647,7 +646,7 @@ pub(crate) fn find_orfs_validated(
     let code = code(options.genetic_code)?;
     if options.max_orfs == 0
         || options.max_orfs > MAX_ORFS
-        || options.min_amino_acids > crate::model::MAX_SEQUENCE_LEN / 3
+        || options.min_amino_acids > collagene_model::MAX_SEQUENCE_LEN / 3
     {
         return Err(Error::Format(
             "ORF limits require 1–10,000 results and a feasible minimum length".into(),

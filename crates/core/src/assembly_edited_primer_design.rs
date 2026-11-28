@@ -1,7 +1,6 @@
 //! Whole overlap preparation proposals from original source contributions,
 //! junction declarations and literal internal edits. No arbitrary target input.
 use crate::{
-    Error, Molecule, Sequence, Topology,
     assembly_edit_intent::{self, Edit},
     assembly_junction_edit,
     assembly_recipe::{self, FragmentSpec, Preparation, RunPreparation},
@@ -14,6 +13,7 @@ use crate::{
     verification::{self, Operation, PlanInput},
     workspace::Workspace,
 };
+use collagene_model::{Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -210,7 +210,7 @@ fn frame_views<'a>(
                 .ok_or_else(|| bad("native source frame evidence missing"))?;
             if !hex(&frame.state_revision)
                 || frame.sequence.is_empty()
-                || frame.sequence.alphabet() != crate::Alphabet::Dna
+                || frame.sequence.alphabet() != collagene_model::Alphabet::Dna
                 || frame.topology != source.topology
                 || template_strand == crate::chemistry::Strand::Top
                     && frame.sequence != source.sequence
@@ -299,7 +299,7 @@ fn base_at(source: &crate::analysis::TemplateView<'_>, f: &Fragment, offset: usi
     };
     let raw = source.sequence.as_str().as_bytes()[(f.start + local) % source.sequence.len()];
     if f.reverse {
-        crate::model::complement(raw, crate::Alphabet::Dna)
+        collagene_model::complement(raw, collagene_model::Alphabet::Dna)
     } else {
         raw
     }
@@ -693,7 +693,7 @@ pub fn source_preflight(
     if inputs.len() > MAX_ROWS {
         return Err(Error::TooLarge);
     }
-    crate::model::bounds::model_preflight(&inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>())?;
+    collagene_model::bounds::model_preflight(&inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>())?;
     size(&(inputs, r))?;
     assembly_edit_intent::source_preflight(inputs, &r.intent, workspace)?;
     if r.intent.base.base.material_bindings.is_empty() {
@@ -1064,7 +1064,11 @@ fn call_options(
         .min(r.options.max_oligo_length - tail.forward_tail.len().max(tail.reverse_tail.len()));
     Ok(vec![left, right, outer])
 }
-fn location_guard(location: &crate::Location, n: usize, maximum: usize) -> Result<(), Error> {
+fn location_guard(
+    location: &collagene_model::Location,
+    n: usize,
+    maximum: usize,
+) -> Result<(), Error> {
     let mut pending = vec![(location, 0usize)];
     let mut count = 0usize;
     let mut bases = 0usize;
@@ -1074,7 +1078,7 @@ fn location_guard(location: &crate::Location, n: usize, maximum: usize) -> Resul
             return Err(Error::TooLarge);
         }
         match l {
-            crate::Location::Range {
+            collagene_model::Location::Range {
                 start,
                 end,
                 before: false,
@@ -1085,8 +1089,8 @@ fn location_guard(location: &crate::Location, n: usize, maximum: usize) -> Resul
                     .filter(|n| *n <= maximum)
                     .ok_or(Error::TooLarge)?;
             }
-            crate::Location::Complement(inner) => pending.push((inner, depth + 1)),
-            crate::Location::Join(parts) if parts.len() <= 2 => {
+            collagene_model::Location::Complement(inner) => pending.push((inner, depth + 1)),
+            collagene_model::Location::Join(parts) if parts.len() <= 2 => {
                 for p in parts {
                     pending.push((p, depth + 1));
                 }

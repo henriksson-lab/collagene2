@@ -1,5 +1,6 @@
 //! Explicit TA/directional preparation form over the shared native builder.
-use collagene_core::{Sequence, analysis::Primer, tailing::TailingBase, topo};
+use collagene_core::{analysis::Primer, tailing::TailingBase, topo};
+use collagene_model::Sequence;
 use topo::physical::{self as physical, projection};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -289,7 +290,7 @@ pub struct CaptureRequest {
 }
 pub struct Captured {
     pub inputs: Vec<topo::Input>,
-    pub target: collagene_core::Molecule,
+    pub target: collagene_model::Molecule,
     pub template: Option<collagene_core::topo_run_preparation::BoundTemplate>,
     pub preparation: collagene_core::topo_preparation::CompiledPreparation,
 }
@@ -346,12 +347,13 @@ pub fn capture(
     chosen: &CaptureRequest,
 ) -> Result<Captured, String> {
     use collagene_core::{
-        Alphabet, run_material,
+        run_material,
         topo_run_preparation::{self, BoundTemplate},
         verification::{Source, TopoSource},
     };
+    use collagene_model::Alphabet;
     workspace.validate().map_err(|e| e.to_string())?;
-    let resolve=|binding:&collagene_core::run_lineage::EventBinding|->Result<&collagene_core::Molecule,String>{
+    let resolve=|binding:&collagene_core::run_lineage::EventBinding|->Result<&collagene_model::Molecule,String>{
         let doc=workspace.documents.iter().find(|doc|doc.id==binding.document_id).ok_or("A selected source document is unavailable")?;
         if doc.head!=binding.revision||doc.head_event.as_ref()!=Some(&binding.event_id){return Err("A selected source event changed; inspect again".into());}
         workspace.head(&doc.id).map_err(|e|e.to_string())
@@ -384,7 +386,7 @@ pub fn capture(
     }
     let mut all = molecules.clone();
     all.push(target);
-    collagene_core::model::bounds::model_preflight(&all).map_err(|e| e.to_string())?;
+    collagene_model::bounds::model_preflight(&all).map_err(|e| e.to_string())?;
     if let Some(selection) = &chosen.template_origin {
         if chosen.draft.source_mode == SourceMode::ResumeGraph {
             return Err("Continuing a saved graph does not consume a new PCR template".into());
@@ -669,14 +671,14 @@ pub(crate) fn task_revision(
     inputs: &[topo::Input],
     template: Option<&collagene_core::topo_run_preparation::BoundTemplate>,
     task: &collagene_core::topo_run_preparation::Task,
-) -> Result<String, collagene_core::Error> {
+) -> Result<String, collagene_model::Error> {
     collagene_core::topo_run_preparation::documentary_revision(inputs, template, task)
 }
 pub(crate) fn batch_revision(
     inputs: &[topo::Input],
     template: Option<&collagene_core::topo_run_preparation::BoundTemplate>,
     request: &topo::Request,
-) -> Result<String, collagene_core::Error> {
+) -> Result<String, collagene_model::Error> {
     collagene_core::topo_run_preparation::preparation_revision(inputs, template, request)
 }
 #[derive(Clone)]
@@ -695,13 +697,16 @@ pub(crate) async fn execute(
     task: collagene_core::topo_run_preparation::Task,
 ) -> Result<
     (
-        collagene_core::protocol::AnalysisResult,
+        collagene_core::protocol::schema::AnalysisResult,
         Option<OriginReview>,
     ),
     String,
 > {
     use collagene_core::{
-        protocol::{AnalysisJob, AnalysisResult, Request},
+        protocol::{
+            request::Request,
+            schema::{AnalysisJob, AnalysisResult},
+        },
         topo_run_preparation::{self, Reply},
     };
     let revision = topo_run_preparation::revision(&inputs, template.as_ref(), &task)
@@ -757,12 +762,13 @@ pub(crate) async fn execute(
 mod generic_material_tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology, material_derivation as derivation,
+        material_derivation as derivation,
         run_lineage::EventBinding,
         run_material::{self, MaterialOrigin, MaterialSelection},
         verification::{self, Source, TopoSource},
         workspace::Workspace,
     };
+    use collagene_model::{Molecule, Topology};
     #[test]
     fn native_derived_insert_template_keeps_exact_origin_and_original_vector_declarations() {
         let parent =

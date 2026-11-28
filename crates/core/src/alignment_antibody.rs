@@ -1,10 +1,10 @@
 //! Conditional antibody analysis of one exact imported protein alignment row.
 //! Alignment gaps have no residue index and never receive numbering labels.
 use crate::{
-    Alphabet, Error, Molecule,
     alignment_formats::AlignmentDocument,
     antibody_numbering::{self as n, domain_candidates as d, domain_tracks as t},
 };
+use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
 pub const ENGINE: &str = "alignment-antibody-3";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

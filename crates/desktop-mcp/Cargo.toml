@@ -6,6 +6,7 @@ license = "MIT"
 rust-version = "1.88"
 description = "Explicit saved-repository selection for an embedded memory-only MCP session"
 [dependencies]
+collagene-model = { path = "../model" }
 collagene-mcp = { path = "../mcp" }
 collagene-desktop-host = { path = "../desktop-host" }
 collagene-core = { path = "../core" }

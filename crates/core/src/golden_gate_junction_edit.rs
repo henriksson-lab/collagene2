@@ -1,7 +1,6 @@
 //! Source/edit-declared Golden Gate intent with selectively regenerated actual
 //! PCR→catalog-digest preparations. Retained rows are never silently repaired.
 use crate::{
-    Error, Molecule, Sequence,
     analysis::Primer,
     assembly_intent,
     assembly_junction_edit::{self as junction, Edit, Intent},
@@ -12,6 +11,7 @@ use crate::{
     golden_gate_primer_design as original, ligation_recipe,
     verification::PlanInput,
 };
+use collagene_model::{Error, Molecule, Sequence};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "golden-gate-junction-edit-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -632,7 +632,7 @@ impl Report {
                         if p.name != format!("{}-{name}", f.role)
                             || p.annealing.len() != length
                             || !dna(p.annealing.as_str())
-                            || p.annealing.alphabet() != crate::Alphabet::Dna
+                            || p.annealing.alphabet() != collagene_model::Alphabet::Dna
                             || p.annealing.len() + p.tail.len() > 200
                             || p.tail != t.sequence()
                         {

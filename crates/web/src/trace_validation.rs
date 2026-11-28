@@ -1,14 +1,18 @@
 //! Explicit revision-bound read/reference evidence; no imported or AI-asserted verdict.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Alphabet, Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request, Response},
+    protocol::{
+        request::Request,
+        response::Response,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
     trace_validation::{
         MissingQualityPolicy, SiteState, TraceValidationOptions, TraceValidationReport, TrimMode,
         TrimOptions,
     },
 };
+use collagene_model::{Alphabet, Molecule};
 use leptos::prelude::*;
 use std::{
     rc::Rc,
@@ -209,8 +213,7 @@ pub fn TraceValidationPanel(
                 let mut borrowed = Vec::with_capacity(reads.len() + 1);
                 borrowed.push(&source);
                 borrowed.extend(reads.iter());
-                collagene_core::model::bounds::model_preflight(&borrowed)
-                    .map_err(|e| e.to_string())?;
+                collagene_model::bounds::model_preflight(&borrowed).map_err(|e| e.to_string())?;
                 let revision = source.revision();
                 let revisions = reads.iter().map(Molecule::revision).collect::<Vec<_>>();
                 if reference.revision != revision

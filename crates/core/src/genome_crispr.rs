@@ -1,12 +1,12 @@
 //! Streaming CRISPR geometry over immutable large-reference blocks.
 //! No serialized progress or imported report grants coverage authority.
 use crate::{
-    Error, Molecule, Topology,
     crispr::{self, GuideOptions, GuideQuery, NucleaseProfile, PamSide},
     genome::{
         self, BlockVerifier, EncodedBlock, GenomeManifest, GenomicInterval, SemanticValidator,
     },
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "genome-crispr-1";
 pub const MAX_INTERVAL_BASES: u64 = 200_000;

@@ -1,7 +1,10 @@
 //! Documentary plate assignment; no reaction approval or physical transfer.
 use crate::{protocol_layout_model as model, worker::CachedWorker};
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     protocol_layout::{self as native, Assignment, Plate, Well},
     workspace::Workspace,
 };

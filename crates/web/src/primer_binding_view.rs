@@ -2,9 +2,10 @@
 //! Captured geometry is comparison context, not restored binding authority.
 use crate::primer_pair_model::{self, OligoDraft, PairDraft};
 use collagene_core::{
-    Feature, Molecule, analysis::Primer, oligo_formats::OligoTable, protocol::PrimerEvidence,
+    analysis::Primer, oligo_formats::OligoTable, protocol::schema::PrimerEvidence,
     run_lineage::EventBinding,
 };
+use collagene_model::{Feature, Molecule};
 use leptos::prelude::*;
 use std::sync::Arc;
 

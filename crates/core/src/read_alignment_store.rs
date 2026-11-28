@@ -1,6 +1,6 @@
 //! Bounded, immutable SAM/BAM collections. File completion is not biological truth.
 //! Kept separate from plasmid documents and alignment/assembly inference.
-use crate::Error;
+use collagene_model::Error;
 use collagene_read_alignments::{
     self as exchange, AuxValue, BamReader, Completion, Header, Record, SamReader,
 };
@@ -301,7 +301,7 @@ impl Collection {
     pub fn check_reference(
         &self,
         index: usize,
-        reference: &crate::Molecule,
+        reference: &collagene_model::Molecule,
         options: &crate::read_alignment_reference::Options,
     ) -> Result<BoundReferenceCheck, Error> {
         let record = self

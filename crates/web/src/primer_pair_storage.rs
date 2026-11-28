@@ -1,6 +1,7 @@
 //! Unfinished editable text, never a saved binding or a positive PCR result.
 use crate::primer_pair_model::{PairDraft, anchor_reference, selected_guard};
-use collagene_core::{Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
 
 pub const ATTACHMENT_KIND: &str = "primer-pair-draft-v2";
@@ -78,7 +79,8 @@ pub fn decode(
 mod tests {
     use super::*;
     use crate::primer_pair_model::SelectionSeed;
-    use collagene_core::{Topology, history::DocumentHistory};
+    use collagene_core::history::DocumentHistory;
+    use collagene_model::Topology;
 
     fn binding(doc: &DocumentHistory) -> EventBinding {
         EventBinding {

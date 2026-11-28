@@ -4,11 +4,14 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
     sequence_similarity as native,
 };
+use collagene_model::Alphabet;
 use leptos::prelude::*;
 use std::{
     collections::BTreeSet,

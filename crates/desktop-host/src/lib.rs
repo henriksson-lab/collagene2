@@ -488,10 +488,10 @@ mod tests {
                 .entries
                 .is_empty()
         );
-        let molecule = collagene_core::Molecule::dna(
+        let molecule = collagene_model::Molecule::dna(
             "Working data",
             "ACGTACGT",
-            collagene_core::Topology::Linear,
+            collagene_model::Topology::Linear,
         )
         .unwrap();
         let frame = collagene_core::workspace::Workspace::from_documents(
@@ -548,8 +548,12 @@ mod tests {
         let frame = collagene_core::workspace::Workspace::from_documents(
             "Committed private workspace",
             vec![
-                collagene_core::Molecule::dna("DNA", "ACGTACGT", collagene_core::Topology::Linear)
-                    .unwrap(),
+                collagene_model::Molecule::dna(
+                    "DNA",
+                    "ACGTACGT",
+                    collagene_model::Topology::Linear,
+                )
+                .unwrap(),
             ],
             0,
         )

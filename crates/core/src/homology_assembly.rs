@@ -2,10 +2,10 @@
 //! See docs/HOMOLOGY_MATERIAL_SOURCES.md. This is neither a kinetic simulation
 //! nor a reconstruction of a proprietary mix. There is no intended-target input.
 use crate::{
-    Error, Sequence, Topology,
     chemistry::{Duplex, FivePrime, Nick, Strand, StrandMapping, Terminus, ThreePrime},
     overlap_extension::SourcedMapping,
 };
+use collagene_model::{Error, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 

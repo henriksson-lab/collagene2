@@ -1,6 +1,6 @@
 //! Independently written, bounded SnapGene reference exchange profile. No opaque
 //! source packet, physical material, experimental status or history is re-emitted.
-use crate::{Alphabet, Error, Feature, Location, Molecule, Topology};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const PROFILE: &str = "collagene-snapgene-reference-15-v1";
@@ -165,7 +165,7 @@ fn preflight(m: &Molecule) -> Result<(), Error> {
             return Err(Error::TooLarge);
         }
     }
-    crate::model::bounds::ModelBudget::default().features(&m.features)?;
+    collagene_model::bounds::ModelBudget::default().features(&m.features)?;
     m.validate()?;
     if !xml_ok(&m.name) {
         return Err(unsupported(

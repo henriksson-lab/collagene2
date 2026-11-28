@@ -1,10 +1,10 @@
 //! Bounded one-copy ligation paths from actual native tracked substrates.
 //! Intended geometry is never selected by a target or ranked by probability.
 use crate::{
-    Error, Sequence, Topology,
     chemistry::Duplex,
     modified_duplex::{self, ModificationSummary, TrackedDuplex},
 };
+use collagene_model::{Error, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

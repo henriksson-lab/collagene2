@@ -1,7 +1,7 @@
 //! Target-free digest inspection of freshly reconstructed overlap-extension PCR.
 //! Imported summaries never restore physical state; saved origins are replayed.
 use crate::{
-    Error, Molecule, assembly_recipe,
+    assembly_recipe,
     catalog_digest::{self, CatalogSelection},
     chemistry,
     modified_duplex::TrackedDuplex,
@@ -13,6 +13,7 @@ use crate::{
     run_material::{MaterialOrigin, MaterialSelection},
     verification,
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "overlap-extension-digest-inspection-2";
@@ -65,7 +66,7 @@ pub fn source_preflight(
     workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<(), Error> {
     shape(request)?;
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     crate::run_material::material_origins_preflight(origin)?;
     size(&(source, origin, request))?;
     if let Some(origin) = origin {

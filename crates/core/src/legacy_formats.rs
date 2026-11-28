@@ -1,10 +1,8 @@
 //! Independently implemented Collagene XML and version-0 XDNA migration.
 //! Stored source geometry/chemistry is evidence, never a trusted reconstructed duplex.
-use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology,
-    formats::{ImportReport, MAX_IMPORT_BYTES},
-};
+use crate::formats::{ImportReport, MAX_IMPORT_BYTES};
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use roxmltree::{Document, Node, ParsingOptions};
 pub const ORIGINAL_BASE64_KEY: &str = "legacy:original_base64";
 pub const KIND_KEY: &str = "legacy:format";
@@ -219,7 +217,7 @@ fn xml_one(
     let lower = attr(sequence, "sl")?;
     if upper.len() != lower.len()
         || upper.is_empty()
-        || upper.len() > crate::model::MAX_SEQUENCE_LEN
+        || upper.len() > collagene_model::MAX_SEQUENCE_LEN
     {
         return Err(bad(
             "legacy aligned strands differ in length or exceed limits",
@@ -276,7 +274,7 @@ fn xml_one(
     }
     let actual = upper
         .bytes()
-        .map(|b| crate::model::complement(b.to_ascii_uppercase(), Alphabet::Dna))
+        .map(|b| collagene_model::complement(b.to_ascii_uppercase(), Alphabet::Dna))
         .collect::<Vec<_>>();
     if upper.contains(' ') || lower.contains(' ') || actual != lower.to_ascii_uppercase().as_bytes()
     {
@@ -431,7 +429,7 @@ impl<'a> Cursor<'a> {
     }
     fn overhang(&mut self) -> Result<(i64, String), Error> {
         let value = integer(&self.string()?)?;
-        if value.unsigned_abs() > crate::model::MAX_SEQUENCE_LEN as u64 {
+        if value.unsigned_abs() > collagene_model::MAX_SEQUENCE_LEN as u64 {
             return Err(Error::TooLarge);
         }
         let sequence = ascii(self.take(value.unsigned_abs() as usize)?)?;
@@ -457,7 +455,7 @@ pub fn import_xdna(bytes: &[u8], name: &str) -> Result<ImportReport, Error> {
     let length = u32::from_be_bytes(bytes[28..32].try_into().unwrap()) as usize;
     let origin = u32::from_be_bytes(bytes[32..36].try_into().unwrap()) as usize;
     let comment_length = u32::from_be_bytes(bytes[96..100].try_into().unwrap()) as usize;
-    if length == 0 || length > crate::model::MAX_SEQUENCE_LEN || origin > length {
+    if length == 0 || length > collagene_model::MAX_SEQUENCE_LEN || origin > length {
         return Err(bad("XDNA length/origin is invalid"));
     }
     let mut cursor = Cursor {

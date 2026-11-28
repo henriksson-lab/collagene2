@@ -53,7 +53,6 @@ impl PrimerCapability {
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         analysis::Primer,
         cloning_outputs,
         plan_oligos::Options,
@@ -62,6 +61,7 @@ mod tests {
         verification::{self, DesignPlan, Operation, PlanInput, Source, TopoSource},
         workspace::Workspace,
     };
+    use collagene_model::{Molecule, Topology};
     fn fixture() -> (DesignPlan, Molecule) {
         let source = Molecule::dna("Original16bp", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
         let target =

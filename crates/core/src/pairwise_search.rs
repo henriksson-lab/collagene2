@@ -1,6 +1,7 @@
 //! Bounded literal/IUPAC searches of retained aligned rows, skipping gap columns.
 //! This neither realigns inputs nor searches their unreported flanks.
-use crate::{Error, analysis::base_mask, pairwise_review::Report};
+use crate::{analysis::base_mask, pairwise_review::Report};
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 
@@ -88,14 +89,14 @@ impl Matches {
                 || hit.columns.1 > crate::alignment::MAX_ALIGNMENT_COLUMNS
                 || hit.columns.1 - hit.columns.0 < self.pattern.len()
                 || hit.oriented.0 >= hit.oriented.1
-                || hit.oriented.1 > crate::model::MAX_SEQUENCE_LEN
+                || hit.oriented.1 > collagene_model::MAX_SEQUENCE_LEN
                 || hit.oriented.1 - hit.oriented.0 != self.pattern.len()
                 || hit.source_spans.is_empty()
                 || hit.source_spans.len() > if hit.row == Row::Reference { 2 } else { 1 }
                 || hit
                     .source_spans
                     .iter()
-                    .any(|(a, b)| a >= b || *b > crate::model::MAX_SEQUENCE_LEN)
+                    .any(|(a, b)| a >= b || *b > collagene_model::MAX_SEQUENCE_LEN)
                 || hit.source_spans.iter().map(|(a, b)| b - a).sum::<usize>() != self.pattern.len()
                 || matches!(
                     (self.options.rows, hit.row),
@@ -323,10 +324,10 @@ pub fn search(report: &Report, pattern: &str, options: Options) -> Result<Matche
 mod tests {
     use super::*;
     use crate::{
-        Molecule, Topology,
         alignment::{AlignmentOptions, ComparisonOptions},
         pairwise_review::{self, Options as ReviewOptions},
     };
+    use collagene_model::{Molecule, Topology};
     fn make_report(reference: &str, query: &str) -> Report {
         pairwise_review::compare(
             &Molecule::dna("reference", reference, Topology::Linear).unwrap(),

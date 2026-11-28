@@ -2,11 +2,11 @@
 //! Arithmetic documents confer no chemistry authority. Combined protocol exports
 //! freshly verify their retained graph; no measured stock or execution is inferred.
 use crate::{
-    Error,
     run_lineage::{self, EventBinding, InputEventBinding, RunRecord},
     verification::{self, DesignPlan, Source},
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 pub use collagene_protocol_units as units;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -315,7 +315,7 @@ impl<'a> Scope<'a> {
             }
             models.push(m);
         }
-        crate::model::bounds::model_preflight(&models)?;
+        collagene_model::bounds::model_preflight(&models)?;
         // Candidate/run structural graph validation was performed once by the native
         // workspace validator; quantity references must name actual selected inputs.
         for reaction in &r.reactions {

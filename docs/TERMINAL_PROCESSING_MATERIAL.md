@@ -70,7 +70,7 @@ never upgrades upstream incomplete evidence or claims that alternative products
 cannot occur. Source features keep their unchanged top-reference coordinates;
 appended terminal bases are outside those original features.
 
-Native fixtures are in `crates/core/tests/material_terminal_processing.rs`:
+Native fixtures are in `crates/core/tests/materials/derivation/material_terminal_processing.rs`:
 all four literal tails, 5′ treatment/dephosphorylation, archive replay, TA ligation
 with retained alternatives and protocol instructions, original unknown-chemistry
 and ownership refusals, native cut-created hydroxyls with retained Dam calls,

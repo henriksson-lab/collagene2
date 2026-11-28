@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     assembly_recipe::Preparation,
     chemistry::Terminus,
     combinatorial_batch::{self as batch, RowRequest},
@@ -10,6 +9,7 @@ use collagene_core::{
     run_lineage::EventBinding,
     workspace::Workspace,
 };
+use collagene_model::{Molecule, Topology};
 pub fn fixture() -> (Workspace, layout::Request) {
     let w = Workspace::from_documents(
         "Explicit plate sources",

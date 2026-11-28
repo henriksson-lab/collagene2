@@ -1,13 +1,11 @@
 //! Native-local reopen retains exact documentary bytes without public authority.
-use collagene_core::{
-    Molecule, Topology,
-    workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
-};
+use collagene_core::workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment};
 use collagene_design_exchange as sbol;
 use collagene_library_sharing::{
     self as sharing, Selection,
     import::{self as importer, ImportError, ImportOptions, SelectedPolicy},
 };
+use collagene_model::{Molecule, Topology};
 use serde_json::json;
 fn fixture() -> (Workspace, Selection, String) {
     let raw=serde_json::to_vec(&json!({"@context":{"sbol":sbol::SBOL},"@graph":[
@@ -169,12 +167,12 @@ fn private_import_retains_public_collision_head_and_stale_checkout_guards() {
 #[test]
 fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
     use collagene_core::{
-        Molecule,
         analysis::Primer,
         run_lineage::{self, EventBinding, InputEventBinding},
         run_material,
         verification::{DesignPlan, Operation, PlanInput, Source, Status},
     };
+    use collagene_model::Molecule;
     let (mut w, _, original) = fixture();
     let stock = w.revisions[&w.documents[0].head].clone();
     let target = Molecule::dna(

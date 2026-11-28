@@ -1,6 +1,6 @@
 //! Revision-bound, bounded reference browser tracks. No viewport operation clones the source.
 use crate::translation::{self, InitiationPolicy, TranslationOptions};
-use crate::{Alphabet, Error, Location, Molecule, Sequence, Topology};
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -381,7 +381,7 @@ fn validate_options(m: &Molecule, w: TrackWindow, o: &TrackOptions) -> Result<()
         || o.frames.iter().collect::<BTreeSet<_>>().len() != o.frames.len()
         || o.enzyme_names.len() > 12
         || o.enzyme_names.iter().collect::<BTreeSet<_>>().len() != o.enzyme_names.len()
-        || o.min_orf_amino_acids > crate::model::MAX_SEQUENCE_LEN / 3
+        || o.min_orf_amino_acids > collagene_model::MAX_SEQUENCE_LEN / 3
     {
         return Err(Error::Format(
             "invalid browser-track configuration or budget".into(),
@@ -782,7 +782,7 @@ impl PreparedTracks {
                         .collect();
                     for &p in &positions {
                         codons.push(if reverse {
-                            crate::model::complement(bytes[p], self.molecule.sequence.alphabet())
+                            collagene_model::complement(bytes[p], self.molecule.sequence.alphabet())
                         } else {
                             bytes[p]
                         } as char);
@@ -1066,7 +1066,7 @@ impl TrackReport {
             || self.source_revision.len() != 64
             || !self.source_revision.bytes().all(|b| b.is_ascii_hexdigit())
             || n == 0
-            || n > crate::model::MAX_SEQUENCE_LEN
+            || n > collagene_model::MAX_SEQUENCE_LEN
             || self.window.start >= n
             || self.window.end <= self.window.start
             || self.window.end - self.window.start > n
@@ -1100,7 +1100,7 @@ impl TrackReport {
             || !translation::genetic_codes()
                 .iter()
                 .any(|c| c.id == self.options.genetic_code)
-            || self.options.min_orf_amino_acids > crate::model::MAX_SEQUENCE_LEN / 3
+            || self.options.min_orf_amino_acids > collagene_model::MAX_SEQUENCE_LEN / 3
         {
             return Err(bad());
         }

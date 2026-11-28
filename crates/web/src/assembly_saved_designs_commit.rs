@@ -116,12 +116,12 @@ mod tests {
         source_identity::SourceInfo,
     };
     use collagene_core::{
-        Molecule, Topology,
         run_lineage::EventBinding,
         transfer::Candidate,
         verification::{DesignPlan, Operation, PlanInput, Source},
         workspace::RevisionEvent,
     };
+    use collagene_model::{Molecule, Topology};
     use std::sync::Arc;
     fn attachment(frame: &mut Workspace, kind: &str, name: &str, bytes: &[u8]) -> String {
         let key = blake3::hash(bytes).to_hex().to_string();

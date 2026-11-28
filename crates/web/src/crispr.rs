@@ -5,7 +5,6 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    Alphabet, Molecule, Topology,
     crispr::{
         self, GuideCandidate, GuideOptions, GuideQuery, GuideReport, IntendedTarget,
         NucleaseProfile, OffTargetOptions, OffTargetReport, PamSide, ReferenceInput,
@@ -13,8 +12,12 @@ use collagene_core::{
     edit_template::{
         self, EditTemplateCheck, EditTemplateOptions, EditTemplateReport, GuideBinding,
     },
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
+use collagene_model::{Alphabet, Molecule, Topology};
 use leptos::prelude::*;
 use serde::Serialize;
 use std::{
@@ -152,7 +155,7 @@ fn preview(value: &str) -> String {
     }
 }
 fn response(
-    result: Result<collagene_core::protocol::Response, String>,
+    result: Result<collagene_core::protocol::response::Response, String>,
     id: u32,
     revision: &str,
 ) -> Result<AnalysisResult, String> {

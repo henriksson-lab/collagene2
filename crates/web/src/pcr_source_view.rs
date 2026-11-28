@@ -1,6 +1,6 @@
 //! Inspect a PCR template without retargeting the independent design target.
 use crate::pcr_overlay::Overlay;
-use collagene_core::Molecule;
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
 

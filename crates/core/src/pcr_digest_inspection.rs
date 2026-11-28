@@ -1,7 +1,6 @@
 //! Fresh exact-PCR followed by pinned complete-digest inspection. Displayed
 //! fragments are documentary choices, never serialized physical stock.
 use crate::{
-    Error, Molecule, Topology,
     analysis::Primer,
     assembly_recipe,
     catalog_digest::{self, CatalogSelection},
@@ -9,6 +8,7 @@ use crate::{
     restriction_inspection::{self, InspectionOptions, RestrictionInspection},
     verification,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "pcr-digest-inspection-1";
 const MAX_GEOMETRIES: usize = 10_000;
@@ -39,7 +39,7 @@ pub(crate) fn shape(request: &Request) -> Result<(), Error> {
             || p.annealing.is_empty()
             || p.annealing.len() > 1000
             || p.tail.len() > 1000
-            || p.annealing.alphabet() != crate::Alphabet::Dna
+            || p.annealing.alphabet() != collagene_model::Alphabet::Dna
             || !p
                 .annealing
                 .as_str()
@@ -66,7 +66,7 @@ fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Res
             "Bottom template PCR requires freshly reconstructed native material",
         ));
     }
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     if reject_imported && chemistry::has_unmapped_physical_evidence(source) {
         return Err(bad(
             "imported physical intermediates require reconstruction of their original graph",
@@ -197,16 +197,16 @@ impl Preview {
             if g.index != i
                 || g.template_strand != self.request.template_strand
                 || g.product_length == 0
-                || g.product_length > crate::model::MAX_SEQUENCE_LEN
-                || g.forward_start > crate::model::MAX_SEQUENCE_LEN
-                || g.reverse_start > crate::model::MAX_SEQUENCE_LEN
+                || g.product_length > collagene_model::MAX_SEQUENCE_LEN
+                || g.forward_start > collagene_model::MAX_SEQUENCE_LEN
+                || g.reverse_start > collagene_model::MAX_SEQUENCE_LEN
             {
                 return Err(bad("invalid geometry summary"));
             }
         }
         match (&self.amplicon, &self.inspection) {
             (Some(m), Some(report)) if self.pcr_geometries.len() == 1 => {
-                crate::model::bounds::model_preflight(&[m])?;
+                collagene_model::bounds::model_preflight(&[m])?;
                 m.validate()?;
                 if m.topology != Topology::Linear
                     || m.sequence.len() != self.pcr_geometries[0].product_length

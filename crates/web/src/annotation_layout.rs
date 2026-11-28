@@ -4,8 +4,8 @@
 use crate::annotation_geometry::MAX_NODES;
 use crate::annotation_geometry::{MAX_FEATURES, MAX_SPANS};
 #[cfg(test)]
-use collagene_core::Location;
-use collagene_core::Molecule;
+use collagene_model::Location;
+use collagene_model::Molecule;
 use collagene_view_layout::{Interval, Item, Limits, Placement};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -116,7 +116,7 @@ pub fn prepare_visible(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Topology, model::Feature};
+    use collagene_model::{Feature, Topology};
 
     fn range(start: usize, end: usize) -> Location {
         Location::Range {

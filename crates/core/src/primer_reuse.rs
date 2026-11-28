@@ -1,6 +1,7 @@
 //! Reuse declared primer sequences from actual current documents. This grants
 //! neither physical oligo state nor fresh annealing/amplification evidence.
-use crate::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology, analysis::Primer};
+use crate::analysis::Primer;
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const MAX_ORDERED_BASES: usize = 200;
@@ -47,7 +48,7 @@ fn hex(s: &str) -> bool {
 }
 /// Borrowed aggregate metadata/location guards precede hashing or extraction.
 pub fn preflight(m: &Molecule) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[m])?;
+    collagene_model::bounds::model_preflight(&[m])?;
     if m.sequence.alphabet() != Alphabet::Dna {
         return Err(bad(
             "primer reuse requires a DNA document; RNA/protein conversion is not inferred",

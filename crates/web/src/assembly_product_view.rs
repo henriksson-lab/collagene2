@@ -6,10 +6,8 @@ use crate::{
     renderer::MapRenderer,
     sequence_view::SequenceView,
 };
-use collagene_core::{
-    Location, Molecule,
-    verification::{self, DesignPlan, Status, VerificationReport},
-};
+use collagene_core::verification::{self, DesignPlan, Status, VerificationReport};
+use collagene_model::{Location, Molecule};
 use leptos::{html, prelude::*};
 use std::{
     rc::Rc,

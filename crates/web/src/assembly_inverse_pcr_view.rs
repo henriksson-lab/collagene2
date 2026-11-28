@@ -5,7 +5,10 @@ use crate::{
 };
 use collagene_core::{
     history::DocumentHistory,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::EventBinding,
     transfer::Candidate,
     verification::Status,
@@ -89,7 +92,7 @@ pub fn InversePcrPreparationView(
                     || (d.edits.is_empty() && d.substitutions.len() == 1))
                 && d.junction_edits.is_empty()
                 && d.slots[0].captured.as_ref().is_some_and(|c| {
-                    c.molecule.topology == collagene_core::Topology::Circular
+                    c.molecule.topology == collagene_model::Topology::Circular
                         && d.slots[0].selector
                             == (collagene_core::assembly_intent::Selector::ReferenceRange {
                                 start: 0,

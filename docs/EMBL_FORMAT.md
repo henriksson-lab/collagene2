@@ -26,7 +26,7 @@ The adapter retains headers in EMBL; it does not interpret every header as an ed
 
 ## Validation and sources
 
-`cargo test -p collagene-core --test embl --locked` covers independently authored synthetic records, origin-spanning reverse features, fuzzy/order locations, duplicate/multiline/flag qualifiers, exact original export, regenerated header retention, malformed counts/terminators, RNA normalization, legacy IDs, edit/reference guards and excessive nesting. No other cloning application acts as a correctness oracle.
+`cargo test -p collagene-core --test formats sequences::embl:: --locked` covers independently authored synthetic records, origin-spanning reverse features, fuzzy/order locations, duplicate/multiline/flag qualifiers, exact original export, regenerated header retention, malformed counts/terminators, RNA normalization, legacy IDs, edit/reference guards and excessive nesting. No other cloning application acts as a correctness oracle.
 
 Primary format references:
 

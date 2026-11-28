@@ -1,9 +1,10 @@
 //! Source-bound multi-parent reciprocal reference exchange and conservative
 //! annotation projection. No imported recipe establishes chemical strand state.
 use crate::{
-    Alphabet, Error, Molecule, Topology, annotations,
+    annotations,
     recombination::{self as old, reference},
 };
+use collagene_model::{Alphabet, Error, Molecule, Topology};
 pub use old::{
     AnnotationLimits, ComponentIdentity, Selection, SourceAnnotationEvidence, SourceIdentity,
 };

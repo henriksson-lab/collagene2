@@ -1,6 +1,6 @@
 //! GenBank syntax uses the standalone gb-io parser; molecular semantics remain ours.
-use crate::model::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::*;
 use gb_io::seq::{self as gb, After, Before};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;

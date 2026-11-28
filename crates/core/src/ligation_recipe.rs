@@ -1,13 +1,13 @@
 //! Ordered ligation from original-source preparations. Shared compilation emits
 //! existing operations; only a fresh verifier pass supplies chemical evidence.
 use crate::{
-    Error, Molecule,
     assembly_recipe::{self as preparation, FragmentSpec, PreparedRow},
     chemistry::{Duplex, DuplexSummary, End, EndTreatment},
     verification::{
         self, DesignPlan, Operation, OrientedSource, PlanInput, Source, VerificationReport,
     },
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "ligation-recipe-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -320,7 +320,7 @@ pub(crate) fn preview_with_tracked(
             break;
         }
     }
-    crate::model::bounds::model_preflight(&available)?;
+    collagene_model::bounds::model_preflight(&available)?;
     let mut bases = 0usize;
     for m in &available {
         bases = bases
@@ -423,7 +423,7 @@ impl Preview {
             .chain(self.prepared.iter())
             .chain(self.verification.products.iter())
         {
-            crate::model::bounds::model_preflight(&[m])?;
+            collagene_model::bounds::model_preflight(&[m])?;
         }
         for report in &self.verification.step_reports {
             if report.step_index >= steps {

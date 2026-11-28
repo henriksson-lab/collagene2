@@ -1,11 +1,11 @@
 //! Borrowed native PCR frames. No synthesized reference stock or restored report.
 use crate::{
-    Error, Molecule, Sequence, Topology,
     analysis::{self, PcrGeometryProduct, Primer, TemplateView},
     annotations::MappingSegment,
     chemistry::{self, Strand},
     modified_duplex::TrackedDuplex,
 };
+use collagene_model::{Error, Molecule, Sequence, Topology};
 #[derive(Clone, Copy)]
 pub(crate) struct Template<'a> {
     pub reference: &'a Molecule,
@@ -116,7 +116,7 @@ impl<'a> Template<'a> {
                 let end = (d.top.len() as i64).max(bottom_end);
                 let length = usize::try_from(end.checked_sub(start).ok_or(Error::TooLarge)?)
                     .map_err(|_| Error::TooLarge)?;
-                if length > crate::model::MAX_SEQUENCE_LEN {
+                if length > collagene_model::MAX_SEQUENCE_LEN {
                     return Err(Error::TooLarge);
                 }
                 // Charge diagnostic source copies too, not just emitted PCR

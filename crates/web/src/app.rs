@@ -29,6 +29,7 @@ use collagene_core::{
     verification::{self, DesignPlan, Operation, PlanInput, Source, VerificationReport},
     *,
 };
+use collagene_model::{Alphabet, Feature, Location, Molecule, Topology};
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::{JsFuture, spawn_local};
@@ -166,7 +167,7 @@ struct RestoredWorkspace {
     alignments: Vec<crate::alignment_view::AlignmentRevision>,
     runs: Vec<collagene_core::run_lineage::RunSummary>,
     assemblies: Vec<collagene_core::contig_history::AssemblySummary>,
-    assembly_draft: crate::assembly_workspace::Draft,
+    assembly_draft: crate::assembly_draft_model::Draft,
     pair_draft: crate::primer_pair_model::PairDraft,
     hidden_products: std::collections::BTreeSet<String>,
 }
@@ -243,7 +244,7 @@ fn restore_workspace_state(
             crate::assembly_draft_model::decode(&asset.bytes)?
         }
         Some(_) => return Err("Assembly draft has the wrong media type.".into()),
-        None => crate::assembly_workspace::Draft::default(),
+        None => crate::assembly_draft_model::Draft::default(),
     };
     for captured in crate::assembly_alternatives::all_captures(&assembly_draft) {
         let binding = &captured.source.binding;
@@ -331,20 +332,20 @@ pub(crate) async fn encode_workspace(
         .head(&frame.active_document)
         .map_err(|e| e.to_string())?
         .revision();
-    match worker::analyze(protocol::Request {
+    match worker::analyze(protocol::request::Request {
         id,
         revision: revision.clone(),
-        job: protocol::AnalysisJob::SaveWorkspace { workspace: frame },
+        job: protocol::schema::AnalysisJob::SaveWorkspace { workspace: frame },
     })
     .await?
     {
-        protocol::Response {
+        protocol::response::Response {
             id: returned,
             revision: bound,
-            result: protocol::AnalysisResult::WorkspaceSaved(bytes),
+            result: protocol::schema::AnalysisResult::WorkspaceSaved(bytes),
         } if returned == id && bound == revision => Ok(bytes),
-        protocol::Response {
-            result: protocol::AnalysisResult::Error(error),
+        protocol::response::Response {
+            result: protocol::schema::AnalysisResult::Error(error),
             ..
         } => Err(error),
         _ => Err("Unexpected workspace-save response".into()),
@@ -355,20 +356,20 @@ pub(crate) async fn decode_workspace(
     id: u32,
 ) -> Result<collagene_core::workspace::Workspace, String> {
     let revision = blake3::hash(&bytes).to_hex().to_string();
-    match worker::analyze(protocol::Request {
+    match worker::analyze(protocol::request::Request {
         id,
         revision: revision.clone(),
-        job: protocol::AnalysisJob::LoadWorkspace { bytes },
+        job: protocol::schema::AnalysisJob::LoadWorkspace { bytes },
     })
     .await?
     {
-        protocol::Response {
+        protocol::response::Response {
             id: returned,
             revision: bound,
-            result: protocol::AnalysisResult::WorkspaceLoaded(frame),
+            result: protocol::schema::AnalysisResult::WorkspaceLoaded(frame),
         } if returned == id && bound == revision => Ok(frame),
-        protocol::Response {
-            result: protocol::AnalysisResult::Error(error),
+        protocol::response::Response {
+            result: protocol::schema::AnalysisResult::Error(error),
             ..
         } => Err(error),
         _ => Err("Unexpected workspace-load response".into()),
@@ -1145,9 +1146,9 @@ pub fn App() -> impl IntoView {
     let pending_alignment = RwSignal::new(None::<crate::alignment_view::PendingAlignment>);
     let pending_sbol = RwSignal::new(None::<std::sync::Arc<Vec<u8>>>);
     let method_config = RwSignal::new(crate::cloning_methods::MethodsState::default());
-    let assembly_draft = RwSignal::new(crate::assembly_workspace::Draft::default());
+    let assembly_draft = RwSignal::new(crate::assembly_draft_model::Draft::default());
     let previous_assembly_draft =
-        RwSignal::new(None::<std::sync::Arc<crate::assembly_workspace::Draft>>);
+        RwSignal::new(None::<std::sync::Arc<crate::assembly_draft_model::Draft>>);
     Effect::new(move |_| {
         let _ = workspace_epoch.get();
         previous_assembly_draft.set(None);
@@ -3262,11 +3263,11 @@ pub fn App() -> impl IntoView {
         pcr_output_worker.set_value(None);
         let reviewed_forward = forward.clone();
         let reviewed_reverse = reverse.clone();
-        let request = protocol::Request {
+        let request = protocol::request::Request {
             id: generation,
             revision: revision.clone(),
             job: if let Some(origin) = &origin {
-                protocol::AnalysisJob::MaterialPcrDocuments {
+                protocol::schema::AnalysisJob::MaterialPcrDocuments {
                     template_strand: collagene_core::chemistry::Strand::Top,
                     molecule: mol,
                     origin: origin.as_ref().clone(),
@@ -3274,7 +3275,7 @@ pub fn App() -> impl IntoView {
                     reverse,
                 }
             } else {
-                protocol::AnalysisJob::PcrDocuments {
+                protocol::schema::AnalysisJob::PcrDocuments {
                     template_strand: collagene_core::chemistry::Strand::Top,
                     molecule: mol,
                     forward,
@@ -3313,16 +3314,16 @@ pub fn App() -> impl IntoView {
             match (origin.is_some(), result) {
                 (
                     false,
-                    Ok(protocol::Response {
-                        result: protocol::AnalysisResult::PcrDocuments(products),
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::PcrDocuments(products),
                         id,
                         revision: response_revision,
                     }),
                 )
                 | (
                     true,
-                    Ok(protocol::Response {
-                        result: protocol::AnalysisResult::MaterialPcrDocuments(products),
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::MaterialPcrDocuments(products),
                         id,
                         revision: response_revision,
                     }),
@@ -3348,8 +3349,8 @@ pub fn App() -> impl IntoView {
                 }
                 (
                     _,
-                    Ok(protocol::Response {
-                        result: protocol::AnalysisResult::Error(error),
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::Error(error),
                         ..
                     }),
                 )
@@ -3526,16 +3527,16 @@ pub fn App() -> impl IntoView {
         let alive = pcr_alive.get_value();
         spawn_local(async move {
             let result = w
-                .ask(protocol::Request {
+                .ask(protocol::request::Request {
                     id: choice.review.generation,
                     revision: revision.clone(),
                     job: if let Some(origin) = &choice.review.origin {
-                        protocol::AnalysisJob::PrepareMaterialPcrOutputs {
+                        protocol::schema::AnalysisJob::PrepareMaterialPcrOutputs {
                             origin: origin.as_ref().clone(),
                             request,
                         }
                     } else {
-                        protocol::AnalysisJob::PreparePcrOutputs { request }
+                        protocol::schema::AnalysisJob::PreparePcrOutputs { request }
                     },
                 })
                 .await;
@@ -3553,17 +3554,17 @@ pub fn App() -> impl IntoView {
                     return Err("PCR output response does not match this request.".into());
                 }
                 let prepared = match response.result {
-                    protocol::AnalysisResult::PcrOutputs(prepared)
+                    protocol::schema::AnalysisResult::PcrOutputs(prepared)
                         if choice.review.origin.is_none() =>
                     {
                         prepared
                     }
-                    protocol::AnalysisResult::MaterialPcrOutputsPrepared(prepared)
+                    protocol::schema::AnalysisResult::MaterialPcrOutputsPrepared(prepared)
                         if choice.review.origin.is_some() =>
                     {
                         prepared
                     }
-                    protocol::AnalysisResult::Error(error) => return Err(error),
+                    protocol::schema::AnalysisResult::Error(error) => return Err(error),
                     _ => return Err("Unexpected PCR output response.".into()),
                 };
                 prepared
@@ -3718,10 +3719,10 @@ pub fn App() -> impl IntoView {
             last_plan_target.set(None);
             let revision = target.revision();
             let generation = plan_generation.get_untracked();
-            let request = protocol::Request {
+            let request = protocol::request::Request {
                 id: 0,
                 revision: revision.clone(),
-                job: protocol::AnalysisJob::Verify {
+                job: protocol::schema::AnalysisJob::Verify {
                     target: target.clone(),
                     plan: plan.clone(),
                 },
@@ -3752,8 +3753,8 @@ pub fn App() -> impl IntoView {
                     return;
                 }
                 match result {
-                    Ok(protocol::Response {
-                        result: protocol::AnalysisResult::Verification(report),
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::Verification(report),
                         ..
                     }) => {
                         plan_report.set(Some(report));
@@ -3767,8 +3768,8 @@ pub fn App() -> impl IntoView {
                         last_plan.set(Some((plan, target)));
                         message.set("Assembly reconstruction finished.".into());
                     }
-                    Ok(protocol::Response {
-                        result: protocol::AnalysisResult::Error(error),
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::Error(error),
                         ..
                     })
                     | Err(error) => message.set(error),
@@ -4231,7 +4232,7 @@ pub fn App() -> impl IntoView {
                 Ok(())
             })?;
             let mut staged = assembly_draft.get_untracked();
-            crate::assembly_workspace::set_digest_fragment(&mut staged, fragment)?;
+            crate::assembly_draft_model::set_digest_fragment(&mut staged, fragment)?;
             assembly_draft.set(staged);
             assembly_visible.set(true);
             message.set("Selected digest fragment placed in the active assembly slot. Its original source and pinned digest preparation are retained.".into());
@@ -4562,8 +4563,7 @@ pub fn App() -> impl IntoView {
             if workspace_restoring.get_untracked() {
                 return Err("Wait for workspace restoration.".into());
             }
-            collagene_core::model::bounds::model_preflight(&[&molecule])
-                .map_err(|e| e.to_string())?;
+            collagene_model::bounds::model_preflight(&[&molecule]).map_err(|e| e.to_string())?;
             if molecule
                 .metadata
                 .get("source:legacy:chemistry_unmapped")
@@ -7027,7 +7027,7 @@ pub fn App() -> impl IntoView {
                                                         let molecules=parents.iter().map(|d|&d.molecule).collect::<Vec<_>>();
                                                         collagene_core::multisite_recombination::source_preflight(&molecules,&capture.request).map_err(|e|e.to_string())?;
                                                         if target.molecule.sequence.len()>2_000_000{return Err("Independent target exceeds 2,000,000 bases.".into());}
-                                                        collagene_core::model::bounds::model_preflight(&[&target.molecule]).map_err(|e|e.to_string())?;
+                                                        collagene_model::bounds::model_preflight(&[&target.molecule]).map_err(|e|e.to_string())?;
                                                         target.molecule.validate().map_err(|e|e.to_string())?;
                                                         let inputs=parents.iter().enumerate().map(|(i,d)|collagene_core::recombination::reference::Input{role:format!("parent_{}",i+1),molecule:d.molecule.clone()}).collect();
                                                         Ok(crate::multisite::Captured{inputs,target:target.molecule.clone()})
@@ -7193,8 +7193,8 @@ pub fn App() -> impl IntoView {
                                 <Show when=move||modal.get()=="alignments"><crate::alignment_view::AlignmentPanel alignments=alignments pending=pending_alignment.get_untracked() epoch=workspace_epoch on_keep={let opened_epoch=workspace_epoch.get_untracked();Callback::new(move|item:crate::alignment_view::AlignmentRevision|{if opened_epoch!=workspace_epoch.get_untracked(){return Err("The workspace changed during alignment import. Open the alignment again.".into());}keep_alignment.run(item)})} on_extract={let opened_epoch=workspace_epoch.get_untracked();Callback::new(move|molecules:Vec<Molecule>|{if opened_epoch!=workspace_epoch.get_untracked(){return Err("The workspace changed during row extraction.".into());}add_documents(documents,active,workspace_restoring,molecules)})}/></Show>
                                 <Show when=move||modal.get()=="oligos"><crate::oligo_import::OligoImport on_import=import_oligos existing=existing_oligo.get_untracked() initial_text=pending_oligo.get_untracked()/></Show>
                                 <Show when=move||modal.get()=="fastq"><p>"Select the quality encoding supplied by the sequencing source. Phred+33 and Phred+64 overlap; it cannot be inferred from printable characters."</p><label>"Supplied FASTQ encoding"<select aria-label="Supplied FASTQ encoding" prop:value=move||match fastq_encoding.get(){None=>"",Some(oligo_formats::QualityEncoding::Phred33)=>"33",Some(oligo_formats::QualityEncoding::Phred64)=>"64"} on:change=move|e|fastq_encoding.set(match event_target_value(&e).as_str(){"33"=>Some(oligo_formats::QualityEncoding::Phred33),"64"=>Some(oligo_formats::QualityEncoding::Phred64),_=>None})><option value="">"Choose supplied encoding"</option><option value="33">"Phred+33"</option><option value="64">"Phred+64"</option></select></label><button class="button primary" disabled=move||fastq_encoding.get().is_none() on:click=move|_|{let(Some(bytes),Some(encoding))=(pending_fastq.get_untracked(),fastq_encoding.get_untracked())else{return;};match oligo_formats::import_fastq(&bytes,encoding){Ok(report)=>match add_documents(documents,active,workspace_restoring,report.molecules){Ok(())=>{message.set(report.warnings.join(" "));pending_fastq.set(None);modal.set("");panel.set("reads");},Err(e)=>modal_error.set(e)},Err(e)=>modal_error.set(e.to_string())}}>"Import FASTQ with selected encoding"</button></Show>
-                                <Show when=move||modal.get()=="variants"><p class="helper">"Declared file alleles and genotype columns are source evidence. Choose an actual DNA reference and a one-based alternative explicitly before checking or creating a design."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_variant_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_variants.get().map(|(source,format,name)|view!{<crate::variants_view::VariantPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_core::model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};let epoch=workspace_epoch.get_untracked();let apply=move|deferred:bool|{if workspace_epoch.try_get_untracked()!=Some(epoch)||workspace_restoring.try_get_untracked().unwrap_or(true){return;}if !documents.with_untracked(|docs|docs.get(active.get_untracked()).is_some_and(|doc|doc.id==id&&doc.head_event()==event)){return;}if deferred&&(selection.get_untracked().is_some()||selected_feature.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}batch(||{selected_feature.set(None);selection.set(if parts.len()==1{parts.first().copied()}else{None});search_regions.set(Some((revision,parts)));});};modal.set("");if active.get_untracked()==index&&has_open_document.get_untracked(){apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}}) on_preview=open_variant_preview/>})}</Show><Show when=move||modal.get()=="read_alignments"><p class="helper">"Keep the original source in this workspace to reopen it later. Mapping claims remain unverified until checked against an explicitly selected DNA document."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_read_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_read_alignment.get().map(|(source,format,name)|view!{
-                                    <crate::read_alignments_view::ReadAlignmentPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_core::model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};
+                                <Show when=move||modal.get()=="variants"><p class="helper">"Declared file alleles and genotype columns are source evidence. Choose an actual DNA reference and a one-based alternative explicitly before checking or creating a design."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_variant_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_variants.get().map(|(source,format,name)|view!{<crate::variants_view::VariantPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};let epoch=workspace_epoch.get_untracked();let apply=move|deferred:bool|{if workspace_epoch.try_get_untracked()!=Some(epoch)||workspace_restoring.try_get_untracked().unwrap_or(true){return;}if !documents.with_untracked(|docs|docs.get(active.get_untracked()).is_some_and(|doc|doc.id==id&&doc.head_event()==event)){return;}if deferred&&(selection.get_untracked().is_some()||selected_feature.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}batch(||{selected_feature.set(None);selection.set(if parts.len()==1{parts.first().copied()}else{None});search_regions.set(Some((revision,parts)));});};modal.set("");if active.get_untracked()==index&&has_open_document.get_untracked(){apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}}) on_preview=open_variant_preview/>})}</Show><Show when=move||modal.get()=="read_alignments"><p class="helper">"Keep the original source in this workspace to reopen it later. Mapping claims remain unverified until checked against an explicitly selected DNA document."</p><button class="button secondary" disabled=move||workspace_restoring.get() on:click=move|_|if let Err(error)=keep_read_source.run(()){modal_error.set(error)}>"Keep original source in workspace"</button>{move||pending_read_alignment.get().map(|(source,format,name)|view!{
+                                    <crate::read_alignments_view::ReadAlignmentPanel source=source format=format name=name documents=Memo::new(move|_|documents.with(|docs|docs.iter().enumerate().filter(|(_,doc)|doc.molecule.sequence.alphabet()==Alphabet::Dna).map(|(index,doc)|(index,doc.molecule.name.clone(),format!("{}:{}:{}",workspace_epoch.get(),doc.id,doc.head_event()))).collect())) get_document=Callback::new(move|index:usize|documents.with_untracked(|docs|docs.get(index).and_then(|doc|collagene_model::bounds::model_preflight(&[&doc.molecule]).ok().map(|_|doc.molecule.clone())))) on_navigate=Callback::new(move|(index,parts):(usize,Vec<(usize,usize)>)|{if workspace_restoring.get_untracked(){return;}let Some((id,event,revision))=documents.with_untracked(|docs|docs.get(index).map(|doc|(doc.id.clone(),doc.head_event().to_string(),doc.molecule.revision())))else{return;};
                                         let epoch=workspace_epoch.get_untracked();
                                         let apply=move|deferred:bool|{if workspace_epoch.try_get_untracked()!=Some(epoch)||workspace_restoring.try_get_untracked().unwrap_or(true){return;}if !documents.with_untracked(|docs|docs.get(active.get_untracked()).is_some_and(|doc|doc.id==id&&doc.head_event()==event)){return;}if deferred&&(selection.get_untracked().is_some()||selected_feature.get_untracked().is_some()||search_regions.get_untracked().is_some()){return;}batch(||{selected_feature.set(None);selection.set(if parts.len()==1{parts.first().copied()}else{None});search_regions.set(Some((revision,parts)));});};
                                         modal.set("");if active.get_untracked()==index&&has_open_document.get_untracked(){apply(false);}else{active.set(index);let frame=wasm_bindgen::closure::Closure::once_into_js(move||apply(true));if let Some(window)=web_sys::window(){let _=window.request_animation_frame(frame.unchecked_ref());}}})/>

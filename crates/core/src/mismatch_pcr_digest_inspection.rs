@@ -1,12 +1,12 @@
 //! Conditional intentional-mismatch PCR followed by complete-digest geometry.
 //! An incomplete singleton remains conditional; no target or unique design is inferred.
 use crate::{
-    Error, Molecule, Topology, assembly_recipe, catalog_digest, chemistry, mutagenesis,
-    pcr_digest_inspection,
+    assembly_recipe, catalog_digest, chemistry, mutagenesis, pcr_digest_inspection,
     restriction_inspection::{self, RestrictionInspection},
     run_material::MaterialOrigin,
     verification,
 };
+use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "mismatch-pcr-digest-inspection-2";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -50,7 +50,7 @@ pub fn source_preflight(
     workspace: Option<&crate::workspace::Workspace>,
 ) -> Result<(), Error> {
     shape(request)?;
-    crate::model::bounds::model_preflight(&[source])?;
+    collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if let Some(origin) = origin {
         crate::run_material::material_origins_preflight([origin])?;
@@ -290,7 +290,7 @@ impl Preview {
             .iter()
             .chain(self.amplicon.iter())
             .collect::<Vec<_>>();
-        crate::model::bounds::model_preflight(&models)?;
+        collagene_model::bounds::model_preflight(&models)?;
         let mut bases = 0usize;
         for (geometry, document) in r.products.iter().zip(&self.pcr.documents) {
             if geometry.forward_primer_index > 1 || geometry.reverse_primer_index > 1 {

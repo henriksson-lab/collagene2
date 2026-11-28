@@ -5,7 +5,8 @@ use crate::{
     primer_pair_model::{OligoDraft, PairDraft, SelectionSeed},
     primer_picker::{PrimerPicker, ResolveRequest},
 };
-use collagene_core::{Molecule, analysis::Primer, primer_reuse, run_lineage::EventBinding};
+use collagene_core::{analysis::Primer, primer_reuse, run_lineage::EventBinding};
+use collagene_model::Molecule;
 use leptos::prelude::*;
 
 fn slot(pair: &PairDraft, reverse_slot: bool) -> &OligoDraft {

@@ -31,5 +31,5 @@ cases cover wrong independent target, stale source references, changed retained
 role/order and invalid catalog pins. Repeated requests must reuse immutable
 artifacts, and original exports must remain unchanged.
 
-`crates/mcp/tests/golden_gate_junction_tools.rs` contains the SDK fixtures.
+`crates/mcp/tests/methods/golden_gate/golden_gate_junction_tools.rs` contains the SDK fixtures.
 Validation results are recorded in [implementation status](IMPLEMENTATION_STATUS.md).

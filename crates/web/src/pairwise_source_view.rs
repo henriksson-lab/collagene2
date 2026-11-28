@@ -1,5 +1,6 @@
 //! Read-only original coordinates for historical or origin-spanning comparisons.
-use collagene_core::{Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
 

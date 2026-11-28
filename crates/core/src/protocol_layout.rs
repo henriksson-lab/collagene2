@@ -1,11 +1,12 @@
 //! Documentary well assignments to immutable native construct declarations.
 //! No scientific approval, quantities, inventory state or instrument instructions.
 use crate::{
-    Error, combinatorial_batch as batch, combinatorial_release as release,
+    combinatorial_batch as batch, combinatorial_release as release,
     run_lineage::{self, EventBinding},
     verification::Status,
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

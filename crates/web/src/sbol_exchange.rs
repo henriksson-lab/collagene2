@@ -1,11 +1,12 @@
 //! Explicit SBOL design-graph review. Native export must not erase restrictive
 //! physical/reference-only source evidence; imported SBOL remains a reference.
 use crate::app::{ExportArtifact, prepare_download};
-use collagene_core::{Molecule, Topology, chemistry, workspace::WorkspaceAttachment};
+use collagene_core::workspace::WorkspaceAttachment;
 use collagene_design_exchange::{
     self as exchange, Document, Export, ExportIds, FeatureKind, Issue, Kind, Projection,
     ProjectionPolicy, Selection,
 };
+use collagene_model::{Molecule, Topology};
 use leptos::prelude::*;
 use std::sync::Arc;
 pub(crate) const ATTACHMENT_KIND: &str = "sbol-design-exchange-v1";
@@ -18,46 +19,6 @@ pub(crate) fn looks_like_sbol(bytes: &[u8]) -> bool {
             .values()
             .any(|o| o.classes.iter().any(|c| c.starts_with(exchange::SBOL)))
     })
-}
-fn native_export_preflight(m: &Molecule) -> Result<(), String> {
-    let producer = m.original_genbank.as_ref().is_some_and(|raw| {
-        raw.lines()
-            .filter_map(|line| {
-                line.strip_prefix("COMMENT     ")
-                    .or_else(|| line.strip_prefix("CC   "))
-            })
-            .any(|line| {
-                matches!(
-                    line.trim_end(),
-                    "Collagene physical product v1: unverified sequence-only evidence"
-                        | "Collagene reference-only v1: unverified sequence-only evidence"
-                )
-            })
-    });
-    let marked = m.metadata.keys().any(|key| {
-        matches!(
-            key.as_str(),
-            "tracked_modifications"
-                | "source:declared_termini"
-                | "source:legacy:chemistry_unmapped"
-                | "source:snapgene:chemistry_unmapped"
-                | "topo:physical_graph_required"
-                | "source:recombination:reference_only"
-                | "source:recombination:unverified_recipe"
-                | "source:restriction_inspection:recipe"
-        ) || key == collagene_core::recombination::REFERENCE_ONLY_KEY
-            || key == collagene_core::recombination::RECIPE_KEY
-            || key == collagene_core::restriction_inspection::RECIPE_KEY
-            || key.starts_with("topo:")
-            || key.starts_with("variant:")
-            || key.starts_with("source:restriction_inspection:")
-            || key.starts_with("restriction_catalog:")
-            || key.starts_with("source:restriction_catalog:")
-    });
-    if producer || marked || chemistry::has_unmapped_physical_evidence(m) {
-        return Err("This document retains physical, nicked, mixed/single-strand or reference-only evidence that this SBOL profile cannot preserve safely. Export its native document/workspace archive instead; allowing presentation losses cannot remove that restriction.".into());
-    }
-    Ok(())
 }
 fn policy(allow: bool) -> ProjectionPolicy {
     if allow {
@@ -399,7 +360,8 @@ pub fn SbolExchangeDialog(
             let ids = get_ids();
             let p = policy(allow_export_loss.get_untracked());
             let value = current.with_value(|m| {
-                native_export_preflight(m)?;
+                collagene_core::format_fidelity::reference_export_guard(m)
+                    .map_err(|e| e.to_string())?;
                 exchange::export_molecule(m, &ids, p).map_err(|e| e.to_string())
             })?;
             checked.run(())?;
@@ -424,7 +386,10 @@ pub fn SbolExchangeDialog(
         let saved_check = saved.clone();
         let check = move || {
             checked.run(())?;
-            current.with_value(|m| native_export_preflight(m))?;
+            current.with_value(|m| {
+                collagene_core::format_fidelity::reference_export_guard(m)
+                    .map_err(|e| e.to_string())
+            })?;
             if get_ids() != saved_check.ids
                 || policy(allow_export_loss.get_untracked()) != saved_check.policy
             {

@@ -1,8 +1,8 @@
 //! Parse editable declarations without changing source DNA or choosing a result.
 use collagene_core::{
-    Molecule, Topology, catalog_digest, codon_design, domestication as design,
-    domestication_preparation as physical,
+    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
 };
+use collagene_model::{Molecule, Topology};
 #[derive(Clone, PartialEq, Eq)]
 pub struct Form {
     pub enzymes: String,
@@ -382,7 +382,7 @@ impl RouteForm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Feature, Location};
+    use collagene_model::{Feature, Location};
     fn source(topology: Topology) -> Molecule {
         let mut source = Molecule::dna(
             "annotated source",

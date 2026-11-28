@@ -1,7 +1,6 @@
 //! Source-bound signed fusion-placement proposals. Search preserves a frozen
 //! independent reference; only explicit materialization invokes PCR/digestion.
 use crate::{
-    Error, Molecule, Sequence,
     assembly_junction_edit::{self as junction, Intent},
     assembly_recipe::{self, Preparation},
     catalog_digest,
@@ -10,6 +9,7 @@ use crate::{
     golden_gate_primer_design as primers, ligation_recipe,
     verification::PlanInput,
 };
+use collagene_model::{Error, Molecule, Sequence};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "golden-gate-fusion-design-1";

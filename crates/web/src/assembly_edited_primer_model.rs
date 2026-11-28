@@ -9,8 +9,6 @@ use crate::{
         OverlapPreparation,
     },
 };
-#[cfg(test)]
-use collagene_core::Molecule;
 use collagene_core::{
     analysis::Primer,
     assembly_edit_intent, assembly_edited_primer_design as native, overlap_extension_primer_design,
@@ -18,6 +16,8 @@ use collagene_core::{
     verification::{PlanInput, VerificationReport},
     workspace::Workspace,
 };
+#[cfg(test)]
+use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
 use std::{io::Write, sync::Arc};
 const ENGINE_VERSION: &str = "assembly-edited-primer-proposal-1";
@@ -635,7 +635,8 @@ mod tests {
     use crate::{
         assembly_draft_model::CapturedSource, assembly_edit_model, source_identity::SourceInfo,
     };
-    use collagene_core::{Alphabet, Topology, chemistry::EndRepairMethod, verification::Status};
+    use collagene_core::{chemistry::EndRepairMethod, verification::Status};
+    use collagene_model::{Alphabet, Topology};
     const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
     fn event(frame: &Workspace, index: usize) -> EventBinding {
         let doc = &frame.documents[index];

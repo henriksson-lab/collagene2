@@ -1,14 +1,18 @@
 //! Revision-bound mutation design and conditional mismatch-PCR reference previews.
 use crate::{worker, worker::CachedWorker};
 use collagene_core::{
-    Molecule,
     analysis::Primer,
     mutagenesis::{InversePcrDesign, InversePcrOptions, PcrOptions},
     primers::BindingOptions,
-    protocol::{AnalysisJob, AnalysisResult, Request, Response},
+    protocol::{
+        request::Request,
+        response::Response,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_lineage::{EventBinding, InputEventBinding},
     transfer::Candidate,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,

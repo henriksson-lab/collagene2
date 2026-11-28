@@ -16,7 +16,7 @@ pub enum IntendedReference {
     Edits(collagene_core::assembly_edit_intent::Report),
 }
 impl IntendedReference {
-    pub fn target(&self) -> &collagene_core::Molecule {
+    pub fn target(&self) -> &collagene_model::Molecule {
         match self {
             Self::Regions(intent) => &intent.target,
             Self::Junctions(intent) => &intent.target,
@@ -110,7 +110,7 @@ pub fn retained_inputs(
     docs: &[DocumentHistory],
     sources: &[InputEventBinding],
     candidate: &Candidate,
-) -> Result<Vec<collagene_core::Molecule>, String> {
+) -> Result<Vec<collagene_model::Molecule>, String> {
     if sources.len() != candidate.plan.inputs.len() {
         return Err("Pinned input count differs from the candidate.".into());
     }
@@ -430,7 +430,7 @@ fn stage_internal_edits(
     frame: &Workspace,
     sources: &[EventBinding],
     candidate: &Candidate,
-    build: impl FnOnce() -> Result<(String, collagene_core::Molecule), String>,
+    build: impl FnOnce() -> Result<(String, collagene_model::Molecule), String>,
 ) -> Result<Staged, String> {
     if candidate.plan.inputs.is_empty() || candidate.plan.inputs.len() > 32 {
         return Err("Edited assembly inputs exceed the bounded staging profile.".into());
@@ -534,10 +534,8 @@ fn stage_internal_edits(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{
-        Molecule, Topology,
-        verification::{DesignPlan, Operation, PlanInput, Source},
-    };
+    use collagene_core::verification::{DesignPlan, Operation, PlanInput, Source};
+    use collagene_model::{Molecule, Topology};
     fn fixture() -> (Workspace, Report, Vec<EventBinding>, Candidate) {
         let mut frame = Workspace {
             name: "assembly workspace".into(),
@@ -1427,7 +1425,7 @@ mod tests {
         bindings[0].revision = "0".repeat(64);
         assert!(stage(&frame, &intent, &bindings, &candidate).is_err());
         let (_, _, bindings, _) = fixture();
-        intent.target.sequence = collagene_core::Sequence::dna("TTTT").unwrap();
+        intent.target.sequence = collagene_model::Sequence::dna("TTTT").unwrap();
         assert!(stage(&frame, &intent, &bindings, &candidate).is_err());
         assert_eq!(frame.documents.len(), 1);
     }
@@ -1559,7 +1557,7 @@ mod tests {
             unreachable!()
         };
         let mut forged = original.clone();
-        forged.target.sequence = collagene_core::Sequence::dna("TTTTTTTT").unwrap();
+        forged.target.sequence = collagene_model::Sequence::dna("TTTTTTTT").unwrap();
         assert!(
             stage_any(
                 &frame,
@@ -1682,7 +1680,7 @@ mod tests {
         );
         let mut stale = candidate.plan.clone();
         stale.inputs[0].molecule.sequence =
-            collagene_core::Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
+            collagene_model::Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
         stale.inputs[0].revision = stale.inputs[0].molecule.revision();
         assert!(
             stage_substituted(
@@ -1874,7 +1872,7 @@ mod tests {
         assert!(stage_contribution_edits(&frame, &intent, &[stale], &candidate).is_err());
         let mut changed = candidate.plan.clone();
         changed.inputs[0].molecule.sequence =
-            collagene_core::Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
+            collagene_model::Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
         changed.inputs[0].revision = changed.inputs[0].molecule.revision();
         assert!(
             stage_contribution_edits(

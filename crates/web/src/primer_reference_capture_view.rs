@@ -1,6 +1,7 @@
 //! Compare an unchanged existing oligo to an explicitly selected reference.
 use crate::primer_pair_model::{OligoDraft, PairDraft, SelectionSeed};
-use collagene_core::{Molecule, run_lineage::EventBinding};
+use collagene_core::run_lineage::EventBinding;
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
 

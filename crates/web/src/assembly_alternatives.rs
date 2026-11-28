@@ -2,7 +2,7 @@
 //! Working source edits persist independently and need explicit choice capture
 //! before they can acquire a construct identity or enter scientific preparation.
 use crate::{
-    assembly_draft_model::{self as assembly_workspace, CapturedSource, Draft, Slot},
+    assembly_draft_model::{self, CapturedSource, Draft, Slot},
     assembly_role_ids::Role,
     cloning_methods_model::{MethodsState, OverlapInput},
 };
@@ -249,7 +249,7 @@ impl Library {
         {
             return Err("Invalid bounded assembly alternative library.".into());
         }
-        assembly_workspace::bounded_size(self)?;
+        assembly_draft_model::bounded_size(self)?;
         let mut ids = BTreeSet::new();
         let mut total = 0usize;
         for (index, bin) in self.bins.iter().enumerate() {
@@ -269,7 +269,7 @@ impl Library {
                 if !entity_id(self, &choice.id, "choice") || !ids.insert(&choice.id) {
                     return Err("Invalid or duplicate assembly choice identity.".into());
                 }
-                assembly_workspace::validate_slot(&choice.slot, &choice.row, index)?;
+                assembly_draft_model::validate_slot(&choice.slot, &choice.row, index)?;
             }
         }
         for row in &self.rows {
@@ -277,7 +277,7 @@ impl Library {
                 return Err("Invalid or duplicate construct row identity.".into());
             }
             let selected = chosen(self, &row.choices)?;
-            assembly_workspace::validate_controls(
+            assembly_draft_model::validate_controls(
                 &row.edits.name,
                 row.edits.circular,
                 row.edits.active_slot,
@@ -285,7 +285,7 @@ impl Library {
                 &row.edits.methods,
                 &row.edits.junction_edits,
             )?;
-            assembly_workspace::validate_internal_declarations(
+            assembly_draft_model::validate_internal_declarations(
                 &row.edits.methods,
                 self.bins.len(),
                 &row.edits.substitutions,
@@ -296,7 +296,7 @@ impl Library {
                 .zip(&row.edits.methods.rows)
                 .enumerate()
             {
-                assembly_workspace::validate_slot_link(&choice.slot, input, index)?;
+                assembly_draft_model::validate_slot_link(&choice.slot, input, index)?;
             }
             if row.edits.methods.source_roles.as_ref() != Some(&roles(self, row)?) {
                 return Err("Saved construct preparation roles differ from its stable selected alternatives.".into());
@@ -700,7 +700,8 @@ mod tests {
         assembly_draft_model::{self, Slot},
         source_identity::SourceInfo,
     };
-    use collagene_core::{Molecule, Topology, run_lineage::EventBinding, workspace::Workspace};
+    use collagene_core::{run_lineage::EventBinding, workspace::Workspace};
+    use collagene_model::{Molecule, Topology};
     use std::sync::Arc;
 
     fn source(name: &str, dna: &str) -> Arc<CapturedSource> {

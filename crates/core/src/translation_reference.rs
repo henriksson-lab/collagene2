@@ -1,14 +1,12 @@
 //! Source-bound reference translation and explicit, reviewable output preparation.
 //! All amino-acid calls come from the existing native translation engine.
-use crate::{
-    Alphabet, Error, Feature, Location, Molecule, Sequence, Topology,
-    translation::{self, CdsTranslation, TranslationOptions, TranslationReport},
-};
+use crate::translation::{self, CdsTranslation, TranslationOptions, TranslationReport};
+use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 pub const ENGINE_VERSION: &str = "translation-reference-1";
-const MAX_BASES: usize = crate::model::MAX_SEQUENCE_LEN;
+const MAX_BASES: usize = collagene_model::MAX_SEQUENCE_LEN;
 macro_rules! dto { ($($item:tt)*) => {
     #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
     #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
@@ -105,7 +103,7 @@ fn effective(location: &Location, reverse: bool) -> Location {
     }
 }
 fn request_preflight(request: &Request) -> Result<(), Error> {
-    crate::model::bounds::model_preflight(&[&request.source])?;
+    collagene_model::bounds::model_preflight(&[&request.source])?;
     request.source.validate()?;
     if request.source.sequence.alphabet() == Alphabet::Protein {
         return Err(bad("choose a DNA or RNA source"));
@@ -409,7 +407,7 @@ impl Report {
 }
 impl Outputs {
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
-        crate::model::bounds::model_preflight(&[&self.protein])?;
+        collagene_model::bounds::model_preflight(&[&self.protein])?;
         self.protein.validate()?;
         self.report
             .validate_binding(&self.report.context_revision)?;
@@ -464,7 +462,7 @@ impl Outputs {
             }
         }
         if let Some(feature) = &self.annotation {
-            crate::model::bounds::feature_preflight(&[std::slice::from_ref(feature)])?;
+            collagene_model::bounds::feature_preflight(&[std::slice::from_ref(feature)])?;
         }
         if self.annotation != annotation(&self.report, &self.protein.name) {
             return Err(bad(

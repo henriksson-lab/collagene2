@@ -1,19 +1,20 @@
 //! Exact event guards around reference-only collection similarity results.
-use collagene_core::{Molecule, run_lineage::EventBinding, sequence_similarity as native};
+use collagene_core::{run_lineage::EventBinding, sequence_similarity as native};
+use collagene_model::Molecule;
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Pin {
     pub index: usize,
     pub binding: EventBinding,
     pub length: usize,
-    pub alphabet: collagene_core::Alphabet,
-    pub topology: collagene_core::Topology,
+    pub alphabet: collagene_model::Alphabet,
+    pub topology: collagene_model::Topology,
 }
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
 pub struct Capture {
     pub epoch: u64,
     pub query: EventBinding,
     pub query_length: usize,
-    pub query_alphabet: collagene_core::Alphabet,
+    pub query_alphabet: collagene_model::Alphabet,
     pub subjects: Vec<Pin>,
     pub options: native::Options,
     pub context_revision: String,
@@ -123,7 +124,8 @@ impl Capture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::{Topology, workspace::Workspace};
+    use collagene_core::workspace::Workspace;
+    use collagene_model::Topology;
     fn binding(w: &Workspace, i: usize) -> EventBinding {
         let d = &w.documents[i];
         EventBinding {

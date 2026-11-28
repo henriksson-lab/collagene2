@@ -1,12 +1,13 @@
 //! Exact native elementary TOPO graphs. Documentary records never restore a
 //! supplied ProductGraph or ordinary duplex; actual calls/transfers replay fresh.
 use crate::{
-    Error, assembly_recipe,
+    assembly_recipe,
     run_lineage::{self, EventBinding},
     run_material::{self, MaterialOrigin},
     topo, verification,
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 pub const ENGINE_VERSION: &str = "topo-ordered-graph-2";
@@ -225,7 +226,7 @@ impl Capsule {
         {
             return Err(bad("graph capsule shape/version"));
         }
-        crate::model::bounds::model_preflight(
+        collagene_model::bounds::model_preflight(
             &self
                 .source_snapshots
                 .iter()
@@ -496,7 +497,7 @@ pub fn preflight(w: &Workspace, r: &CaptureRequest) -> Result<(), Error> {
             }
             o.validate_for_workspace(w, &b.event)?;
         }
-        if m.sequence.alphabet() != crate::Alphabet::Dna {
+        if m.sequence.alphabet() != collagene_model::Alphabet::Dna {
             return Err(bad("DNA source required"));
         }
     }

@@ -65,7 +65,7 @@ a reaction-mixture winner. See [native records](TOPO_GRAPH_HISTORY.md),
 [faithful material bridge](TOPO_PROCESSED_PRODUCT.md) and
 [plan reuse](TOPO_PROCESSED_PLAN.md).
 
-The independent fixture in `core/tests/topo_graph_continuation.rs` specifies a
+The independent fixture in `crates/core/tests/cloning/topo/graph/topo_graph_continuation.rs` specifies a
 52-call directional graph: first transfer, actual flap hydrolysis and one nick
 seal are captured; after restart the remaining original activation is transferred
 and the other nick sealed. The result retains 48 paired circular calls and the

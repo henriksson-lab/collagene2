@@ -4,7 +4,10 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     scf_export::{self, LossPolicy, Options, SamplePrecision},
     traces::{QualityEvidence, Trace},
 };

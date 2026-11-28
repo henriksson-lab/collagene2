@@ -1,6 +1,7 @@
 //! Raw SAM/BAM source attachments, without restored parser/reference authority.
 //! Kind/media describe the caller's declared format; neither proves file validity.
-use crate::{Error, read_alignment_store::Format, workspace::WorkspaceAttachment};
+use crate::{read_alignment_store::Format, workspace::WorkspaceAttachment};
+use collagene_model::Error;
 
 pub const SAM_SOURCE_KIND: &str = "sam-source-v1";
 pub const BAM_SOURCE_KIND: &str = "bam-source-v1";

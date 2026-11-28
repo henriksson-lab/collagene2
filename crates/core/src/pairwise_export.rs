@@ -1,11 +1,11 @@
 //! Portable presentation of a retained comparison. This does not rerun alignment
 //! or turn a historical receipt or host freshness label into scientific authority.
 use crate::{
-    Alphabet, Error,
     alignment_formats::{self, AlignmentFormat, AlignmentMetadata, AlignmentRow},
     pairwise_history::{self, Record},
     pdf::ReviewBlock,
 };
+use collagene_model::{Alphabet, Error};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 

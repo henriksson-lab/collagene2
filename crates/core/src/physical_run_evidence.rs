@@ -1,11 +1,12 @@
 //! Immutable historical processed graphs, separately bound to exact run events.
 //! Reading this attachment never restores fresh scientific/material authority.
 use crate::{
-    Error, assembly_recipe,
+    assembly_recipe,
     run_lineage::{self, EventBinding, InputEventBinding, ProductBinding, RunRecord},
     verification::{Operation, PhysicalProcessingStepReport, Source},
     workspace::{Workspace, WorkspaceAttachment},
 };
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},

@@ -43,7 +43,7 @@ assumption in the intent transaction.
 
 ## SDK fixture scope
 
-`crates/mcp/tests/mutation_intent_tools.rs` authors two actual in-process MCP SDK
+`crates/mcp/tests/cloning/mutation_intent_tools.rs` authors two actual in-process MCP SDK
 flows using a 48-base circular GenBank source. Literal replacement, insertion and
 deletion targets are asserted before any simulator runs; unchanged original export,
 immutable deduplication, changed context and stale references are covered. A

@@ -6,7 +6,10 @@ use crate::{
     worker::CachedWorker,
 };
 use collagene_core::{
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     run_material::{self, MaterialInspection, MaterialSelection},
     workspace::Workspace,
 };

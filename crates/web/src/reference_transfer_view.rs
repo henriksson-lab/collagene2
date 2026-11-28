@@ -2,11 +2,14 @@
 //! Prepared material and physical cloning success are never inferred here.
 use crate::worker::CachedWorker;
 use collagene_core::{
-    Molecule,
-    protocol::{AnalysisJob, AnalysisResult, Request},
+    protocol::{
+        request::Request,
+        schema::{AnalysisJob, AnalysisResult},
+    },
     reference_transfer::{self, Fragment, Report, RequestPaste},
     run_lineage::EventBinding,
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     cell::Cell,
@@ -55,8 +58,8 @@ impl PasteOpen {
     }
 }
 
-fn location_label(location: &collagene_core::Location) -> String {
-    use collagene_core::Location;
+fn location_label(location: &collagene_model::Location) -> String {
+    use collagene_model::Location;
     match location {
         Location::Range {
             start,
@@ -90,7 +93,7 @@ fn location_label(location: &collagene_core::Location) -> String {
         Location::Unresolved(_) => "unresolved location; original evidence retained".into(),
     }
 }
-fn feature_label(feature: &collagene_core::Feature) -> String {
+fn feature_label(feature: &collagene_model::Feature) -> String {
     format!(
         "{} · {} · {}{}",
         feature.label().chars().take(200).collect::<String>(),

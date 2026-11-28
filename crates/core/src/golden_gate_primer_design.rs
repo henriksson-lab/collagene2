@@ -1,13 +1,13 @@
 //! Explicit source-interval Type IIS PCR preparation proposals. No target-directed DNA.
 pub use crate::golden_gate::GoldenGateEnzyme;
 use crate::{
-    Alphabet, Error, Location, Molecule, Sequence, Topology,
     analysis::{self, Primer},
     assembly_recipe::{self, FragmentSpec, Preparation},
     catalog_digest::{self, CatalogSelection},
     chemistry::{self, Duplex, End, Polarity},
     verification::PlanInput,
 };
+use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE_VERSION: &str = "golden-gate-primer-design-1";
@@ -134,7 +134,7 @@ pub fn source_preflight(
     }
     let mut models = inputs.iter().map(|(_, m)| *m).collect::<Vec<_>>();
     models.push(target);
-    crate::model::bounds::model_preflight(&models)?;
+    collagene_model::bounds::model_preflight(&models)?;
     let mut lookup = BTreeMap::new();
     let mut bases = target.sequence.len();
     if target.sequence.alphabet() != Alphabet::Dna {

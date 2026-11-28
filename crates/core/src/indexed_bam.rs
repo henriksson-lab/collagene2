@@ -4,8 +4,9 @@
 //! adapter independently scans reported coordinates to detect every omitted
 //! mapped record in the requested interval. It does not establish actual-base
 //! agreement, unique mapping, coverage or biological absence.
-use crate::{Error, read_alignment_store::Collection};
+use crate::read_alignment_store::Collection;
 use collagene_genomic_index::{Format, Index, Limits, QueryLimits};
+use collagene_model::Error;
 use std::{
     borrow::Cow,
     io::{Cursor, Read},

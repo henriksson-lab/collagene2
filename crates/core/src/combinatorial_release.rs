@@ -2,11 +2,11 @@
 //! Historical batch summaries never authorize outputs. Each row is compiled afresh
 //! and cloning_outputs::finalize performs the only scientific verifier pass here.
 use crate::{
-    Error, Molecule, assembly_recipe, cloning_outputs, combinatorial_batch as batch,
-    combinatorial_design as design,
+    assembly_recipe, cloning_outputs, combinatorial_batch as batch, combinatorial_design as design,
     run_lineage::{self, EventBinding, InputEventBinding},
     workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 pub const KIND: &str = "combinatorial-release-v1";
@@ -650,8 +650,8 @@ impl Inspection {
         self.row.validate()?;
         self.product.validate()?;
         self.target.validate()?;
-        if self.product.sequence.alphabet() != crate::Alphabet::Dna
-            || self.target.sequence.alphabet() != crate::Alphabet::Dna
+        if self.product.sequence.alphabet() != collagene_model::Alphabet::Dna
+            || self.target.sequence.alphabet() != collagene_model::Alphabet::Dna
             || self.product.revision() != self.row.output.construct.revision
             || self.target.revision() != self.row.target.revision
             || self.product.name != self.row.options.name

@@ -1,13 +1,14 @@
 //! Immutable construct-owned read checks. Loading is historical evidence;
 //! capture and replay alone invoke the existing fresh scientific validator.
 use crate::{
-    Error, Molecule, assembly_recipe,
+    assembly_recipe,
     run_lineage::{self, EventBinding},
     trace_validation::{
         self, SiteState, TraceValidationOptions, TraceValidationReport, ValidationStatus,
     },
     workspace::{self, Workspace, WorkspaceAttachment},
 };
+use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -69,14 +70,14 @@ pub(crate) fn workspace_guard(w: &Workspace) -> Result<(), Error> {
         return Err(Error::TooLarge);
     }
     for m in w.revisions.values() {
-        crate::model::bounds::model_preflight(&[m])?;
+        collagene_model::bounds::model_preflight(&[m])?;
     }
     for c in &w.candidates {
         if c.plan.inputs.len() > 1000 || c.plan.steps.len() > 1000 {
             return Err(Error::TooLarge);
         }
         for i in &c.plan.inputs {
-            crate::model::bounds::model_preflight(&[&i.molecule])?;
+            collagene_model::bounds::model_preflight(&[&i.molecule])?;
         }
     }
     if w.attachments
@@ -113,7 +114,7 @@ fn inputs_guard(
     for b in reads {
         models.push(resolve(w, b)?);
     }
-    crate::model::bounds::model_preflight(&models)?;
+    collagene_model::bounds::model_preflight(&models)?;
     assembly_recipe::hash(&(models, options))?;
     Ok(())
 }
@@ -202,7 +203,7 @@ pub(crate) fn report_guard(
         || report.model.is_empty()
         || report.model.len() > 1024
         || report.consensus.is_empty()
-        || report.consensus.len() > crate::model::MAX_SEQUENCE_LEN
+        || report.consensus.len() > collagene_model::MAX_SEQUENCE_LEN
         || report.sites.len() > report.options.max_consensus_sites
         || report.insertions.len() > MAX_COLUMNS
         || report.uncovered_ranges.len() > MAX_COLUMNS + 1

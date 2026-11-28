@@ -1,9 +1,7 @@
 //! Source-bound digest handoff data, shared by the view and native draft tests.
 use crate::{run_origin_model::PinnedOrigin, source_identity::SourceInfo};
-use collagene_core::{
-    Molecule,
-    catalog_digest::{CatalogSelection, InspectionOptions},
-};
+use collagene_core::catalog_digest::{CatalogSelection, InspectionOptions};
+use collagene_model::Molecule;
 use std::sync::Arc;
 
 /// An explicit fragment choice retains its original source and reconstruction
@@ -34,7 +32,7 @@ mod tests {
         cloning_methods_model::OverlapPreparation,
     };
     use collagene_core::{
-        Topology, cloning_outputs,
+        cloning_outputs,
         history::DocumentHistory,
         methylation::MethylationState,
         modified_duplex::GenerationAssumptions,
@@ -43,6 +41,7 @@ mod tests {
         verification::{DesignPlan, Operation, PlanInput, Source},
         workspace::Workspace,
     };
+    use collagene_model::Topology;
     fn fixture() -> AssemblyFragment {
         let chosen = from_sources(
             vec![Molecule::dna("Original circle", "AAAGAATTCTTT", Topology::Circular).unwrap()],

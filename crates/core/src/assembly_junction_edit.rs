@@ -1,7 +1,6 @@
 //! Coherent source-bound junction edit intent and explicit PCR oligo proposals.
 //! Intended DNA is declared before, and independently of, molecular reconstruction.
 use crate::{
-    Error, Feature, Location, Molecule, Sequence,
     assembly_intent::{self, PlacedFragment},
     assembly_recipe::{self, FragmentSpec, Preparation},
     overlap_primer_design::{self, Fragment},
@@ -9,6 +8,7 @@ use crate::{
     primers::{self, DesignOptions, DesignReport},
     verification::PlanInput,
 };
+use collagene_model::{Error, Feature, Location, Molecule, Sequence};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "assembly-junction-edit-3";
@@ -584,7 +584,7 @@ impl Intent {
         {
             return Err(bad("junction source/context changed"));
         }
-        crate::model::bounds::model_preflight(&[&self.target])?;
+        collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         warning_guard(&self.warnings)?;
         assembly_intent::validate_rows(&self.fragments, &self.base_request, &self.target)?;

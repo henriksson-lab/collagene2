@@ -1,9 +1,7 @@
 //! Regenerated SCF 3.00 from actual retained trace evidence. No basecalling,
 //! synthetic signal, normalization, clipping or quality-scale conversion.
-use crate::{
-    Error,
-    traces::{self, QualityEvidence, Trace, TraceFormat, TraceOrientation},
-};
+use crate::traces::{self, QualityEvidence, Trace, TraceFormat, TraceOrientation};
+use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 pub const ENGINE_VERSION: &str = "scf-export-1";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

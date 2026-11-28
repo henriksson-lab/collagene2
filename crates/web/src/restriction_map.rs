@@ -3,10 +3,11 @@ use crate::{
     map_labels::{self, View},
     restriction_label_groups,
 };
-use collagene_core::{Topology, restriction_inspection::InspectionSite};
+use collagene_core::restriction_inspection::InspectionSite;
 use collagene_map_label_layout::{
     self as layout, Column, Label, Outcome, OverflowReason, Point, Rect, Side, Size, Viewport,
 };
+use collagene_model::Topology;
 use std::{
     collections::BTreeMap,
     f64::consts::{PI, TAU},

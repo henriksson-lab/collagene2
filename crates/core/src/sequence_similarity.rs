@@ -1,9 +1,7 @@
 //! Bounded library similarity search using the native affine nucleotide aligner.
 //! One best local score per subject, not BLAST statistics or sample verification.
-use crate::{
-    Alphabet, Error, Molecule, Sequence, Topology,
-    alignment::{self, AlignmentMode, AlignmentOptions, AlignmentStats, Scoring},
-};
+use crate::alignment::{self, AlignmentMode, AlignmentOptions, AlignmentStats, Scoring};
+use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "sequence-similarity-2";
@@ -165,7 +163,7 @@ pub fn preflight_borrowed(
     if subjects.is_empty() || subjects.len() > MAX_SUBJECTS || !valid_key(query.0) {
         return Err(bad("invalid query key or subject count"));
     }
-    let mut budget = crate::model::bounds::ModelBudget::default();
+    let mut budget = collagene_model::bounds::ModelBudget::default();
     budget.molecule(query.1)?;
     let mut bases = query.1.sequence.len();
     let mut keys = BTreeSet::new();

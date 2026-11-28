@@ -7,6 +7,16 @@
 - Remove tests whose only purpose is supporting obsolete implementations or encodings. Preserve meaningful scientific correctness, data integrity, resource bounds, and current-format validation tests.
 - Intentional import/export support for external file formats, including original Collagene files, remains product functionality. It does not justify compatibility layers around internal code.
 
+## Code organization
+
+- Every directory may contain at most 20 direct `.rs` files, including tests, examples, benches, and build scripts. Aim below that ceiling; group shared concepts into cohesive subdirectories before adding more siblings.
+- Every Rust file must contain at most 5,000 lines. Reaching 3,000 lines is a warning requiring an ownership/responsibility review and a concrete refactoring decision before further growth.
+- Keep a struct and its meaningful implementations together. Splitting an owner across many files requires a clear domain or lifecycle reason; do not distribute methods merely to satisfy line counts.
+- Prefer inherent methods when a function naturally belongs to one type's state or invariants. Keep stateless or symmetric algorithms as free functions when that expresses ownership better.
+- Organize by domain and ownership, not numbered chunks, generic utility collections, or `include!` fragments. Update imports and callers directly; no old-path forwarding facades or compatibility reexports.
+- When regrouping integration tests, preserve Cargo discovery explicitly and compare the before/after test inventory. Moving tests into unregistered subdirectories is not an acceptable reduction in coverage.
+- Run `python3 scripts/check_rust_layout.py` for the repository-wide size/count inventory. Existing violations remain failures until fixed; do not add grandfathering baselines or exemptions to make the gate pass.
+
 ## Verification
 
 - Implement in coherent batches across the scientific core, schemas, transport, UI, callers, and fixtures before compiling. Prefer temporarily broken intermediate code to small changes made only to keep each step building.

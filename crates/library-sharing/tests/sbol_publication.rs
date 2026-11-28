@@ -1,5 +1,4 @@
 use collagene_core::{
-    Molecule, Topology,
     analysis::Primer,
     run_lineage::{self, EventBinding, InputEventBinding},
     run_material,
@@ -8,6 +7,7 @@ use collagene_core::{
 };
 use collagene_design_exchange::{self as sbol, ProjectionPolicy};
 use collagene_library_sharing::{self as sharing, Selection};
+use collagene_model::{Molecule, Topology};
 use serde_json::{Value, json};
 const DNA: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
 const C: &str = "https://example.test/sbol/component";
@@ -350,7 +350,7 @@ fn unrelated_sbol_attachment_does_not_block_legacy_publication_and_other_unknown
 fn documentary_source_hash_is_not_a_fresh_sequence_match_or_material_bootstrap() {
     let raw = bytes(&graph());
     let mut edited = project(&raw, S, ProjectionPolicy::Strict);
-    edited.sequence = collagene_core::Sequence::dna("TTTTGGGGCCCCAAAA").unwrap();
+    edited.sequence = collagene_model::Sequence::dna("TTTTGGGGCCCCAAAA").unwrap();
     edited.name = "Edited after SBOL projection".into();
     let hash = edited.metadata["sbol:source_hash"].clone();
     let revision = edited.revision();

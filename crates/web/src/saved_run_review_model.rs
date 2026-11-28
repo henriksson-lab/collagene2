@@ -64,13 +64,13 @@ pub fn validate_report(p: &PreparedReview, r: &VerificationReport) -> Result<(),
 mod tests {
     use super::*;
     use collagene_core::{
-        Molecule, Topology,
         analysis::Primer,
         run_lineage::{self, EventBinding, InputEventBinding},
         run_review,
         verification::{DesignPlan, Operation, PlanInput, Source, Status},
         workspace::{RevisionEvent, Workspace},
     };
+    use collagene_model::{Molecule, Topology};
     fn fixture() -> (Workspace, PreparedReview, VerificationReport) {
         let source = Molecule::dna("Stock", "AGTCCGATGCTACGTA", Topology::Linear).unwrap();
         let target =

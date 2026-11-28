@@ -1,7 +1,7 @@
 //! Official Addgene developer catalog adapter, independently implemented from its OpenAPI schema.
 //! Signed download URLs and raw catalog responses are transient, never serialized as provenance.
 use super::*;
-use collagene_core::{Alphabet, Sequence, Topology};
+use collagene_model::{Alphabet, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -201,7 +201,7 @@ pub fn parse_addgene_catalog(plasmid_id: u64, bytes: &[u8]) -> Result<AddgeneCat
                     .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
                 || record
                     .length
-                    .is_some_and(|n| n == 0 || n > collagene_core::model::MAX_SEQUENCE_LEN)
+                    .is_some_and(|n| n == 0 || n > collagene_model::MAX_SEQUENCE_LEN)
             {
                 return Err(SourceError::AddgeneSchema);
             }

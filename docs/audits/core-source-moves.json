@@ -1,0 +1,2533 @@
+{
+  "schema": "collagene2.core-source-relocation-plan/v1",
+  "audit_date": "2026-11-28",
+  "purpose": "Exhaustive development-time move plan; never runtime compatibility data",
+  "source_root": "crates/core/src",
+  "policy": {
+    "max_rust_files_per_directory": 20,
+    "preferred_max_rust_files_per_directory": 16,
+    "max_file_lines": 5000,
+    "warning_file_lines": 3000,
+    "compatibility": "none; update all callers and module declarations directly",
+    "worker_protocol": "Preserve existing protocol subtree and canonical item paths exactly"
+  },
+  "scope": {
+    "source_edits_performed": false,
+    "compiler_or_tests_run": false,
+    "only_source_inputs": "All current physical crates/core/src/**/*.rs files; no fixture/runtime/private inputs"
+  },
+  "proof": {
+    "current_root_rust_file_count": 154,
+    "current_nested_rust_file_count": 10,
+    "current_physical_rust_file_count": 164,
+    "entries_count": 164,
+    "unique_sources_count": 164,
+    "unique_destinations_count": 164,
+    "all_current_files_accounted_once": true,
+    "new_declaration_files_count": 16,
+    "projected_total_rust_files": 180,
+    "projected_max_direct_rust_files": 11,
+    "root_rust_files": [
+      "lib.rs"
+    ],
+    "projected_root_public_modules": [
+      "alignment",
+      "chemistry",
+      "cloning",
+      "documents",
+      "formats",
+      "material",
+      "output",
+      "planning",
+      "protein",
+      "protocol",
+      "review",
+      "sequence",
+      "tracks",
+      "verification"
+    ],
+    "projected_namespaces_with_child_declarations": 32
+  },
+  "root_module_plan": {
+    "path": "crates/core/src/lib.rs",
+    "action": "Replace current flat declarations with actual nested modules; keep only crate documentation and reviewed explicit external package integration declarations",
+    "module_declarations": [
+      "pub mod alignment;",
+      "pub mod chemistry;",
+      "pub mod cloning;",
+      "pub mod documents;",
+      "pub mod formats;",
+      "pub mod material;",
+      "pub mod output;",
+      "pub mod planning;",
+      "pub mod protein;",
+      "pub mod protocol;",
+      "pub mod review;",
+      "pub mod sequence;",
+      "pub mod tracks;",
+      "pub mod verification;"
+    ],
+    "forbidden": [
+      "old flat module aliases",
+      "compatibility reexports",
+      "#[path] facades retaining old module paths",
+      "use super::*",
+      "include! fragments"
+    ]
+  },
+  "moves": [
+    {
+      "source": "crates/core/src/alignment.rs",
+      "destination": "crates/core/src/alignment/mod.rs",
+      "action": "move",
+      "source_module": "crate::alignment",
+      "destination_module": "crate::alignment",
+      "owner": "alignment :: mod",
+      "module_visibility": "public",
+      "source_sha256": "dd888105eff95f10779ed20b4b07abf6bc45d8a1abe30323517da49c5682d9e1",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/alignment_antibody.rs",
+      "destination": "crates/core/src/protein/antibody_alignment.rs",
+      "action": "move",
+      "source_module": "crate::alignment_antibody",
+      "destination_module": "crate::protein::antibody_alignment",
+      "owner": "protein :: antibody_alignment",
+      "module_visibility": "public",
+      "source_sha256": "d3ad1b23d23cde47137a8094de2aaa338a8b6f86430b1c4abb06219d91e5db7e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/alignment_exchange.rs",
+      "destination": "crates/core/src/formats/alignment/profiles.rs",
+      "action": "move",
+      "source_module": "crate::alignment_exchange",
+      "destination_module": "crate::formats::alignment::profiles",
+      "owner": "formats / alignment :: profiles",
+      "module_visibility": "public",
+      "source_sha256": "6ff84cee77d0fccd92dcfe6db71cd2b596533cf9808347dc59ea1e2784afb282",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/alignment_exchange_more.rs",
+      "destination": "crates/core/src/formats/alignment/pir_gde_selex.rs",
+      "action": "move",
+      "source_module": "crate::alignment_exchange_more",
+      "destination_module": "crate::formats::alignment::pir_gde_selex",
+      "owner": "formats / alignment :: pir_gde_selex",
+      "module_visibility": "public",
+      "source_sha256": "536551085f94ed115b4f7d84815ebfa0460ad1282172e84951d35d64fedbc78c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/alignment_formats.rs",
+      "destination": "crates/core/src/formats/alignment/mod.rs",
+      "action": "move",
+      "source_module": "crate::alignment_formats",
+      "destination_module": "crate::formats::alignment",
+      "owner": "formats / alignment :: mod",
+      "module_visibility": "public",
+      "source_sha256": "fca11e1155aacb6b5d09f4076ae9ee19b65367a333a393f81e7e0cf67c0e38a1",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/analysis.rs",
+      "destination": "crates/core/src/sequence/analysis.rs",
+      "action": "move",
+      "source_module": "crate::analysis",
+      "destination_module": "crate::sequence::analysis",
+      "owner": "sequence :: analysis",
+      "module_visibility": "public",
+      "source_sha256": "c82698fbe23d6a49ddbfdd5650fe6cbcd3096b0bc5052e3232b36774cb96ca3a",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/annotation_batch.rs",
+      "destination": "crates/core/src/sequence/annotations/batch.rs",
+      "action": "move",
+      "source_module": "crate::annotation_batch",
+      "destination_module": "crate::sequence::annotations::batch",
+      "owner": "sequence / annotations :: batch",
+      "module_visibility": "public",
+      "source_sha256": "8769ed89d3b30d62ecbf1204261103f6c0395231b57b7d4d64041df3499e0fbd",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/annotation_formats/gtf.rs",
+      "destination": "crates/core/src/formats/annotations/gtf.rs",
+      "action": "move",
+      "source_module": "crate::annotation_formats::gtf",
+      "destination_module": "crate::formats::annotations::gtf",
+      "owner": "Annotation exchange GTF parser, private child of annotation-format owner",
+      "module_visibility": "private; existing annotation-owner child",
+      "source_sha256": "a6eb36be842a8774443ac0267c6d57bf80b486aadafa2dede2e7df71754e3d32",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/annotation_formats.rs",
+      "destination": "crates/core/src/formats/annotations/mod.rs",
+      "action": "move",
+      "source_module": "crate::annotation_formats",
+      "destination_module": "crate::formats::annotations",
+      "owner": "formats / annotations :: mod",
+      "module_visibility": "public",
+      "source_sha256": "203bfa58f333ea2c9ceec9ef6dabe3f4b6cdd7cba948e3932f4bf9da7c3fcdf2",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/annotations.rs",
+      "destination": "crates/core/src/sequence/annotations/mod.rs",
+      "action": "move",
+      "source_module": "crate::annotations",
+      "destination_module": "crate::sequence::annotations",
+      "owner": "sequence / annotations :: mod",
+      "module_visibility": "public",
+      "source_sha256": "c86ab71f01fbaf3032bee8a79734cda40b38ac4297797d582a9fc7550f972674",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_diagnostics.rs",
+      "destination": "crates/core/src/cloning/assembly/diagnostics.rs",
+      "action": "move",
+      "source_module": "crate::assembly_diagnostics",
+      "destination_module": "crate::cloning::assembly::diagnostics",
+      "owner": "cloning / assembly :: diagnostics",
+      "module_visibility": "public",
+      "source_sha256": "c66e8dedbdd02e8e1871fa10c8111553bdc0f1d6ebca033ec8f89e81fe2915d3",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_edit_intent.rs",
+      "destination": "crates/core/src/cloning/assembly/edit_intent.rs",
+      "action": "move",
+      "source_module": "crate::assembly_edit_intent",
+      "destination_module": "crate::cloning::assembly::edit_intent",
+      "owner": "cloning / assembly :: edit_intent",
+      "module_visibility": "public",
+      "source_sha256": "fd8403727a108b6252e0ef47ec5d3136f07e619562838b455dba086b6644c6c8",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_edited_primer_design.rs",
+      "destination": "crates/core/src/cloning/assembly/edited_primers.rs",
+      "action": "move",
+      "source_module": "crate::assembly_edited_primer_design",
+      "destination_module": "crate::cloning::assembly::edited_primers",
+      "owner": "cloning / assembly :: edited_primers",
+      "module_visibility": "public",
+      "source_sha256": "479f05a9b498922b77b71a373cb4c838dde40b631fd124d94f44d81d52d63292",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_intent.rs",
+      "destination": "crates/core/src/cloning/assembly/intent.rs",
+      "action": "move",
+      "source_module": "crate::assembly_intent",
+      "destination_module": "crate::cloning::assembly::intent",
+      "owner": "cloning / assembly :: intent",
+      "module_visibility": "public",
+      "source_sha256": "6a6233c99aad0a19174e55586639b641cd2bcb356e81792a6afebf8c48a92646",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_junction_edit.rs",
+      "destination": "crates/core/src/cloning/assembly/junction_edit.rs",
+      "action": "move",
+      "source_module": "crate::assembly_junction_edit",
+      "destination_module": "crate::cloning::assembly::junction_edit",
+      "owner": "cloning / assembly :: junction_edit",
+      "module_visibility": "public",
+      "source_sha256": "608665a8101011b3333973560a68461d9b9e777e3545ce1e1fcb240ead20ef4f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_junctions.rs",
+      "destination": "crates/core/src/cloning/assembly/junctions.rs",
+      "action": "move",
+      "source_module": "crate::assembly_junctions",
+      "destination_module": "crate::cloning::assembly::junctions",
+      "owner": "cloning / assembly :: junctions",
+      "module_visibility": "public",
+      "source_sha256": "d555d7ee6c7d4d5b8afdb0fa21a306f23824ef1bac4a4a1fdfb2edc07e1e9973",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_library_history.rs",
+      "destination": "crates/core/src/cloning/assembly/library_history.rs",
+      "action": "move",
+      "source_module": "crate::assembly_library_history",
+      "destination_module": "crate::cloning::assembly::library_history",
+      "owner": "cloning / assembly :: library_history",
+      "module_visibility": "public",
+      "source_sha256": "eacce1709d7ed791deac04b6497777eeada0760c0b38d48286bfed3afdc16f7d",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_recipe.rs",
+      "destination": "crates/core/src/cloning/assembly/recipe.rs",
+      "action": "move",
+      "source_module": "crate::assembly_recipe",
+      "destination_module": "crate::cloning::assembly::recipe",
+      "owner": "cloning / assembly :: recipe",
+      "module_visibility": "public",
+      "source_sha256": "e5a7078fa3c7b5facf340fba9cce0f25a678158c2940f77d80be9ac778910724",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/assembly_substitution_intent.rs",
+      "destination": "crates/core/src/cloning/assembly/substitution_intent.rs",
+      "action": "move",
+      "source_module": "crate::assembly_substitution_intent",
+      "destination_module": "crate::cloning::assembly::substitution_intent",
+      "owner": "cloning / assembly :: substitution_intent",
+      "module_visibility": "public",
+      "source_sha256": "052a727f34994e99dbc1ed260274932ac049b7415036bdd6b49388d6b9106a5d",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/catalog_digest.rs",
+      "destination": "crates/core/src/cloning/restriction/catalog.rs",
+      "action": "move",
+      "source_module": "crate::catalog_digest",
+      "destination_module": "crate::cloning::restriction::catalog",
+      "owner": "cloning / restriction :: catalog",
+      "module_visibility": "public",
+      "source_sha256": "611ab801ffe755aef151381be592a5016d98a7096860a8eefd2e090c0f8c7a4c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/chemistry.rs",
+      "destination": "crates/core/src/chemistry/mod.rs",
+      "action": "move",
+      "source_module": "crate::chemistry",
+      "destination_module": "crate::chemistry",
+      "owner": "chemistry :: mod",
+      "module_visibility": "public",
+      "source_sha256": "dbe8df52831f2f05e83499e4451a607a0b46625e9902b7ef4e58668e98c43381",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/cloning_outputs.rs",
+      "destination": "crates/core/src/material/outputs.rs",
+      "action": "move",
+      "source_module": "crate::cloning_outputs",
+      "destination_module": "crate::material::outputs",
+      "owner": "material :: outputs",
+      "module_visibility": "public",
+      "source_sha256": "50aa80d78e84c881f0bc4b5676a4bcc4a7e9fc90329dfdf23018eb672ee5411a",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/codon_design.rs",
+      "destination": "crates/core/src/sequence/codon_design.rs",
+      "action": "move",
+      "source_module": "crate::codon_design",
+      "destination_module": "crate::sequence::codon_design",
+      "owner": "sequence :: codon_design",
+      "module_visibility": "public",
+      "source_sha256": "10ef61c6ceb3271f6116e80d582df9977eb72ef4f5a84436d5d804b72a0afc64",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/collagene_xml_compat.rs",
+      "destination": "crates/core/src/formats/original/collagene_lower_strand.rs",
+      "action": "move",
+      "source_module": "crate::collagene_xml_compat",
+      "destination_module": "crate::formats::original::collagene_lower_strand",
+      "owner": "formats / original :: collagene_lower_strand",
+      "module_visibility": "public",
+      "source_sha256": "a5ab53fd83d65bbdc2fc77af42b39385dd8c071130908cdc76a9b75d8d00f208",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/combinatorial_batch.rs",
+      "destination": "crates/core/src/planning/combinatorial/batch.rs",
+      "action": "move",
+      "source_module": "crate::combinatorial_batch",
+      "destination_module": "crate::planning::combinatorial::batch",
+      "owner": "planning / combinatorial :: batch",
+      "module_visibility": "public",
+      "source_sha256": "068d806c59e05d6db7775b39cb4e4aa067d7d606de8609c98fe1a60683b11e09",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/combinatorial_design.rs",
+      "destination": "crates/core/src/planning/combinatorial/mod.rs",
+      "action": "move",
+      "source_module": "crate::combinatorial_design",
+      "destination_module": "crate::planning::combinatorial",
+      "owner": "planning / combinatorial :: mod",
+      "module_visibility": "public",
+      "source_sha256": "9326f7a4830ef1a6de69c6a7c7437a08fedbc7733c272a4adfc23c80d621587c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/combinatorial_export.rs",
+      "destination": "crates/core/src/planning/combinatorial/export.rs",
+      "action": "move",
+      "source_module": "crate::combinatorial_export",
+      "destination_module": "crate::planning::combinatorial::export",
+      "owner": "planning / combinatorial :: export",
+      "module_visibility": "public",
+      "source_sha256": "343fbf5bff251a3ada1991fe68c746a96104f36dae07e386ea3a6c8ceb41a678",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/combinatorial_release.rs",
+      "destination": "crates/core/src/planning/combinatorial/release.rs",
+      "action": "move",
+      "source_module": "crate::combinatorial_release",
+      "destination_module": "crate::planning::combinatorial::release",
+      "owner": "planning / combinatorial :: release",
+      "module_visibility": "public",
+      "source_sha256": "dbf321c798f5d5238bd2f7c5dd329aceb46b3df7ad1a0cc0e93e467d024281b4",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/contig.rs",
+      "destination": "crates/core/src/review/contigs/mod.rs",
+      "action": "move",
+      "source_module": "crate::contig",
+      "destination_module": "crate::review::contigs",
+      "owner": "review / contigs :: mod",
+      "module_visibility": "public",
+      "source_sha256": "5fcd4d9106860dad70983fc45231dfdb5b574149d62d3c37471a029d5e620e23",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/contig_history.rs",
+      "destination": "crates/core/src/review/contigs/history.rs",
+      "action": "move",
+      "source_module": "crate::contig_history",
+      "destination_module": "crate::review::contigs::history",
+      "owner": "review / contigs :: history",
+      "module_visibility": "public",
+      "source_sha256": "d8001819f2fd172b363a0ee1c8a241608e1d2715f2b195fa0eb9273af335992f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/crispr.rs",
+      "destination": "crates/core/src/sequence/crispr.rs",
+      "action": "move",
+      "source_module": "crate::crispr",
+      "destination_module": "crate::sequence::crispr",
+      "owner": "sequence :: crispr",
+      "module_visibility": "public",
+      "source_sha256": "ef71635934f8cbe5aa1e1ba6669caf8477e6aecab2c2983c5df4a68f264b37df",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/digest_cut_selection.rs",
+      "destination": "crates/core/src/cloning/restriction/cut_selection.rs",
+      "action": "move",
+      "source_module": "crate::digest_cut_selection",
+      "destination_module": "crate::cloning::restriction::cut_selection",
+      "owner": "cloning / restriction :: cut_selection",
+      "module_visibility": "public",
+      "source_sha256": "bf81b991ab4efc53d58363aa2ed41bd82d7e056c0e81f71eaf4419c298059185",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/digest_setups.rs",
+      "destination": "crates/core/src/cloning/restriction/setups.rs",
+      "action": "move",
+      "source_module": "crate::digest_setups",
+      "destination_module": "crate::cloning::restriction::setups",
+      "owner": "cloning / restriction :: setups",
+      "module_visibility": "public",
+      "source_sha256": "b232b06e9db77ba53b7147b2c1c0ff7474b8bdd26f0aef28b12bfa5d78988453",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/domestication.rs",
+      "destination": "crates/core/src/cloning/golden_gate/domestication/mod.rs",
+      "action": "move",
+      "source_module": "crate::domestication",
+      "destination_module": "crate::cloning::golden_gate::domestication",
+      "owner": "cloning / golden_gate / domestication :: mod",
+      "module_visibility": "public",
+      "source_sha256": "8cb608e8bfecae0a13c3d5112ccfab7ff24cfe6be778828377208ab4662c2fac",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/domestication_preparation.rs",
+      "destination": "crates/core/src/cloning/golden_gate/domestication/preparation.rs",
+      "action": "move",
+      "source_module": "crate::domestication_preparation",
+      "destination_module": "crate::cloning::golden_gate::domestication::preparation",
+      "owner": "cloning / golden_gate / domestication :: preparation",
+      "module_visibility": "public",
+      "source_sha256": "185468995442fa58e0b261a7bbdf4058c44ccada8f7098f5b27ba5c64125e179",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/domestication_rounds.rs",
+      "destination": "crates/core/src/cloning/golden_gate/domestication/rounds.rs",
+      "action": "move",
+      "source_module": "crate::domestication_rounds",
+      "destination_module": "crate::cloning::golden_gate::domestication::rounds",
+      "owner": "cloning / golden_gate / domestication :: rounds",
+      "module_visibility": "pub(crate)",
+      "source_sha256": "d02e7f9c464e9736934b357be3db78c44bca6f506e2d2e97c55c56c1da80762b",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/dotplot.rs",
+      "destination": "crates/core/src/alignment/dotplot.rs",
+      "action": "move",
+      "source_module": "crate::dotplot",
+      "destination_module": "crate::alignment::dotplot",
+      "owner": "alignment :: dotplot",
+      "module_visibility": "public",
+      "source_sha256": "c4fc2c7145a883c2ee53e4650abf82f09c733444a27a0962370aa2a4afedd52f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/edit_template.rs",
+      "destination": "crates/core/src/sequence/template.rs",
+      "action": "move",
+      "source_module": "crate::edit_template",
+      "destination_module": "crate::sequence::template",
+      "owner": "sequence :: template",
+      "module_visibility": "public",
+      "source_sha256": "e95850a401574b943f5e58dcec3c916a11ad74b24ddfd0cca2f0c872bd4cb8c4",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/editing.rs",
+      "destination": "crates/core/src/sequence/editing.rs",
+      "action": "move",
+      "source_module": "crate::editing",
+      "destination_module": "crate::sequence::editing",
+      "owner": "sequence :: editing",
+      "module_visibility": "public",
+      "source_sha256": "578ba8cbd557a9b2df0bb8875b3c36f5b868f3fcee1b301bb40bbcb34aa42767",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/embl.rs",
+      "destination": "crates/core/src/formats/sequence/embl.rs",
+      "action": "move",
+      "source_module": "crate::embl",
+      "destination_module": "crate::formats::sequence::embl",
+      "owner": "formats / sequence :: embl",
+      "module_visibility": "public",
+      "source_sha256": "667471b702bc2a69f4877dfa4693b1bc81b13a391f0ccd9535c411b1851f14c6",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/enzyme_sets.rs",
+      "destination": "crates/core/src/cloning/restriction/enzyme_sets.rs",
+      "action": "move",
+      "source_module": "crate::enzyme_sets",
+      "destination_module": "crate::cloning::restriction::enzyme_sets",
+      "owner": "cloning / restriction :: enzyme_sets",
+      "module_visibility": "public",
+      "source_sha256": "1a19436289e3f7f61a06f7afa0c8d50f6f27cf4a11913297d710dcb05013be0d",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/feature_library.rs",
+      "destination": "crates/core/src/sequence/annotations/library.rs",
+      "action": "move",
+      "source_module": "crate::feature_library",
+      "destination_module": "crate::sequence::annotations::library",
+      "owner": "sequence / annotations :: library",
+      "module_visibility": "public",
+      "source_sha256": "5b17565b25a848650c5b7f9a7f0b4f1ba605228cde02d4cc50f951d7cd65dde9",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/format_fidelity.rs",
+      "destination": "crates/core/src/formats/fidelity.rs",
+      "action": "move",
+      "source_module": "crate::format_fidelity",
+      "destination_module": "crate::formats::fidelity",
+      "owner": "formats :: fidelity",
+      "module_visibility": "public",
+      "source_sha256": "dfb87d237d4c4da53bfba219471960a3c887d621fae5c81449fb6e81ab16a5a2",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/formats.rs",
+      "destination": "crates/core/src/formats/sequence/mod.rs",
+      "action": "move",
+      "source_module": "crate::formats",
+      "destination_module": "crate::formats::sequence",
+      "owner": "formats / sequence :: mod",
+      "module_visibility": "public",
+      "source_sha256": "394c429bb5b08857043214a3ecb336e9649700da407d5f61a31fd57c30f74fae",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/gcg_sequence.rs",
+      "destination": "crates/core/src/formats/sequence/gcg.rs",
+      "action": "move",
+      "source_module": "crate::gcg_sequence",
+      "destination_module": "crate::formats::sequence::gcg",
+      "owner": "formats / sequence :: gcg",
+      "module_visibility": "public",
+      "source_sha256": "66b16f3379eb360893888f83771c93fefad7819b239e0e0f097dd18e11f2abac",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/gel.rs",
+      "destination": "crates/core/src/output/gel.rs",
+      "action": "move",
+      "source_module": "crate::gel",
+      "destination_module": "crate::output::gel",
+      "owner": "output :: gel",
+      "module_visibility": "public",
+      "source_sha256": "f075c4465dc2ab8b91c7689f2878d8411f755060691fa8b4e60fa5e2c9e1ad79",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/genome.rs",
+      "destination": "crates/core/src/tracks/genome.rs",
+      "action": "move",
+      "source_module": "crate::genome",
+      "destination_module": "crate::tracks::genome",
+      "owner": "tracks :: genome",
+      "module_visibility": "public",
+      "source_sha256": "dfdba1b37f123182b337650b8aa0f5fcaeb1258a231e21e891e2e02eeaddfda4",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/genome_crispr.rs",
+      "destination": "crates/core/src/tracks/crispr.rs",
+      "action": "move",
+      "source_module": "crate::genome_crispr",
+      "destination_module": "crate::tracks::crispr",
+      "owner": "tracks :: crispr",
+      "module_visibility": "public",
+      "source_sha256": "2a329027b955b322cbe00c0a6ccdb5255ac7d8980c1245750e2ac6edf1bdfe6c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/genome_session.rs",
+      "destination": "crates/core/src/tracks/genome_session.rs",
+      "action": "move",
+      "source_module": "crate::genome_session",
+      "destination_module": "crate::tracks::genome_session",
+      "owner": "tracks :: genome_session",
+      "module_visibility": "public",
+      "source_sha256": "e93a75c4d560235f9d550c8af08e255673db14f132fc4826dd500c5bf3cb6c2d",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/golden_gate.rs",
+      "destination": "crates/core/src/cloning/golden_gate/mod.rs",
+      "action": "move",
+      "source_module": "crate::golden_gate",
+      "destination_module": "crate::cloning::golden_gate",
+      "owner": "cloning / golden_gate :: mod",
+      "module_visibility": "public",
+      "source_sha256": "f74ba473d360cc8b20fbe7f69fb88e94f4be8668bec20647f6ece8ffd8095eb7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/golden_gate_fusion_design.rs",
+      "destination": "crates/core/src/cloning/golden_gate/fusion_design.rs",
+      "action": "move",
+      "source_module": "crate::golden_gate_fusion_design",
+      "destination_module": "crate::cloning::golden_gate::fusion_design",
+      "owner": "cloning / golden_gate :: fusion_design",
+      "module_visibility": "public",
+      "source_sha256": "3b8f2e804c10db5e36f614d75a6caa1df39b7fe1da6196e353864dc844f6e113",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/golden_gate_fusion_rank.rs",
+      "destination": "crates/core/src/cloning/golden_gate/fusion_rank.rs",
+      "action": "move",
+      "source_module": "crate::golden_gate_fusion_rank",
+      "destination_module": "crate::cloning::golden_gate::fusion_rank",
+      "owner": "cloning / golden_gate :: fusion_rank",
+      "module_visibility": "public",
+      "source_sha256": "e28940cad30b484a7617c600a5749727f65d5d16d0ba8aec59ca7dddbd816cc7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/golden_gate_junction_edit.rs",
+      "destination": "crates/core/src/cloning/golden_gate/junction_edit.rs",
+      "action": "move",
+      "source_module": "crate::golden_gate_junction_edit",
+      "destination_module": "crate::cloning::golden_gate::junction_edit",
+      "owner": "cloning / golden_gate :: junction_edit",
+      "module_visibility": "public",
+      "source_sha256": "1bfb3fa43a51fae023ff705bea527bfa1d7d70515ecd5b4ecf6969e9813d969d",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/golden_gate_primer_design.rs",
+      "destination": "crates/core/src/cloning/golden_gate/primers.rs",
+      "action": "move",
+      "source_module": "crate::golden_gate_primer_design",
+      "destination_module": "crate::cloning::golden_gate::primers",
+      "owner": "cloning / golden_gate :: primers",
+      "module_visibility": "public",
+      "source_sha256": "be46a56a1fadc61fb3fcb4215ad861644e175ba26ba3083ab8a35ff8f0ed48c1",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/golden_gate_reaction.rs",
+      "destination": "crates/core/src/cloning/golden_gate/reaction.rs",
+      "action": "move",
+      "source_module": "crate::golden_gate_reaction",
+      "destination_module": "crate::cloning::golden_gate::reaction",
+      "owner": "cloning / golden_gate :: reaction",
+      "module_visibility": "public",
+      "source_sha256": "1ae72b3e8c4df40d93baaca950087958b0ad35d2e3af7f35dbbcadacf26e59e0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/history.rs",
+      "destination": "crates/core/src/documents/history.rs",
+      "action": "move",
+      "source_module": "crate::history",
+      "destination_module": "crate::documents::history",
+      "owner": "documents :: history",
+      "module_visibility": "public",
+      "source_sha256": "851974271b39d0cbe286ae845d0a4289c8f9d453276f4c9903565fd127c907d0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/homology_annealing.rs",
+      "destination": "crates/core/src/cloning/overlap/annealing.rs",
+      "action": "move",
+      "source_module": "crate::homology_annealing",
+      "destination_module": "crate::cloning::overlap::annealing",
+      "owner": "cloning / overlap :: annealing",
+      "module_visibility": "public",
+      "source_sha256": "ede3f3c526174310249ac99faa8055fe21d11f167be03ef7bfdaf31d35a41e4f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/homology_assembly.rs",
+      "destination": "crates/core/src/cloning/overlap/assembly.rs",
+      "action": "move",
+      "source_module": "crate::homology_assembly",
+      "destination_module": "crate::cloning::overlap::assembly",
+      "owner": "cloning / overlap :: assembly",
+      "module_visibility": "public",
+      "source_sha256": "495eb09d251cfca8aadf5226424c452eda63b37b1b78bd7d29c6404a6c0b89b3",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/indexed_bam.rs",
+      "destination": "crates/core/src/review/reads/indexed_bam.rs",
+      "action": "move",
+      "source_module": "crate::indexed_bam",
+      "destination_module": "crate::review::reads::indexed_bam",
+      "owner": "review / reads :: indexed_bam",
+      "module_visibility": "public",
+      "source_sha256": "58d137548c0b3db14753a71a9a2c5463b0fb09232921066f1dc6a97905591548",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/legacy_formats.rs",
+      "destination": "crates/core/src/formats/original/mod.rs",
+      "action": "move",
+      "source_module": "crate::legacy_formats",
+      "destination_module": "crate::formats::original",
+      "owner": "formats / original :: mod",
+      "module_visibility": "public",
+      "source_sha256": "fa5d18fa9d0aca31964c170fe9cebd518f4d4f2b2ed562fa4815f1873bf949b0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/lib.rs",
+      "destination": "crates/core/src/lib.rs",
+      "action": "retain",
+      "source_module": "crate",
+      "destination_module": "crate",
+      "owner": "Crate module declarations and existing explicit external package integrations",
+      "module_visibility": "crate root",
+      "source_sha256": "d65db7547479b5ee95928adcdd4277816100447d1b6e5a50e7a542f11a3b4b0a",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/ligation_fidelity.rs",
+      "destination": "crates/core/src/cloning/ligation/fidelity.rs",
+      "action": "move",
+      "source_module": "crate::ligation_fidelity",
+      "destination_module": "crate::cloning::ligation::fidelity",
+      "owner": "cloning / ligation :: fidelity",
+      "module_visibility": "public",
+      "source_sha256": "c0d3fabe9e442dfad0a12a503c221b6ccc384eec5cd902ab8a2b8a0990f19034",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/ligation_outcomes.rs",
+      "destination": "crates/core/src/cloning/ligation/outcomes.rs",
+      "action": "move",
+      "source_module": "crate::ligation_outcomes",
+      "destination_module": "crate::cloning::ligation::outcomes",
+      "owner": "cloning / ligation :: outcomes",
+      "module_visibility": "public",
+      "source_sha256": "ecf94b46886a7ee8d528c49b6526e12cf4bedf2bb13c0e61949b9701b3b6adc8",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/ligation_profiles.rs",
+      "destination": "crates/core/src/cloning/ligation/profiles.rs",
+      "action": "move",
+      "source_module": "crate::ligation_profiles",
+      "destination_module": "crate::cloning::ligation::profiles",
+      "owner": "cloning / ligation :: profiles",
+      "module_visibility": "public",
+      "source_sha256": "d32eda8fe72862e2388c100b3c6dfc005f97ba84f10b935990ca7e0650ed0760",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/ligation_recipe.rs",
+      "destination": "crates/core/src/cloning/ligation/recipe.rs",
+      "action": "move",
+      "source_module": "crate::ligation_recipe",
+      "destination_module": "crate::cloning::ligation::recipe",
+      "owner": "cloning / ligation :: recipe",
+      "module_visibility": "public",
+      "source_sha256": "46b3fa7ddd0840253851666c330087f6c0b1fde9cf0675bf99c12e29ad824b94",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/material_derivation.rs",
+      "destination": "crates/core/src/material/derivation/mod.rs",
+      "action": "move",
+      "source_module": "crate::material_derivation",
+      "destination_module": "crate::material::derivation",
+      "owner": "material / derivation :: mod",
+      "module_visibility": "public",
+      "source_sha256": "c2715ffa8e74787611108adbb0000a7b9f585c8a97d574e6fec7d4ecfe6f42e6",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/material_pcr.rs",
+      "destination": "crates/core/src/cloning/pcr/material.rs",
+      "action": "move",
+      "source_module": "crate::material_pcr",
+      "destination_module": "crate::cloning::pcr::material",
+      "owner": "cloning / pcr :: material",
+      "module_visibility": "public",
+      "source_sha256": "65a0c07afd64f9ce3b95ab7592ab1eb4b5a98b49af051a42f998693853390f7f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/methylation.rs",
+      "destination": "crates/core/src/chemistry/methylation.rs",
+      "action": "move",
+      "source_module": "crate::methylation",
+      "destination_module": "crate::chemistry::methylation",
+      "owner": "chemistry :: methylation",
+      "module_visibility": "public",
+      "source_sha256": "cae48704d43a10a08765635749402a3bfe20d971fad556377622f79c42d03daf",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/mismatch_pcr_digest_inspection.rs",
+      "destination": "crates/core/src/cloning/pcr/mismatch_digest.rs",
+      "action": "move",
+      "source_module": "crate::mismatch_pcr_digest_inspection",
+      "destination_module": "crate::cloning::pcr::mismatch_digest",
+      "owner": "cloning / pcr :: mismatch_digest",
+      "module_visibility": "public",
+      "source_sha256": "487269da5703f23d516da33a7894b94ddbf7e76b785e3a11552799acd627701f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/mismatch_pcr_outputs.rs",
+      "destination": "crates/core/src/cloning/pcr/mismatch_outputs.rs",
+      "action": "move",
+      "source_module": "crate::mismatch_pcr_outputs",
+      "destination_module": "crate::cloning::pcr::mismatch_outputs",
+      "owner": "cloning / pcr :: mismatch_outputs",
+      "module_visibility": "public",
+      "source_sha256": "fbc31ecd2b128290c9eed634517e9fea513ef17ea138a93cfc9b2c70ab65ee49",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/modified_duplex.rs",
+      "destination": "crates/core/src/chemistry/tracked_duplex.rs",
+      "action": "move",
+      "source_module": "crate::modified_duplex",
+      "destination_module": "crate::chemistry::tracked_duplex",
+      "owner": "chemistry :: tracked_duplex",
+      "module_visibility": "public",
+      "source_sha256": "6c593b044b99a3beab34731708e8c45a4fa65981cbc6762d0774ade5cfcac1e9",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/multisite_recombination.rs",
+      "destination": "crates/core/src/cloning/recombination/multisite.rs",
+      "action": "move",
+      "source_module": "crate::multisite_recombination",
+      "destination_module": "crate::cloning::recombination::multisite",
+      "owner": "cloning / recombination :: multisite",
+      "module_visibility": "public",
+      "source_sha256": "187f147e683f4c6954b83364b415e4b5b44326e620da7d2953eaeb1114074145",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/mutagenesis.rs",
+      "destination": "crates/core/src/cloning/pcr/mutagenesis.rs",
+      "action": "move",
+      "source_module": "crate::mutagenesis",
+      "destination_module": "crate::cloning::pcr::mutagenesis",
+      "owner": "cloning / pcr :: mutagenesis",
+      "module_visibility": "public",
+      "source_sha256": "793b1e5df0f5e8b5f3f1120f3cc40152a41e3557a6cd6ef56f2a77bd6089ce6f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/mutation_intent.rs",
+      "destination": "crates/core/src/cloning/pcr/mutation_intent.rs",
+      "action": "move",
+      "source_module": "crate::mutation_intent",
+      "destination_module": "crate::cloning::pcr::mutation_intent",
+      "owner": "cloning / pcr :: mutation_intent",
+      "module_visibility": "public",
+      "source_sha256": "9d6cd65879c60d95c7dd451f453d3218c0ebebea79cefc3df040a0352477ff4e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/oligo_formats.rs",
+      "destination": "crates/core/src/formats/oligos.rs",
+      "action": "move",
+      "source_module": "crate::oligo_formats",
+      "destination_module": "crate::formats::oligos",
+      "owner": "formats :: oligos",
+      "module_visibility": "public",
+      "source_sha256": "530b300e8aec40966986e155f6d1b6be6c2a72e2133c6b932099727a10375542",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/oligo_orders.rs",
+      "destination": "crates/core/src/planning/orders.rs",
+      "action": "move",
+      "source_module": "crate::oligo_orders",
+      "destination_module": "crate::planning::orders",
+      "owner": "planning :: orders",
+      "module_visibility": "public",
+      "source_sha256": "87f4d686ed70a79519d70d4e46aade465c9a04aa8346d84f050c9bfc88222f29",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_extension.rs",
+      "destination": "crates/core/src/cloning/overlap/extension/mod.rs",
+      "action": "move",
+      "source_module": "crate::overlap_extension",
+      "destination_module": "crate::cloning::overlap::extension",
+      "owner": "cloning / overlap / extension :: mod",
+      "module_visibility": "public",
+      "source_sha256": "05f19b489317bca429c058263e7732d0f5421e0362e993150923c67cec42e961",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_extension_digest_inspection.rs",
+      "destination": "crates/core/src/cloning/overlap/extension/digest.rs",
+      "action": "move",
+      "source_module": "crate::overlap_extension_digest_inspection",
+      "destination_module": "crate::cloning::overlap::extension::digest",
+      "owner": "cloning / overlap / extension :: digest",
+      "module_visibility": "public",
+      "source_sha256": "f8d8b14fcd5b1de303c275c6a5e9cd1975757129039ff990d5f43c0b186532d0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_extension_execution.rs",
+      "destination": "crates/core/src/cloning/overlap/extension/execution.rs",
+      "action": "move",
+      "source_module": "crate::overlap_extension_execution",
+      "destination_module": "crate::cloning::overlap::extension::execution",
+      "owner": "cloning / overlap / extension :: execution",
+      "module_visibility": "pub(crate)",
+      "source_sha256": "4bb97641a8542b2ba1fdf46e8010af0fa397b71a60957b84c85d30792c9e80b5",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_extension_pcr.rs",
+      "destination": "crates/core/src/cloning/overlap/extension/pcr.rs",
+      "action": "move",
+      "source_module": "crate::overlap_extension_pcr",
+      "destination_module": "crate::cloning::overlap::extension::pcr",
+      "owner": "cloning / overlap / extension :: pcr",
+      "module_visibility": "public",
+      "source_sha256": "b60f3bc73c8e18c39ef7d4b9d754976ea483ed015aa1b87b200b27830baf3239",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_extension_primer_design.rs",
+      "destination": "crates/core/src/cloning/overlap/extension/primers.rs",
+      "action": "move",
+      "source_module": "crate::overlap_extension_primer_design",
+      "destination_module": "crate::cloning::overlap::extension::primers",
+      "owner": "cloning / overlap / extension :: primers",
+      "module_visibility": "public",
+      "source_sha256": "ae7d666f39bc787e93852374ac9f61249c23a47f868c5056ef1d7eb392d0efda",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_primer_design.rs",
+      "destination": "crates/core/src/cloning/overlap/primer_design.rs",
+      "action": "move",
+      "source_module": "crate::overlap_primer_design",
+      "destination_module": "crate::cloning::overlap::primer_design",
+      "owner": "cloning / overlap :: primer_design",
+      "module_visibility": "public",
+      "source_sha256": "4357eee5edef577a98584a14873849f1ae5169a583a02d35056be4194370ba6e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/overlap_profiles.rs",
+      "destination": "crates/core/src/cloning/overlap/profiles.rs",
+      "action": "move",
+      "source_module": "crate::overlap_profiles",
+      "destination_module": "crate::cloning::overlap::profiles",
+      "owner": "cloning / overlap :: profiles",
+      "module_visibility": "public",
+      "source_sha256": "39f3055f930d7bc291fefda422b5740cf1ec61e7a8fa6a1083b7674d91cc153e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pairwise_context.rs",
+      "destination": "crates/core/src/alignment/context.rs",
+      "action": "move",
+      "source_module": "crate::pairwise_context",
+      "destination_module": "crate::alignment::context",
+      "owner": "alignment :: context",
+      "module_visibility": "public",
+      "source_sha256": "c0d0dcf2812529bd7cb8c17a76373b4e9d38eadeaa421f3d9f6599d103513d5c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pairwise_export.rs",
+      "destination": "crates/core/src/alignment/export.rs",
+      "action": "move",
+      "source_module": "crate::pairwise_export",
+      "destination_module": "crate::alignment::export",
+      "owner": "alignment :: export",
+      "module_visibility": "public",
+      "source_sha256": "ee3b7b6461f423cf22a0c8d903768956f975677cc8d352293902e39c658685bf",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pairwise_history.rs",
+      "destination": "crates/core/src/alignment/history.rs",
+      "action": "move",
+      "source_module": "crate::pairwise_history",
+      "destination_module": "crate::alignment::history",
+      "owner": "alignment :: history",
+      "module_visibility": "public",
+      "source_sha256": "8f21414e50a70eb7669acbee4b9ce7da81eacc0b5ee51e3124bf47c141a3dddf",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pairwise_review.rs",
+      "destination": "crates/core/src/alignment/review.rs",
+      "action": "move",
+      "source_module": "crate::pairwise_review",
+      "destination_module": "crate::alignment::review",
+      "owner": "alignment :: review",
+      "module_visibility": "public",
+      "source_sha256": "9cc2696b1cb2c5d3d68676da8e41450e677a234e3d2222d686bfa6d4f7209060",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pairwise_search.rs",
+      "destination": "crates/core/src/alignment/search.rs",
+      "action": "move",
+      "source_module": "crate::pairwise_search",
+      "destination_module": "crate::alignment::search",
+      "owner": "alignment :: search",
+      "module_visibility": "public",
+      "source_sha256": "12b5c28eeccca0a0102b379e45a5a166e2940891c7e30b6a8c47862e80a4c4ca",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pcr_digest_inspection.rs",
+      "destination": "crates/core/src/cloning/pcr/digest.rs",
+      "action": "move",
+      "source_module": "crate::pcr_digest_inspection",
+      "destination_module": "crate::cloning::pcr::digest",
+      "owner": "cloning / pcr :: digest",
+      "module_visibility": "public",
+      "source_sha256": "bf11079e86fa5998e809e2ae80f6cb2e9b2e5b655a526e418d5f157bf1ab1e3c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pcr_outputs.rs",
+      "destination": "crates/core/src/cloning/pcr/outputs.rs",
+      "action": "move",
+      "source_module": "crate::pcr_outputs",
+      "destination_module": "crate::cloning::pcr::outputs",
+      "owner": "cloning / pcr :: outputs",
+      "module_visibility": "public",
+      "source_sha256": "b6a188705fe6cb48a30cfff98c2267dc7dcdaa0e8352bb5b246c523e9a169453",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pcr_source.rs",
+      "destination": "crates/core/src/cloning/pcr/source.rs",
+      "action": "move",
+      "source_module": "crate::pcr_source",
+      "destination_module": "crate::cloning::pcr::source",
+      "owner": "cloning / pcr :: source",
+      "module_visibility": "pub(crate)",
+      "source_sha256": "a31e021d11768c131022641b1049653387b7835a2295c53ddd12eaea6293e4a7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/pdf.rs",
+      "destination": "crates/core/src/output/pdf.rs",
+      "action": "move",
+      "source_module": "crate::pdf",
+      "destination_module": "crate::output::pdf",
+      "owner": "output :: pdf",
+      "module_visibility": "public",
+      "source_sha256": "e2844fa83b5fe7059bc9d116e26ad92404f408d11675eccf30cfa423d8e631ce",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/physical_run_evidence.rs",
+      "destination": "crates/core/src/material/physical_evidence.rs",
+      "action": "move",
+      "source_module": "crate::physical_run_evidence",
+      "destination_module": "crate::material::physical_evidence",
+      "owner": "material :: physical_evidence",
+      "module_visibility": "public",
+      "source_sha256": "d2baa5c6054177e4a0685d30ae2f0acae4cb4d2f2694f432d7ac97f346fa6002",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/plan_editing.rs",
+      "destination": "crates/core/src/planning/editing.rs",
+      "action": "move",
+      "source_module": "crate::plan_editing",
+      "destination_module": "crate::planning::editing",
+      "owner": "planning :: editing",
+      "module_visibility": "public",
+      "source_sha256": "4a1a4ba8b9f8b79c86d2bdbdb56a9fcffe7549229a617de70413fd6b3c978ff7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/plan_oligos.rs",
+      "destination": "crates/core/src/planning/oligos.rs",
+      "action": "move",
+      "source_module": "crate::plan_oligos",
+      "destination_module": "crate::planning::oligos",
+      "owner": "planning :: oligos",
+      "module_visibility": "public",
+      "source_sha256": "61dfbbd2e61122404df53956d78f77656ac7a33c614d4b0bde0ac62e9030ec9f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/prepared_golden_gate.rs",
+      "destination": "crates/core/src/cloning/golden_gate/prepared.rs",
+      "action": "move",
+      "source_module": "crate::prepared_golden_gate",
+      "destination_module": "crate::cloning::golden_gate::prepared",
+      "owner": "cloning / golden_gate :: prepared",
+      "module_visibility": "public",
+      "source_sha256": "df86bb02fd7d481a5c92e3824ee7c96bd809ce9e55d12e43c3d89e7af7324bb5",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/primer_reuse.rs",
+      "destination": "crates/core/src/cloning/pcr/reuse.rs",
+      "action": "move",
+      "source_module": "crate::primer_reuse",
+      "destination_module": "crate::cloning::pcr::reuse",
+      "owner": "cloning / pcr :: reuse",
+      "module_visibility": "public",
+      "source_sha256": "1f68f02f0755bf68819f5eaed1b911855db22119d59dd1cc2375e954845a766c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/primers.rs",
+      "destination": "crates/core/src/cloning/pcr/primers.rs",
+      "action": "move",
+      "source_module": "crate::primers",
+      "destination_module": "crate::cloning::pcr::primers",
+      "owner": "cloning / pcr :: primers",
+      "module_visibility": "public",
+      "source_sha256": "c6d3a40e5a42c770f6a91f06aa70f56d47164607f867f7dd41d56692e22ce153",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protein_formats.rs",
+      "destination": "crates/core/src/formats/protein.rs",
+      "action": "move",
+      "source_module": "crate::protein_formats",
+      "destination_module": "crate::formats::protein",
+      "owner": "formats :: protein",
+      "module_visibility": "public",
+      "source_sha256": "b77d0edf51909390dfabdf895cb968868e88aa30a5973b412ebba532c31d0897",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protein_liability_annotation.rs",
+      "destination": "crates/core/src/protein/liability_annotation.rs",
+      "action": "move",
+      "source_module": "crate::protein_liability_annotation",
+      "destination_module": "crate::protein::liability_annotation",
+      "owner": "protein :: liability_annotation",
+      "module_visibility": "public",
+      "source_sha256": "ea1cf114d2894cba35d7d8535aa3d20c8fa261ea6ce7a44c6b78a5f20060d5b7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protein_properties.rs",
+      "destination": "crates/core/src/protein/properties.rs",
+      "action": "move",
+      "source_module": "crate::protein_properties",
+      "destination_module": "crate::protein::properties",
+      "owner": "protein :: properties",
+      "module_visibility": "public",
+      "source_sha256": "f0ec3336a076821778e95f7f9e483bff276eb90c4ec1d1583e2a3a522f4365d4",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/bindings.rs",
+      "destination": "crates/core/src/protocol/bindings.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::bindings",
+      "destination_module": "crate::protocol::bindings",
+      "owner": "Current worker bindings owner",
+      "module_visibility": "public",
+      "source_sha256": "0861abb549ff3c715832f5d141be527e7b8921af7e7e2434b80084bd8b0ce0f7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/envelope.rs",
+      "destination": "crates/core/src/protocol/envelope.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::envelope",
+      "destination_module": "crate::protocol::envelope",
+      "owner": "Current worker envelope owner",
+      "module_visibility": "public",
+      "source_sha256": "a209f17b06f777fc4fad7e4bd6eee3736cb701de1d377a638cae7abeb0136994",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/execution.rs",
+      "destination": "crates/core/src/protocol/execution.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::execution",
+      "destination_module": "crate::protocol::execution",
+      "owner": "Current worker execution owner",
+      "module_visibility": "public",
+      "source_sha256": "b6eae02bf2844930b73f6dc081b2e5435dbb4dcd3b18355254d6bb7e36c2b323",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/mod.rs",
+      "destination": "crates/core/src/protocol/mod.rs",
+      "action": "retain",
+      "source_module": "crate::protocol",
+      "destination_module": "crate::protocol",
+      "owner": "Current worker mod owner",
+      "module_visibility": "public",
+      "source_sha256": "5f37d948efe18ea97b7d28d6247c3fdedd627d12ec75d9c0370d8c24c64f7694",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/request.rs",
+      "destination": "crates/core/src/protocol/request.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::request",
+      "destination_module": "crate::protocol::request",
+      "owner": "Current worker request owner",
+      "module_visibility": "public",
+      "source_sha256": "48fd4571b233ae1cd275065c61806d0f5f3252b35cef6c3beb9c569ed5dd200f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/response.rs",
+      "destination": "crates/core/src/protocol/response.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::response",
+      "destination_module": "crate::protocol::response",
+      "owner": "Current worker response owner",
+      "module_visibility": "public",
+      "source_sha256": "e170ad58162d30274d0de5742f81ad6ae628dd1a0fdd9824d970be3bcace2dd9",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/schema.rs",
+      "destination": "crates/core/src/protocol/schema.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::schema",
+      "destination_module": "crate::protocol::schema",
+      "owner": "Current worker schema owner",
+      "module_visibility": "public",
+      "source_sha256": "10fa07aa7af70837054565e9db8e002d96e914123877b7cf5384118e2a383528",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/session.rs",
+      "destination": "crates/core/src/protocol/session.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::session",
+      "destination_module": "crate::protocol::session",
+      "owner": "Current worker session owner",
+      "module_visibility": "public",
+      "source_sha256": "4cf152fca15f7207e349e08e96c4c8d2a156a8587b0d994b7ddde49e7bcd1f6a",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol/validation.rs",
+      "destination": "crates/core/src/protocol/validation.rs",
+      "action": "retain",
+      "source_module": "crate::protocol::validation",
+      "destination_module": "crate::protocol::validation",
+      "owner": "Current worker validation owner",
+      "module_visibility": "private; protocol subtree only",
+      "source_sha256": "d9d4f1c4885be79779e57b5afb1250bdd71fc1e8f40466d91974c1f404b2f537",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol_layout.rs",
+      "destination": "crates/core/src/output/layout.rs",
+      "action": "move",
+      "source_module": "crate::protocol_layout",
+      "destination_module": "crate::output::layout",
+      "owner": "output :: layout",
+      "module_visibility": "public",
+      "source_sha256": "d2ed00030da67738e11563b0e96e48ffca7073857f23266deb9412687ae07c86",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/protocol_quantities.rs",
+      "destination": "crates/core/src/output/quantities.rs",
+      "action": "move",
+      "source_module": "crate::protocol_quantities",
+      "destination_module": "crate::output::quantities",
+      "owner": "output :: quantities",
+      "module_visibility": "public",
+      "source_sha256": "a5df0edaf983b4fabbc8dd52c64b1fe69c0ba26dfaad2b83d74cf6835100cd38",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/read_alignment_archive.rs",
+      "destination": "crates/core/src/review/reads/archive.rs",
+      "action": "move",
+      "source_module": "crate::read_alignment_archive",
+      "destination_module": "crate::review::reads::archive",
+      "owner": "review / reads :: archive",
+      "module_visibility": "public",
+      "source_sha256": "f46d1efd10bda0850ebab14be38ddad41300500d6590b4b691a60610a840a6e9",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/read_alignment_reference.rs",
+      "destination": "crates/core/src/review/reads/reference.rs",
+      "action": "move",
+      "source_module": "crate::read_alignment_reference",
+      "destination_module": "crate::review::reads::reference",
+      "owner": "review / reads :: reference",
+      "module_visibility": "public",
+      "source_sha256": "633a01f8bc9b1162559a3d39b7e391ca89d254381e86f06dd569fcf4d4940b1b",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/read_alignment_session.rs",
+      "destination": "crates/core/src/review/reads/session.rs",
+      "action": "move",
+      "source_module": "crate::read_alignment_session",
+      "destination_module": "crate::review::reads::session",
+      "owner": "review / reads :: session",
+      "module_visibility": "public",
+      "source_sha256": "1387052e182f2d402859b29ca9e51390690dd4d90bc2e9d35c58488b78addb55",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/read_alignment_store.rs",
+      "destination": "crates/core/src/review/reads/store.rs",
+      "action": "move",
+      "source_module": "crate::read_alignment_store",
+      "destination_module": "crate::review::reads::store",
+      "owner": "review / reads :: store",
+      "module_visibility": "public",
+      "source_sha256": "baa7cf0de9cff61a7b032b4146115e6dd3a8df05fe9fa8af6bf115c9ec49953b",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/read_checks.rs",
+      "destination": "crates/core/src/review/reads/checks.rs",
+      "action": "move",
+      "source_module": "crate::read_checks",
+      "destination_module": "crate::review::reads::checks",
+      "owner": "review / reads :: checks",
+      "module_visibility": "public",
+      "source_sha256": "d339dac63a35e2fb136bf5874e9d05b9e946773e3351dc87248ebe44d7a2bd63",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/read_review.rs",
+      "destination": "crates/core/src/review/reads/review.rs",
+      "action": "move",
+      "source_module": "crate::read_review",
+      "destination_module": "crate::review::reads::review",
+      "owner": "review / reads :: review",
+      "module_visibility": "public",
+      "source_sha256": "5cc8567c8d9fc4c5e88e78c97dc10e8538df8d927ba6f33b35afdeef17cb23e1",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/recombination.rs",
+      "destination": "crates/core/src/cloning/recombination/mod.rs",
+      "action": "move",
+      "source_module": "crate::recombination",
+      "destination_module": "crate::cloning::recombination",
+      "owner": "cloning / recombination :: mod",
+      "module_visibility": "public",
+      "source_sha256": "e32f93e9694af7f7d28620efa21b71eccd66d8bde0025a57fd9b08868d74d5c7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/reference_run_evidence.rs",
+      "destination": "crates/core/src/material/reference_evidence.rs",
+      "action": "move",
+      "source_module": "crate::reference_run_evidence",
+      "destination_module": "crate::material::reference_evidence",
+      "owner": "material :: reference_evidence",
+      "module_visibility": "public",
+      "source_sha256": "467225f53f9368d712f0339fa6fb022cf185f29eee58991ea2c6ab0d3071d145",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/reference_transfer.rs",
+      "destination": "crates/core/src/sequence/reference_transfer.rs",
+      "action": "move",
+      "source_module": "crate::reference_transfer",
+      "destination_module": "crate::sequence::reference_transfer",
+      "owner": "sequence :: reference_transfer",
+      "module_visibility": "public",
+      "source_sha256": "db0659ac0cd796c19b8969e5e9321b5936875fc95485984e22bdb5696bf0dbe2",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/restriction_history.rs",
+      "destination": "crates/core/src/cloning/restriction/history.rs",
+      "action": "move",
+      "source_module": "crate::restriction_history",
+      "destination_module": "crate::cloning::restriction::history",
+      "owner": "cloning / restriction :: history",
+      "module_visibility": "public",
+      "source_sha256": "e8926db9377c3ce066fbd0fd7b3ca94992d44b6bf55dcf2ed986fcc3b19a7f9f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/restriction_inspection.rs",
+      "destination": "crates/core/src/cloning/restriction/inspection.rs",
+      "action": "move",
+      "source_module": "crate::restriction_inspection",
+      "destination_module": "crate::cloning::restriction::inspection",
+      "owner": "cloning / restriction :: inspection",
+      "module_visibility": "public",
+      "source_sha256": "f291099dbce69f62e701d1551c2d849c5fbc4b3277cb485dbc37ad1fac44eee9",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/restriction_selection.rs",
+      "destination": "crates/core/src/cloning/restriction/selection.rs",
+      "action": "move",
+      "source_module": "crate::restriction_selection",
+      "destination_module": "crate::cloning::restriction::selection",
+      "owner": "cloning / restriction :: selection",
+      "module_visibility": "public",
+      "source_sha256": "3410db236f96f4ae437802bae6245cd4e38de4ee11af57bfa1230c168aaede2f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/rna_history.rs",
+      "destination": "crates/core/src/documents/rna_history.rs",
+      "action": "move",
+      "source_module": "crate::rna_history",
+      "destination_module": "crate::documents::rna_history",
+      "owner": "documents :: rna_history",
+      "module_visibility": "public",
+      "source_sha256": "e0b8e09099d3fe1325db9a1bae09fa6ce15ba1aeed3293786cb35fb349cb6324",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/run_catalog_digest.rs",
+      "destination": "crates/core/src/cloning/restriction/run_digest.rs",
+      "action": "move",
+      "source_module": "crate::run_catalog_digest",
+      "destination_module": "crate::cloning::restriction::run_digest",
+      "owner": "cloning / restriction :: run_digest",
+      "module_visibility": "public",
+      "source_sha256": "06a85c513fe83b15eed2689fff87e76de97283e0efda91eabf723c22626f6738",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/run_evidence.rs",
+      "destination": "crates/core/src/material/evidence.rs",
+      "action": "move",
+      "source_module": "crate::run_evidence",
+      "destination_module": "crate::material::evidence",
+      "owner": "material :: evidence",
+      "module_visibility": "public",
+      "source_sha256": "77f9343fc3e4ff19faf94cd42acbad2192d62bb5b7375e405511f21314332b91",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/run_lineage.rs",
+      "destination": "crates/core/src/material/lineage.rs",
+      "action": "move",
+      "source_module": "crate::run_lineage",
+      "destination_module": "crate::material::lineage",
+      "owner": "material :: lineage",
+      "module_visibility": "public",
+      "source_sha256": "746bcbda292312ab30872eef8c174e06b9ecc1878c22d99390b2556d03bbc0c0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/run_material.rs",
+      "destination": "crates/core/src/material/run.rs",
+      "action": "move",
+      "source_module": "crate::run_material",
+      "destination_module": "crate::material::run",
+      "owner": "material :: run",
+      "module_visibility": "public",
+      "source_sha256": "574ab424d9ed093079d7c535f95fc22b3ef3054dffb8ca08c2924c6c5ffa41e0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/run_material_capsule.rs",
+      "destination": "crates/core/src/material/capsule.rs",
+      "action": "move",
+      "source_module": "crate::run_material_capsule",
+      "destination_module": "crate::material::capsule",
+      "owner": "material :: capsule",
+      "module_visibility": "public",
+      "source_sha256": "2d24f1e9d970e4195190a130698d8af29a0052ef86fa6711e12ef4c4c6895cdc",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/run_review.rs",
+      "destination": "crates/core/src/material/review.rs",
+      "action": "move",
+      "source_module": "crate::run_review",
+      "destination_module": "crate::material::review",
+      "owner": "material :: review",
+      "module_visibility": "public",
+      "source_sha256": "cfe9a883927c73374b7aae580dab641ea6e124c41526e8b25ab4e021c214f1ed",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/scf_export.rs",
+      "destination": "crates/core/src/formats/scf.rs",
+      "action": "move",
+      "source_module": "crate::scf_export",
+      "destination_module": "crate::formats::scf",
+      "owner": "formats :: scf",
+      "module_visibility": "public",
+      "source_sha256": "5404d70a248ebc9b934d26dccda5be10a3cdd4a61e5230106e8c955f66e46a43",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/search.rs",
+      "destination": "crates/core/src/sequence/search.rs",
+      "action": "move",
+      "source_module": "crate::search",
+      "destination_module": "crate::sequence::search",
+      "owner": "sequence :: search",
+      "module_visibility": "public",
+      "source_sha256": "3fb57aaa9cf3bee82feb5e148be89758492739a2ff7904a8d0be1df9810a8199",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/selective_junction_edit.rs",
+      "destination": "crates/core/src/cloning/assembly/selective_edit.rs",
+      "action": "move",
+      "source_module": "crate::selective_junction_edit",
+      "destination_module": "crate::cloning::assembly::selective_edit",
+      "owner": "cloning / assembly :: selective_edit",
+      "module_visibility": "public",
+      "source_sha256": "c84e94123164d5b32c7f179913bb803123153e36ab510ea33fe3d41575eba9a0",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/sequence_export.rs",
+      "destination": "crates/core/src/formats/sequence/export.rs",
+      "action": "move",
+      "source_module": "crate::sequence_export",
+      "destination_module": "crate::formats::sequence::export",
+      "owner": "formats / sequence :: export",
+      "module_visibility": "public",
+      "source_sha256": "4804824952f07f121802017a4e858d6f2fbec6b89083b4f09a9347e98d66efe6",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/sequence_similarity.rs",
+      "destination": "crates/core/src/sequence/similarity.rs",
+      "action": "move",
+      "source_module": "crate::sequence_similarity",
+      "destination_module": "crate::sequence::similarity",
+      "owner": "sequence :: similarity",
+      "module_visibility": "public",
+      "source_sha256": "76c19f9518929858d46ffb31da2d6d3b4436c7c460ae7aa5b324029f55511329",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/snapgene.rs",
+      "destination": "crates/core/src/formats/snapgene/mod.rs",
+      "action": "move",
+      "source_module": "crate::snapgene",
+      "destination_module": "crate::formats::snapgene",
+      "owner": "formats / snapgene :: mod",
+      "module_visibility": "public",
+      "source_sha256": "fac9d782e85342f03c65eb16de9c07b2ee39611649cbc42f96cbbf0920c0bf39",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/snapgene_export.rs",
+      "destination": "crates/core/src/formats/snapgene/export.rs",
+      "action": "move",
+      "source_module": "crate::snapgene_export",
+      "destination_module": "crate::formats::snapgene::export",
+      "owner": "formats / snapgene :: export",
+      "module_visibility": "public",
+      "source_sha256": "a90c3cf07dbfdf06b7ee3e17ce66d04bc9b3e6132fb77017081a3559af4b378e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/structure_view.rs",
+      "destination": "crates/core/src/protein/structure.rs",
+      "action": "move",
+      "source_module": "crate::structure_view",
+      "destination_module": "crate::protein::structure",
+      "owner": "protein :: structure",
+      "module_visibility": "public",
+      "source_sha256": "ed269c18cb1028d1cb70fd553e9e52f4461e87eeaa7926f7f90991b3e5dae0fa",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/svg.rs",
+      "destination": "crates/core/src/output/svg.rs",
+      "action": "move",
+      "source_module": "crate::svg",
+      "destination_module": "crate::output::svg",
+      "owner": "output :: svg",
+      "module_visibility": "public",
+      "source_sha256": "8e9197e0ff4122474a50c38b56fe0e669fa0cfee6b1461578e1a4955fd300709",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/svg_export.rs",
+      "destination": "crates/core/src/output/svg_export.rs",
+      "action": "move",
+      "source_module": "crate::svg_export",
+      "destination_module": "crate::output::svg_export",
+      "owner": "output :: svg_export",
+      "module_visibility": "public",
+      "source_sha256": "4f9798c69d61346214b7c85d72707e598a111b76db30494c1fbd3820467cbc8e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/tailing.rs",
+      "destination": "crates/core/src/cloning/ligation/tailing.rs",
+      "action": "move",
+      "source_module": "crate::tailing",
+      "destination_module": "crate::cloning::ligation::tailing",
+      "owner": "cloning / ligation :: tailing",
+      "module_visibility": "public",
+      "source_sha256": "8a96d1c09718a794945a82f978268b4e840704c17abee7ad892d2a9a7c24162e",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/tailing_recipe.rs",
+      "destination": "crates/core/src/cloning/ligation/tailing_recipe.rs",
+      "action": "move",
+      "source_module": "crate::tailing_recipe",
+      "destination_module": "crate::cloning::ligation::tailing_recipe",
+      "owner": "cloning / ligation :: tailing_recipe",
+      "module_visibility": "public",
+      "source_sha256": "e70a54dad6c444944ffd3e5da27bc9613fabdb47af7b29d9a10c456b18267571",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/three_prime_resection.rs",
+      "destination": "crates/core/src/cloning/overlap/resection.rs",
+      "action": "move",
+      "source_module": "crate::three_prime_resection",
+      "destination_module": "crate::cloning::overlap::resection",
+      "owner": "cloning / overlap :: resection",
+      "module_visibility": "public",
+      "source_sha256": "2da6f1f8253deb0bcad02e4e312275ffcadfb32fe2eeb95dac893621840d1596",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo.rs",
+      "destination": "crates/core/src/cloning/topo/mod.rs",
+      "action": "move",
+      "source_module": "crate::topo",
+      "destination_module": "crate::cloning::topo",
+      "owner": "cloning / topo :: mod",
+      "module_visibility": "public",
+      "source_sha256": "2e204e68d35a5ebcdc2fa9ad00f133c7b3cf1ebe4f76c8a4f50cfa17062fced7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo_actions.rs",
+      "destination": "crates/core/src/cloning/topo/actions.rs",
+      "action": "move",
+      "source_module": "crate::topo_actions",
+      "destination_module": "crate::cloning::topo::actions",
+      "owner": "cloning / topo :: actions",
+      "module_visibility": "public",
+      "source_sha256": "0393e2c6f5ef3b1498b401cee45f58cd9c49bb396c16b428d2822ebe00665f80",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo_annotations.rs",
+      "destination": "crates/core/src/cloning/topo/annotations.rs",
+      "action": "move",
+      "source_module": "crate::topo_annotations",
+      "destination_module": "crate::cloning::topo::annotations",
+      "owner": "cloning / topo :: annotations",
+      "module_visibility": "public",
+      "source_sha256": "098f10e8adcc6513bb9a3d2cec1dabda773183a85ada2bdcc9ede52cd7df3d4f",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo_graph_history.rs",
+      "destination": "crates/core/src/cloning/topo/graph_history.rs",
+      "action": "move",
+      "source_module": "crate::topo_graph_history",
+      "destination_module": "crate::cloning::topo::graph_history",
+      "owner": "cloning / topo :: graph_history",
+      "module_visibility": "public",
+      "source_sha256": "e654a20c6f2d330aa573d1137fff8152acc1713615595baa1d97878c07dad815",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo_preparation.rs",
+      "destination": "crates/core/src/cloning/topo/preparation.rs",
+      "action": "move",
+      "source_module": "crate::topo_preparation",
+      "destination_module": "crate::cloning::topo::preparation",
+      "owner": "cloning / topo :: preparation",
+      "module_visibility": "public",
+      "source_sha256": "5dcfc7257bcb62d92af0deef60abdbfe8ba1eee25a1443b153c3d9ca8b66f7e8",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo_run_preparation.rs",
+      "destination": "crates/core/src/cloning/topo/run_preparation.rs",
+      "action": "move",
+      "source_module": "crate::topo_run_preparation",
+      "destination_module": "crate::cloning::topo::run_preparation",
+      "owner": "cloning / topo :: run_preparation",
+      "module_visibility": "public",
+      "source_sha256": "4d4abdd302935447250ea7e5bb5f9c641b7df18e3eb4fde0ea6065ff62626db4",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/topo_worker.rs",
+      "destination": "crates/core/src/cloning/topo/worker.rs",
+      "action": "move",
+      "source_module": "crate::topo_worker",
+      "destination_module": "crate::cloning::topo::worker",
+      "owner": "cloning / topo :: worker",
+      "module_visibility": "public",
+      "source_sha256": "e43060133f4344d99d94c378ff579d245028b74d6bfac49a78301e3df8e5b42a",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/trace_validation.rs",
+      "destination": "crates/core/src/review/reads/trace_validation.rs",
+      "action": "move",
+      "source_module": "crate::trace_validation",
+      "destination_module": "crate::review::reads::trace_validation",
+      "owner": "review / reads :: trace_validation",
+      "module_visibility": "public",
+      "source_sha256": "287f7bf2cc350b1461ff332162b6502f6209504f221ee870ccf04496095cadc3",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/traces.rs",
+      "destination": "crates/core/src/review/reads/traces.rs",
+      "action": "move",
+      "source_module": "crate::traces",
+      "destination_module": "crate::review::reads::traces",
+      "owner": "review / reads :: traces",
+      "module_visibility": "public",
+      "source_sha256": "e3ec0e10d0f514a5d1e6fdca2493854d4656d13188fac68e3714dfc01ec8666c",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/tracks.rs",
+      "destination": "crates/core/src/tracks/mod.rs",
+      "action": "move",
+      "source_module": "crate::tracks",
+      "destination_module": "crate::tracks",
+      "owner": "tracks :: mod",
+      "module_visibility": "public",
+      "source_sha256": "8b286853d105863a125b3e2f01f88a84fae66e374279024bf0a5f3dd2097a6f4",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/transfer.rs",
+      "destination": "crates/core/src/documents/transfer.rs",
+      "action": "move",
+      "source_module": "crate::transfer",
+      "destination_module": "crate::documents::transfer",
+      "owner": "documents :: transfer",
+      "module_visibility": "public",
+      "source_sha256": "0c8335474aef8a361d23d32134e232141c42d55a608215b9336114ff5cff83cc",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/translation.rs",
+      "destination": "crates/core/src/sequence/translation.rs",
+      "action": "move",
+      "source_module": "crate::translation",
+      "destination_module": "crate::sequence::translation",
+      "owner": "sequence :: translation",
+      "module_visibility": "public",
+      "source_sha256": "555e7b2061bb937d1b21d7b284c0301ddda4bbb9b52196fe2b3e26c07d933d65",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/translation_reference.rs",
+      "destination": "crates/core/src/sequence/translation_reference.rs",
+      "action": "move",
+      "source_module": "crate::translation_reference",
+      "destination_module": "crate::sequence::translation_reference",
+      "owner": "sequence :: translation_reference",
+      "module_visibility": "public",
+      "source_sha256": "5d22c77737c19eeeb1b1fa55e90d6bf2206a327f7e235b1332f378e6b72b5820",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/variant_reference.rs",
+      "destination": "crates/core/src/review/variants/reference.rs",
+      "action": "move",
+      "source_module": "crate::variant_reference",
+      "destination_module": "crate::review::variants::reference",
+      "owner": "review / variants :: reference",
+      "module_visibility": "public",
+      "source_sha256": "11906c565ac4a2976d32c2a839d98f7e8c1a9baa76c443e9b8b8813b7ab3902d",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/variants_archive.rs",
+      "destination": "crates/core/src/review/variants/archive.rs",
+      "action": "move",
+      "source_module": "crate::variants_archive",
+      "destination_module": "crate::review::variants::archive",
+      "owner": "review / variants :: archive",
+      "module_visibility": "public",
+      "source_sha256": "d9770f9bf00986fbb8fa7ffa8f6116448d0262157a5b5faa0c38bedd8731893a",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/variants_session.rs",
+      "destination": "crates/core/src/review/variants/session.rs",
+      "action": "move",
+      "source_module": "crate::variants_session",
+      "destination_module": "crate::review::variants::session",
+      "owner": "review / variants :: session",
+      "module_visibility": "public",
+      "source_sha256": "cde98e4664d4cdddf999d56765910a199303d9acfe8a35f16e698ccb592edf24",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/verification.rs",
+      "destination": "crates/core/src/verification/mod.rs",
+      "action": "move",
+      "source_module": "crate::verification",
+      "destination_module": "crate::verification",
+      "owner": "verification :: mod",
+      "module_visibility": "public",
+      "source_sha256": "c3f3b7ba7f71c58d1e6379a911b0a49c0ae0d8d7758aed726a75051981966ee7",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/view_tracks.rs",
+      "destination": "crates/core/src/tracks/view.rs",
+      "action": "move",
+      "source_module": "crate::view_tracks",
+      "destination_module": "crate::tracks::view",
+      "owner": "tracks :: view",
+      "module_visibility": "public",
+      "source_sha256": "0f48a0feb6930af438b1f7f03bf316c30497407271c8894520870e3938313209",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/workspace.rs",
+      "destination": "crates/core/src/documents/workspace.rs",
+      "action": "move",
+      "source_module": "crate::workspace",
+      "destination_module": "crate::documents::workspace",
+      "owner": "documents :: workspace",
+      "module_visibility": "public",
+      "source_sha256": "766ef2b745b41c9ef7cf660563534891591f55581dd7ec1ddea5e335932f5e0b",
+      "whole_owner_move": true
+    },
+    {
+      "source": "crates/core/src/xdna_export.rs",
+      "destination": "crates/core/src/formats/original/xdna_export.rs",
+      "action": "move",
+      "source_module": "crate::xdna_export",
+      "destination_module": "crate::formats::original::xdna_export",
+      "owner": "formats / original :: xdna_export",
+      "module_visibility": "public",
+      "source_sha256": "3b3779039456317b3df89a1610f230760f8bf51abfb41becd217040668149572",
+      "whole_owner_move": true
+    }
+  ],
+  "create_declaration_modules": [
+    {
+      "path": "crates/core/src/cloning/assembly/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "diagnostics",
+        "edit_intent",
+        "edited_primers",
+        "intent",
+        "junction_edit",
+        "junctions",
+        "library_history",
+        "recipe",
+        "selective_edit",
+        "substitution_intent"
+      ]
+    },
+    {
+      "path": "crates/core/src/cloning/ligation/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "fidelity",
+        "outcomes",
+        "profiles",
+        "recipe",
+        "tailing",
+        "tailing_recipe"
+      ]
+    },
+    {
+      "path": "crates/core/src/cloning/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "assembly",
+        "golden_gate",
+        "ligation",
+        "overlap",
+        "pcr",
+        "recombination",
+        "restriction",
+        "topo"
+      ]
+    },
+    {
+      "path": "crates/core/src/cloning/overlap/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "annealing",
+        "assembly",
+        "extension",
+        "primer_design",
+        "profiles",
+        "resection"
+      ]
+    },
+    {
+      "path": "crates/core/src/cloning/pcr/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "digest",
+        "material",
+        "mismatch_digest",
+        "mismatch_outputs",
+        "mutagenesis",
+        "mutation_intent",
+        "outputs",
+        "primers",
+        "reuse",
+        "source"
+      ]
+    },
+    {
+      "path": "crates/core/src/cloning/restriction/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "catalog",
+        "cut_selection",
+        "enzyme_sets",
+        "history",
+        "inspection",
+        "run_digest",
+        "selection",
+        "setups"
+      ]
+    },
+    {
+      "path": "crates/core/src/documents/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "history",
+        "rna_history",
+        "transfer",
+        "workspace"
+      ]
+    },
+    {
+      "path": "crates/core/src/formats/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "alignment",
+        "annotations",
+        "fidelity",
+        "oligos",
+        "original",
+        "protein",
+        "scf",
+        "sequence",
+        "snapgene"
+      ]
+    },
+    {
+      "path": "crates/core/src/material/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "capsule",
+        "derivation",
+        "evidence",
+        "lineage",
+        "outputs",
+        "physical_evidence",
+        "reference_evidence",
+        "review",
+        "run"
+      ]
+    },
+    {
+      "path": "crates/core/src/output/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "gel",
+        "layout",
+        "pdf",
+        "quantities",
+        "svg",
+        "svg_export"
+      ]
+    },
+    {
+      "path": "crates/core/src/planning/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "combinatorial",
+        "editing",
+        "oligos",
+        "orders"
+      ]
+    },
+    {
+      "path": "crates/core/src/protein/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "antibody_alignment",
+        "liability_annotation",
+        "properties",
+        "structure"
+      ]
+    },
+    {
+      "path": "crates/core/src/review/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "contigs",
+        "reads",
+        "variants"
+      ]
+    },
+    {
+      "path": "crates/core/src/review/reads/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "archive",
+        "checks",
+        "indexed_bam",
+        "reference",
+        "review",
+        "session",
+        "store",
+        "trace_validation",
+        "traces"
+      ]
+    },
+    {
+      "path": "crates/core/src/review/variants/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "archive",
+        "reference",
+        "session"
+      ]
+    },
+    {
+      "path": "crates/core/src/sequence/mod.rs",
+      "purpose": "Actual namespace declaration module; no reexports, aliases, forwarding functions or glob imports",
+      "children": [
+        "analysis",
+        "annotations",
+        "codon_design",
+        "crispr",
+        "editing",
+        "reference_transfer",
+        "search",
+        "similarity",
+        "template",
+        "translation",
+        "translation_reference"
+      ]
+    }
+  ],
+  "projected_directory_counts": {
+    "crates/core/src": 1,
+    "crates/core/src/alignment": 7,
+    "crates/core/src/chemistry": 3,
+    "crates/core/src/cloning": 1,
+    "crates/core/src/cloning/assembly": 11,
+    "crates/core/src/cloning/golden_gate": 7,
+    "crates/core/src/cloning/golden_gate/domestication": 3,
+    "crates/core/src/cloning/ligation": 7,
+    "crates/core/src/cloning/overlap": 6,
+    "crates/core/src/cloning/overlap/extension": 5,
+    "crates/core/src/cloning/pcr": 11,
+    "crates/core/src/cloning/recombination": 2,
+    "crates/core/src/cloning/restriction": 9,
+    "crates/core/src/cloning/topo": 7,
+    "crates/core/src/documents": 5,
+    "crates/core/src/formats": 5,
+    "crates/core/src/formats/alignment": 3,
+    "crates/core/src/formats/annotations": 2,
+    "crates/core/src/formats/original": 3,
+    "crates/core/src/formats/sequence": 4,
+    "crates/core/src/formats/snapgene": 2,
+    "crates/core/src/material": 9,
+    "crates/core/src/material/derivation": 1,
+    "crates/core/src/output": 7,
+    "crates/core/src/planning": 4,
+    "crates/core/src/planning/combinatorial": 4,
+    "crates/core/src/protein": 5,
+    "crates/core/src/protocol": 9,
+    "crates/core/src/review": 1,
+    "crates/core/src/review/contigs": 2,
+    "crates/core/src/review/reads": 10,
+    "crates/core/src/review/variants": 4,
+    "crates/core/src/sequence": 11,
+    "crates/core/src/sequence/annotations": 3,
+    "crates/core/src/tracks": 5,
+    "crates/core/src/verification": 1
+  },
+  "ownership_review": [
+    {
+      "family": "Current complete modules",
+      "decision": "Move complete files and their inherent/trait implementations together. Do not split structs into declaration and methods files just to shorten paths."
+    },
+    {
+      "family": "protocol",
+      "decision": "Retain all nine existing files and canonical paths unchanged; session/request/response owners stay with their implementations."
+    },
+    {
+      "family": "verification",
+      "decision": "verification.rs -> verification/mod.rs is mechanical ownership relocation only. Its 4528-line warning remains until the separately planned coherent verifier/plan/output extraction; do not claim line-limit debt resolved."
+    },
+    {
+      "family": "analysis",
+      "decision": "sequence/analysis.rs retains the complete existing bounded analysis module, including its current PCR/restriction functions. Relocation does not arbitrarily fragment these algorithms; later reviewed ownership extraction may move complete algorithms to cloning domains."
+    },
+    {
+      "family": "material derivation",
+      "decision": "Keep 2729-line derivation owner intact under material/derivation/mod.rs. Co-locate preview declarations, revisions and methods during a separate cohesive extraction, not scattered impl fragments."
+    },
+    {
+      "family": "run material capsules",
+      "decision": "run_material_capsule currently has private root module but public API reexported through run_material. New material::capsule is the canonical public owner; remove the old run_material reexport list and update all callers directly."
+    },
+    {
+      "family": "alignment exchange",
+      "decision": "Existing additional PIR/GDE/SELEX parsers are a distinct codec family, not newer versions of the main exchange format. profiles and pir_gde_selex names replace vague exchange_more. ExportOptions keeps one canonical owner in profiles; remove its existing reexport from the additional codecs and import the canonical owner directly."
+    },
+    {
+      "family": "original external formats",
+      "decision": "Retain original Collagene XML and XDNA support and source-byte fidelity. External formats are product functionality, not internal compatibility scaffolding. existing mixed legacy_formats owner remains whole as formats::original; its GCG path remains in sequence::gcg."
+    },
+    {
+      "family": "private helper modules",
+      "decision": "pcr source, Golden Gate domestication rounds and overlap-extension execution use pub(crate) only if cross-domain callers need access; do not expose as public product API. Annotation GTF remains private to annotations."
+    },
+    {
+      "family": "upstream scientific crates",
+      "decision": "Do not copy existing canonical collagene-model/topo/recombination/etc algorithms into new core subtrees. Existing explicit crate integrations are reviewed separately; this move manifest introduces no replacement aliases."
+    }
+  ],
+  "integration_requirements": [
+    "Refresh source hashes before execution; reject changed files and regenerate affected plan entries rather than overwrite concurrent work.",
+    "Update use paths, qualified paths, macros, public schema paths, tests, benchmarks/examples, MCP/web/desktop/library consumers, fixtures and documentation together.",
+    "Apply module-path replacements as one syntax-aware mapping against original resolved paths, most-specific source owner first. Do not sequentially rewrite already-rewritten destination paths when an old root name overlaps a new namespace (formats, alignment, chemistry, tracks).",
+    "New module declarations must expose current owners with minimum required visibility; no transitional aliases.",
+    "Keep byte enums, schema versions, resource bounds and scientific behavior unchanged for this mechanical move batch.",
+    "Nested private and inline modules move with their complete owners. annotation_formats/gtf.rs moves with its parent and retains private mod gtf declaration.",
+    "Do not compile each worker patch; integrate shared lib declarations and imports once, then focused native/WASM validation as instructed by repository rules.",
+    "Before claiming completion, recompute all physical Rust directory/file limits and verify discovery/coverage of the already regrouped integration tests."
+  ],
+  "update_owner_module_declarations": [
+    {
+      "path": "crates/core/src/alignment/mod.rs",
+      "declarations": [
+        "pub mod context;",
+        "pub mod dotplot;",
+        "pub mod export;",
+        "pub mod history;",
+        "pub mod review;",
+        "pub mod search;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/chemistry/mod.rs",
+      "declarations": [
+        "pub mod methylation;",
+        "pub mod tracked_duplex;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/assembly/mod.rs",
+      "declarations": [
+        "pub mod diagnostics;",
+        "pub mod edit_intent;",
+        "pub mod edited_primers;",
+        "pub mod intent;",
+        "pub mod junction_edit;",
+        "pub mod junctions;",
+        "pub mod library_history;",
+        "pub mod recipe;",
+        "pub mod selective_edit;",
+        "pub mod substitution_intent;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/golden_gate/domestication/mod.rs",
+      "declarations": [
+        "pub mod preparation;",
+        "pub(crate) mod rounds;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/golden_gate/mod.rs",
+      "declarations": [
+        "pub mod domestication;",
+        "pub mod fusion_design;",
+        "pub mod fusion_rank;",
+        "pub mod junction_edit;",
+        "pub mod prepared;",
+        "pub mod primers;",
+        "pub mod reaction;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/ligation/mod.rs",
+      "declarations": [
+        "pub mod fidelity;",
+        "pub mod outcomes;",
+        "pub mod profiles;",
+        "pub mod recipe;",
+        "pub mod tailing;",
+        "pub mod tailing_recipe;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/mod.rs",
+      "declarations": [
+        "pub mod assembly;",
+        "pub mod golden_gate;",
+        "pub mod ligation;",
+        "pub mod overlap;",
+        "pub mod pcr;",
+        "pub mod recombination;",
+        "pub mod restriction;",
+        "pub mod topo;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/overlap/extension/mod.rs",
+      "declarations": [
+        "pub mod digest;",
+        "pub(crate) mod execution;",
+        "pub mod pcr;",
+        "pub mod primers;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/overlap/mod.rs",
+      "declarations": [
+        "pub mod annealing;",
+        "pub mod assembly;",
+        "pub mod extension;",
+        "pub mod primer_design;",
+        "pub mod profiles;",
+        "pub mod resection;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/pcr/mod.rs",
+      "declarations": [
+        "pub mod digest;",
+        "pub mod material;",
+        "pub mod mismatch_digest;",
+        "pub mod mismatch_outputs;",
+        "pub mod mutagenesis;",
+        "pub mod mutation_intent;",
+        "pub mod outputs;",
+        "pub mod primers;",
+        "pub mod reuse;",
+        "pub(crate) mod source;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/recombination/mod.rs",
+      "declarations": [
+        "pub mod multisite;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/restriction/mod.rs",
+      "declarations": [
+        "pub mod catalog;",
+        "pub mod cut_selection;",
+        "pub mod enzyme_sets;",
+        "pub mod history;",
+        "pub mod inspection;",
+        "pub mod run_digest;",
+        "pub mod selection;",
+        "pub mod setups;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/cloning/topo/mod.rs",
+      "declarations": [
+        "pub mod actions;",
+        "pub mod annotations;",
+        "pub mod graph_history;",
+        "pub mod preparation;",
+        "pub mod run_preparation;",
+        "pub mod worker;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/documents/mod.rs",
+      "declarations": [
+        "pub mod history;",
+        "pub mod rna_history;",
+        "pub mod transfer;",
+        "pub mod workspace;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/formats/alignment/mod.rs",
+      "declarations": [
+        "pub mod pir_gde_selex;",
+        "pub mod profiles;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/formats/annotations/mod.rs",
+      "declarations": [
+        "mod gtf;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/formats/mod.rs",
+      "declarations": [
+        "pub mod alignment;",
+        "pub mod annotations;",
+        "pub mod fidelity;",
+        "pub mod oligos;",
+        "pub mod original;",
+        "pub mod protein;",
+        "pub mod scf;",
+        "pub mod sequence;",
+        "pub mod snapgene;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/formats/original/mod.rs",
+      "declarations": [
+        "pub mod collagene_lower_strand;",
+        "pub mod xdna_export;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/formats/sequence/mod.rs",
+      "declarations": [
+        "pub mod embl;",
+        "pub mod export;",
+        "pub mod gcg;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/formats/snapgene/mod.rs",
+      "declarations": [
+        "pub mod export;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/material/mod.rs",
+      "declarations": [
+        "pub mod capsule;",
+        "pub mod derivation;",
+        "pub mod evidence;",
+        "pub mod lineage;",
+        "pub mod outputs;",
+        "pub mod physical_evidence;",
+        "pub mod reference_evidence;",
+        "pub mod review;",
+        "pub mod run;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/output/mod.rs",
+      "declarations": [
+        "pub mod gel;",
+        "pub mod layout;",
+        "pub mod pdf;",
+        "pub mod quantities;",
+        "pub mod svg;",
+        "pub mod svg_export;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/planning/combinatorial/mod.rs",
+      "declarations": [
+        "pub mod batch;",
+        "pub mod export;",
+        "pub mod release;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/planning/mod.rs",
+      "declarations": [
+        "pub mod combinatorial;",
+        "pub mod editing;",
+        "pub mod oligos;",
+        "pub mod orders;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/protein/mod.rs",
+      "declarations": [
+        "pub mod antibody_alignment;",
+        "pub mod liability_annotation;",
+        "pub mod properties;",
+        "pub mod structure;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/review/contigs/mod.rs",
+      "declarations": [
+        "pub mod history;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/review/mod.rs",
+      "declarations": [
+        "pub mod contigs;",
+        "pub mod reads;",
+        "pub mod variants;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/review/reads/mod.rs",
+      "declarations": [
+        "pub mod archive;",
+        "pub mod checks;",
+        "pub mod indexed_bam;",
+        "pub mod reference;",
+        "pub mod review;",
+        "pub mod session;",
+        "pub mod store;",
+        "pub mod trace_validation;",
+        "pub mod traces;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/review/variants/mod.rs",
+      "declarations": [
+        "pub mod archive;",
+        "pub mod reference;",
+        "pub mod session;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/sequence/annotations/mod.rs",
+      "declarations": [
+        "pub mod batch;",
+        "pub mod library;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/sequence/mod.rs",
+      "declarations": [
+        "pub mod analysis;",
+        "pub mod annotations;",
+        "pub mod codon_design;",
+        "pub mod crispr;",
+        "pub mod editing;",
+        "pub mod reference_transfer;",
+        "pub mod search;",
+        "pub mod similarity;",
+        "pub mod template;",
+        "pub mod translation;",
+        "pub mod translation_reference;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    },
+    {
+      "path": "crates/core/src/tracks/mod.rs",
+      "declarations": [
+        "pub mod crispr;",
+        "pub mod genome;",
+        "pub mod genome_session;",
+        "pub mod view;"
+      ],
+      "action": "Add actual child module declarations in owner implementation file; preserve its definitions and remove superseded declarations. This is not a facade."
+    }
+  ]
+}

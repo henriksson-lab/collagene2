@@ -1,12 +1,12 @@
 //! Positional modification state on the actual stored 5′→3′ strands.
 //! Explicit source-generation/synthesis assumptions, never imported metadata authority.
 use crate::{
-    Error, Molecule, Sequence, Topology,
     analysis::{self, Enzyme},
     chemistry::{self, Duplex, EndRepairMethod, EndTreatment, Strand},
     methylation::{self, MethylationState, Outcome, Sensitivity},
     tailing::{self, TailingBase},
 };
+use collagene_model::{Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 pub const ENGINE_VERSION: &str = "modified-duplex-1";
@@ -405,8 +405,8 @@ fn provenance<'a>(
 }
 fn duplex_preflight(duplex: &Duplex) -> Result<(), Error> {
     if duplex.nicks.len() > 10_000
-        || duplex.top.len() > crate::model::MAX_SEQUENCE_LEN
-        || duplex.bottom.len() > crate::model::MAX_SEQUENCE_LEN
+        || duplex.top.len() > collagene_model::MAX_SEQUENCE_LEN
+        || duplex.bottom.len() > collagene_model::MAX_SEQUENCE_LEN
     {
         return Err(Error::TooLarge);
     }
@@ -415,8 +415,8 @@ fn duplex_preflight(duplex: &Duplex) -> Result<(), Error> {
 }
 impl TrackedDuplex {
     pub fn validate(&self) -> Result<(), Error> {
-        if self.duplex.top.len() > crate::model::MAX_SEQUENCE_LEN
-            || self.duplex.bottom.len() > crate::model::MAX_SEQUENCE_LEN
+        if self.duplex.top.len() > collagene_model::MAX_SEQUENCE_LEN
+            || self.duplex.bottom.len() > collagene_model::MAX_SEQUENCE_LEN
             || self.top_modifications.spans.len() > MAX_SPANS
             || self.bottom_modifications.spans.len() > MAX_SPANS
             || self.generation.len() > 1000

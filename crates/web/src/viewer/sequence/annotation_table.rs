@@ -83,7 +83,7 @@ pub fn AnnotationTable(
                     index,
                     label: feature.label().to_string(),
                     kind: feature.kind.clone(),
-                    location: collagene_core::formats::sequence::location_text(&feature.location)
+                    location: collagene_model::annotations::insdc::location_text(&feature.location)
                         .unwrap_or_else(|e| format!("Unresolved location: {e}")),
                     review: feature.needs_review,
                     qualifiers: feature.qualifiers.len(),

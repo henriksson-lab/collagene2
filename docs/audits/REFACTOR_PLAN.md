@@ -57,11 +57,11 @@ in-flight scientific work before overlapping its files with a refactor.
 
 ## Next connected native editing behavior
 
-The source investigation identifies an actual editor gap: `Molecule::replace`
-globally refuses four coordinate qualifier keys, including edits outside features;
-destination paste duplicates this refusal. Native editing and paste also have
-different translation/phase cleanup policies. Complete item 6 as a semantic batch,
-not merely a module move or blanket-guard deletion.
+Item 6 is now implemented in source: the lower model owner, native edits, paste
+and strand flips use one supported-qualifier policy. The former global refusal,
+duplicated paste checks and index-paired phase postpass are deleted. The
+[native editing contract](../NATIVE_ANNOTATION_EDITING.md) records behavior,
+operation-specific bounds and integration evidence. Native/WASM checks and 1,349 focused cases pass; exact-source CI remains required.
 
 Preserve supported assertions when the parent biological calls, order, strand and
 phase remain intact. An interrupted parent/exception must require review and
@@ -76,7 +76,9 @@ and paste-only phase postpass after one authoritative edit policy exists.
 Independent fixtures must cover forward/reverse/spliced features, codon phase,
 partial TERM, boundary insertion, complete deletion, identity, malformed and
 unsupported qualifiers, resource bounds, unchanged sources and citation replay.
-These are required future semantics, not behavior enabled by the current refactor.
+These semantics are implemented; fixture execution and exact-source CI remain
+separate requirements. The common request budget is unchanged, while the bounded
+native edit profile retains 100,000-feature / 32 MiB original-record support.
 
 ## Explicit decisions to retain current owners
 
@@ -111,3 +113,17 @@ without a concrete reason. Browser, screenshot and application HTTP checks remai
 deferred until full in-scope code is complete. Exact-source CI and product
 acceptance remain separate delivery gates; passing this audit does not complete
 the product goal.
+
+## Next citation and edit-log owner
+
+Legal GenBank `(sites)`, unscoped/prose reference descriptions, repeated `bases`
+after semicolons, and fully deleted citation coverage still prevent otherwise
+valid DNA edits. This is bibliographic handling, not unknown molecular biology.
+The next connected batch should move complete citation/edit-log ownership into
+`model::genbank_edit`, retaining Molecule and its meaningful implementation together.
+Use typed mapped/source-only citation outcomes; keep numbering and bibliography
+while explicitly withholding destination coverage for ancestral-only evidence.
+Always replay the source-bound edit log independently before export. Malformed,
+stale or unsupported-version logs remain errors, never source-only fallbacks.
+Update all callers and fixtures directly, with one current encoding and no root
+forwarding exports. The [delivery audit](../DELIVERY_AUDIT.md) records the gap.

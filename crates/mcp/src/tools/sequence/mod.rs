@@ -233,7 +233,7 @@ pub struct ArtifactRegion {
 #[tool_router(router = sequence_router, vis = "pub(crate)")]
 impl CollageneServer {
     #[tool(
-        description = "Edit one immutable reference document: reverse-complement, rotate a circular origin, extract a zero-based half-open interval, set/delete an annotation, rename or change reference topology. Uses validated native coordinate/qualifier projection and annotation-edit guards. Publishes a new session-only reference revision; the source stays unchanged. This is reference intent only, never physical cleavage/ligation, recorded workspace ancestry, or verified cloning material. Unsupported coordinate semantics fail rather than silently moving source coordinates."
+        description = "Edit one immutable reference document: reverse-complement, rotate a circular origin, extract or replace a zero-based half-open interval, set/delete an annotation, flip annotation strands, rename or change reference topology. Uses validated native coordinate/qualifier projection and annotation-edit guards. Publishes a new session-only reference revision; the source stays unchanged. This is reference intent only, never physical cleavage/ligation, recorded workspace ancestry, or verified cloning material. Unsupported coordinate semantics fail rather than silently moving source coordinates."
     )]
     pub(crate) async fn edit_reference_document(
         &self,
@@ -252,16 +252,20 @@ impl CollageneServer {
             let operation = args.operation.name();
             let product = args.operation.apply(&source).map_err(bad)?;
             collagene_model::bounds::model_preflight(&[&product]).map_err(bad)?;
-            let published = server.session.insert_documents(
-                vec![product],
-                vec!["Reference edit only: no physical product, reusable material origin, native history or current scientific verification is established.".into()],
-            )?;
+            let review_count = product.features.iter().filter(|feature| feature.needs_review).count();
+            let mut warnings = vec!["Reference edit only: no physical product, reusable material origin, native history or current scientific verification is established.".into()];
+            if review_count > 0 {
+                warnings.push(format!("Result contains {review_count} annotations marked for review; inspect their locations and source-evidence notes before using their biological claims."));
+            }
+            let published = server.session.insert_documents(vec![product], warnings)?;
             let Some(mut receipt) = published.structured_content else {
                 return Err(ErrorData::internal_error("Missing session document receipt", None));
             };
             receipt["source"] = json!(args.document);
             receipt["operation"] = json!(operation);
             receipt["reference_only"] = json!(true);
+            receipt["review_required"] = json!(review_count > 0);
+            receipt["annotations_requiring_review"] = json!(review_count);
             output(receipt)
         }).await
     }

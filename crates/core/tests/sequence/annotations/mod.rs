@@ -11,5 +11,6 @@ mod genbank_reference_editing;
 mod gtf_annotations;
 mod gtf_protocol;
 mod model_edit_qualifiers;
+mod native_coordinate_edits;
 mod reference_transfer;
 mod reference_transfer_protocol;

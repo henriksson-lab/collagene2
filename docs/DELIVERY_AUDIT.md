@@ -151,6 +151,54 @@ scientific CI and desktop packaging passed for the fix at `ded0067`. Current
 ownership changes retain their own exact-source CI gate.
 [Profile](GENBANK_FORMAT.md).
 
+## Connected native annotation editing
+
+The [native editing batch](NATIVE_ANNOTATION_EDITING.md) is implemented in source.
+Projection, qualifier proofs and INSDC codec now have a dependency-safe model
+owner. All callers use canonical paths; old core forwarding entry points are
+removed. Native replace preserves endpoint envelopes and supported biological
+claims, while disrupted assertions become bounded source evidence. Paste uses
+that policy without index-pairing remaining annotations. Annotation-only strand
+flips deactivate claims; arbitrary manual relocation remains guarded.
+
+Native editing retains the source-format scale of 100,000 features and 32 MiB of
+original GenBank under a separate bounded edit profile; ordinary shared-request
+admission is unchanged. Positive fixtures cover 4,097 rich features and an original
+record larger than 5 MiB. Invalid Unicode whitespace cannot become silent deletion.
+MCP adds two typed operations to its existing reference-edit tool, retaining 209
+tools and immutable reference-only publication.
+
+Independent comparison accounts for 54 unchanged moved function bodies and source
+strings, with new behavior covered by 19 core and two real SDK fixtures. Existing
+native-model expectations now check literal geometry, source-evidence notes and
+citation replay instead of the removed blanket refusal. Scientific engine
+`science-34` and directly affected standalone edit-engine stamps reject stale
+contexts; binary layouts remain unchanged. Native harness compilation and the final web/worker WASM check pass. Focused
+execution passes 1,349 distinct cases: 852 core, 79 MCP SDK, 11 model and 407 web.
+The late continuity correction replays 622 affected cases, retaining 727 unchanged
+passing results. Discovery preserves all 2,463 baseline cases after two intentional
+semantic test renames and exposes 2,495 cases in 32 harnesses. Source comparison
+and execution evidence is retained in the
+[owner record](audits/native-annotation-owner-comparison.json). Layout passes
+1,245 Rust files / 215 directories with no violations or size warnings. The
+preceding `4b87ac0` passed scientific and desktop CI; exact-source CI remains
+required for this batch. Installed-platform and graphical acceptance remain open.
+
+## Next connected citation batch
+
+Current native editing still rejects legal GenBank `(sites)` or unscoped reference
+descriptions, and edits that remove all cited coverage. NCBI explicitly permits
+optional parenthetical scope and `(sites)` annotation citations, including repeated
+`bases` after semicolons. [NCBI format definition](https://www.ncbi.nlm.nih.gov/genbank/-release/123/).
+These bibliography forms must not block valid DNA editing or silently become
+claims about destination coverage. The next batch needs typed mapped/source-only
+citation results, stable numbering and retained bibliographic/source-scope evidence,
+with fresh raw-source/current-DNA replay and existing tamper/resource checks.
+Prose/unknown descriptions require full consumption or explicit source-only status;
+never accept a parsed prefix or convert replay failure into ancestral evidence.
+The complete citation/edit-log owner should move with its types and meaningful
+operations into `model::genbank_edit`, without old-path facades.
+
 ## Antibody analysis acceptance scope
 
 Benchling's current [antibody annotation reference](https://help.benchling.com/hc/en-us/articles/9684246077325-Annotate-antibody-specific-information-on-protein-sequences)

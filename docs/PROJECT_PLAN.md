@@ -82,7 +82,7 @@ exact-source CI remains required for that implementation checkpoint. Its
 [ownership tracking](audits/organization-followup-2026-11-28.md) records completed
 moves. The fresh [refactor plan](audits/REFACTOR_PLAN.md) now owns the remaining
 proposal/pool, natural-method, import-facade and growth-review work. Current layout
-passes across 1,241 Rust files/214 directories; the largest directory has 17
+passes across 1,245 Rust files/215 directories; the largest directory has 17
 direct Rust files and no file reaches 3,000 lines. The paired-oligo base `ded0067` passed scientific CI
 on Windows/macOS/Linux and desktop packaging. Current-source checks and the
 full existing delivery gates remain required. No superseded internal API or
@@ -95,8 +95,14 @@ The GenBank feature codec is locally verified with bounded parsing/writing and
 regression now corrected and verified in the original core/MCP cases. Paired-oligo
 library provenance passes native/WASM checks and 529 focused cases;
 coordinate-bearing qualifier projection and guarded native MCP reference editing
-are now implemented and pass native/WASM checks plus 2,152 selected cases. Retain
-exact-source CI gates. See
+are now implemented and pass native/WASM checks plus 2,152 selected cases. The
+connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) moves the
+canonical projection/codec owner down into the model, preserves native edit
+envelopes and unifies paste/strand-curation policy. Native/WASM checks and 1,349
+selected cases pass, including both-strand circular/compound continuity and
+100,000-feature capacity. The next connected editor gap is source-only handling
+of legal but non-positional GenBank citations and deleted citation coverage; see
+the [current audit](DELIVERY_AUDIT.md#next-connected-citation-batch). Retain exact-source CI gates. See
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
 
 This order supersedes the older milestone order and any format-first expansion.

@@ -152,6 +152,20 @@ fn unsupported_coordinate_metadata_is_not_exported_as_if_remapped() {
     f.qualifiers
         .push(("transl_except".into(), Some("(pos:4..6,aa:Sec)".into())));
     mol.features.push(f);
+    let original = mol.clone();
+    let edited = mol.replace(0, 0, "AA").unwrap();
+    assert_eq!(edited.sequence.as_str(), "AAAAAACCCC");
+    assert_eq!(edited.features[0].location, Location::range(2, 10));
+    assert!(!edited.features[0].needs_review);
+    assert!(
+        edited.features[0]
+            .qualifiers
+            .contains(&("transl_except".into(), Some("(pos:6..8,aa:Sec)".into())))
+    );
+    assert_eq!(mol, original);
+    mol.features[0]
+        .qualifiers
+        .push(("rpt_unit_range".into(), Some("4..6".into())));
     assert!(mol.replace(0, 0, "AA").is_err());
     let mut mol = molecule("AAAACCCC", Topology::Linear);
     mol.original_genbank = Some("REFERENCE   1 (bases 1 to 8)\n".into());

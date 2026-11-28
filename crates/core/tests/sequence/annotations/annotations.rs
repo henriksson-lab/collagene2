@@ -1,4 +1,5 @@
 use collagene_core::sequence::annotations::*;
+use collagene_model::annotations::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn molecule(sequence: &str, topology: Topology) -> Molecule {
     Molecule::dna("fixture", sequence, topology).unwrap()

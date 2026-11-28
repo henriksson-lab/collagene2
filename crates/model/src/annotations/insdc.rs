@@ -1,6 +1,6 @@
 //! Bounded, full-consumption INSDC locations. Unsupported semantics retain the
 //! complete validated expression instead of being converted into precise bases.
-use collagene_model::{Error, Location, MAX_SEQUENCE_LEN};
+use crate::{Error, Location, MAX_SEQUENCE_LEN};
 
 const MAX_BYTES: usize = 65_536;
 const MAX_DEPTH: usize = 32;
@@ -10,7 +10,7 @@ fn invalid(reason: &str) -> Error {
     Error::Format(format!("invalid INSDC location: {reason}"))
 }
 
-pub(super) fn check_text(text: &str) -> Result<(), Error> {
+pub fn check_text(text: &str) -> Result<(), Error> {
     if text.is_empty()
         || text.len() > MAX_BYTES
         || !text.is_ascii()
@@ -41,7 +41,7 @@ pub(super) fn check_text(text: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub(super) fn parse(text: &str, length: usize) -> Result<Location, Error> {
+pub fn parse_location(text: &str, length: usize) -> Result<Location, Error> {
     let text = text.trim();
     let location = Parser::new(text, Some(length))?.complete()?;
     let location = location.unwrap_or_else(|| Location::Unresolved(text.to_owned()));
@@ -52,13 +52,13 @@ pub(super) fn parse(text: &str, length: usize) -> Result<Location, Error> {
 /// Validate raw feature-table syntax before any general GenBank parser executes.
 /// Remote positions and local positions are not compared to a record length here.
 /// Positive coordinates are limited to i64::MAX for safe GenBank interoperability.
-pub(super) fn validate_for_genbank(text: &str) -> Result<(), Error> {
+pub fn validate_for_genbank(text: &str) -> Result<(), Error> {
     Parser::new(text.trim(), None)?.complete().map(|_| ())
 }
 
 /// Render the current native location directly, with the same syntax and bounds
 /// as parsing. Opaque validated descriptors retain their complete original text.
-pub(super) fn format(location: &Location) -> Result<String, Error> {
+pub fn location_text(location: &Location) -> Result<String, Error> {
     let mut formatter = Formatter {
         text: String::new(),
         nodes: 0,

@@ -16,7 +16,9 @@ fn range(start: usize, end: usize, before: bool, after: bool) -> Location {
 }
 
 fn rejected_without_panic(text: &str, length: usize) {
-    let outcome = std::panic::catch_unwind(|| sequence::parse_location(text, length));
+    let outcome = std::panic::catch_unwind(|| {
+        collagene_model::annotations::insdc::parse_location(text, length)
+    });
     assert!(outcome.is_ok(), "location parser panicked for {text:?}");
     assert!(
         outcome.unwrap().is_err(),
@@ -176,11 +178,11 @@ fn insdc_local_examples_preserve_exact_tree_coordinates_and_roundtrip() {
         ),
     ];
     for (text, expected) in cases {
-        let actual = sequence::parse_location(text, 6000).unwrap();
+        let actual = collagene_model::annotations::insdc::parse_location(text, 6000).unwrap();
         assert_eq!(actual, expected, "{text}");
-        let rendered = sequence::location_text(&actual).unwrap();
+        let rendered = collagene_model::annotations::insdc::location_text(&actual).unwrap();
         assert_eq!(
-            sequence::parse_location(&rendered, 6000).unwrap(),
+            collagene_model::annotations::insdc::parse_location(&rendered, 6000).unwrap(),
             expected,
             "{text} -> {rendered}"
         );
@@ -207,9 +209,12 @@ fn unsupported_valid_descriptors_retain_whole_text_without_local_sequence_author
         "complement(J00194.1:100..202)",
         "join(1..3,gap(100),7..9)",
     ] {
-        let location = sequence::parse_location(text, 128).unwrap();
+        let location = collagene_model::annotations::insdc::parse_location(text, 128).unwrap();
         assert_eq!(location, Location::Unresolved(text.into()), "{text}");
-        assert_eq!(sequence::location_text(&location).unwrap(), text);
+        assert_eq!(
+            collagene_model::annotations::insdc::location_text(&location).unwrap(),
+            text
+        );
         assert!(
             location.spans().is_empty(),
             "unresolved coordinates must not become local spans"

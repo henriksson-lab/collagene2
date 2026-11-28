@@ -1,0 +1,381 @@
+{
+  "method": "Rust token body comparison ignoring whitespace/comments and commas; qualifier codec paths substituted, public codec entry functions renamed",
+  "comparisons": [
+    {
+      "owner": "projection",
+      "function": "len",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "destination_end",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "bad",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "unsupported",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "warn",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "budget",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "mappings",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "identity",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "has_unresolved",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "uncertain",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "complement",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "compound",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "intersections",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "project_location",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "atoms",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "adjacent",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "disrupted",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "mark_partial",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "short_label",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "coordinate_qualifier",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "project_features",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "project_features_with_topology",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "project_collapsing_features",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "projection",
+      "function": "project_with_maps",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "invalid",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "check_text",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "parse_location",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "validate_for_genbank",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "location_text",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "append",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "location",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "location",
+      "occurrence": 1,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "new",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "complete",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "charge",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "spaces",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "take",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "expect",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "number",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "position",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "check_position",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "local_range",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "insdc",
+      "function": "remote_prefix",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "charge",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "note",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "key",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "project",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "project",
+      "occurrence": 1,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "parse",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "token",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "exact_size",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "calls",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "codon_phase",
+      "occurrence": 0,
+      "body_equal": true
+    },
+    {
+      "owner": "qualifiers",
+      "function": "membership",
+      "occurrence": 0,
+      "body_equal": true
+    }
+  ],
+  "expected_changes": [
+    "qualifier source preflight delegates same per-feature charging to shared preflight_feature",
+    "new atomic assertion deactivation",
+    "native endpoint edit geometry now owned by Edit with work charging"
+  ],
+  "string_literals": [
+    {
+      "old": "crates/core/src/sequence/annotations/mod.rs",
+      "new": "crates/model/src/annotations/mod.rs",
+      "includes_retained_core_orchestration": true,
+      "missing_literals": {}
+    },
+    {
+      "old": "crates/core/src/sequence/annotations/qualifiers.rs",
+      "new": "crates/model/src/annotations/qualifiers.rs",
+      "includes_retained_core_orchestration": false,
+      "missing_literals": {}
+    },
+    {
+      "old": "crates/core/src/formats/sequence/location.rs",
+      "new": "crates/model/src/annotations/insdc.rs",
+      "includes_retained_core_orchestration": false,
+      "missing_literals": {}
+    }
+  ],
+  "verification": {
+    "native": "pass",
+    "wasm": "pass",
+    "focused_cases": 1349,
+    "failures": 0,
+    "by_crate": {
+      "core": 852,
+      "web": 407,
+      "mcp": 79,
+      "model": 11
+    },
+    "new_core_cases": 19,
+    "new_sdk_cases": 2,
+    "discovery_cases": 2495,
+    "discovery_harnesses": 32,
+    "baseline_cases": 2463,
+    "baseline_harnesses": 29,
+    "baseline_names_preserved_after_explicit_semantic_renames": true,
+    "intentional_test_renames": {
+      "annotations::annotation_batch::coordinate_linked_qualifiers_block_only_strand_edits_and_do_not_partially_apply": "annotations::annotation_batch::coordinate_linked_qualifiers_become_source_evidence_only_for_strand_edits",
+      "annotations::model_edit_qualifiers::coordinate_bearing_case_variants_do_not_bypass_native_edit_rejection": "annotations::model_edit_qualifiers::coordinate_bearing_case_variants_obey_the_supported_and_unsupported_edit_profiles"
+    },
+    "fixture_corrections": "Five obsolete or mistaken expectations corrected, with only affected cases rerun. Later continuity fix added three cases and replayed 622 affected cases while retaining 727 unchanged passing results.",
+    "continuity_fix_rerun_cases": 622,
+    "continuity_fix_retained_passing_cases": 727,
+    "continuity_review": "Independent review confirmed lost-adjacency detection on both strands/circular origins and safe proof omission for untouched single ranges, nested complements and singleton joins. Full 100,000-feature/two-qualifier case passes without exceeding the shared work budget."
+  }
+}

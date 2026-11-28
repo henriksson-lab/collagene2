@@ -42,23 +42,13 @@ pub fn set_feature(
                 .qualifiers
                 .iter()
                 .chain(&feature.qualifiers)
-                .any(|(key, _)| crate::sequence::annotations::coordinate_qualifier(key))
+                .any(|(key, _)| collagene_model::annotations::coordinate_qualifier(key))
             {
                 return Err(Error::Unsupported(
                     "Changing an annotation location cannot reinterpret coordinate-bearing qualifiers. Remove or review those qualifiers at the current location before relocating the annotation, then explicitly curate the new annotation.".into(),
                 ));
             }
-            let mut evidence = Vec::new();
-            feature.qualifiers.retain(|(key, value)| {
-                if key.eq_ignore_ascii_case("translation") || key.eq_ignore_ascii_case("codon_start") {
-                    evidence.push(("note".into(), Some(format!(
-                        "Collagene source qualifier /{key}={} retained only as source evidence; recalculate after annotation location review.",
-                        value.as_deref().unwrap_or("(flag)")))));
-                    false
-                } else { true }
-            });
-            feature.qualifiers.extend(evidence);
-            feature.needs_review = true;
+            collagene_model::annotations::deactivate_assertions(&mut feature)?;
         }
     }
     collagene_model::bounds::feature_preflight(&[std::slice::from_ref(&feature)])?;

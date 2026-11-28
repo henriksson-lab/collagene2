@@ -7,13 +7,14 @@ The implementation goal is active. The working application covers substantial pa
 The fresh [three-part ownership audit and refactor plan](audits/REFACTOR_PLAN.md)
 identified targeted ownership work. Proposal/pool owners, Design/Draft/TreeJob
 methods and canonical import cleanup now pass native/WASM checks and 495 focused
-cases. Current layout covers 1,241 Rust files / 214 directories, maximum 17 direct
+cases. Current layout covers 1,245 Rust files / 215 directories, maximum 17 direct
 files per directory and largest file 2,869 lines. The
 [implementation record](audits/ownership-implementation-2026-11-28.md) distinguishes
-source comparisons, execution and remaining exact-source CI. Native annotation
-editing and future growth reviews remain open; historical checkpoints below
-retain their original scope.
-
+source comparisons, execution and remaining exact-source CI. The connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) is now
+implemented and passes native/WASM checks plus 1,349 selected cases, including
+21 new core/SDK fixtures. Exact-source CI remains required for this batch.
+Future growth reviews and full-product acceptance remain open; historical
+checkpoints below retain their original scope.
 
 Scientific, MCP and web ownership refactors are implemented with direct caller
 updates and no old-path facades. The layout gate covers 1,234 Rust files with a
@@ -23,10 +24,14 @@ cases; its scientific CI and desktop packaging passed on Windows/macOS/Linux. Se
 [refactor status](audits/CODE_ORGANIZATION.md) for scope and evidence.
 
 Current source uses worker schema 123, candidate schema 31, draft schema 20,
-scientific engine science-33 and 209 native MCP tools. The current annotation
-qualifier/reference-edit batch passes native/WASM compilation and 2,152 selected
-cases, including 21 new core/SDK fixtures; exact-source CI remains required. This does not establish
-full-product or visual acceptance.
+scientific engine science-34 and 209 native MCP tools. Native sequence edits,
+paste and annotation-only strand flips now share annotation proofs and bounded
+source-evidence handling; MCP receipts expose annotation review counts. The
+preceding projection/ownership checkpoint `4b87ac0` passed scientific CI on all
+three native platforms and desktop packaging. Its 2,152 annotation and 495
+ownership executions are separate, overlapping evidence; the connected native
+edit batch passes 1,349 selected cases. This does not establish full-product,
+installed-platform or visual acceptance.
 
 RNA chemistry/declaration review, protein liability
 screening and imported structure viewing are integrated. Antibody analysis now

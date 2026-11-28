@@ -1,11 +1,9 @@
 //! Literal source/product geometry for coordinate-bearing qualifier projection.
 use collagene_core::{
     formats::sequence,
-    sequence::{
-        annotations::{self, MappingSegment},
-        editing::set_feature,
-    },
+    sequence::{annotations, editing::set_feature},
 };
+use collagene_model::annotations::{self as projection, MappingSegment};
 use collagene_model::{Feature, Location, Molecule, Topology};
 
 fn feature(kind: &str, location: Location, qualifiers: &[(&str, Option<&str>)]) -> Feature {
@@ -51,8 +49,8 @@ fn values<'a>(feature: &'a Feature, key: &str) -> Vec<&'a str> {
         .collect()
 }
 
-fn mapped(source: &Molecule, offset: usize) -> annotations::Projection {
-    annotations::project_features(
+fn mapped(source: &Molecule, offset: usize) -> projection::Projection {
+    projection::project_features(
         source,
         &[MappingSegment {
             source_start: 0,
@@ -209,7 +207,7 @@ fn a_spliced_codon_uses_biological_join_order_and_literal_original_coordinates()
     for invalid in ["(pos:join(5,1..2),aa:Sec)", "(pos:join(1,3..4),aa:Sec)"] {
         source.features[0].qualifiers[0].1 = Some(invalid.into());
         assert!(
-            annotations::project_features(
+            projection::project_features(
                 &source,
                 &[MappingSegment {
                     source_start: 0,
@@ -353,7 +351,7 @@ fn identity_keeps_source_bytes_and_dropped_annotations_remain_unmapped_evidence(
         .qualifiers
         .push(("coded_by".into(), Some("NC_REMOTE:1..3".into())));
     source.features[0].qualifiers[1].1 = Some("(pos:remote:7..9,aa:Sec)unknown".into());
-    let identity = annotations::project_features(
+    let identity = projection::project_features(
         &source,
         &[MappingSegment {
             source_start: 0,
@@ -365,7 +363,7 @@ fn identity_keeps_source_bytes_and_dropped_annotations_remain_unmapped_evidence(
     )
     .unwrap();
     assert_eq!(identity.features, source.features);
-    let absent = annotations::project_features(
+    let absent = projection::project_features(
         &source,
         &[MappingSegment {
             source_start: 0,

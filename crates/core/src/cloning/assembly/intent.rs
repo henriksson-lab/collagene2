@@ -9,8 +9,8 @@ use crate::{
         run::{self as run_material, MaterialOrigin},
     },
     planning::plan::PlanInput,
-    sequence::annotations::{self, MappingSegment},
 };
+use collagene_model::annotations::{self, MappingSegment};
 use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

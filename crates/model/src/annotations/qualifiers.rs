@@ -1,7 +1,7 @@
 //! Local coordinate-bearing qualifier projection. This parses the qualifier
 //! wrapper only; location syntax and rendering use the canonical INSDC codec.
 use super::{Atom, MappingSegment, atoms, budget, project_location, unsupported};
-use collagene_model::{Alphabet, Error, Feature, Location, Molecule};
+use crate::{Alphabet, Error, Feature, Location, Molecule};
 
 const MAX_WRAPPER_BYTES: usize = 65_536;
 const MAX_NOTE_BYTES: usize = 1024 * 1024;
@@ -17,16 +17,37 @@ pub(super) fn preflight(source: &Molecule, work: &mut usize) -> Result<(), Error
         return Err(Error::TooLarge);
     }
     for feature in &source.features {
-        charge(work, 1 + feature.kind.len().div_ceil(64))?;
-        for (key, value) in &feature.qualifiers {
-            let bytes = key
-                .len()
-                .checked_add(value.as_ref().map_or(0, String::len))
-                .ok_or(Error::TooLarge)?;
-            charge(work, 1 + bytes.div_ceil(64))?;
-        }
+        preflight_feature(feature, work)?;
     }
     Ok(())
+}
+pub(super) fn preflight_feature(feature: &Feature, work: &mut usize) -> Result<(), Error> {
+    charge(work, 1 + feature.kind.len().div_ceil(64))?;
+    for (key, value) in &feature.qualifiers {
+        let bytes = key
+            .len()
+            .checked_add(value.as_ref().map_or(0, String::len))
+            .ok_or(Error::TooLarge)?;
+        charge(work, 1 + bytes.div_ceil(64))?;
+    }
+    Ok(())
+}
+pub(super) fn deactivated(feature: &Feature, work: &mut usize) -> Result<Vec<Qualifier>, Error> {
+    let mut result = Vec::with_capacity(feature.qualifiers.len());
+    let mut evidence = Vec::new();
+    for (key, value) in &feature.qualifiers {
+        budget(work)?;
+        if super::coordinate_qualifier(key)
+            || key.eq_ignore_ascii_case("translation")
+            || key.eq_ignore_ascii_case("codon_start")
+        {
+            evidence.push(note(key, value)?);
+        } else {
+            result.push((key.clone(), value.clone()));
+        }
+    }
+    result.extend(evidence);
+    Ok(result)
 }
 fn charge(work: &mut usize, units: usize) -> Result<(), Error> {
     *work = work
@@ -251,7 +272,7 @@ impl<'a> Wrapper<'a> {
                 }
             })
             .collect();
-        let location = crate::formats::sequence::parse_location(&position, length)?;
+        let location = super::insdc::parse_location(&position, length)?;
         let count = exact_size(&location, work)?;
         if count != 3
             && !(kind == Kind::TranslationException
@@ -307,7 +328,7 @@ impl<'a> Wrapper<'a> {
                 "embedded codon biological order/strand changed",
             ));
         }
-        let position = crate::formats::sequence::location_text(&mapped)?;
+        let position = super::insdc::location_text(&mapped)?;
         let length = self
             .before
             .len()

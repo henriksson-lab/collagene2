@@ -81,7 +81,35 @@ fn unsupported_scope_deleted_coverage_and_coordinate_qualifiers_remain_explicit(
         qualifiers: vec![("transl_except".into(), Some("(pos:1..3,aa:Sec)".into()))],
         needs_review: false,
     });
-    assert!(guarded.replace(5, 5, "A").is_err());
+    let before = guarded.clone();
+    let outside = guarded.replace(5, 5, "A").unwrap();
+    assert_eq!(outside.sequence.as_str(), "AAAACACCCGGGG");
+    assert_eq!(outside.features, guarded.features);
+    assert_eq!(outside.original_genbank.as_deref(), Some(SOURCE));
+    assert_eq!(
+        remap_genbank_reference("1  (bases 3 to 8; 10 to 12)", &recipe(&outside)).unwrap(),
+        "1  (bases 3 to 9; 11 to 13)"
+    );
+    let shifted = guarded.replace(0, 0, "TT").unwrap();
+    assert_eq!(shifted.features[0].location, Location::range(2, 5));
+    assert!(!shifted.features[0].needs_review);
+    assert_eq!(
+        shifted.features[0].qualifiers,
+        vec![("transl_except".into(), Some("(pos:3..5,aa:Sec)".into()))]
+    );
+    assert_eq!(shifted.original_genbank.as_deref(), Some(SOURCE));
+    assert_eq!(
+        remap_genbank_reference("1  (bases 3 to 8; 10 to 12)", &recipe(&shifted)).unwrap(),
+        "1  (bases 5 to 10; 12 to 14)"
+    );
+    assert_eq!(guarded, before);
+    let mut unsupported = guarded.clone();
+    unsupported.features[0]
+        .qualifiers
+        .push(("rpt_unit_range".into(), Some("1..3".into())));
+    let original = unsupported.clone();
+    assert!(unsupported.replace(5, 5, "A").is_err());
+    assert_eq!(unsupported, original);
 }
 
 #[test]

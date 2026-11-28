@@ -62,7 +62,7 @@ pub fn FeatureEditor(
             Location::range(a, b)
         });
     let location = RwSignal::new(
-        collagene_core::formats::sequence::location_text(&initial_location).unwrap_or_default(),
+        collagene_model::annotations::insdc::location_text(&initial_location).unwrap_or_default(),
     );
     let review = RwSignal::new(original.as_ref().is_some_and(|f| f.needs_review));
     let error = RwSignal::new(String::new());
@@ -87,14 +87,14 @@ pub fn FeatureEditor(
     let save = move |_| {
         let source = source.get_value();
         let text = location.get_untracked();
-        let parsed = if collagene_core::formats::sequence::location_text(&initial_location)
+        let parsed = if collagene_model::annotations::insdc::location_text(&initial_location)
             .ok()
             .as_deref()
             == Some(text.trim())
         {
             Ok(initial_location.clone())
         } else {
-            collagene_core::formats::sequence::parse_location(&text, source.sequence.len())
+            collagene_model::annotations::insdc::parse_location(&text, source.sequence.len())
         };
         let parsed = match parsed {
             Ok(location) => location,

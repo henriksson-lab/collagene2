@@ -1,11 +1,9 @@
 //! Borrowed native PCR frames. No synthesized reference stock or restored report.
 use crate::{
     chemistry::{self, Strand, tracked_duplex::TrackedDuplex},
-    sequence::{
-        analysis::{self, PcrGeometryProduct, Primer, TemplateView},
-        annotations::MappingSegment,
-    },
+    sequence::analysis::{self, PcrGeometryProduct, Primer, TemplateView},
 };
+use collagene_model::annotations::MappingSegment;
 use collagene_model::{Error, Molecule, Sequence, Topology};
 #[derive(Clone, Copy)]
 pub(crate) struct Template<'a> {

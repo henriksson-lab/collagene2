@@ -56,20 +56,15 @@ fn color_key(key: &str) -> bool {
         .any(|name| key.eq_ignore_ascii_case(name))
 }
 
-fn coordinate_key(key: &str) -> bool {
-    ["transl_except", "anticodon", "rpt_unit_range", "coded_by"]
-        .iter()
-        .any(|name| key.eq_ignore_ascii_case(name))
-}
-
 /// Bounds and validates the source and entire request before cloning once.
 /// Unknown qualifier multiplicity, unselected features, fuzzy/compound locations,
 /// original source evidence, and reference calls are preserved.
 ///
-/// Strand reversal invalidates translation/phase assertions and marks review;
-/// their original text becomes notes. Coordinate-bearing qualifiers unsupported
-/// by the existing projection engine block a strand change rather than being
-/// silently reinterpreted. Type and color edits leave other qualifiers intact.
+/// Strand reversal changes the annotation's biological meaning without changing
+/// source calls. Coordinate, translation and phase assertions therefore become
+/// bounded source-evidence notes and require review; their positions are never
+/// reinterpreted as preserved biological calls. Type and color edits leave other
+/// qualifiers intact.
 pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
     collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
@@ -108,22 +103,12 @@ pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
     }
     let mut seen = BTreeSet::new();
     for &index in &request.indices {
-        let feature = source
+        source
             .features
             .get(index)
             .ok_or_else(|| bad("annotation index is out of bounds"))?;
         if !seen.insert(index) {
             return Err(bad("duplicate annotation index"));
-        }
-        if request.flip_strand
-            && feature
-                .qualifiers
-                .iter()
-                .any(|(key, _)| coordinate_key(key))
-        {
-            return Err(bad(
-                "coordinate-bearing qualifiers cannot yet be reinterpreted on a flipped annotation; retain the original and resolve them first",
-            ));
         }
     }
     if request.source_revision != source.revision() {
@@ -141,17 +126,7 @@ pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
                 Location::Complement(inner) => *inner,
                 other => Location::Complement(Box::new(other)),
             };
-            let mut evidence = Vec::new();
-            feature.qualifiers.retain(|(key, value)| {
-                if key.eq_ignore_ascii_case("translation") || key.eq_ignore_ascii_case("codon_start") {
-                    evidence.push(("note".into(), Some(format!(
-                        "Collagene source qualifier /{key}={} retained only as source evidence; recalculate after annotation strand review.",
-                        value.as_deref().unwrap_or("(flag)")))));
-                    false
-                } else { true }
-            });
-            feature.qualifiers.extend(evidence);
-            feature.needs_review = true;
+            collagene_model::annotations::deactivate_assertions(feature)?;
         }
         if !matches!(request.color, ColorEdit::Keep) {
             feature.qualifiers.retain(|(key, _)| !color_key(key));

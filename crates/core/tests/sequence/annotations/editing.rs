@@ -1,5 +1,5 @@
-use collagene_core::formats::sequence::{location_text, parse_location};
 use collagene_core::sequence::editing::*;
+use collagene_model::annotations::insdc::{location_text, parse_location};
 use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 fn molecule() -> Molecule {
     Molecule::dna("fixture", "AAAACCCCGGGGTTTT", Topology::Circular).unwrap()

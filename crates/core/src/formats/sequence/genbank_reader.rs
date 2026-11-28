@@ -1,9 +1,7 @@
 //! Frame external GenBank records before the rich header/qualifier reader runs.
 //! Feature tables are parsed independently and omitted from the private reader
 //! copy. CONTIG gets a safe placeholder; original bytes remain unchanged.
-use super::{
-    MAX_IMPORT_BYTES, MAX_LOCATION_WORK, MAX_QUALIFIER_LINES, feature_qualifiers, location,
-};
+use super::{MAX_IMPORT_BYTES, MAX_LOCATION_WORK, MAX_QUALIFIER_LINES, feature_qualifiers};
 use collagene_model::{Error, Feature, MAX_SEQUENCE_LEN};
 
 const MAX_RECORDS: usize = 1000;
@@ -65,8 +63,8 @@ impl Budget {
         Ok(())
     }
     fn location(&mut self, text: &str) -> Result<(), Error> {
-        location::check_text(text)?;
-        location::validate_for_genbank(text)?;
+        collagene_model::annotations::insdc::check_text(text)?;
+        collagene_model::annotations::insdc::validate_for_genbank(text)?;
         // Conservative structural work bound across every feature and CONTIG,
         // in addition to the parser's per-expression byte/node/depth limits.
         let work = 1 + text
@@ -317,7 +315,10 @@ impl<'a> ReaderInput<'a> {
             .map(|feature| {
                 // Reparse with actual length: unresolved mixed remote expressions
                 // can still contain local coordinates that must remain bounded.
-                let location = location::parse(&feature.expression, length)?;
+                let location = collagene_model::annotations::insdc::parse_location(
+                    &feature.expression,
+                    length,
+                )?;
                 let needs_review = feature.qualifiers.iter().any(|(key, value)| {
                     key == "collagene_review_required" && value.as_deref() == Some("true")
                 });

@@ -1,11 +1,11 @@
 //! Annotation-preserving reference transfers. These operations declare sequence
 //! intent, not molecular cleavage, ligation or prepared physical material.
-use crate::sequence::annotations::{self, MappingSegment};
+use collagene_model::annotations::{self, MappingSegment};
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 
-pub const ENGINE_VERSION: &str = "reference-transfer-2";
+pub const ENGINE_VERSION: &str = "reference-transfer-3";
 pub const MAX_PARTS: usize = 4096;
 const MAX_BYTES: usize = 32 << 20;
 const EVIDENCE_CHUNK: usize = 512 << 10;
@@ -382,17 +382,6 @@ pub fn paste_revision(request: &RequestPaste) -> Result<String, Error> {
         request.source.sequence.len(),
         request.source.sequence.alphabet(),
     )?;
-    if request.destination.features.iter().any(|feature| {
-        feature.qualifiers.iter().any(|(key, _)| {
-            ["transl_except", "anticodon", "rpt_unit_range", "coded_by"]
-                .iter()
-                .any(|known| key.eq_ignore_ascii_case(known))
-        })
-    }) {
-        return Err(bad(
-            "destination coordinate-bearing qualifiers cannot yet be safely remapped",
-        ));
-    }
     if request.source.sequence.alphabet() != request.destination.sequence.alphabet() {
         return Err(bad("source and destination require matching alphabets"));
     }
@@ -423,32 +412,6 @@ pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
         request.end,
         fragment.molecule.sequence.as_str(),
     )?;
-    // Preserve native edit geometry while handling case variants of imported
-    // translation assertions consistently with the annotation projector.
-    if product.features.len() != request.destination.features.len() {
-        return Err(bad(
-            "native reference edit changed feature correspondence unexpectedly",
-        ));
-    }
-    for (original, edited) in request
-        .destination
-        .features
-        .iter()
-        .zip(&mut product.features)
-    {
-        let touched = original.location.spans().iter().any(|&(start, end, _)| {
-            if request.start == request.end {
-                start < request.start && request.start < end
-            } else {
-                start < request.end && request.start < end
-            }
-        });
-        if touched {
-            edited.qualifiers.retain(|(key, _)| {
-                !key.eq_ignore_ascii_case("translation") && !key.eq_ignore_ascii_case("codon_start")
-            });
-        }
-    }
     // Project from the original source into the final topology. The clipboard
     // preview is linear and can mark an origin-spanning circular feature broken;
     // carrying that intermediate annotation forward would lose valid continuity
@@ -506,7 +469,7 @@ pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
         warnings.push("Copied source citation numbers remain source evidence, not destination reference numbers.".into());
     }
     warnings.push("Reference paste only; no cleavage, end chemistry, synthesis, repair, ligation or experimental success is established.".into());
-    warnings.push("Destination reference annotations use the native edit transform; touched annotations require review and stale translation assertions are removed. Original source/destination features remain evidence.".into());
+    warnings.push("Destination reference annotations use the native edit transform; disrupted coordinate, translation and phase assertions become source-evidence notes and require review. Original source/destination features remain evidence.".into());
     let report = Report {
         context_revision,
         source_revision: fragment.source_revision,

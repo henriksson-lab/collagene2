@@ -6,11 +6,9 @@ use super::{
 };
 use crate::{
     chemistry::{self, Duplex},
-    sequence::{
-        analysis::{self, Primer},
-        annotations::MappingSegment,
-    },
+    sequence::analysis::{self, Primer},
 };
+use collagene_model::annotations::MappingSegment;
 use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

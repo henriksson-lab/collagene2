@@ -329,7 +329,25 @@ fn unsupported_and_stale_requests_never_modify_either_document() {
     uppercase.destination.features[0]
         .qualifiers
         .push(("TRANSL_EXCEPT".into(), Some("(pos:1..3,aa:Sec)".into())));
-    assert!(transfer::paste_revision(&uppercase).is_err());
+    let original = uppercase.destination.clone();
+    assert!(transfer::paste_revision(&uppercase).is_ok());
+    let pasted = transfer::paste(&uppercase).unwrap().product;
+    assert_eq!(pasted.features[0].location, Location::range(0, 7));
+    assert!(pasted.features[0].needs_review);
+    assert!(
+        !pasted.features[0]
+            .qualifiers
+            .iter()
+            .any(|(key, _)| key.eq_ignore_ascii_case("transl_except"))
+    );
+    assert!(pasted.features[0].qualifiers.iter().any(|(key, value)| {
+        key == "note"
+            && value.as_deref().is_some_and(|text| {
+                text.contains("/TRANSL_EXCEPT=(pos:1..3,aa:Sec)")
+                    && text.contains("source evidence")
+            })
+    }));
+    assert_eq!(uppercase.destination, original);
     let overlap = Selection {
         parts: vec![
             Part {

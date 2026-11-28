@@ -17,7 +17,7 @@ use crate::{
 use collagene_model::{Error, Feature, Location, Molecule, Sequence};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-pub const ENGINE_VERSION: &str = "assembly-junction-edit-3";
+pub const ENGINE_VERSION: &str = "assembly-junction-edit-4";
 const MAX_ROWS: usize = 32;
 const REFERENCE_MODEL: &str =
     "Reference-only junction edit design intent; physical material state unavailable";

@@ -1,3 +1,4 @@
+pub mod annotations;
 pub mod bounds;
 
 use serde::{Deserialize, Serialize};
@@ -275,6 +276,16 @@ impl<'de> Deserialize<'de> for Location {
 }
 
 impl Location {
+    /// A native edit which touches no range cannot break this one-piece path.
+    /// Compound paths with multiple parts require the separate continuity proof.
+    pub(crate) fn is_single_range(&self) -> bool {
+        match self {
+            Self::Range { .. } => true,
+            Self::Complement(inner) => inner.is_single_range(),
+            Self::Join(parts) if parts.len() == 1 => parts[0].is_single_range(),
+            _ => false,
+        }
+    }
     pub fn range(start: usize, end: usize) -> Self {
         Self::Range {
             start,
@@ -820,37 +831,21 @@ impl Molecule {
             .to_string()
     }
     /// Apply an edit to an explicit half-open, non-wrapping interval.
-    /// Intersected annotations are retained with a review flag and stale translations removed.
+    /// Intersected annotation envelopes are retained for review; stale biological
+    /// assertions become bounded source evidence rather than active destination claims.
     pub fn replace(&self, start: usize, end: usize, replacement: &str) -> Result<Self, Error> {
-        // Untrusted source/recipe attachments must be bounded before rich model
-        // cloning, not merely when the optional citation log is decoded later.
-        if self
-            .metadata
-            .get(GENBANK_EDIT_RECIPE_KEY)
-            .is_some_and(|raw| raw.len() > MAX_GENBANK_EDIT_RECIPE_BYTES)
-            || self
-                .original_genbank
-                .as_ref()
-                .is_some_and(|raw| raw.len() > 32 * 1024 * 1024)
-        {
+        if replacement.len() > MAX_SEQUENCE_LEN.saturating_mul(2) {
             return Err(Error::TooLarge);
         }
-        if self.features.iter().any(|f| {
-            f.qualifiers.iter().any(|(key, _)| {
-                ["transl_except", "anticodon", "rpt_unit_range", "coded_by"]
-                    .iter()
-                    .any(|known| key.eq_ignore_ascii_case(known))
-            })
-        }) {
-            return Err(Error::Unsupported("editing coordinate-bearing feature qualifiers is not implemented; the original document remains intact".into()));
-        }
+        bounds::annotation_edit_preflight(&[self])?;
+        self.validate()?;
         let len = self.sequence.len();
         if start > end || end > len {
             return Err(Error::Coordinates(format!(
                 "edit {start}..{end} outside {len}"
             )));
         }
-        let replacement = if replacement.trim().is_empty() {
+        let replacement = if replacement.bytes().all(|byte| byte.is_ascii_whitespace()) {
             String::new()
         } else {
             Sequence::new(self.sequence.alphabet(), replacement)?.bases
@@ -859,77 +854,12 @@ impl Molecule {
         if new_len > MAX_SEQUENCE_LEN {
             return Err(Error::TooLarge);
         }
-        // Reject editing unresolved locations: preserving their stale coordinates would be misleading.
-        fn map(
-            l: &Location,
-            a: usize,
-            b: usize,
-            added: usize,
-        ) -> Result<(Option<Location>, bool), Error> {
-            let shift = |x: usize| x - (b - a) + added;
-            match l {
-                Location::Range {
-                    start,
-                    end,
-                    before,
-                    after,
-                } => {
-                    if *end <= a {
-                        return Ok((Some(l.clone()), false));
-                    }
-                    if *start >= b {
-                        return Ok((
-                            Some(Location::Range {
-                                start: shift(*start),
-                                end: shift(*end),
-                                before: *before,
-                                after: *after,
-                            }),
-                            false,
-                        ));
-                    }
-                    let s = if *start < a { *start } else { a };
-                    let e = if *end > b { shift(*end) } else { a + added };
-                    Ok((
-                        (s < e).then_some(Location::Range {
-                            start: s,
-                            end: e,
-                            before: *before,
-                            after: *after,
-                        }),
-                        true,
-                    ))
-                }
-                Location::Complement(inner) => {
-                    let (v, changed) = map(inner, a, b, added)?;
-                    Ok((v.map(|l| Location::Complement(Box::new(l))), changed))
-                }
-                Location::Join(parts) | Location::Order(parts) => {
-                    let mut out = vec![];
-                    let mut changed = false;
-                    for p in parts {
-                        let (v, c) = map(p, a, b, added)?;
-                        changed |= c;
-                        if let Some(v) = v {
-                            out.push(v);
-                        }
-                    }
-                    Ok((
-                        if out.is_empty() {
-                            None
-                        } else if matches!(l, Location::Join(_)) {
-                            Some(Location::Join(out))
-                        } else {
-                            Some(Location::Order(out))
-                        },
-                        changed,
-                    ))
-                }
-                Location::Unresolved(_) => Err(Error::Unsupported(
-                    "editing documents with unresolved feature locations".into(),
-                )),
-            }
+        // A normalized no-op preserves opaque source assertions and creates no edit recipe.
+        if self.sequence.as_str()[start..end] == replacement {
+            return Ok(self.clone());
         }
+        let features = annotations::editing::Edit::new(start, end, replacement.len())
+            .features(self, new_len)?;
         let mut bases = self.sequence.bases.clone();
         bases.replace_range(start..end, &replacement);
         let sequence = Sequence::new(self.sequence.alphabet(), &bases)?;
@@ -951,25 +881,12 @@ impl Molecule {
         };
         let mut result = self.clone();
         result.sequence = sequence;
-        result.features.clear();
-        for feature in &self.features {
-            let (location, touched) = map(&feature.location, start, end, replacement.len())?;
-            if let Some(location) = location {
-                let mut feature = feature.clone();
-                feature.location = location;
-                if touched {
-                    feature.needs_review = true;
-                    feature
-                        .qualifiers
-                        .retain(|(key, _)| !key.eq_ignore_ascii_case("translation"));
-                }
-                result.features.push(feature);
-            }
-        }
+        result.features = features;
         if let Some(raw) = pending_recipe {
             result.metadata.insert(GENBANK_EDIT_RECIPE_KEY.into(), raw);
             result.metadata.insert("genbank:citation_scope".into(), "Original citations require source-bound edit replay and coordinate projection before export; they do not establish support for edited sequence.".into());
         }
+        bounds::annotation_edit_preflight(&[&result])?;
         result.validate()?;
         Ok(result)
     }

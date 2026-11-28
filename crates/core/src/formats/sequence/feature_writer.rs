@@ -2,8 +2,9 @@
 //! wrapper receives native strings, field widths, Unicode or escaped quotes.
 use super::{
     MAX_IMPORT_BYTES, MAX_LOCATION_WORK, MAX_QUALIFIER_LINES, feature_kind_valid,
-    feature_qualifiers, location_text,
+    feature_qualifiers,
 };
+use collagene_model::annotations::insdc::{location_text, parse_location};
 use collagene_model::{Error, Feature, Molecule};
 
 const WIDTH: usize = 79;
@@ -89,7 +90,7 @@ impl Writer {
             return Err(unsupported("feature key does not fit its 15-column field"));
         }
         let location = location_text(&feature.location)?;
-        super::parse_location(&location, self.length)?;
+        parse_location(&location, self.length)?;
         if !location.is_ascii() || location.bytes().any(|b| b.is_ascii_control()) {
             return Err(unsupported(
                 "a location must be a single-line ASCII expression",

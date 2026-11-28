@@ -199,5 +199,18 @@ fn exact_edit_behavior_keeps_the_parent_evidence_and_review_contract() {
     guarded.features[0]
         .qualifiers
         .push(("transl_except".into(), Some("(pos:1..3,aa:Sec)".into())));
-    assert!(guarded.replace(0, 1, "G").is_err());
+    let before = guarded.clone();
+    let edited = guarded.replace(0, 1, "G").unwrap();
+    assert_eq!(edited.sequence.as_str(), "GAAACCCCGGGGTTTT");
+    assert_eq!(edited.features[0].location, guarded.features[0].location);
+    assert!(edited.features[0].needs_review);
+    assert!(
+        !edited.features[0]
+            .qualifiers
+            .iter()
+            .any(|(key, _)| key.eq_ignore_ascii_case("transl_except"))
+    );
+    assert!(edited.features[0].qualifiers.iter().any(|(key, value)| key == "note"
+        && value.as_deref() == Some("Collagene source qualifier /transl_except=(pos:1..3,aa:Sec) retained only as source evidence; recalculate after annotation review.")));
+    assert_eq!(guarded, before);
 }

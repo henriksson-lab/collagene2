@@ -1,12 +1,10 @@
 //! Source-bound multi-parent reciprocal reference exchange and conservative
 //! annotation projection. No imported recipe establishes chemical strand state.
+use crate::cloning::recombination::{self as adapter, reference};
 use crate::cloning::recombination::{
     AnnotationLimits, ComponentIdentity, Selection, SourceAnnotationEvidence, SourceIdentity,
 };
-use crate::{
-    cloning::recombination::{self as adapter, reference},
-    sequence::annotations,
-};
+use collagene_model::annotations;
 use collagene_model::{Alphabet, Error, Molecule, Topology};
 pub use reference::multisite;
 use serde::{Deserialize, Serialize};

@@ -1,12 +1,10 @@
 //! Annotation correspondence through fresh TOPO preparation and paired-contour
 //! top-call provenance. This is not chemical ancestry or biological validation.
-use crate::{
-    cloning::topo::{
-        self, Origin, PreparationEvidence,
-        physical::projection::{ContourTopology, DuplexView},
-    },
-    sequence::annotations::{self, MappingSegment},
+use crate::cloning::topo::{
+    self, Origin, PreparationEvidence,
+    physical::projection::{ContourTopology, DuplexView},
 };
+use collagene_model::annotations::{self, MappingSegment};
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{

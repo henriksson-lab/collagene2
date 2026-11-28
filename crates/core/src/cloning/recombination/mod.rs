@@ -1,6 +1,6 @@
 //! Reference-only adapter for the independently bounded reciprocal-exchange engine.
 //! Exact sequence maps support annotation projection, never inherited physical state.
-use crate::sequence::annotations::{self, MappingSegment};
+use collagene_model::annotations::{self, MappingSegment};
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 pub use collagene_recombination as reference;
 use serde::{Deserialize, Serialize};

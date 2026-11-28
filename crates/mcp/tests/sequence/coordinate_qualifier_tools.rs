@@ -260,7 +260,7 @@ async fn reference_transform_tools_project_literal_complete_local_coordinates_an
         assert_eq!(product.sequence.as_str(), sequence);
         let feature = &product.features[0];
         assert_eq!(
-            collagene_core::formats::sequence::location_text(&feature.location).unwrap(),
+            collagene_model::annotations::insdc::location_text(&feature.location).unwrap(),
             feature_location
         );
         let positions = feature

@@ -9,9 +9,9 @@ use crate::{
         },
         pcr::digest::GeometrySummary,
     },
-    sequence::annotations::{self, MappingSegment},
     verification::{self, pcr::PcrDocument},
 };
+use collagene_model::annotations::{self, MappingSegment};
 use collagene_model::{Error, Molecule};
 use std::collections::BTreeSet;
 const MAX_GEOMETRIES: usize = 10_000;

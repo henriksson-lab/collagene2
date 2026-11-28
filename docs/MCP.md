@@ -13,12 +13,14 @@ without requiring a client to reproduce internal hash recipes.
 
 `edit_reference_document` applies a typed reference operation to an exact immutable
 document: reverse complement, circular origin rotation, region extraction,
-annotation insertion/replacement/deletion, renaming or reference topology change.
+native sequence replacement, annotation insertion/replacement/deletion or strand
+flips, renaming or reference topology change.
 It uses the same core projection and annotation-edit guards as the editor and
 returns another immutable session document without mutating its source. The
 receipt explicitly withholds physical-material, native-history and verification
-authority. Native sequence edits and annotation-only strand flips retain their
-separate supported profiles; projection does not silently enable them.
+authority. `ReplaceSequence` and `FlipAnnotationStrands` use the
+[shared native annotation policy](NATIVE_ANNOTATION_EDITING.md), including source
+evidence for disrupted claims and explicit request/model admission limits.
 
 Sequence-file exchange uses `import_compat_sequence` for explicit FASTA, GCG
 and original Collagene XML text profiles, and `import_sequence_file` for binary

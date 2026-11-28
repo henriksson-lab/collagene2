@@ -10,7 +10,7 @@ use crate::{
 };
 use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "assembly-edit-intent-2";
+pub const ENGINE_VERSION: &str = "assembly-edit-intent-3";
 pub const MAX_EDITS: usize = 256;
 const PREFIX: &str = "assembly_edit_intent:";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}

@@ -147,7 +147,7 @@ fn exact_strand_reversal_changes_extraction_without_changing_reference() {
 }
 
 #[test]
-fn coordinate_linked_qualifiers_block_only_strand_edits_and_do_not_partially_apply() {
+fn coordinate_linked_qualifiers_become_source_evidence_only_for_strand_edits() {
     for key in ["transl_except", "ANTICODON", "rpt_unit_range", "Coded_By"] {
         let mut source = source();
         source.features[1]
@@ -159,8 +159,26 @@ fn coordinate_linked_qualifiers_block_only_strand_edits_and_do_not_partially_app
         r.kind = Some("gene".into());
         r.color = ColorEdit::Set("#112233".into());
         r.flip_strand = true;
-        assert!(batch::apply(&source, &r).is_err());
+        let flipped = batch::apply(&source, &r).unwrap();
         assert_eq!(source, original);
+        assert_eq!(flipped.sequence, source.sequence);
+        assert_eq!(flipped.features[1].kind, "gene");
+        assert!(flipped.features[1].needs_review);
+        assert!(
+            !flipped.features[1]
+                .qualifiers
+                .iter()
+                .any(|(name, _)| name.eq_ignore_ascii_case(key))
+        );
+        assert!(
+            flipped.features[1]
+                .qualifiers
+                .iter()
+                .any(|(name, value)| name == "note"
+                    && value.as_deref().is_some_and(|text| text.contains(key)
+                        && text.contains("(pos:10..12,aa:Sec)")
+                        && text.contains("source evidence")))
+        );
         r.flip_strand = false;
         let edited = batch::apply(&source, &r).unwrap();
         assert!(

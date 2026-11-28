@@ -24,8 +24,9 @@ use crate::{
         tracked_duplex::{self as modified_duplex, CheckedDigestOptions, TrackedDuplex},
     },
     planning::plan::{DesignPlan, Operation, Source},
-    sequence::{analysis, annotations::MappingSegment},
+    sequence::analysis,
 };
+use collagene_model::annotations::MappingSegment;
 use collagene_model::{Alphabet, Error, MAX_SEQUENCE_LEN, Molecule, Topology};
 use std::collections::BTreeMap;
 pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {

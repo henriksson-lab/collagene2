@@ -1,5 +1,6 @@
-//! Bounded INSDC locations are parsed here; gb-io reads rich headers and qualifiers.
+//! GenBank import/export uses the canonical model-layer INSDC location codec.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use collagene_model::annotations::insdc::location_text;
 use collagene_model::*;
 use gb_io::seq as gb;
 use serde::{Deserialize, Serialize};
@@ -766,18 +767,11 @@ fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportRe
     })
 }
 
-pub fn parse_location(text: &str, length: usize) -> Result<Location, Error> {
-    location::parse(text, length)
-}
-
 fn feature_kind_valid(kind: &str) -> bool {
     !kind.is_empty()
         && kind.len() <= 256
         && !kind.starts_with('/')
         && kind.bytes().all(|byte| byte.is_ascii_graphic())
-}
-pub fn location_text(location: &Location) -> Result<String, Error> {
-    location::format(location)
 }
 
 // INSDC nucleotide flat files encode RNA uracil as T. Keep this conversion
@@ -1127,4 +1121,3 @@ pub mod gcg;
 mod feature_qualifiers;
 mod feature_writer;
 mod genbank_reader;
-mod location;

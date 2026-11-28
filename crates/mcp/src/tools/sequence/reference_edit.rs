@@ -9,6 +9,16 @@ use serde::Deserialize;
 #[serde(deny_unknown_fields)]
 pub enum Operation {
     ReverseComplement,
+    /// Literal native edit; annotation claims follow the shared model policy.
+    ReplaceSequence {
+        start: usize,
+        end: usize,
+        replacement: String,
+    },
+    /// Annotation meaning changes without changing the sequence calls.
+    FlipAnnotationStrands {
+        indices: Vec<usize>,
+    },
     RotateOrigin {
         new_origin: usize,
     },
@@ -34,6 +44,17 @@ pub enum Operation {
 }
 impl Operation {
     pub(super) fn preflight(&self) -> Result<(), Error> {
+        match self {
+            Self::ReplaceSequence { replacement, .. }
+                if replacement.len() > collagene_model::MAX_SEQUENCE_LEN.saturating_mul(2) =>
+            {
+                return Err(Error::TooLarge);
+            }
+            Self::FlipAnnotationStrands { indices } if indices.len() > 4096 => {
+                return Err(Error::TooLarge);
+            }
+            _ => {}
+        }
         if let Self::SetFeature { feature, .. } = self {
             collagene_model::bounds::ModelBudget::default()
                 .features(std::slice::from_ref(feature))?;
@@ -43,6 +64,8 @@ impl Operation {
     pub(super) fn name(&self) -> &'static str {
         match self {
             Self::ReverseComplement => "ReverseComplement",
+            Self::ReplaceSequence { .. } => "ReplaceSequence",
+            Self::FlipAnnotationStrands { .. } => "FlipAnnotationStrands",
             Self::RotateOrigin { .. } => "RotateOrigin",
             Self::ExtractRegion { .. } => "ExtractRegion",
             Self::SetFeature { .. } => "SetFeature",
@@ -54,6 +77,21 @@ impl Operation {
     pub(super) fn apply(self, source: &Molecule) -> Result<Molecule, Error> {
         match self {
             Self::ReverseComplement => annotations::reverse_complement(source),
+            Self::ReplaceSequence {
+                start,
+                end,
+                replacement,
+            } => source.replace(start, end, &replacement),
+            Self::FlipAnnotationStrands { indices } => annotations::batch::apply(
+                source,
+                &annotations::batch::Request {
+                    source_revision: source.revision(),
+                    indices,
+                    kind: None,
+                    flip_strand: true,
+                    color: annotations::batch::ColorEdit::Keep,
+                },
+            ),
             Self::RotateOrigin { new_origin } => annotations::rotate_origin(source, new_origin),
             Self::ExtractRegion { start, end } => annotations::extract_region(source, start, end),
             Self::SetFeature { index, feature } => editing::set_feature(source, index, feature),

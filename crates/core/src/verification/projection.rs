@@ -1,8 +1,6 @@
 //! Shared source-coordinate projection into freshly reconstructed products.
-use crate::{
-    chemistry,
-    sequence::annotations::{self, MappingSegment},
-};
+use crate::chemistry;
+use collagene_model::annotations::{self, MappingSegment};
 use collagene_model::{Error, Molecule, Topology};
 pub(super) fn region_map(
     length: usize,

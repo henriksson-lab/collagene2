@@ -46,15 +46,17 @@ changes refuse until those declarations are reviewed or removed at the original
 location. Other relocations deactivate `translation` and `codon_start`
 case-insensitively and retain their values in source-evidence notes. New or
 same-location annotations remain explicit user declarations. Native sequence
-editing, destination paste and annotation-only strand flips retain their separate
-refusals; projection does not bypass them.
+editing, destination paste and annotation-only strand flips now
+use the [shared native edit policy](NATIVE_ANNOTATION_EDITING.md); arbitrary manual
+relocation retains its separate source-correspondence guard.
 
 Native MCP exposes these operations through `edit_reference_document`, which
 publishes immutable session references with an explicit reference-only receipt.
 It does not create physical material, workspace ancestry or cloning verification.
-The scientific engine advances to `science-33` because product annotations can
-change. Standalone TOPO source/annotation, reciprocal/multisite recombination
-and reference-transfer engine stamps also advance, invalidating stale contexts.
+The projection checkpoint advanced the scientific engine to `science-33` and
+standalone TOPO/recombination/reference-transfer stamps because annotations can
+change. The connected native edit batch uses `science-34` and advances the affected
+edit-engine stamps described in its contract, invalidating stale contexts.
 Worker schema 123 and the current plan encodings retain their layouts.
 
 Independent fixtures cover literal positions, spliced/reverse/circular cases,

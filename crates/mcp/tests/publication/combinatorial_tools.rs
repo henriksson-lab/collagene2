@@ -1,5 +1,6 @@
 //! Real SDK routing, immutable workspace commits and exact source identities.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     chemistry::Terminus,
     cloning::assembly::recipe::Preparation,
@@ -179,9 +180,22 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
     };
     // The chosen original event remains retained after a later source-head edit.
     let mut histories = DocumentHistory::restore_all(&original).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
         .commit(
-            Molecule::dna("later left", "CCCC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "CCCC".into(),
+                },
+                Edit::Rename {
+                    name: "later left".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Later edit",
         )
         .unwrap();

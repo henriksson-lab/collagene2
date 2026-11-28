@@ -1,6 +1,6 @@
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use collagene_core::documents::transfer;
 use collagene_core::material::lineage::EventBinding;
-use collagene_core::sequence::editing;
 use collagene_model::{Location, Molecule};
 use leptos::prelude::*;
 
@@ -414,8 +414,10 @@ impl BiologyController {
                     }
                     suffix += 1;
                 };
-                let derived=source.derive_event(&output.source.event_id,id,protein,
-            "Computed reference translation; source codon policy retained, expression and experimental outcome unverified")
+                let derived={
+                    let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::Translation, protein.revision());
+                    source.derive_event(&output.source.event_id, id, protein, "Computed reference translation; source codon policy retained, expression and experimental outcome unverified", analysis_origin)
+                }
             .map_err(|e|e.to_string())?;
                 let new_index = docs.len();
                 docs.push(derived);
@@ -494,9 +496,15 @@ impl BiologyController {
                     .annotation
                     .clone()
                     .ok_or("This existing-CDS translation has no new annotation proposal.")?;
-                let edited = editing::set_feature(&output.request.source, None, feature)
-                    .map_err(|e| e.to_string())?;
-                session.commit_document(&output.source.revision, edited)?;
+                session.commit_document(
+                    &output.source.revision,
+                    vec![
+                        collagene_core::documents::reference_edit::Operation::SetFeature {
+                            index: None,
+                            feature,
+                        },
+                    ],
+                )?;
                 message.set("Retained a CDS proposal requiring review. Its notes retain the chosen frame policy; biological CDS initiation can differ.".into());
                 Ok(())
             },
@@ -648,7 +656,7 @@ impl BiologyController {
                 if workspace_restoring.get_untracked() {
                     return Err("Wait for the workspace update to finish.".into());
                 }
-                let edited = documents.with_untracked(|docs| {
+                let feature = documents.with_untracked(|docs| {
                     let doc = &docs[active.get_untracked()];
                     capture.guard(
                         workspace_epoch.get_untracked(),
@@ -661,9 +669,17 @@ impl BiologyController {
                         &hit,
                     )
                     .map_err(|e| e.to_string())?;
-                    editing::set_feature(&doc.molecule, None, feature).map_err(|e| e.to_string())
+                    Ok::<_, String>(feature)
                 })?;
-                session.commit_document(&capture.source.revision, edited)
+                session.commit_document(
+                    &capture.source.revision,
+                    vec![
+                        collagene_core::documents::reference_edit::Operation::SetFeature {
+                            index: None,
+                            feature,
+                        },
+                    ],
+                )
             },
         )
     }

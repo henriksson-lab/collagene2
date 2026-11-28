@@ -997,6 +997,31 @@ pub fn apply_annotations(
     report: &AnnotationImportReport,
     selection: &[usize],
 ) -> Result<Molecule, Error> {
+    apply_annotations_native(reference, report, selection, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn apply_annotations_with_projection(
+    reference: &Molecule,
+    report: &AnnotationImportReport,
+    selection: &[usize],
+) -> Result<(Molecule, crate::sequence::editing::AnnotationIdentity), Error> {
+    let (molecule, identity) = apply_annotations_native(reference, report, selection, true)?;
+    Ok((
+        molecule,
+        identity.ok_or_else(|| bad("native annotation receipt unavailable"))?,
+    ))
+}
+fn apply_annotations_native(
+    reference: &Molecule,
+    report: &AnnotationImportReport,
+    selection: &[usize],
+    capture: bool,
+) -> Result<
+    (
+        Molecule,
+        Option<crate::sequence::editing::AnnotationIdentity>,
+    ),
+    Error,
+> {
     report.validate(reference)?;
     if selection.is_empty() {
         return Err(bad("select at least one annotation proposal"));
@@ -1022,6 +1047,14 @@ pub fn apply_annotations(
         additions.push(p.feature.clone());
     }
     let mut result = reference.clone();
+    let identity = capture.then(|| {
+        let mut identity =
+            crate::sequence::editing::AnnotationIdentity::retained(reference.features.len());
+        identity
+            .added
+            .extend(reference.features.len()..reference.features.len() + additions.len());
+        identity
+    });
     result.features.extend(additions);
     let prefix = format!("annotation_import:{}", report.source_blake3);
     if let Some(existing) = result.metadata.get(&format!("{prefix}:original_base64")) {
@@ -1060,7 +1093,7 @@ pub fn apply_annotations(
     );
     result.validate()?;
     crate::protocol::save_document(&result)?;
-    Ok(result)
+    Ok((result, identity))
 }
 
 fn qualifier_hash(qualifiers: &[(String, Option<String>)]) -> Result<String, Error> {

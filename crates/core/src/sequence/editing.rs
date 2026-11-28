@@ -1,11 +1,54 @@
 //! Validated annotation editing and explicit reference-document metadata changes.
 use collagene_model::{Error, Feature, Molecule, Topology};
 
+/// Actual annotation identity disposition from the native owner. Ordinals are
+/// recorded while cloning, replacing, removing or appending, never by matching.
+#[derive(Debug)]
+pub(crate) struct AnnotationIdentity {
+    pub retained: Vec<(usize, usize)>,
+    pub reassigned: Vec<usize>,
+    pub removed: Vec<usize>,
+    pub added: Vec<usize>,
+}
+impl AnnotationIdentity {
+    pub(crate) fn retained(count: usize) -> Self {
+        Self {
+            retained: (0..count).map(|i| (i, i)).collect(),
+            reassigned: vec![],
+            removed: vec![],
+            added: vec![],
+        }
+    }
+    pub(crate) fn reassign(&mut self, index: usize) {
+        self.retained.retain(|(source, _)| *source != index);
+        self.reassigned.push(index);
+        self.added.push(index);
+    }
+}
 pub fn set_feature(
     molecule: &Molecule,
     index: Option<usize>,
-    mut feature: Feature,
+    feature: Feature,
 ) -> Result<Molecule, Error> {
+    set_feature_native(molecule, index, feature, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn set_feature_with_projection(
+    molecule: &Molecule,
+    index: Option<usize>,
+    feature: Feature,
+) -> Result<(Molecule, AnnotationIdentity), Error> {
+    let (molecule, identity) = set_feature_native(molecule, index, feature, true)?;
+    Ok((
+        molecule,
+        identity.ok_or_else(|| Error::Format("native annotation receipt unavailable".into()))?,
+    ))
+}
+fn set_feature_native(
+    molecule: &Molecule,
+    index: Option<usize>,
+    mut feature: Feature,
+    capture: bool,
+) -> Result<(Molecule, Option<AnnotationIdentity>), Error> {
     // Bound both inputs before recursive validation, evidence copies or cloning.
     collagene_model::bounds::model_preflight(&[molecule])?;
     collagene_model::bounds::feature_preflight(&[std::slice::from_ref(&feature)])?;
@@ -53,27 +96,62 @@ pub fn set_feature(
     }
     collagene_model::bounds::feature_preflight(&[std::slice::from_ref(&feature)])?;
     let mut result = molecule.clone();
+    let mut identity = capture.then(|| AnnotationIdentity::retained(molecule.features.len()));
     match index {
         Some(index) => {
+            if let Some(identity) = &mut identity {
+                identity.reassign(index);
+            }
             *result
                 .features
                 .get_mut(index)
                 .ok_or_else(|| Error::Coordinates("annotation no longer exists".into()))? = feature
         }
-        None => result.features.push(feature),
+        None => {
+            if let Some(identity) = &mut identity {
+                identity.added.push(result.features.len());
+            }
+            result.features.push(feature);
+        }
     }
     collagene_model::bounds::model_preflight(&[&result])?;
     result.validate()?;
-    Ok(result)
+    Ok((result, identity))
 }
 pub fn delete_feature(molecule: &Molecule, index: usize) -> Result<Molecule, Error> {
+    delete_feature_native(molecule, index, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn delete_feature_with_projection(
+    molecule: &Molecule,
+    index: usize,
+) -> Result<(Molecule, AnnotationIdentity), Error> {
+    let (molecule, identity) = delete_feature_native(molecule, index, true)?;
+    Ok((
+        molecule,
+        identity.ok_or_else(|| Error::Format("native annotation receipt unavailable".into()))?,
+    ))
+}
+fn delete_feature_native(
+    molecule: &Molecule,
+    index: usize,
+    capture: bool,
+) -> Result<(Molecule, Option<AnnotationIdentity>), Error> {
     molecule.validate()?;
     if index >= molecule.features.len() {
         return Err(Error::Coordinates("annotation no longer exists".into()));
     }
     let mut result = molecule.clone();
     result.features.remove(index);
-    Ok(result)
+    let identity = capture.then(|| AnnotationIdentity {
+        retained: (0..molecule.features.len())
+            .filter(|i| *i != index)
+            .map(|i| (i, if i > index { i - 1 } else { i }))
+            .collect(),
+        reassigned: vec![],
+        removed: vec![index],
+        added: vec![],
+    });
+    Ok((result, identity))
 }
 pub fn rename(molecule: &Molecule, name: &str) -> Result<Molecule, Error> {
     molecule.validate()?;

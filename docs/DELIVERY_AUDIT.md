@@ -377,3 +377,16 @@ digest export2. Full reaction-condition dataset coverage and cloning-step protoc
 integration remain in the queue. The newly authored parallel crates/QC and mouse
 reference foundation are outside this proof.
 [Current evidence](audits/restriction-conditions-current-integration.json).
+
+
+## Published checkpoint CI and current parallel source
+
+Checkpoint `39d70f4` has failed scientific CI and desktop packaging. Two PDF
+assertions use obsolete verifier prose; their current-source corrections preserve
+typed target-check assertions. Frontend packaging reports an asset-size rejection;
+the previous diagnostic cannot establish the exact asset or observed size. Source
+now retains the size caps, adds precise diagnostics, and uses a frontend-only
+lightly optimized development-derived profile. Current-source native/WASM and selected PDF/packager checks pass; optimized frontend/package success remains unverified. The [package inventory](audits/desktop-packages-current.json)
+keeps the last successful `c58c95c` artifacts separate from these later failures.
+
+Vector-class QC, IVT linearization selection and native causal/edit ancestry are integrated. Native/WASM checks and **2,934 distinct selected cases** pass across initial and affected corrective executions. [Exact scope and corrections](audits/causal-history-current-integration.json) retain original failures and distinguish source stages; this is not a claim that every case ran on the final binary. GUI/platform/provider acceptance and the broader feature goal remain open.

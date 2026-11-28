@@ -1,4 +1,6 @@
 //! Current-event construct checks, with explicit declaration controls and worker ownership.
+mod causal;
+mod vector_class;
 use super::construct_qc_model::Draft;
 use crate::{platform::worker::CachedWorker, sources::identity::SourceInfo};
 use collagene_core::{
@@ -64,6 +66,8 @@ pub fn ConstructQcPanel(
     get_molecule: Callback<(), Molecule>,
     epoch: RwSignal<u64>,
     on_select: Callback<Vec<(usize, usize)>>,
+    workspace_busy: RwSignal<bool>,
+    get_workspace: Callback<(), Result<collagene_core::documents::workspace::Workspace, String>>,
 ) -> impl IntoView {
     let draft = RwSignal::new(Draft::default());
     let rows = Memo::new(move |_| {
@@ -641,6 +645,8 @@ pub fn ConstructQcPanel(
                     "Next"
                 </button>
             </Show>
+            <vector_class::VectorClassPanel source get_molecule epoch draft rows on_select workspace_busy/>
+            <causal::CausalQcPanel source epoch workspace_busy get_workspace on_select/>
         </section>
     }
 }

@@ -72,6 +72,22 @@ impl Response {
         let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::ConstructCausalQc(report) => {
+                report.validate_binding(&response.revision)?
+            }
+            AnalysisResult::VectorClassProfiles(profiles) => {
+                if profiles != &crate::construct_qc::vector_class::catalogue()?
+                    || response.revision != crate::construct_qc::vector_class::catalogue_revision()?
+                {
+                    return Err(Error::Format(
+                        "Vector-class catalogue context changed".into(),
+                    ));
+                }
+            }
+            AnalysisResult::VectorClass(report) => report.validate_binding(&response.revision)?,
+            AnalysisResult::IvtLinearization(report) => {
+                report.validate_binding(&response.revision)?
+            }
             AnalysisResult::BaseEditing(report) => report.validate_binding(&response.revision)?,
             AnalysisResult::IvtProfiles(profiles) => {
                 let expected = crate::rna_chemistry::ivt::profiles()

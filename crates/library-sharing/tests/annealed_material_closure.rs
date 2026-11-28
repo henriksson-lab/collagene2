@@ -1,4 +1,7 @@
 //! Selected adapter publication retains both exact oligo events, never private heads.
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     chemistry::{AnnealOptions, EndTreatment, FivePrime, Terminus, ThreePrime},
     documents::workspace::{self, RevisionEvent, Workspace},
@@ -136,13 +139,32 @@ fn fixture() -> (
 }
 fn advance_private_head(w: &mut Workspace, index: usize, letters: &str) -> String {
     let old = event(w, index);
-    let next = Molecule::dna("PRIVATE later oligo redesign", letters, Topology::Linear).unwrap();
+    let previous = w.revisions.get(&old.revision).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: letters.into(),
+        },
+        Edit::Rename {
+            name: "PRIVATE later oligo redesign".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let next = Edit::apply_all(previous, &actions).unwrap();
     let revision = next.revision();
     let next_event = RevisionEvent::new(
         &old.document_id,
         &revision,
         vec![old.event_id.clone()],
         "Private later redesign after adapter retention",
+        Transition::ReferenceEdit {
+            source: old.clone(),
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     w.revisions.insert(revision.clone(), next);

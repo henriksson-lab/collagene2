@@ -405,6 +405,27 @@ mod tests {
             revision.clone(),
             vec![old.head_event.clone().unwrap()],
             "later source edit",
+            collagene_core::documents::history::transition::Transition::ReferenceEdit {
+                source: collagene_core::material::lineage::EventBinding {
+                    document_id: old.id.clone(),
+                    event_id: old.head_event.clone().unwrap(),
+                    revision: old.head.clone(),
+                },
+                actions: vec![
+                    collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                        start: 0,
+                        end: frame.revisions[&old.head].sequence.len(),
+                        replacement: "GGTTAACC".into(),
+                    },
+                    collagene_core::documents::reference_edit::Operation::Rename {
+                        name: "changed later".into(),
+                    },
+                    collagene_core::documents::reference_edit::Operation::SetTopology {
+                        topology: Topology::Linear,
+                    },
+                ],
+                supplemental_sources: vec![],
+            },
         )
         .unwrap();
         frame.revisions.insert(revision.clone(), molecule);

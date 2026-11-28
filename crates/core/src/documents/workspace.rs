@@ -1,6 +1,7 @@
 //! Durable revision/workspace archive. ZIP is an in-memory container, never a filesystem action.
 //! Content hashes bind evidence, not permission, trusted chemistry or scientific verification.
 use crate::{
+    documents::history::transition::Transition,
     documents::transfer::Candidate,
     planning::plan::{DesignPlan, Operation, PlanInput},
 };
@@ -29,7 +30,7 @@ pub const MAX_ATTACHMENTS: usize = 1000;
 const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
-const VERSION: u32 = 1;
+const VERSION: u32 = 2;
 pub const PLAN_SCHEMA_VERSION: u32 = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +59,7 @@ pub struct RevisionEvent {
     pub parents: Vec<String>,
     /// A descriptive operation label, not executable replay code or a grant of authority.
     pub operation: String,
+    pub transition: Transition,
 }
 impl RevisionEvent {
     pub fn new(
@@ -65,6 +67,7 @@ impl RevisionEvent {
         revision: impl Into<String>,
         parents: Vec<String>,
         operation: impl Into<String>,
+        transition: Transition,
     ) -> Result<Self, Error> {
         let mut event = Self {
             id: String::new(),
@@ -72,6 +75,7 @@ impl RevisionEvent {
             revision: revision.into(),
             parents,
             operation: operation.into(),
+            transition,
         };
         event.check_fields()?;
         event.id = event.expected_id()?;
@@ -79,13 +83,14 @@ impl RevisionEvent {
     }
     fn expected_id(&self) -> Result<String, Error> {
         let mut hash = blake3::Hasher::new();
-        hash.update(b"collagene-history-event-v1\0");
+        hash.update(b"collagene-history-event-v2\0");
         hash.update(
             &serde_json::to_vec(&(
                 &self.document_id,
                 &self.revision,
                 &self.parents,
                 &self.operation,
+                &self.transition,
             ))
             .map_err(format_error)?,
         );
@@ -105,7 +110,9 @@ impl RevisionEvent {
         {
             return Err(bad("invalid history event fields"));
         }
-        Ok(())
+        self.transition
+            .check_fields(&self.document_id, &self.revision, &self.parents)?;
+        crate::encoding::bounded_json::preflight(&self.transition, MAX_ENTRY_BYTES)
     }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,7 +159,13 @@ impl Workspace {
             molecule.validate()?;
             let revision = molecule.revision();
             let id = format!("document-{}", i + 1);
-            let event = RevisionEvent::new(&id, &revision, vec![], "Imported document")?;
+            let event = RevisionEvent::new(
+                &id,
+                &revision,
+                vec![],
+                "Imported document",
+                Transition::IndependentReference,
+            )?;
             workspace.documents.push(WorkspaceDocument {
                 id,
                 head: revision.clone(),
@@ -203,17 +216,34 @@ impl Workspace {
             self.revisions.values(),
             MAX_EXPANDED_BYTES,
         )?;
+        // Admit action-owned annotation trees before recursive serialization or
+        // identity hashing. The manifest contains descriptors, never these bytes.
+        let mut expanded = 0usize;
+        for event in &self.history {
+            if let Transition::ReferenceEdit { actions, .. } = &event.transition {
+                if actions.len() > crate::documents::reference_edit::MAX_ACTIONS {
+                    return Err(Error::TooLarge);
+                }
+                for action in actions {
+                    action.preflight()?;
+                }
+            }
+            charge(
+                &mut expanded,
+                json_size(&event.transition, MAX_ENTRY_BYTES)?,
+                MAX_EXPANDED_BYTES,
+            )?;
+        }
         json_size(
             &(
                 &self.name,
                 &self.active_document,
                 &self.documents,
-                &self.history,
+                &HistoryDescriptors(&self.history),
                 &self.active_candidate,
             ),
             MAX_MANIFEST_BYTES,
         )?;
-        let mut expanded = 0usize;
         let mut metadata_fields = 0usize;
         for (revision, molecule) in &self.revisions {
             let size = molecule_size(molecule)?;
@@ -274,6 +304,9 @@ impl Workspace {
                 }
                 children.entry(parent).or_default().push(&event.id);
             }
+            event
+                .transition
+                .validate_sources(&events, &self.attachments)?;
             indegrees.insert(event.id.as_str(), event.parents.len());
         }
         let mut queue = indegrees
@@ -441,20 +474,20 @@ impl Workspace {
         Ok(())
     }
 }
-fn identifier(value: &str) -> bool {
+pub(super) fn identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && value
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b':'))
 }
-fn digest(value: &str) -> bool {
+pub(super) fn digest(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
-fn event_id(value: &str) -> bool {
+pub(super) fn event_id(value: &str) -> bool {
     value.strip_prefix("event-").is_some_and(digest)
 }
 fn bad(message: &str) -> Error {
@@ -516,9 +549,9 @@ struct Manifest {
     )]
     documents: Vec<WorkspaceDocument>,
     #[serde(
-        deserialize_with = "collagene_model::decode::bounded_vec::<_, RevisionEvent, MAX_HISTORY_EVENTS>"
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, HistoryEntry, MAX_HISTORY_EVENTS>"
     )]
-    history: Vec<RevisionEvent>,
+    history: Vec<HistoryEntry>,
     #[serde(deserialize_with = "json::bounded_map::<_, String, MAX_REVISIONS>")]
     revisions: BTreeMap<String, String>,
     #[serde(
@@ -534,6 +567,63 @@ struct Manifest {
     attachments: BTreeMap<String, AttachmentRecord>,
     #[serde(deserialize_with = "json::bounded_map::<_, BlobInfo, MAX_ENTRIES>")]
     blobs: BTreeMap<String, BlobInfo>,
+}
+/// The manifest contains only bounded event descriptors. Typed action payloads
+/// have their own content-addressed entry and retain the normal per-entry bound.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HistoryEntry {
+    id: String,
+    document_id: String,
+    revision: String,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 128>")]
+    parents: Vec<String>,
+    operation: String,
+    transition_blob: String,
+}
+/// Shared borrowed serialized layout for both the actual manifest and admission.
+#[derive(Serialize)]
+struct HistoryEntryRef<'a> {
+    id: &'a str,
+    document_id: &'a str,
+    revision: &'a str,
+    parents: &'a [String],
+    operation: &'a str,
+    transition_blob: &'a str,
+}
+impl Serialize for HistoryEntry {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        HistoryEntryRef {
+            id: &self.id,
+            document_id: &self.document_id,
+            revision: &self.revision,
+            parents: &self.parents,
+            operation: &self.operation,
+            transition_blob: &self.transition_blob,
+        }
+        .serialize(serializer)
+    }
+}
+struct HistoryDescriptors<'a>(&'a [RevisionEvent]);
+impl Serialize for HistoryDescriptors<'_> {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeSeq;
+        // Every real lower-hex blob hash has exactly this serialized length.
+        const HASH_LENGTH: &str =
+            "0000000000000000000000000000000000000000000000000000000000000000";
+        let mut sequence = serializer.serialize_seq(Some(self.0.len()))?;
+        for event in self.0 {
+            sequence.serialize_element(&HistoryEntryRef {
+                id: &event.id,
+                document_id: &event.document_id,
+                revision: &event.revision,
+                parents: &event.parents,
+                operation: &event.operation,
+                transition_blob: HASH_LENGTH,
+            })?;
+        }
+        sequence.end()
+    }
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -640,6 +730,7 @@ impl Blobs {
         Ok(hash)
     }
     fn json(&mut self, value: &impl Serialize) -> Result<String, Error> {
+        json_size(value, MAX_ENTRY_BYTES)?;
         self.put(&serde_json::to_vec(value).map_err(format_error)?)
     }
 }
@@ -716,6 +807,17 @@ pub fn save_workspace(workspace: &Workspace) -> Result<Vec<u8>, Error> {
             },
         );
     }
+    let mut history = Vec::with_capacity(workspace.history.len());
+    for event in &workspace.history {
+        history.push(HistoryEntry {
+            id: event.id.clone(),
+            document_id: event.document_id.clone(),
+            revision: event.revision.clone(),
+            parents: event.parents.clone(),
+            operation: event.operation.clone(),
+            transition_blob: blobs.json(&event.transition)?,
+        });
+    }
     let manifest = Manifest {
         format: FORMAT.into(),
         version: VERSION,
@@ -724,7 +826,7 @@ pub fn save_workspace(workspace: &Workspace) -> Result<Vec<u8>, Error> {
         name: workspace.name.clone(),
         active_document: workspace.active_document.clone(),
         documents: workspace.documents.clone(),
-        history: workspace.history.clone(),
+        history,
         revisions,
         candidates,
         active_candidate: workspace.active_candidate.clone(),
@@ -1197,6 +1299,28 @@ fn load_workspace_inner(bytes: &[u8]) -> Result<Workspace, Error> {
         sizes.insert(revision.clone(), size);
         revisions.insert(revision.clone(), molecule);
     }
+    let mut history = Vec::with_capacity(manifest.history.len());
+    for record in manifest.history {
+        let bytes = get(&blobs, &record.transition_blob)?;
+        charge(&mut expanded, bytes.len(), MAX_EXPANDED_BYTES)?;
+        let transition: Transition = json_exact(bytes)?;
+        used.insert(record.transition_blob);
+        let event = RevisionEvent {
+            id: record.id,
+            document_id: record.document_id,
+            revision: record.revision,
+            parents: record.parents,
+            operation: record.operation,
+            transition,
+        };
+        event.check_fields()?;
+        if event.id != event.expected_id()? {
+            return Err(bad(
+                "workspace history transition differs from its event identity",
+            ));
+        }
+        history.push(event);
+    }
     let mut candidates = Vec::new();
     for blob in &manifest.candidates {
         used.insert(blob.clone());
@@ -1277,7 +1401,7 @@ fn load_workspace_inner(bytes: &[u8]) -> Result<Workspace, Error> {
         active_document: manifest.active_document,
         documents: manifest.documents,
         revisions,
-        history: manifest.history,
+        history,
         candidates,
         active_candidate: manifest.active_candidate,
         attachments,

@@ -1,5 +1,6 @@
 //! Target-free native PCR, reciprocal extension, catalog-digest and end-repair derivations. Opaque, bounded recipe
 //! packages break typed recursion; only fresh native execution yields material.
+use crate::documents::history::transition::{AnalysisOrigin, AnalysisProducer, Transition};
 pub mod digest_export;
 pub mod reaction_conditions;
 use crate::{
@@ -41,6 +42,7 @@ const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x05";
 const HEADER: usize = 44;
 const CONTEXT_KEY: &str = "source:material_derivation:context";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
+mod ancestry;
 pub mod annealing;
 pub mod digest;
 pub mod end_repair;
@@ -189,6 +191,21 @@ pub struct FreshMaterial {
     reaction_conditions: Vec<crate::cloning::restriction::conditions::source::SourceReport>,
 }
 impl FreshMaterial {
+    fn from_run_source(fresh: run_material::FreshMaterial) -> Result<Self, Error> {
+        let reaction_conditions = reaction_conditions::collect(fresh.reaction_conditions())?;
+        let (reference, tracked, incomplete, findings, findings_total, findings_truncated) =
+            fresh.into_parts();
+        Ok(Self {
+            reference,
+            tracked,
+            incomplete,
+            findings,
+            findings_total,
+            findings_truncated,
+            reaction_conditions,
+        })
+    }
+
     pub fn reaction_conditions(
         &self,
     ) -> &[crate::cloning::restriction::conditions::source::SourceReport] {
@@ -801,10 +818,22 @@ fn fresh_template(
     source: &Molecule,
     request: &Request,
     revision: &str,
+    capture: &mut Option<ancestry::Capture>,
+    replay: &mut verification::replay_budget::ReplayBudget<'_>,
 ) -> Result<FreshMaterial, Error> {
     let template = request.template()?;
     request_source(source, request)?;
-    let mut inherited = fresh_source(source, &template.origin)?;
+    let mut inherited = match capture {
+        Some(capture) => capture.source(template.role, source, &template.origin, replay)?,
+        None if replay.is_qc_job() => match &template.origin {
+            SourceOrigin::OriginalReference => fresh_source(source, &template.origin)?,
+            SourceOrigin::Saved(origin) => {
+                let (fresh, _) = origin.replay_scoped(source, replay, None)?;
+                FreshMaterial::from_run_source(fresh)?
+            }
+        },
+        None => fresh_source(source, &template.origin)?,
+    };
     let (mut reference, tracked, local) = match &request.derivation {
         Derivation::AnnealedOligos { .. } => {
             return Err(bad("annealing requires the plural oligo source path"));
@@ -815,25 +844,58 @@ fn fresh_template(
             template_strand,
             selection,
         } => {
-            let previews = match &template.origin {
-                SourceOrigin::OriginalReference => verification::pcr::simulate_pcr_documents(
-                    source,
-                    forward,
-                    reverse,
-                    *template_strand,
-                )?,
-                SourceOrigin::Saved(origin) => crate::cloning::pcr::material::simulate_from_fresh(
-                    source,
-                    origin,
-                    forward,
-                    reverse,
-                    *template_strand,
-                    &inherited.tracked,
-                    inherited.incomplete,
-                    &inherited.findings,
-                    inherited.findings_total,
-                    inherited.findings_truncated,
-                )?,
+            let previews = if replay.is_qc_job() {
+                match &template.origin {
+                    SourceOrigin::OriginalReference => {
+                        verification::pcr::simulate_pcr_documents_with_budget(
+                            source,
+                            forward,
+                            reverse,
+                            *template_strand,
+                            &mut replay.pcr,
+                        )?
+                    }
+                    SourceOrigin::Saved(origin) => {
+                        crate::cloning::pcr::material::simulate_from_fresh(
+                            source,
+                            origin,
+                            forward,
+                            reverse,
+                            *template_strand,
+                            &inherited.tracked,
+                            inherited.incomplete,
+                            &inherited.findings,
+                            inherited.findings_total,
+                            inherited.findings_truncated,
+                            Some(&mut replay.pcr),
+                        )?
+                    }
+                }
+            } else {
+                let previews = match &template.origin {
+                    SourceOrigin::OriginalReference => verification::pcr::simulate_pcr_documents(
+                        source,
+                        forward,
+                        reverse,
+                        *template_strand,
+                    )?,
+                    SourceOrigin::Saved(origin) => {
+                        crate::cloning::pcr::material::simulate_from_fresh(
+                            source,
+                            origin,
+                            forward,
+                            reverse,
+                            *template_strand,
+                            &inherited.tracked,
+                            inherited.incomplete,
+                            &inherited.findings,
+                            inherited.findings_total,
+                            inherited.findings_truncated,
+                            None,
+                        )?
+                    }
+                };
+                previews
             };
             if previews.len() != 1 || selection.selected_index != 0 {
                 return Err(bad(
@@ -852,7 +914,13 @@ fn fresh_template(
                 &inherited.tracked,
                 *template_strand,
             )?;
-            let geometries = frame.geometries(forward, reverse)?;
+            let geometries = if replay.is_qc_job() {
+                frame
+                    .geometries_with_budget(forward, reverse, &mut replay.pcr)?
+                    .0
+            } else {
+                frame.geometries(forward, reverse)?
+            };
             if geometries.len() != 1 {
                 return Err(bad("actual exact PCR geometry is not unique"));
             }
@@ -860,12 +928,21 @@ fn fresh_template(
             let tracked = TrackedDuplex::exact_pcr(&geometry.product.sequence)?;
             let mut reference = tracked.duplex.molecule(&request.name)?;
             let mut findings = Vec::new();
-            verification::pcr::project_pcr_frame_annotations(
+            let receipt = verification::pcr::project_pcr_frame_annotations(
                 frame,
                 geometry,
                 &mut reference,
                 &mut findings,
             )?;
+            if let Some(capture) = capture {
+                capture.record(
+                    0,
+                    receipt,
+                    verification::ancestry::ProjectionKind::TemplateSynthesis,
+                    vec![],
+                    verification::ancestry::IntroductionKind::PrimerTail,
+                );
+            }
             findings.push("Unique exact PCR produces newly synthesized unmodified blunt duplex strands with 5′OH/3′OH in the existing ideal-PCR model. Primer chemistry, yields, cleanup, amplification efficiency and experimental isolation are not measured.".into());
             (reference, tracked, findings)
         }
@@ -904,7 +981,31 @@ fn fresh_template(
             let tracked = TrackedDuplex::exact_pcr(&geometry.sequence)?;
             let mut reference = tracked.duplex.molecule(&request.name)?;
             let mut findings = preview.preview.report.warnings.clone();
-            verification::pcr::project_mutant_pcr(source, geometry, &mut reference, &mut findings)?;
+            let receipt = verification::pcr::project_mutant_pcr(
+                source,
+                geometry,
+                &mut reference,
+                &mut findings,
+            )?;
+            if let Some(capture) = capture {
+                let changes = geometry
+                    .substitutions
+                    .iter()
+                    .map(|change| verification::ancestry::MappedChange {
+                        source_position: change.source_position,
+                        destination_position: change.product_position,
+                        before: change.template_base,
+                        after: change.product_base,
+                    })
+                    .collect();
+                capture.record(
+                    0,
+                    receipt,
+                    verification::ancestry::ProjectionKind::EditedTemplate,
+                    changes,
+                    verification::ancestry::IntroductionKind::PrimerTail,
+                );
+            }
             findings.push(format!("Intentional-mismatch PCR retains {} primer-encoded substitutions, both complete ordered oligos and the declared 3′/mismatch/search policy. The selected native geometry supplies newly synthesized unmodified blunt strands with 5′OH/3′OH; amplification efficiency, isolation and target success are not established.",geometry.substitutions.len()));
             if !preview.preview.report.enumeration_complete {
                 findings.push("Alternative mismatch-PCR search is incomplete. The selected singleton path remains conditional material and its limitations are not upgraded.".into());
@@ -915,10 +1016,12 @@ fn fresh_template(
             preparation,
             selection,
         } => {
-            let executed = crate::cloning::overlap::extension::execution::execute(
+            let executed = crate::cloning::overlap::extension::execution::execute_scoped(
                 source,
                 Some(&inherited.tracked),
                 preparation,
+                capture.is_some(),
+                replay,
             )?;
             let mut product=executed.product.ok_or_else(||bad("Reusable OE material requires one actual geometry in each source PCR and outer PCR; no product is inferred from a desired sequence"))?;
             if product.revision() != selection.expected_product_revision {
@@ -927,6 +1030,9 @@ fn fresh_template(
                 ));
             }
             product.name = request.name.clone();
+            if let Some(capture) = capture {
+                capture.record_oe(executed.native);
+            }
             inherited.incomplete |= executed.incomplete;
             let tracked = TrackedDuplex::exact_pcr(&product.sequence)?;
             let mut findings = executed.findings;
@@ -934,7 +1040,11 @@ fn fresh_template(
             (product, tracked, findings)
         }
         Derivation::TerminalProcessing { action } => {
-            terminal::terminal_from_fresh(source, &inherited, action, &request.name)?
+            let result = terminal::terminal_from_fresh(source, &inherited, action, &request.name)?;
+            if let Some(capture) = capture {
+                capture.record_top_copy(source, &result.0)?;
+            }
+            result
         }
         Derivation::EndRepair { method } => {
             let repair = chemistry::repair_ends(&inherited.tracked.duplex, *method)?;
@@ -943,12 +1053,24 @@ fn fresh_template(
                 return Err(bad("native repair geometry and tracked mappings differ"));
             }
             let mut findings = repair.warnings.clone();
-            let reference = verification::terminal::repaired_document(
+            let projected = verification::terminal::repaired_document(
                 source,
                 &repair,
                 request.name.clone(),
                 &mut findings,
             )?;
+            let reference = projected.molecule;
+            if let Some(capture) = capture {
+                for receipt in projected.projections {
+                    capture.record(
+                        0,
+                        receipt,
+                        verification::ancestry::ProjectionKind::ReferenceCorrespondence,
+                        vec![],
+                        verification::ancestry::IntroductionKind::NewlySynthesizedUnmappedCalls,
+                    );
+                }
+            }
             findings.push("Direct end repair uses actual source strands and template-supported fill/removal only. Surviving positional modifications, original 5′ groups and internal nicks remain; no phosphorylation, nick sealing, supplier-vector chemistry or target success is inferred.".into());
             (reference, tracked, findings)
         }
@@ -988,10 +1110,16 @@ fn fresh_template(
                 &inherited.tracked.duplex.summary()?,
                 || {
                     let mut result = Vec::new();
-                    for (index, fragment) in modified_duplex::digest(&inherited.tracked, &enzymes)?
-                        .into_iter()
-                        .enumerate()
-                    {
+                    let fragments = if replay.is_qc_job() {
+                        modified_duplex::digest_with_budget(
+                            &inherited.tracked,
+                            &enzymes,
+                            replay.cleavage,
+                        )?
+                    } else {
+                        modified_duplex::digest(&inherited.tracked, &enzymes)?
+                    };
+                    for (index, fragment) in fragments.into_iter().enumerate() {
                         result.push(chemistry::DigestFragment {
                             duplex: fragment.duplex.duplex.clone(),
                             top_start: fragment.top_start,
@@ -1026,12 +1154,21 @@ fn fresh_template(
                     findings.push(format!("Retained source-bound documentary reaction constraint: {:?}. Star activity and incubation-duration compatibility remain unassessed; sequence product geometry is retained independently of this condition status.",evidence.report.documentary_status));
                 }
             }
-            verification::projection::project_digest_annotations(
+            let receipt = verification::projection::project_digest_annotations(
                 source,
                 &geometry,
                 &mut reference,
                 &mut findings,
             )?;
+            if let Some(capture) = capture {
+                capture.record(
+                    0,
+                    receipt,
+                    verification::ancestry::ProjectionKind::ReferenceCorrespondence,
+                    vec![],
+                    verification::ancestry::IntroductionKind::DeclaredLiteral,
+                );
+            }
             inherited.incomplete |= !inspection.scan_complete || !inspection.limits.is_empty();
             findings.push("Catalog cleavage uses actual tracked source strands and retains terminal groups, nicks and positional modifications. Complete cleavage is a declared reaction assumption, not measured enzyme completion or methylation permission; fragment choice is not proof of isolation.".into());
             (reference, fragment.duplex, findings)
@@ -1100,6 +1237,10 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
         id.clone(),
         fresh.reference.clone(),
         EVENT_OPERATION,
+        AnalysisOrigin::context(
+            AnalysisProducer::MaterialDerivation,
+            context_revision.clone(),
+        ),
     )?;
     let product = EventBinding {
         document_id: id.clone(),
@@ -1257,7 +1398,15 @@ pub(crate) fn attest_record_shallow(
         .iter()
         .find(|e| e.id == record.product.event_id)
         .ok_or_else(|| bad("product event absent"))?;
-    if event.operation != EVENT_OPERATION
+    let expected_origin = AnalysisOrigin::context(
+        AnalysisProducer::MaterialDerivation,
+        record.context_revision.clone(),
+    );
+    if event.transition
+        != (Transition::Analysis {
+            origin: expected_origin,
+        })
+        || event.operation != EVENT_OPERATION
         || event.parents != distinct_parent_events(&record.request)
         || product.metadata.get(CONTEXT_KEY) != Some(&record.context_revision)
         || !product.metadata.contains_key("duplex_model")
@@ -1290,10 +1439,17 @@ pub fn validate_workspace_records(w: &Workspace) -> Result<(), Error> {
         attest_record_shallow(w, &record, None)?;
         crate::material::capsule::validate_derived_request_origins(w, &record.request)?;
     }
-    if w.history
-        .iter()
-        .any(|e| e.operation == EVENT_OPERATION && !products.contains(&e.id))
-    {
+    if w.history.iter().any(|event| {
+        matches!(
+            &event.transition,
+            Transition::Analysis {
+                origin: AnalysisOrigin {
+                    producer: AnalysisProducer::MaterialDerivation,
+                    record: crate::documents::history::transition::AnalysisRecord::Context { .. }
+                }
+            }
+        ) && !products.contains(&event.id)
+    }) {
         return Err(bad(
             "native material product event lacks its retained record",
         ));
@@ -1346,6 +1502,62 @@ pub fn replay(capsule: &Capsule, reference: &Molecule) -> Result<FreshMaterial, 
     let record = load_record_shallow(&capsule.record_bytes)?;
     replay_fields(&record, &capsule.source_snapshots, reference)
 }
+/// Capture actual current derivation projections and nested saved-source receipts.
+pub(crate) fn replay_scoped(
+    capsule: &Capsule,
+    reference: &Molecule,
+    replay: &mut verification::replay_budget::ReplayBudget<'_>,
+    budget: Option<verification::ancestry::TraceBudget>,
+) -> Result<
+    (
+        FreshMaterial,
+        verification::ancestry::OriginBinding,
+        Option<Result<verification::ancestry::ReconstructionTrace, Error>>,
+    ),
+    Error,
+> {
+    capsule.validate_documentary()?;
+    let record = load_record_shallow(&capsule.record_bytes)?;
+    collagene_model::bounds::model_preflight(&[reference])?;
+    if record.scientific_engine != verification::ENGINE_VERSION {
+        return Err(bad(
+            "historical derivation requires current native reassessment",
+        ));
+    }
+    let mut capture = budget.map(|budget| ancestry::Capture::new(budget, &record.context_revision));
+    let fresh = fresh_observed(
+        &capsule.source_snapshots,
+        &record.request,
+        &record.context_revision,
+        &mut capture,
+        replay,
+    )?;
+    validate_replayed(&record, reference, &fresh)?;
+    let binding = verification::ancestry::OriginBinding::Material {
+        product: record.product.clone(),
+        record_hash: blake3::hash(&capsule.record_bytes).to_hex().to_string(),
+        context_revision: record.context_revision.clone(),
+        sources: record.request.source_bindings(),
+    };
+    let trace = capture.map(|capture| capture.finish(fresh.reference()));
+    Ok((fresh, binding, trace))
+}
+fn validate_replayed(
+    record: &Record,
+    reference: &Molecule,
+    fresh: &FreshMaterial,
+) -> Result<(), Error> {
+    if reference.revision() != record.product.revision
+        || reference != fresh.reference()
+        || fresh.incomplete != record.incomplete
+        || fresh.tracked().summary()?.state_revision != record.product_state_revision
+    {
+        return Err(bad(
+            "actual replay differs from saved material product/state/limitations",
+        ));
+    }
+    Ok(())
+}
 fn replay_fields(
     record: &Record,
     source: &[SourceSnapshot],
@@ -1358,15 +1570,7 @@ fn replay_fields(
         ));
     }
     let fresh = fresh(source, &record.request, &record.context_revision)?;
-    if reference.revision() != record.product.revision
-        || reference != fresh.reference()
-        || fresh.incomplete != record.incomplete
-        || fresh.tracked().summary()?.state_revision != record.product_state_revision
-    {
-        return Err(bad(
-            "actual replay differs from saved material product/state/limitations",
-        ));
-    }
+    validate_replayed(record, reference, &fresh)?;
     Ok(fresh)
 }
 pub fn reconstruct(w: &Workspace, product: &EventBinding) -> Result<FreshMaterial, Error> {
@@ -1695,6 +1899,17 @@ fn fresh(
     request: &Request,
     revision: &str,
 ) -> Result<FreshMaterial, Error> {
+    let mut cleavage = modified_duplex::CleavageBudget::new(100_000_000)?;
+    let mut replay = verification::replay_budget::ReplayBudget::plan_local(&mut cleavage);
+    fresh_observed(snapshots, request, revision, &mut None, &mut replay)
+}
+fn fresh_observed(
+    snapshots: &[SourceSnapshot],
+    request: &Request,
+    revision: &str,
+    capture: &mut Option<ancestry::Capture>,
+    replay: &mut verification::replay_budget::ReplayBudget<'_>,
+) -> Result<FreshMaterial, Error> {
     validate_source_snapshots(request, snapshots)?;
     if let Derivation::AnnealedOligos { options, selection } = &request.derivation {
         let mut findings = Vec::new();
@@ -1714,13 +1929,28 @@ fn fresh(
             .iter()
             .position(|c| c.id == selection.candidate_id)
             .ok_or_else(|| bad("selected native annealing candidate is unavailable"))?;
-        let mut reference = verification::terminal::annealed_document_inner(
+        let projected = verification::terminal::annealed_document_inner(
             &snapshots[0].molecule,
             &snapshots[1].molecule,
             &preview.annealing,
             index,
             &mut findings,
         )?;
+        let mut reference = projected.molecule;
+        if let Some(capture) = capture {
+            for snapshot in snapshots {
+                capture.root(snapshot.role, &snapshot.molecule, None)?;
+            }
+            for (input, receipt) in projected.projections.into_iter().enumerate() {
+                capture.record(
+                    input,
+                    receipt,
+                    verification::ancestry::ProjectionKind::ReferenceCorrespondence,
+                    vec![],
+                    verification::ancestry::IntroductionKind::DeclaredLiteral,
+                );
+            }
+        }
         annealing::protect_anneal_preview(&mut reference)?;
         if reference.revision() != selection.expected_product_revision {
             return Err(bad("selected native annealed product changed"));
@@ -1752,6 +1982,6 @@ fn fresh(
             findings_truncated,
         })
     } else {
-        fresh_template(&snapshots[0].molecule, request, revision)
+        fresh_template(&snapshots[0].molecule, request, revision, capture, replay)
     }
 }

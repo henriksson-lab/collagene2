@@ -1,6 +1,7 @@
 //! Reference-free read assembly with exact source-event binding and fresh replay before use.
 use crate::platform::worker::CachedWorker;
 use crate::viewer::map::renderer::ResizeListener;
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use collagene_core::{
     protocol::{
         request::Request,
@@ -909,7 +910,10 @@ pub fn ContigArchivePanel(
                     let source_bindings=current.placements.iter().map(|p|bindings.get(p.read_index).ok_or("A contributing source binding is missing.")).collect::<Result<Vec<_>,_>>()?;
                     let sources=source_bindings.iter().map(|b|histories.iter().find(|h|h.id==b.event.document_id).map(|h|(h,b.event.event_id.as_str())).ok_or("A contributing read history is unavailable.")).collect::<Result<Vec<_>,_>>()?;
                     let base=format!("assembly-{}-{}",&hash[..24],id);let mut document_id=base.clone();let mut suffix=1usize;while next.documents.iter().any(|d|d.id==document_id){document_id=format!("{base}-{suffix}");suffix+=1;}
-                    let derived=collagene_core::documents::history::DocumentHistory::derive_from_events(&sources,document_id.clone(),product,format!("Read contig assembly {hash} contig {id}; computational evidence, not experimental provenance")).map_err(|e|e.to_string())?;
+                    let derived={
+                        let analysis_origin = AnalysisOrigin::context(AnalysisProducer::ReadContig, hash.clone());
+                        collagene_core::documents::history::DocumentHistory::derive_from_events(&sources, document_id.clone(), product, format!("Read contig assembly {hash} contig {id}; computational evidence, not experimental provenance"), analysis_origin)
+                    }.map_err(|e|e.to_string())?;
                     derived.contribute(&mut next).map_err(|e|e.to_string())?;next.active_document=document_id;
                 }
                 next.validate().map_err(|e|e.to_string())?;validate.run(next.clone())?;guard()?;

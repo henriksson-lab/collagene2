@@ -48,7 +48,13 @@ pub fn ClipboardTools(
     locked: RwSignal<bool>,
     epoch: RwSignal<u64>,
     identity: Memo<String>,
-    on_commit: Callback<(String, Molecule), Result<(), String>>,
+    on_commit: Callback<
+        (
+            String,
+            Vec<collagene_core::documents::reference_edit::Operation>,
+        ),
+        Result<(), String>,
+    >,
     message: RwSignal<String>,
     source: Memo<SourceInfo>,
     source_selection: Callback<(), Result<Selection, String>>,
@@ -379,12 +385,19 @@ pub fn ClipboardTools(
                     &replacement,
                 ),
             };
-            let edited = edit.and_then(|edit| {
-                source
-                    .replace(edit.start, edit.end, &edit.replacement)
-                    .map_err(|error| error.to_string())
+            let committed = edit.and_then(|edit| {
+                on_commit.run((
+                    revision,
+                    vec![
+                        collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                            start: edit.start,
+                            end: edit.end,
+                            replacement: edit.replacement,
+                        },
+                    ],
+                ))
             });
-            match edited.and_then(|edited| on_commit.run((revision, edited))) {
+            match committed {
                 Ok(()) => {
                     selected_feature.set(None);
                     selection.set(None);

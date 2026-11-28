@@ -1,5 +1,6 @@
 //! Install declared reference intent with exact computational ancestry. No physical
 //! product or positive scientific result is installed by this operation.
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use collagene_core::{
     cloning::pcr::mutation_intent::{self, Report},
     documents::{
@@ -56,8 +57,10 @@ pub fn stage(
             .map(|n| format!("{prefix}-{n}"))
             .find(|id| !docs.iter().any(|doc| doc.id == *id))
             .ok_or("No intended-reference identity is available.")?;
-        let derived = original.derive_event(&source.event_id, id,
-            fresh.target.clone(),"Declared mutation intent from an exact source event; reference only, preparation and experimental outcome unverified")
+        let derived = {
+            let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::MutationIntent, fresh.target.revision());
+            original.derive_event(&source.event_id, id, fresh.target.clone(), "Declared mutation intent from an exact source event; reference only, preparation and experimental outcome unverified", analysis_origin)
+        }
             .map_err(|e|e.to_string())?;
         let id = derived.id.clone();
         derived.contribute(&mut staged).map_err(|e| e.to_string())?;

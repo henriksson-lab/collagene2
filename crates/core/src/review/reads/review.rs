@@ -1,5 +1,6 @@
 //! Explicit caller decisions over fresh read evidence. No original call or source
 //! document is edited, and a reviewed reference is never physical sample proof.
+use crate::documents::history::transition::{AnalysisOrigin, AnalysisProducer, Transition};
 use crate::{
     documents::{
         history::DocumentHistory,
@@ -611,6 +612,18 @@ fn load_inner(w: &Workspace, hash: &str) -> Result<SavedReview, Error> {
             .iter()
             .find(|e| e.id == binding.event_id)
             .ok_or_else(|| bad("missing review target event"))?;
+        if event.transition
+            != (Transition::Analysis {
+                origin: AnalysisOrigin::context(
+                    AnalysisProducer::ReadReview,
+                    s.context_revision.clone(),
+                ),
+            })
+        {
+            return Err(bad(
+                "review target typed producer/context differs from its retained record",
+            ));
+        }
         let required = s
             .reads
             .iter()
@@ -731,6 +744,7 @@ pub fn commit(w: &Workspace, r: &Request) -> Result<Commit, Error> {
             id.clone(),
             m.clone(),
             "Explicit reviewed reference from original construct and all read events",
+            AnalysisOrigin::context(AnalysisProducer::ReadReview, stable.clone()),
         )?;
         let binding = EventBinding {
             document_id: id,

@@ -1,4 +1,7 @@
 //! Native/WASM worker boundary contracts for durable workspace I/O and trace validation.
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::workspace::*,
     protocol::{
@@ -56,6 +59,19 @@ fn workspace_save_load_jobs_preserve_document_identity_history_and_request_bindi
         edited.revision(),
         vec![workspace.history[0].id.clone()],
         "Substitution",
+        Transition::ReferenceEdit {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: "document-1".into(),
+                event_id: workspace.history[0].id.clone(),
+                revision: old.clone(),
+            },
+            actions: vec![Edit::ReplaceSequence {
+                start: 1,
+                end: 2,
+                replacement: "T".into(),
+            }],
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     workspace.documents[0].undo.push(old);

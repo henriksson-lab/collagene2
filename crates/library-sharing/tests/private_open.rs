@@ -1,5 +1,8 @@
 //! Native-local reopen retains exact documentary bytes without public authority.
 use collagene_core::documents::workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment};
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_design_exchange as sbol;
 use collagene_library_sharing::{
     self as sharing, Selection,
@@ -128,14 +131,25 @@ fn private_import_retains_public_collision_head_and_stale_checkout_guards() {
         .unwrap()
         .workspace;
     let mut local = incoming.clone();
-    let mut edited = local.revisions[&pin.revision].clone();
-    edited.name = "Unpublished local edit".into();
+    let actions = vec![Edit::Rename {
+        name: "Unpublished local edit".into(),
+    }];
+    let edited = Edit::apply_all(&local.revisions[&pin.revision], &actions).unwrap();
     let revision = edited.revision();
     let event = RevisionEvent::new(
         &pin.document_id,
         &revision,
         vec![pin.head_event.clone().unwrap()],
         "Local edit",
+        Transition::ReferenceEdit {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: pin.document_id.clone(),
+                event_id: pin.head_event.clone().unwrap(),
+                revision: pin.revision.clone(),
+            },
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     local.revisions.insert(revision.clone(), edited);

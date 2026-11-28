@@ -49,7 +49,8 @@ pub fn preview_repair(
         &repair,
         format!("{}_end_repair", source.name),
         &mut local,
-    )?;
+    )?
+    .molecule;
     molecule.metadata.insert(
         "source:material_derivation:preview_context".into(),
         context_revision.clone(),

@@ -3,6 +3,18 @@
 use super::{MappingSegment, budget, qualifiers, uncertain};
 use crate::{Error, Feature, Location, Molecule};
 
+/// Non-deserializable receipt emitted by the native edit feature loop.
+/// Ordinals address the original source and align with retained product features.
+#[derive(Debug)]
+pub struct ReplacementProjection {
+    pub map: Vec<MappingSegment>,
+    pub source_feature_indices: Vec<usize>,
+    pub dropped_source_feature_indices: Vec<usize>,
+    pub start: usize,
+    pub end: usize,
+    pub inserted_length: usize,
+    pub unchanged: bool,
+}
 pub(crate) struct Edit {
     start: usize,
     end: usize,
@@ -121,7 +133,8 @@ impl Edit {
         &self,
         source: &Molecule,
         destination_length: usize,
-    ) -> Result<Vec<Feature>, Error> {
+        capture: bool,
+    ) -> Result<(Vec<Feature>, Option<ReplacementProjection>), Error> {
         let length = source.sequence.len();
         if self.start > self.end
             || self.end > length
@@ -135,9 +148,14 @@ impl Edit {
         qualifiers::preflight(source, &mut work)?;
         let segments = self.retained_segments(length);
         let mut result = Vec::with_capacity(source.features.len());
-        for original in &source.features {
+        let mut ordinals = Vec::new();
+        let mut dropped = Vec::new();
+        for (index, original) in source.features.iter().enumerate() {
             let (location, touched) = self.map_location(&original.location, &mut work)?;
             let Some(location) = location else {
+                if capture {
+                    dropped.push(index);
+                }
                 continue;
             };
             let review = touched
@@ -168,7 +186,19 @@ impl Edit {
             };
             feature.location.validate(destination_length)?;
             result.push(feature);
+            if capture {
+                ordinals.push(index);
+            }
         }
-        Ok(result)
+        let projection = capture.then(|| ReplacementProjection {
+            map: segments,
+            source_feature_indices: ordinals,
+            dropped_source_feature_indices: dropped,
+            start: self.start,
+            end: self.end,
+            inserted_length: self.inserted,
+            unchanged: false,
+        });
+        Ok((result, projection))
     }
 }

@@ -1,4 +1,5 @@
 //! Retained digest recipes are historical evidence, never a freshness receipt.
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     cloning::restriction::{
         catalog::{self as catalog_digest, catalog},
@@ -96,14 +97,22 @@ fn insert(frame: &Workspace, value: &serde_json::Value) -> (Workspace, String) {
 }
 fn advance(frame: &Workspace) -> Workspace {
     let mut histories = DocumentHistory::restore_all(frame).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
         .commit(
-            Molecule::dna(
-                "later template",
-                "CCCGGATCCAAAGAATTCTTT",
-                Topology::Circular,
-            )
-            .unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "CCCGGATCCAAAGAATTCTTT".into(),
+                },
+                Edit::Rename {
+                    name: "later template".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Circular,
+                },
+            ],
             "later edit",
         )
         .unwrap();

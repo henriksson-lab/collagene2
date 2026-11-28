@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     chemistry::Terminus,
     documents::workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
@@ -119,18 +122,32 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
     // Later private source edits cannot be chosen instead of the captured source
     // event merely because the owning document now points somewhere else.
     let old = event(&w, 0);
-    let edited = Molecule::dna(
-        "PRIVATE NEW SOURCE HEAD",
-        "TTTTGGGGCCCCAAAA",
-        Topology::Linear,
-    )
-    .unwrap();
+    let previous_source = w.revisions.get(&old.revision).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous_source.sequence.len(),
+            replacement: "TTTTGGGGCCCCAAAA".into(),
+        },
+        Edit::Rename {
+            name: "PRIVATE NEW SOURCE HEAD".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let edited = Edit::apply_all(previous_source, &actions).unwrap();
     let revision = edited.revision();
     let e = RevisionEvent::new(
         &old.document_id,
         &revision,
         vec![old.event_id.clone()],
         "Private edit after digest",
+        Transition::ReferenceEdit {
+            source: old.clone(),
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     w.revisions.insert(revision.clone(), edited);
@@ -383,8 +400,14 @@ fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication
     .unwrap();
     let id = "independent-downstream-target".to_string();
     let revision = target.revision();
-    let target_event =
-        RevisionEvent::new(&id, &revision, vec![], "Independent target import").unwrap();
+    let target_event = RevisionEvent::new(
+        &id,
+        &revision,
+        vec![],
+        "Independent target import",
+        Transition::IndependentReference,
+    )
+    .unwrap();
     w.documents.push(workspace::WorkspaceDocument {
         id: id.clone(),
         head: revision.clone(),

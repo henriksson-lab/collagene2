@@ -1,4 +1,5 @@
 //! Actual native target-free installations exercise mixed material ancestry.
+use collagene_core::documents::history::transition::Transition;
 use collagene_core::{
     cloning::restriction::catalog as catalog_digest,
     documents::workspace::{self, RevisionEvent, Workspace, WorkspaceDocument},
@@ -118,6 +119,7 @@ fn exact_derived_event_is_offered_and_equal_content_document_alias_cannot_select
         &product.revision,
         vec![],
         "Imported equal-content reference",
+        Transition::IndependentReference,
     )
     .unwrap();
     let alias = EventBinding {

@@ -169,6 +169,7 @@ pub fn attest(draft: &Draft, index: usize, frame: &Workspace) -> Result<EventBin
                 event.revision.clone(),
                 event.parents.clone(),
                 event.operation.clone(),
+                event.transition.clone(),
             )
             .map_err(|e| e.to_string())?;
             let molecule = frame

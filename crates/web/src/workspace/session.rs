@@ -475,7 +475,11 @@ impl WorkspaceSession {
         })
     }
 
-    pub(crate) fn commit_document(&self, base: &str, edited: Molecule) -> Result<(), String> {
+    pub(crate) fn commit_document(
+        &self,
+        base: &str,
+        actions: Vec<collagene_core::documents::reference_edit::Operation>,
+    ) -> Result<(), String> {
         let Self {
             documents,
             active,
@@ -485,30 +489,49 @@ impl WorkspaceSession {
         if workspace_restoring.get_untracked() {
             return Err("Workspace restoration is in progress; retry after it finishes.".into());
         }
-        edited.validate().map_err(|e| e.to_string())?;
         let index = active.get_untracked();
-        let valid = documents.with_untracked(|docs| {
-            docs.get(index)
-                .is_some_and(|d| d.molecule.revision() == base)
-        });
-        if !valid {
-            return Err("The active document changed while the editor was open. Reopen the editor against its current revision.".into());
-        }
-        let bytes = documents.with_untracked(|docs| {
-            docs.iter()
+        let (mut staged, other_bytes, event) = documents.with_untracked(|docs| {
+            let current = docs
+                .get(index)
+                .ok_or("The active document is unavailable.")?;
+            if current.molecule.revision() != base {
+                return Err("The active document changed while the editor was open. Reopen the editor against its current revision.".to_string());
+            }
+            let other_bytes = docs
+                .iter()
                 .enumerate()
                 .filter(|(i, _)| *i != index)
-                .map(|(_, d)| document_bytes(&d.molecule))
-                .sum::<usize>()
-        }) + document_bytes(&edited);
-        if bytes > MAX_WORKSPACE_BYTES {
+                .try_fold(0usize, |bytes, (_, doc)| {
+                    bytes.checked_add(document_bytes(&doc.molecule))
+                })
+                .ok_or("Workspace size accounting exceeded its bound.")?;
+            if other_bytes > MAX_WORKSPACE_BYTES {
+                return Err("This workspace exceeds the current size limit.".to_string());
+            }
+            Ok((current.clone(), other_bytes, current.head_event().to_string()))
+        })?;
+        // Native history executes exactly these actions on this staged source.
+        // No partially edited document or event is published on any failure.
+        staged
+            .commit(actions, "Edited document")
+            .map_err(|e| e.to_string())?;
+        if other_bytes
+            .checked_add(document_bytes(&staged.molecule))
+            .is_none_or(|bytes| bytes > MAX_WORKSPACE_BYTES)
+        {
             return Err("This edit exceeds the current workspace size limit.".into());
         }
         let mut result = Ok(());
-        documents.update(|docs| {
-            result = docs[index]
-                .commit(edited, "Edited document")
-                .map_err(|e| e.to_string());
+        documents.update(|docs| match docs.get(index) {
+            Some(current)
+                if current.head_event() == event && current.molecule.revision() == base =>
+            {
+                docs[index] = staged;
+            }
+            _ => {
+                result =
+                    Err("The document event changed before the edit could be published.".into())
+            }
         });
         result
     }

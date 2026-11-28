@@ -40,3 +40,42 @@ pub(super) fn oligo_collection(
         .map(AnalysisResult::OligoCollectionBinding)
         .unwrap_or_else(|e| AnalysisResult::Error(e.to_string())))
 }
+
+pub(super) fn vector_profiles(context: &RequestContext) -> Result<AnalysisResult, Error> {
+    bound(context, construct_qc::vector_class::catalogue_revision()?)?;
+    Ok(AnalysisResult::VectorClassProfiles(
+        construct_qc::vector_class::catalogue()?,
+    ))
+}
+pub(super) fn vector_class(
+    context: &RequestContext,
+    molecule: Molecule,
+    request: construct_qc::vector_class::Request,
+) -> Result<AnalysisResult, Error> {
+    bound(
+        context,
+        construct_qc::vector_class::revision(&molecule, &request)?,
+    )?;
+    Ok(construct_qc::vector_class::assess(&molecule, &request)
+        .map(AnalysisResult::VectorClass)
+        .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+}
+
+/// The scientific owner resolves native events and replays the selected history.
+pub(super) fn causal_qc(
+    context: &RequestContext,
+    workspace: crate::documents::workspace::Workspace,
+    request: construct_qc::causal::Request,
+) -> Result<AnalysisResult, Error> {
+    bound(
+        context,
+        construct_qc::causal::revision(&workspace, &request)?,
+    )?;
+    let result = construct_qc::causal::assess(&workspace, &request).and_then(|report| {
+        report.validate_request(&workspace, &request)?;
+        Ok(report)
+    });
+    Ok(result
+        .map(AnalysisResult::ConstructCausalQc)
+        .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+}

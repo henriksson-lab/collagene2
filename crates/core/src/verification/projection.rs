@@ -82,12 +82,55 @@ pub(super) fn reverse_reference_map(
     Ok(map)
 }
 
-pub(super) fn project_into(
+/// Native annotation projection plus the actual deduplication ordinal map.
+/// Existing callers may discard this receipt; fresh ancestry capture consumes it.
+pub(crate) struct NativeProjection {
+    pub projection: annotations::Projection,
+    pub destination_feature_indices: Vec<usize>,
+    pub previous_feature_indices: Vec<usize>,
+}
+/// Coordinates and annotations emitted together by one actual native helper.
+pub(crate) struct ReferenceProjection {
+    pub map: Vec<MappingSegment>,
+    pub native: NativeProjection,
+    pub introduced: Vec<(usize, usize)>,
+}
+/// An actual native source operand ordinal, never a name/content match.
+pub(crate) struct SourceProjection {
+    pub input: usize,
+    pub reference: ReferenceProjection,
+}
+#[derive(Clone, Debug)]
+pub(crate) struct TopoScope {
+    pub occurrence: u32,
+    pub binding: std::sync::Arc<super::ancestry::OriginBinding>,
+}
+pub(crate) enum GraphProjectionSource {
+    CurrentInput {
+        index: usize,
+    },
+    RetainedGraph {
+        role: String,
+        scopes: Vec<TopoScope>,
+        retained_index: Option<usize>,
+        molecule: Molecule,
+    },
+}
+pub(crate) struct GraphProjections {
+    pub retained: Vec<crate::material::run::RetainedReplay>,
+    pub sources: Vec<GraphProjectionSource>,
+    pub projections: Vec<SourceProjection>,
+}
+pub(crate) struct ProjectedDocument {
+    pub molecule: Molecule,
+    pub projections: Vec<ReferenceProjection>,
+}
+pub(crate) fn project_into(
     source: &Molecule,
     map: &[MappingSegment],
     product: &mut Molecule,
     findings: &mut Vec<String>,
-) -> Result<(), Error> {
+) -> Result<NativeProjection, Error> {
     project_into_with_collapse(source, map, product, findings, false)
 }
 /// Shared source-top coordinate projection for a freshly reconstructed digest fragment.
@@ -97,14 +140,19 @@ pub(crate) fn project_digest_annotations(
     fragment: &chemistry::DigestFragment,
     product: &mut Molecule,
     findings: &mut Vec<String>,
-) -> Result<(), Error> {
+) -> Result<ReferenceProjection, Error> {
     let map = region_map(
         source.sequence.len(),
         fragment.top_start,
         fragment.duplex.top.len(),
         0,
     )?;
-    project_into(source, &map, product, findings)
+    let native = project_into(source, &map, product, findings)?;
+    Ok(ReferenceProjection {
+        map,
+        native,
+        introduced: vec![],
+    })
 }
 pub(super) fn project_into_with_collapse(
     source: &Molecule,
@@ -112,9 +160,21 @@ pub(super) fn project_into_with_collapse(
     product: &mut Molecule,
     findings: &mut Vec<String>,
     allow_homology_collapse: bool,
-) -> Result<(), Error> {
+) -> Result<NativeProjection, Error> {
     if source.features.is_empty() {
-        return Ok(());
+        return Ok(NativeProjection {
+            projection: annotations::Projection {
+                features: vec![],
+                source_feature_indices: vec![],
+                warnings: vec![],
+                unmapped_features: vec![],
+                unmapped_source_feature_indices: vec![],
+                dropped_features: 0,
+                dropped_source_feature_indices: vec![],
+            },
+            destination_feature_indices: vec![],
+            previous_feature_indices: (0..product.features.len()).collect(),
+        });
     }
     let projection = if allow_homology_collapse {
         annotations::project_collapsing_features(
@@ -131,7 +191,8 @@ pub(super) fn project_into_with_collapse(
             product.topology,
         )?
     };
-    product.features.extend(projection.features);
+    let old_length = product.features.len();
+    product.features.extend(projection.features.iter().cloned());
     if !projection.unmapped_features.is_empty() {
         product.metadata.insert(
             format!("annotation_mapping:unmapped:{}", source.revision()),
@@ -145,11 +206,29 @@ pub(super) fn project_into_with_collapse(
     if projection.warnings.len() > 100 {
         findings.push("Additional annotation-projection findings omitted; source evidence and review flags remain in the plan.".into());
     }
-    // Identical annotations shared by homology arms are represented once, with sources in the graph.
-    let mut seen = std::collections::BTreeSet::new();
-    product.features.retain(|f| {
-        seen.insert(*blake3::hash(&serde_json::to_vec(f).expect("serializable feature")).as_bytes())
+    // Native first-wins deduplication records every actual old/new ordinal.
+    // Earlier receipts are remapped with this exact retain-loop result rather
+    // than assuming that an appended feature still has its original ordinal.
+    let mut seen = std::collections::BTreeMap::new();
+    let mut remap = Vec::with_capacity(product.features.len());
+    let mut next = 0usize;
+    product.features.retain(|feature| {
+        let hash =
+            *blake3::hash(&serde_json::to_vec(feature).expect("serializable feature")).as_bytes();
+        if let Some(index) = seen.get(&hash) {
+            remap.push(*index);
+            false
+        } else {
+            seen.insert(hash, next);
+            remap.push(next);
+            next += 1;
+            true
+        }
     });
     product.validate()?;
-    Ok(())
+    Ok(NativeProjection {
+        projection,
+        destination_feature_indices: remap[old_length..].to_vec(),
+        previous_feature_indices: remap[..old_length].to_vec(),
+    })
 }

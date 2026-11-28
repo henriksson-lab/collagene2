@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::workspace::{self, RevisionEvent, Workspace},
     material::{
@@ -692,13 +695,36 @@ fn remote_reads_are_fully_bound_and_pending_pagination_never_drops_a_cursor() {
 }
 fn edit(frame: &mut Workspace, id: &str, text: &str) {
     let old = selection(frame, id);
-    let molecule = Molecule::dna("Edited native branch", text, Topology::Linear).unwrap();
+    let previous = frame.head(id).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: text.into(),
+        },
+        Edit::Rename {
+            name: "Edited native branch".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let molecule = Edit::apply_all(previous, &actions).unwrap();
     let revision = molecule.revision();
     let event = RevisionEvent::new(
         id,
         &revision,
         old.head_event.iter().cloned().collect(),
         "Private branch edit",
+        Transition::ReferenceEdit {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: id.into(),
+                event_id: old.head_event.clone().unwrap(),
+                revision: old.revision.clone(),
+            },
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     let doc = frame.documents.iter_mut().find(|d| d.id == id).unwrap();

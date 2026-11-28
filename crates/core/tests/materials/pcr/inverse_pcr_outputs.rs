@@ -1,4 +1,5 @@
 //! End-to-end inverse-PCR outputs against a separately declared literal target.
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     cloning::pcr::mutagenesis::{self, InversePcrOptions},
     documents::{history::DocumentHistory, workspace::Workspace},
@@ -81,14 +82,22 @@ fn advance_original(frame: &mut Workspace, original: &EventBinding) -> EventBind
         .iter_mut()
         .find(|document| document.id == original.document_id)
         .unwrap();
+    let edit_end = source.molecule.sequence.len();
     source
         .commit(
-            Molecule::dna(
-                "Later source edit",
-                "TGTCCGATGCTACGTAGGACTTCAGACCTGTA",
-                Topology::Circular,
-            )
-            .unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TGTCCGATGCTACGTAGGACTTCAGACCTGTA".into(),
+                },
+                Edit::Rename {
+                    name: "Later source edit".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Circular,
+                },
+            ],
             "Edit source after pinning inverse-PCR design",
         )
         .unwrap();

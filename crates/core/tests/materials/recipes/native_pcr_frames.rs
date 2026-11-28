@@ -1,4 +1,5 @@
 //! Independent actual13/17 strand oracles. No bottom Molecule replaces the saved stock.
+use collagene_core::documents::history::transition::Transition;
 use collagene_core::{
     chemistry::{AnnealOptions, Strand, Terminus},
     cloning::pcr::material as material_pcr,
@@ -316,6 +317,7 @@ fn framed_step_pcr_orders_and_saved_collection_retain_bottom_declarations_after_
         target.revision(),
         vec![],
         "Independent literal reference requirement",
+        Transition::IndependentReference,
     )
     .unwrap();
     let binding = EventBinding {

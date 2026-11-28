@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 135;
+pub const WORKER_SCHEMA_VERSION: u16 = 137;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 34;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1011,6 +1011,19 @@ pub enum AnalysisJob {
         molecule: Molecule,
         request: crate::sequence::crispr::base_editing::Request,
     },
+    ListVectorClassProfiles,
+    AssessVectorClass {
+        molecule: Molecule,
+        request: crate::construct_qc::vector_class::Request,
+    },
+    AssessIvtLinearization {
+        molecule: Molecule,
+        request: crate::cloning::restriction::ivt_linearization::Request,
+    },
+    AssessConstructCausalQc {
+        workspace: crate::documents::workspace::Workspace,
+        request: crate::construct_qc::causal::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1227,6 +1240,15 @@ pub enum AnalysisResult {
     ),
     IvtTemplate(crate::rna_chemistry::ivt::Report),
     BaseEditing(crate::sequence::crispr::base_editing::Report),
+    VectorClassProfiles(
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, crate::construct_qc::vector_class::Profile, 16>"
+        )]
+        Vec<crate::construct_qc::vector_class::Profile>,
+    ),
+    VectorClass(crate::construct_qc::vector_class::Report),
+    IvtLinearization(crate::cloning::restriction::ivt_linearization::Report),
+    ConstructCausalQc(crate::construct_qc::causal::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

@@ -1,4 +1,8 @@
 //! Exact selected locations retain biological order and strand independently of highlights.
+#[cfg(test)]
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::{cloning::restriction::selection::footprint, material::lineage::EventBinding};
 use collagene_model::{Location, Molecule};
 
@@ -235,22 +239,31 @@ mod tests {
             "translation:source_revision".into(),
             original.revision.clone(),
         );
-        let derived = source
-            .derive_event(
+        let derived = {
+            let analysis_origin =
+                AnalysisOrigin::preview(AnalysisProducer::Translation, protein.revision());
+            source.derive_event(
                 &original.event_id,
                 "protein",
                 protein.clone(),
                 "Computed translation",
+                analysis_origin,
             )
-            .unwrap();
+        }
+        .unwrap();
         let protein_binding = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),
             revision: derived.head_revision().into(),
         };
-        let mut next = dna.clone();
-        next.name = "later template name".into();
-        source.commit(next, "Later edit").unwrap();
+        source
+            .commit(
+                vec![ReferenceEdit::Rename {
+                    name: "later template name".into(),
+                }],
+                "Later edit",
+            )
+            .unwrap();
         let mut frame = Workspace::from_documents("translation", vec![dna.clone()], 0).unwrap();
         frame.documents.clear();
         frame.revisions.clear();

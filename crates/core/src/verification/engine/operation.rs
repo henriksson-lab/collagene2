@@ -1,5 +1,6 @@
 //! One staged native operation. Only the execution owner commits its product
 //! and private tracked state; failed branches may retain explicitly scoped evidence.
+use super::super::ancestry::{self, IntroductionKind, ProjectionKind, native::NativeStep};
 use super::*;
 use std::cell::Cell;
 
@@ -26,6 +27,7 @@ pub(super) struct StepAttempt {
     pub physical_processing_reports: Vec<PhysicalProcessingStepReport>,
     pub reference_step_reports: Vec<ReferenceStepReport>,
     pub golden_gate: Option<crate::cloning::golden_gate::GoldenGateReport>,
+    pub ancestry_error: Option<Error>,
 }
 impl StepAttempt {
     #[allow(clippy::too_many_arguments)]
@@ -40,9 +42,11 @@ impl StepAttempt {
         reference_only: &[bool],
         budget: &mut MaterialBudget,
         retained_processing: usize,
-        cleavage_budget: &mut modified_duplex::CleavageBudget,
-        pcr_budget: &mut analysis::ExactSearchBudget,
+        scientific: &mut ReplayBudget<'_>,
+        ancestry_builder: Option<&mut ancestry::TraceBuilder>,
     ) -> Self {
+        let mut ancestry = NativeStep::new(ancestry_builder, index);
+        let mut product_token = None;
         let step = &plan.steps[index];
         let rule = Cell::new(operation_rule(step));
         let mut notes = Vec::new();
@@ -148,17 +152,28 @@ impl StepAttempt {
                         ));
                     }
                     rule.set(RuleId::AnnotationProjection);
-                    project_into(
-                        source_model,
-                        &[MappingSegment {
+                    {
+                        let native_source = source_model;
+                        let native_map = &[MappingSegment {
                             source_start: 0,
                             source_end: top_end,
                             destination_start: 0,
                             reverse: false,
-                        }],
-                        &mut product,
-                        findings,
-                    )?;
+                        }];
+                        let native_projection =
+                            project_into(native_source, native_map, &mut product, findings)?;
+                        let native_source_token = ancestry.source(source);
+                        ancestry.project(
+                            native_source_token,
+                            native_source,
+                            &mut product_token,
+                            &product,
+                            native_map,
+                            &native_projection,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                        );
+                    }
                     carry_unmapped_evidence(source_model, &mut product);
                     findings.extend(geometry.warnings.iter().take(100).cloned());
                     findings.push(format!("Step {} removes bottom3′ suffix {} nt and top3′ suffix {} nt. Original5′ end groups and every surviving strand/modification remain; any bottom5′ extension beyond the displayed top reference stays in the actual duplex. No filling, nick sealing or host repair is inferred.",index+1,cuts.left,cuts.right));
@@ -286,13 +301,29 @@ impl StepAttempt {
                             cursor += span;
                         }
                         rule.set(RuleId::AnnotationProjection);
-                        project_into_with_collapse(
-                            source,
-                            &map,
-                            &mut product,
-                            findings,
-                            policy.topology == Topology::Circular && oriented.len() == 1,
-                        )?;
+                        {
+                            let native_source = source;
+                            let native_map = &map;
+                            let native_projection = project_into_with_collapse(
+                                native_source,
+                                native_map,
+                                &mut product,
+                                findings,
+                                policy.topology == Topology::Circular && oriented.len() == 1,
+                            )?;
+                            let native_source_token =
+                                ancestry.source(&fragments[placement.source].source);
+                            ancestry.project(
+                                native_source_token,
+                                native_source,
+                                &mut product_token,
+                                &product,
+                                native_map,
+                                &native_projection,
+                                ProjectionKind::ReferenceCorrespondence,
+                                &[],
+                            );
+                        }
                         carry_unmapped_evidence(source, &mut product);
                     }
                     product.name = format!("Annealed reference {}", index + 1);
@@ -421,34 +452,64 @@ impl StepAttempt {
                     findings.extend(profile.findings.iter().take(100).cloned());
                     findings.extend(profile.warnings.iter().take(100).cloned());
                     let mut oriented = Vec::with_capacity(sources.len());
-                    for (source, reverse) in sources.iter().zip(&reverse) {
+                    let mut oriented_tokens = Vec::with_capacity(sources.len());
+                    for (oriented_index, (source, reverse)) in
+                        sources.iter().zip(&reverse).enumerate()
+                    {
                         if *reverse {
                             let mut model = Molecule::dna(
                                 format!("Oriented {}", source.name),
                                 source.sequence.reverse_complement()?.as_str(),
                                 source.topology,
                             )?;
+                            let mut model_token = None;
                             rule.set(RuleId::AnnotationProjection);
-                            project_into(
-                                source,
-                                &[MappingSegment {
+                            {
+                                let native_source = source;
+                                let native_map = &[MappingSegment {
                                     source_start: 0,
                                     source_end: source.sequence.len(),
                                     destination_start: 0,
                                     reverse: true,
-                                }],
-                                &mut model,
-                                findings,
-                            )?;
+                                }];
+                                let native_projection =
+                                    project_into(native_source, native_map, &mut model, findings)?;
+                                let native_source_token =
+                                    ancestry.source(&fragments[oriented_index].source);
+                                ancestry.project(
+                                    native_source_token,
+                                    native_source,
+                                    &mut model_token,
+                                    &model,
+                                    native_map,
+                                    &native_projection,
+                                    ProjectionKind::ReferenceCorrespondence,
+                                    &[],
+                                );
+                            }
                             carry_unmapped_evidence(source, &mut model);
+                            ancestry.seal(model_token, &model);
+                            oriented_tokens.push(model_token);
                             oriented.push(model);
                         } else {
+                            oriented_tokens
+                                .push(ancestry.source(&fragments[oriented_index].source));
                             oriented.push(source.clone());
                         }
                     }
                     let refs = oriented.iter().collect::<Vec<_>>();
-                    let reference =
-                        assemble_overlap(&refs, &policy.overlaps, circular, index, findings)?;
+                    let mut reference_token = None;
+                    let reference = assemble_overlap(
+                        &refs,
+                        &policy.overlaps,
+                        circular,
+                        index,
+                        findings,
+                        &mut ancestry,
+                        &oriented_tokens,
+                        &mut reference_token,
+                    )?;
+                    ancestry.seal(reference_token, &reference);
                     if reference.sequence.len() != reference_length
                         || reference_top_start >= reference_top_end
                         || reference
@@ -460,17 +521,28 @@ impl StepAttempt {
                         return Err(Error::Format("Source-only annotation reference differs from independently constructed physical strands".into()));
                     }
                     rule.set(RuleId::AnnotationProjection);
-                    project_into(
-                        &reference,
-                        &[MappingSegment {
+                    {
+                        let native_source = &reference;
+                        let native_map = &[MappingSegment {
                             source_start: reference_top_start,
                             source_end: reference_top_end,
                             destination_start: 0,
                             reverse: false,
-                        }],
-                        &mut product,
-                        findings,
-                    )?;
+                        }];
+                        let native_projection =
+                            project_into(native_source, native_map, &mut product, findings)?;
+                        let native_source_token = reference_token;
+                        ancestry.project(
+                            native_source_token,
+                            native_source,
+                            &mut product_token,
+                            &product,
+                            native_map,
+                            &native_projection,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                        );
+                    }
                     carry_unmapped_evidence(&reference, &mut product);
                     product.metadata.insert(
                         "homology_assembly:policy".into(),
@@ -512,17 +584,28 @@ impl StepAttempt {
                     for (oriented, destination_start) in [(left, 0), (right, offset)] {
                         let source = resolve(&oriented.source)?;
                         rule.set(RuleId::AnnotationProjection);
-                        project_into(
-                            source,
-                            &[MappingSegment {
+                        {
+                            let native_source = source;
+                            let native_map = &[MappingSegment {
                                 source_start: 0,
                                 source_end: source.sequence.len(),
                                 destination_start,
                                 reverse: oriented.reverse,
-                            }],
-                            &mut product,
-                            findings,
-                        )?;
+                            }];
+                            let native_projection =
+                                project_into(native_source, native_map, &mut product, findings)?;
+                            let native_source_token = ancestry.source(&oriented.source);
+                            ancestry.project(
+                                native_source_token,
+                                native_source,
+                                &mut product_token,
+                                &product,
+                                native_map,
+                                &native_projection,
+                                ProjectionKind::ReferenceCorrespondence,
+                                &[],
+                            );
+                        }
                     }
                     findings.extend(geometry.warnings.iter().take(100).cloned());
                     findings.push(format!("Step {} denatures two intact duplexes, pairs the left top strand with the right bottom strand over {} bp and extends their paired 3′ ends. Retained strands preserve modifications; synthesized complements are assumed unmodified. Selection does not prove isolation, amplification efficiency or reaction-mixture uniqueness.", index+1, options.overlap));
@@ -550,7 +633,13 @@ impl StepAttempt {
                                 .into(),
                         ));
                     }
-                    let fresh = crate::material::derivation::replay(origin, resolve(template)?)?;
+                    let (fresh, binding, trace) = crate::material::derivation::replay_scoped(
+                        origin,
+                        resolve(template)?,
+                        scientific,
+                        ancestry.budget(),
+                    )?;
+                    let native_origin = trace.map(|trace| (binding, trace));
                     crate::material::derivation::reaction_conditions::validate(
                         fresh.reaction_conditions(),
                     )?;
@@ -577,6 +666,23 @@ impl StepAttempt {
                         origin_findings_total,
                         origin_findings_truncated,
                     ) = fresh.into_parts();
+                    if let Some((binding, trace)) = native_origin {
+                        match trace {
+                            Ok(trace) => {
+                                let source = ancestry.import(binding, trace, 0);
+                                ancestry.present_event(
+                                    source,
+                                    &reference,
+                                    &origin.product,
+                                    &mut product_token,
+                                    &reference,
+                                );
+                            }
+                            Err(error) => ancestry.unavailable(&format!(
+                                "saved-derivation native coordinate receipt was refused: {error}"
+                            )),
+                        }
+                    }
                     let evidence = DerivedOriginEvidence {
                         reaction_conditions,
                         origin: origin.clone(),
@@ -607,7 +713,40 @@ impl StepAttempt {
                     if !matches!(template, Source::Input(_)) {
                         return Err(Error::Format("Saved material reconstruction requires an explicit saved input event, not an enclosing step projection".into()));
                     }
-                    let fresh = crate::material::capsule::replay(origin, resolve(template)?)?;
+                    let (fresh, binding, trace, inner_reference) =
+                        crate::material::capsule::replay_scoped(
+                            origin,
+                            resolve(template)?,
+                            scientific,
+                            ancestry.budget(),
+                        )?;
+                    let native_origin = match (trace, inner_reference) {
+                        (Some(trace), Some(reference)) => Some((binding, trace, reference)),
+                        (Some(_), None) => {
+                            ancestry
+                                .unavailable("saved-run trace omitted its actual native reference");
+                            None
+                        }
+                        (None, _) => None,
+                    };
+                    if let Some((binding, trace, inner_reference)) = native_origin {
+                        match trace {
+                            Ok(trace) => {
+                                let source =
+                                    ancestry.import(binding, trace, origin.selection.step_index);
+                                ancestry.present_event(
+                                    source,
+                                    &inner_reference,
+                                    &origin.selection.event,
+                                    &mut product_token,
+                                    &fresh.reference,
+                                );
+                            }
+                            Err(error) => ancestry.unavailable(&format!(
+                                "saved-run native coordinate receipt was refused: {error}"
+                            )),
+                        }
+                    }
                     let bytes = evidence_bytes(
                         &fresh.evidence,
                         crate::material::capsule::MAX_REPORT_BYTES,
@@ -650,8 +789,16 @@ impl StepAttempt {
                             },
                         )
                         .collect::<Vec<_>>();
-                    let fresh =
-                        crate::cloning::recombination::multisite::simulate(&inputs, request)?;
+                    let (fresh, native_projections) = if ancestry.budget().is_some() {
+                        crate::cloning::recombination::multisite::simulate_with_projections(
+                            &inputs, request, selection,
+                        )?
+                    } else {
+                        (
+                            crate::cloning::recombination::multisite::simulate(&inputs, request)?,
+                            None,
+                        )
+                    };
                     let bytes = evidence_bytes(&fresh, 32 * 1024 * 1024)?;
                     rule.set(RuleId::EvidenceBudget);
                     step_evidence_bytes = step_evidence_bytes
@@ -660,6 +807,20 @@ impl StepAttempt {
                         .ok_or(Error::TooLarge)?;
                     rule.set(operation_rule(step));
                     let selected = fresh.selected(selection);
+                    if let Ok(selected) = &selected {
+                        let bindings = sources
+                            .iter()
+                            .zip(&resolved)
+                            .map(|(source, molecule)| (&source.source, *molecule))
+                            .collect::<Vec<_>>();
+                        ancestry.sources(
+                            &bindings,
+                            &mut product_token,
+                            &selected.molecule,
+                            native_projections.as_deref(),
+                            ProjectionKind::ReferenceCorrespondence,
+                        );
+                    }
                     findings.push(format!("Step {} retains a whole {}-parent multi-site reference exchange: {} candidate networks and every reciprocal component. No target selects pairings; reference provenance is not physical strand/modification authority.",index+1,inputs.len(),fresh.reference.candidates.len()));
                     reference_step_reports.push(ReferenceStepReport {
                         step_index: index,
@@ -723,11 +884,25 @@ impl StepAttempt {
                         .iter()
                         .map(|(role, material)| (role.clone(), material))
                         .collect::<Vec<_>>();
-                    let fresh = crate::cloning::topo::actions::inspect_reconstructed(
-                        &inputs,
-                        request,
-                        &tracked_templates,
-                    )?;
+                    let (fresh, native_projections) =
+                        if ancestry.budget().is_some() || scientific.is_qc_job() {
+                            crate::cloning::topo::actions::inspect_reconstructed_with_projections(
+                                &inputs,
+                                request,
+                                &tracked_templates,
+                                ancestry.budget(),
+                                scientific,
+                            )?
+                        } else {
+                            (
+                                crate::cloning::topo::actions::inspect_reconstructed(
+                                    &inputs,
+                                    request,
+                                    &tracked_templates,
+                                )?,
+                                None,
+                            )
+                        };
                     retain_topo_source_incompleteness(&fresh.preparation, index, &mut incomplete);
                     if !templates.is_empty() {
                         findings.push(format!("Step {} uses {} fresh upstream material role(s) only as templates for explicitly declared new PCR synthesis. Template atoms, internal modifications and generation history are not inherited into the new strands; arbitrary Prepared correspondence from prior products remains unsupported.", index + 1, templates.len()));
@@ -780,6 +955,19 @@ impl StepAttempt {
                         findings.push(format!("Step {} retains an unapplied/unknown requested action under its explicit projection options; target agreement cannot establish that it occurred.",index+1));
                     }
                     findings.extend(fresh.bridge_notes.iter().cloned());
+                    if let Some(product) = &fresh.product {
+                        let bindings = sources
+                            .iter()
+                            .zip(&molecules)
+                            .map(|(source, molecule)| (&source.source, *molecule))
+                            .collect::<Vec<_>>();
+                        ancestry.graph_sources(
+                            &bindings,
+                            &mut product_token,
+                            product,
+                            native_projections,
+                        );
+                    }
                     let actual = fresh.product.as_ref().cloned();
                     let tracked = fresh.tracked.as_ref().cloned();
                     physical_processing_reports.push(PhysicalProcessingStepReport {
@@ -850,13 +1038,28 @@ impl StepAttempt {
                             selection: selection.clone(),
                         }
                     };
-                    let reply = crate::cloning::topo::inspect_reconstructed_task(
-                        &inputs, &templates, &task,
-                    )
-                    .map_err(|error| {
-                        Error::Format(format!(
+                    let (reply, native_projections) = if ancestry.budget().is_some()
+                        || scientific.is_qc_job()
+                    {
+                        crate::cloning::topo::inspect_reconstructed_task_with_projections(
+                            &inputs,
+                            &templates,
+                            &task,
+                            ancestry.budget(),
+                            scientific,
+                        )
+                    } else {
+                        crate::cloning::topo::inspect_reconstructed_task(&inputs, &templates, &task)
+                            .map(|reply| (reply, None))
+                    }
+                    .map_err(|error| match error {
+                        Error::TooLarge => Error::TooLarge,
+                        Error::Unsupported(reason) => Error::Unsupported(format!(
+                            "TOPO source/recipe reconstruction unavailable: {reason}"
+                        )),
+                        error => Error::Format(format!(
                             "TOPO source/recipe reconstruction rejected: {error}"
-                        ))
+                        )),
                     })?;
                     let (fresh, outcome) = match reply {
                         crate::cloning::topo::run_preparation::Reply::Projected(p) => (p, None),
@@ -875,6 +1078,19 @@ impl StepAttempt {
                         .filter(|n| *n <= 32 * 1024 * 1024)
                         .ok_or(Error::TooLarge)?;
                     rule.set(operation_rule(step));
+                    if let Some(product) = &fresh.reference {
+                        let bindings = sources
+                            .iter()
+                            .zip(&molecules)
+                            .map(|(source, molecule)| (&source.source, *molecule))
+                            .collect::<Vec<_>>();
+                        ancestry.graph_sources(
+                            &bindings,
+                            &mut product_token,
+                            product,
+                            native_projections,
+                        );
+                    }
                     let preview = fresh.reference.clone();
                     step_reports.push(StepReport {
                         step_index: index,
@@ -910,7 +1126,16 @@ impl StepAttempt {
                     let molecules = [resolve(&sources[0])?, resolve(&sources[1])?];
                     // Borrowed preflight happens before cloning the immutable source snapshots.
                     let inputs = recombination_inputs(sources, molecules, request)?;
-                    let fresh = crate::cloning::recombination::simulate(&inputs, request)?;
+                    let (fresh, native_projections) = if ancestry.budget().is_some() {
+                        crate::cloning::recombination::simulate_with_projections(
+                            &inputs, request, selection,
+                        )?
+                    } else {
+                        (
+                            crate::cloning::recombination::simulate(&inputs, request)?,
+                            None,
+                        )
+                    };
                     rule.set(RuleId::RecombinationReference);
                     if fresh.batch_revision != selection.batch_revision {
                         return Err(Error::Format("Reference component selection belongs to a different source/profile/options request".into()));
@@ -928,6 +1153,18 @@ impl StepAttempt {
                                     .into(),
                             )
                         })?;
+                    let bindings = sources
+                        .iter()
+                        .zip(molecules)
+                        .map(|(source, molecule)| (source, molecule))
+                        .collect::<Vec<_>>();
+                    ancestry.sources(
+                        &bindings,
+                        &mut product_token,
+                        &selected.molecule,
+                        native_projections.as_deref(),
+                        ProjectionKind::ReferenceCorrespondence,
+                    );
                     findings.extend(selected.warnings.iter().cloned());
                     incomplete.push(format!("Step {} selects candidate {} component {} under pinned reference profile {} / {} ({}). All reciprocal components were reconstructed; this establishes reference sequence only, not recombinase efficacy, physical strand/modification states, cellular repair, selection or chemical uniqueness.", index + 1, selection.candidate_id, selection.component_id, request.profile.profile.id, request.profile.profile.edition, request.profile.revision));
                     selected.molecule
@@ -941,8 +1178,8 @@ impl StepAttempt {
                     rule.set(RuleId::PcrBinding);
                     let substrate = resolve(template)?;
                     rule.set(RuleId::PcrBinding);
-                    pcr_budget.charge(substrate.sequence.len())?;
-                    pcr_budget.charge(substrate.features.len())?;
+                    scientific.pcr.charge(substrate.sequence.len())?;
+                    scientific.pcr.charge(substrate.features.len())?;
                     rule.set(RuleId::SourceChemistry);
                     let frame = match template {
                         Source::Input(_) => {
@@ -960,8 +1197,8 @@ impl StepAttempt {
                                     "PCR requires actual physical source state; reference-only evidence is not a template".into(),
                                 ))?;
                             rule.set(RuleId::PcrBinding);
-                            pcr_budget.charge(tracked.top.len())?;
-                            pcr_budget.charge(tracked.bottom.len())?;
+                            scientific.pcr.charge(tracked.top.len())?;
+                            scientific.pcr.charge(tracked.bottom.len())?;
                             rule.set(RuleId::SourceChemistry);
                             crate::cloning::pcr::source::Template::fresh(
                                 substrate,
@@ -972,7 +1209,7 @@ impl StepAttempt {
                     };
                     rule.set(RuleId::PcrBinding);
                     let (matches, _) =
-                        frame.geometries_with_budget(forward, reverse, pcr_budget)?;
+                        frame.geometries_with_budget(forward, reverse, &mut scientific.pcr)?;
                     if matches.is_empty() {
                         return Err(Error::Format(format!("step {}: no PCR product", index + 1)));
                     }
@@ -989,7 +1226,19 @@ impl StepAttempt {
                     let duplex = Duplex::exact_pcr(&geometry.product.sequence)?;
                     let mut product = duplex.molecule(format!("PCR {}", index + 1))?;
                     rule.set(RuleId::AnnotationProjection);
-                    project_pcr_frame_annotations(frame, geometry, &mut product, findings)?;
+                    let receipt =
+                        project_pcr_frame_annotations(frame, geometry, &mut product, findings)?;
+                    let source_token = ancestry.source(template);
+                    ancestry.reference(
+                        source_token,
+                        substrate,
+                        &mut product_token,
+                        &product,
+                        &receipt,
+                        ProjectionKind::TemplateSynthesis,
+                        &[],
+                        IntroductionKind::PrimerTail,
+                    );
                     next_physical = Some(TrackedDuplex::exact_pcr(&duplex.top)?);
                     product
                 }
@@ -1081,7 +1330,28 @@ impl StepAttempt {
                     let duplex = Duplex::exact_pcr(&geometry.sequence)?;
                     let mut product = duplex.molecule(format!("Mismatched PCR {}", index + 1))?;
                     rule.set(RuleId::AnnotationProjection);
-                    project_mutant_pcr(substrate, geometry, &mut product, findings)?;
+                    let receipt = project_mutant_pcr(substrate, geometry, &mut product, findings)?;
+                    let source_token = ancestry.source(template);
+                    let changes = geometry
+                        .substitutions
+                        .iter()
+                        .map(|change| ancestry::MappedChange {
+                            source_position: change.source_position,
+                            destination_position: change.product_position,
+                            before: change.template_base,
+                            after: change.product_base,
+                        })
+                        .collect::<Vec<_>>();
+                    ancestry.reference(
+                        source_token,
+                        substrate,
+                        &mut product_token,
+                        &product,
+                        &receipt,
+                        ProjectionKind::EditedTemplate,
+                        &changes,
+                        IntroductionKind::PrimerTail,
+                    );
                     findings.push(format!("Mismatched PCR introduced {} template-base changes under explicit 3′/mismatch policy; amplification efficiency is not established.",geometry.substitutions.len()));
                     next_physical = Some(TrackedDuplex::exact_pcr(&duplex.top)?);
                     product
@@ -1111,7 +1381,7 @@ impl StepAttempt {
                         &substrates,
                         options,
                         Some(*candidate_index),
-                        cleavage_budget,
+                        scientific.cleavage,
                     )?;
                     let selected_tracked = fresh_gate.selected;
                     let mut local_report = Some(fresh_gate.report);
@@ -1167,6 +1437,7 @@ impl StepAttempt {
                         let source = &sources[fragment.source_index];
                         let mut intermediate =
                             fragment.duplex.molecule("Golden Gate source fragment")?;
+                        let mut intermediate_token = None;
                         rule.set(RuleId::AnnotationProjection);
                         let map = region_map(
                             source.sequence.len(),
@@ -1175,7 +1446,29 @@ impl StepAttempt {
                             0,
                         )?;
                         rule.set(RuleId::AnnotationProjection);
-                        project_into(source, &map, &mut intermediate, findings)?;
+                        {
+                            let native_source = source;
+                            let native_map = &map;
+                            let native_projection = project_into(
+                                native_source,
+                                native_map,
+                                &mut intermediate,
+                                findings,
+                            )?;
+                            let native_source_token =
+                                ancestry.source(&templates[fragment.source_index]);
+                            ancestry.project(
+                                native_source_token,
+                                native_source,
+                                &mut intermediate_token,
+                                &intermediate,
+                                native_map,
+                                &native_projection,
+                                ProjectionKind::ReferenceCorrespondence,
+                                &[],
+                            );
+                        }
+                        ancestry.seal(intermediate_token, &intermediate);
                         let oriented_duplex = if oriented.reverse {
                             fragment.duplex.reverse()?
                         } else {
@@ -1198,7 +1491,23 @@ impl StepAttempt {
                             }]
                         };
                         rule.set(RuleId::AnnotationProjection);
-                        project_into(&intermediate, &map, &mut product, findings)?;
+                        {
+                            let native_source = &intermediate;
+                            let native_map = &map;
+                            let native_projection =
+                                project_into(native_source, native_map, &mut product, findings)?;
+                            let native_source_token = intermediate_token;
+                            ancestry.project(
+                                native_source_token,
+                                native_source,
+                                &mut product_token,
+                                &product,
+                                native_map,
+                                &native_projection,
+                                ProjectionKind::ReferenceCorrespondence,
+                                &[],
+                            );
+                        }
                         offset += oriented_duplex.top.len();
                     }
                     next_physical=Some(selected_tracked.ok_or_else(||Error::Unsupported("Selected Golden Gate material was not freshly reconstructed under checked cleavage".into()))?);
@@ -1242,11 +1551,24 @@ impl StepAttempt {
                             }
                         }
                     }
+                    let source_tokens = fragments
+                        .iter()
+                        .map(|source| ancestry.source(source))
+                        .collect::<Vec<_>>();
                     let fragments = fragments
                         .iter()
                         .map(resolve)
                         .collect::<Result<Vec<_>, _>>()?;
-                    assemble_overlap(&fragments, overlaps, *circular, index, findings)?
+                    assemble_overlap(
+                        &fragments,
+                        overlaps,
+                        *circular,
+                        index,
+                        findings,
+                        &mut ancestry,
+                        &source_tokens,
+                        &mut product_token,
+                    )?
                 }
                 Operation::DeclareSourceTermini {
                     template,
@@ -1268,6 +1590,13 @@ impl StepAttempt {
                     let tracked = TrackedDuplex::from_unknown_duplex(&duplex)?;
                     // DNA and all source feature/citation evidence are unchanged.
                     let mut product = substrate.clone();
+                    let source_token = ancestry.source(template);
+                    ancestry.unchanged_reference(
+                        source_token,
+                        substrate,
+                        &mut product_token,
+                        &product,
+                    );
                     product.metadata.insert(
                         "duplex_model".into(),
                         serde_json::to_string(&duplex.summary()?)
@@ -1292,17 +1621,28 @@ impl StepAttempt {
                         .duplex
                         .molecule(format!("Declared source generation {}", index + 1))?;
                     rule.set(RuleId::AnnotationProjection);
-                    project_into(
-                        substrate,
-                        &[MappingSegment {
+                    {
+                        let native_source = substrate;
+                        let native_map = &[MappingSegment {
                             source_start: 0,
                             source_end: substrate.sequence.len(),
                             destination_start: 0,
                             reverse: false,
-                        }],
-                        &mut product,
-                        findings,
-                    )?;
+                        }];
+                        let native_projection =
+                            project_into(native_source, native_map, &mut product, findings)?;
+                        let native_source_token = ancestry.source(template);
+                        ancestry.project(
+                            native_source_token,
+                            native_source,
+                            &mut product_token,
+                            &product,
+                            native_map,
+                            &native_projection,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                        );
+                    }
                     findings.push(format!("Step {} records a closed Dam/Dcm/CpG source-generation assumption on exact input revision {}: {}. This does not measure modifications or infer any other methylase activity.",index+1,substrate.revision(),serde_json::to_string(assumptions).map_err(|e|Error::Format(e.to_string()))?));
                     next_physical = Some(tracked);
                     product
@@ -1352,7 +1692,7 @@ impl StepAttempt {
                                 .map_err(|_| Error::TooLarge)?,
                             max_sites: options.max_sites,
                         },
-                        cleavage_budget,
+                        scientific.cleavage,
                     )?;
                     evidence_bytes(&report, options.max_report_bytes)?;
                     if report.fragments.len() > options.max_fragments {
@@ -1384,17 +1724,28 @@ impl StepAttempt {
                     ))?;
                     let substrate = resolve(template)?;
                     rule.set(RuleId::AnnotationProjection);
-                    project_into(
-                        substrate,
-                        &region_map(
+                    {
+                        let native_source = substrate;
+                        let native_map = &region_map(
                             substrate.sequence.len(),
                             fragment.top_start,
                             fragment.duplex.duplex.top.len(),
                             0,
-                        )?,
-                        &mut product,
-                        findings,
-                    )?;
+                        )?;
+                        let native_projection =
+                            project_into(native_source, native_map, &mut product, findings)?;
+                        let native_source_token = ancestry.source(template);
+                        ancestry.project(
+                            native_source_token,
+                            native_source,
+                            &mut product_token,
+                            &product,
+                            native_map,
+                            &native_projection,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                        );
+                    }
                     findings.push(format!("Step {} selected fragment {} of {} fully determined positional-profile digest products; supplier conditions and experimental completion remain assumptions.",index+1,fragment_index+1,report.fragments.len()));
                     next_physical = Some(fragment.duplex.clone());
                     product
@@ -1474,7 +1825,11 @@ impl StepAttempt {
                         }
                     }
                     rule.set(RuleId::RestrictionCleavage);
-                    let fragments = modified_duplex::digest(&source, &enzymes)?;
+                    let fragments = if scientific.is_qc_job() {
+                        modified_duplex::digest_with_budget(&source, &enzymes, scientific.cleavage)?
+                    } else {
+                        modified_duplex::digest(&source, &enzymes)?
+                    };
                     rule.set(RuleId::DigestSelection);
                     let fragment=fragments.get(*fragment_index).ok_or_else(||Error::Format(format!("digest has {} fragments; selected zero-based index {fragment_index} does not exist",fragments.len())))?;
                     let mut product = fragment.duplex.molecule(format!(
@@ -1491,7 +1846,23 @@ impl StepAttempt {
                         0,
                     )?;
                     rule.set(RuleId::AnnotationProjection);
-                    project_into(template_molecule, &map, &mut product, findings)?;
+                    {
+                        let native_source = template_molecule;
+                        let native_map = &map;
+                        let native_projection =
+                            project_into(native_source, native_map, &mut product, findings)?;
+                        let native_source_token = ancestry.source(template);
+                        ancestry.project(
+                            native_source_token,
+                            native_source,
+                            &mut product_token,
+                            &product,
+                            native_map,
+                            &native_projection,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                        );
+                    }
                     findings.push(format!("Step {} selects fragment {} of {} from the complete digest (top reference boundary {}); top/bottom lengths {}/{}.",index+1,fragment_index+1,fragments.len(),fragment.top_start,fragment.duplex.top.len(),fragment.duplex.bottom.len()));
                     next_physical = Some(fragment.duplex.clone());
                     product
@@ -1506,17 +1877,28 @@ impl StepAttempt {
                     let mut product = duplex.molecule(format!("End treatment {}", index + 1))?;
                     let source = resolve(template)?;
                     rule.set(RuleId::AnnotationProjection);
-                    project_into(
-                        source,
-                        &[MappingSegment {
+                    {
+                        let native_source = source;
+                        let native_map = &[MappingSegment {
                             source_start: 0,
                             source_end: source.sequence.len(),
                             destination_start: 0,
                             reverse: false,
-                        }],
-                        &mut product,
-                        findings,
-                    )?;
+                        }];
+                        let native_projection =
+                            project_into(native_source, native_map, &mut product, findings)?;
+                        let native_source_token = ancestry.source(template);
+                        ancestry.project(
+                            native_source_token,
+                            native_source,
+                            &mut product_token,
+                            &product,
+                            native_map,
+                            &native_projection,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                        );
+                    }
                     next_physical = Some(tracked);
                     product
                 }
@@ -1525,12 +1907,26 @@ impl StepAttempt {
                     let source = resolve_physical(template)?;
                     let report =
                         crate::cloning::ligation::tailing::tail_blunt_duplex(&source, *base)?;
-                    let product = tailed_document(
+                    let projected = tailed_document(
                         resolve(template)?,
                         &report,
                         format!("3′ tailing {}", index + 1),
                         findings,
                     )?;
+                    let product = projected.molecule;
+                    let source_token = ancestry.source(template);
+                    for receipt in &projected.projections {
+                        ancestry.reference(
+                            source_token,
+                            resolve(template)?,
+                            &mut product_token,
+                            &product,
+                            receipt,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                            IntroductionKind::NewlySynthesizedUnmappedCalls,
+                        );
+                    }
                     findings.push(format!("Step {} explicitly appends one {} nucleotide to both strand 3′ termini. Added nucleotides have no source-template ancestry; five-prime chemistry and internal nicks are retained.",index+1,base.as_str()));
                     findings.extend(report.warnings.iter().take(100).cloned());
                     next_physical = Some(resolve_tracked(template)?.tail(*base)?);
@@ -1587,34 +1983,66 @@ impl StepAttempt {
                     findings.extend(report.warnings.iter().take(100).cloned());
                     findings.push(format!("Step {} uses {:?} sequence recommendations. Recommendation compliance {:?} is advisory and does not establish reagent activity, experimental outcome or uniqueness.",index+1,options.method,report.recommendation_compliant));
                     let mut oriented_sources = Vec::new();
-                    for (source, reverse) in sources.iter().zip(&reverse) {
+                    let mut oriented_tokens = Vec::new();
+                    for (oriented_index, (source, reverse)) in
+                        sources.iter().zip(&reverse).enumerate()
+                    {
                         if *reverse {
                             let mut oriented = Molecule::dna(
                                 format!("Oriented {}", source.name),
                                 source.sequence.reverse_complement()?.as_str(),
                                 source.topology,
                             )?;
+                            let mut model_token = None;
                             rule.set(RuleId::AnnotationProjection);
-                            project_into(
-                                source,
-                                &[MappingSegment {
+                            {
+                                let native_source = source;
+                                let native_map = &[MappingSegment {
                                     source_start: 0,
                                     source_end: source.sequence.len(),
                                     destination_start: 0,
                                     reverse: true,
-                                }],
-                                &mut oriented,
-                                findings,
-                            )?;
+                                }];
+                                let native_projection = project_into(
+                                    native_source,
+                                    native_map,
+                                    &mut oriented,
+                                    findings,
+                                )?;
+                                let native_source_token =
+                                    ancestry.source(&fragments[oriented_index].source);
+                                ancestry.project(
+                                    native_source_token,
+                                    native_source,
+                                    &mut model_token,
+                                    &oriented,
+                                    native_map,
+                                    &native_projection,
+                                    ProjectionKind::ReferenceCorrespondence,
+                                    &[],
+                                );
+                            }
                             carry_unmapped_evidence(source, &mut oriented);
+                            ancestry.seal(model_token, &oriented);
+                            oriented_tokens.push(model_token);
                             oriented_sources.push(oriented);
                         } else {
+                            oriented_tokens
+                                .push(ancestry.source(&fragments[oriented_index].source));
                             oriented_sources.push(source.clone());
                         }
                     }
                     let refs = oriented_sources.iter().collect::<Vec<_>>();
-                    let mut product =
-                        assemble_overlap(&refs, overlaps, *circular, index, findings)?;
+                    let mut product = assemble_overlap(
+                        &refs,
+                        overlaps,
+                        *circular,
+                        index,
+                        findings,
+                        &mut ancestry,
+                        &oriented_tokens,
+                        &mut product_token,
+                    )?;
                     product.metadata.insert(
                         "overlap_profile:options".into(),
                         serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?,
@@ -1636,12 +2064,26 @@ impl StepAttempt {
                     let source = resolve_physical(template)?;
                     rule.set(RuleId::EndRepair);
                     let repair = chemistry::repair_ends(&source, *method)?;
-                    let product = repaired_document(
+                    let projected = repaired_document(
                         resolve(template)?,
                         &repair,
                         format!("End repair {}", index + 1),
                         findings,
                     )?;
+                    let product = projected.molecule;
+                    let source_token = ancestry.source(template);
+                    for receipt in &projected.projections {
+                        ancestry.reference(
+                            source_token,
+                            resolve(template)?,
+                            &mut product_token,
+                            &product,
+                            receipt,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                            IntroductionKind::NewlySynthesizedUnmappedCalls,
+                        );
+                    }
                     findings.push(format!("Step {} end repair {:?}: top added/removed {}/{} bases; bottom added/removed {}/{} bases. Five-prime chemistry and internal nicks are retained.",index+1,method,repair.top_added_3prime.len(),repair.top_removed_3prime.len(),repair.bottom_added_3prime.len(),repair.bottom_removed_3prime.len()));
                     findings.extend(repair.warnings.iter().take(100).cloned());
                     next_physical = Some(resolve_tracked(template)?.repair(*method)?);
@@ -1657,6 +2099,8 @@ impl StepAttempt {
                     if !matches!(top, Source::Input(_)) || !matches!(bottom, Source::Input(_)) {
                         return Err(Error::Unsupported("annealing requires explicitly declared input oligos; duplex-producing steps do not implicitly denature into ssDNA".into()));
                     }
+                    let top_token = ancestry.source(top);
+                    let bottom_token = ancestry.source(bottom);
                     let top = resolve(top)?;
                     let bottom = resolve(bottom)?;
                     rule.set(RuleId::OligoAnnealing);
@@ -1668,13 +2112,29 @@ impl StepAttempt {
                         .ok_or_else(|| {
                             Error::Format("selected annealing candidate is unavailable".into())
                         })?;
-                    let product = annealed_document_inner(
+                    let projected = annealed_document_inner(
                         top,
                         bottom,
                         &preview.annealing,
                         *candidate_index,
                         findings,
                     )?;
+                    let product = projected.molecule;
+                    for ((source, token), receipt) in [(top, top_token), (bottom, bottom_token)]
+                        .into_iter()
+                        .zip(&projected.projections)
+                    {
+                        ancestry.reference(
+                            token,
+                            source,
+                            &mut product_token,
+                            &product,
+                            receipt,
+                            ProjectionKind::ReferenceCorrespondence,
+                            &[],
+                            IntroductionKind::NewlySynthesizedUnmappedCalls,
+                        );
+                    }
                     findings.push(format!("Step {} anneals declared 5′→3′ ssDNA oligos at bottom offset {}, with {} paired bases. Explicit terminal chemistry is a plan assumption; annealing creates no covalent bonds.",index+1,candidate.duplex.bottom_start,candidate.paired_bases));
                     if !preview.annealing.complete {
                         incomplete.push(format!("Step {} annealing placement search was incomplete; unsearched alignments cannot establish uniqueness.",index+1));
@@ -1839,7 +2299,23 @@ impl StepAttempt {
                             }]
                         };
                         rule.set(RuleId::AnnotationProjection);
-                        project_into(source, &map, &mut product, findings)?;
+                        {
+                            let native_source = source;
+                            let native_map = &map;
+                            let native_projection =
+                                project_into(native_source, native_map, &mut product, findings)?;
+                            let native_source_token = ancestry.source(&oriented_source.source);
+                            ancestry.project(
+                                native_source_token,
+                                native_source,
+                                &mut product_token,
+                                &product,
+                                native_map,
+                                &native_projection,
+                                ProjectionKind::ReferenceCorrespondence,
+                                &[],
+                            );
+                        }
                         destination += *oriented_top_length;
                     }
                     next_physical = Some(duplex);
@@ -1909,6 +2385,12 @@ impl StepAttempt {
             }
             Ok((product, next_physical, is_reference_only))
         })();
+        let ancestry_error = ancestry
+            .finish(
+                product_token,
+                result.as_ref().ok().map(|(product, _, _)| product),
+            )
+            .err();
         budget.product_bases = product_bases;
         budget.product_bytes = product_bytes;
         budget.step_evidence_bytes = step_evidence_bytes;
@@ -1921,6 +2403,7 @@ impl StepAttempt {
             physical_processing_reports,
             reference_step_reports,
             golden_gate,
+            ancestry_error,
         }
     }
 }

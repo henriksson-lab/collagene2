@@ -125,6 +125,7 @@ pub fn simulate(
         fresh.findings(),
         fresh.findings_total(),
         fresh.findings_truncated(),
+        None,
     )
 }
 /// The caller already owns fresh private source state; do not replay its origin
@@ -140,15 +141,26 @@ pub(crate) fn simulate_from_fresh(
     findings: &[String],
     total: usize,
     truncated: bool,
+    budget: Option<&mut crate::sequence::analysis::ExactSearchBudget>,
 ) -> Result<Vec<verification::pcr::PcrDocument>, Error> {
     let context = revision(source, origin, forward, reverse, template_strand)?;
-    let mut previews = verification::pcr::simulate_pcr_documents_from_fresh(
-        source,
-        forward,
-        reverse,
-        tracked,
-        template_strand,
-    )?;
+    let mut previews = match budget {
+        Some(budget) => verification::pcr::simulate_pcr_documents_from_fresh_with_budget(
+            source,
+            forward,
+            reverse,
+            tracked,
+            template_strand,
+            budget,
+        )?,
+        None => verification::pcr::simulate_pcr_documents_from_fresh(
+            source,
+            forward,
+            reverse,
+            tracked,
+            template_strand,
+        )?,
+    };
     let receipt = evidence(
         source,
         origin,

@@ -1,0 +1,319 @@
+[
+  {
+    "id": "raav-transfer-declared-graph-2026",
+    "edition": "1",
+    "name": "rAAV declared transfer-cassette graph",
+    "scope": "Conventional declared research transfer cassette between two specifically pinned ITR-role annotations. This is an annotation/reference geometry profile, not a universal rAAV architecture or packaging certificate.",
+    "start_role": "five-prime-itr",
+    "end_role": "three-prime-itr",
+    "roles": [
+      {
+        "id": "five-prime-itr",
+        "description": "Declared first ITR element",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      },
+      {
+        "id": "promoter",
+        "description": "Declared expression-cassette promoter",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      },
+      {
+        "id": "payload",
+        "description": "Declared user payload; no coding/function inference",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      },
+      {
+        "id": "three-prime-itr",
+        "description": "Declared opposing ITR element",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "OppositeToAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      }
+    ],
+    "order": [
+      {
+        "upstream_role": "five-prime-itr",
+        "downstream_role": "promoter",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      },
+      {
+        "upstream_role": "promoter",
+        "downstream_role": "payload",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      },
+      {
+        "upstream_role": "payload",
+        "downstream_role": "three-prime-itr",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-aav-guide"
+        ]
+      }
+    ],
+    "numeric_context": [
+      {
+        "id": "wu2010-tested-input-range",
+        "metric": "Plasmid-encoded vector genome lengths examined in the reported experiment",
+        "minimum": 4700,
+        "maximum": 8700,
+        "unit": "bases",
+        "population": "Wu et al. 2010 primary abstract; laboratory vector preparations in that study; tested plasmid-encoded sizes, not an interval of accepted functional outcomes.",
+        "interpretation": "Descriptive study-input range only. It is not a recommended range, a universal packaging ceiling or a pass/fail threshold for this source. No interpolation or yield model is admitted.",
+        "source_ids": [
+          "wu-2010-size"
+        ]
+      }
+    ],
+    "sources": [
+      {
+        "id": "addgene-aav-guide",
+        "url": "https://www.addgene.org/guides/aav/",
+        "locator": "Recombinant AAV Vectors; Figure2 transfer-cassette element order",
+        "revision": "Content reviewed by provider 2025-06-09; live page checked 2026-11-28",
+        "reviewed_on": "2026-11-28",
+        "rights": "Independent small factual curation. No supplier prose, images or sequences redistributed; no Addgene catalogue licence asserted."
+      },
+      {
+        "id": "wu-2010-size",
+        "url": "https://pubmed.ncbi.nlm.nih.gov/19904234/",
+        "locator": "Primary study abstract: 4.7\u20138.7 kb plasmid-encoded genome range; this is tested input, not a performance interval",
+        "revision": "Wu, Yang, Colosi, Mol. Ther. 18(1):80\u201386, 2010; doi:10.1038/mt.2009.255",
+        "reviewed_on": "2026-11-28",
+        "rights": "Small independently authored numeric study-context facts only; no article, figure or dataset redistributed; redistribution licence not asserted."
+      }
+    ],
+    "limitations": [
+      "Only the explicitly declared annotation/reference graph is checked. Matching supplied literals never authenticates their biological role, source rights, structure or function.",
+      "Missing, stale, unreviewed, ambiguous or reference-mismatching role premises remain indeterminate for dependent geometry. Native literal-reference mismatch remains a failed identity claim.",
+      "Graph-node cardinality is not exhaustive biological copy number. Optional explicit literal-reference scans separately report complete/incomplete identity-interval counts; absence of one supplied literal is not biological absence.",
+      "Only exact simple feature intervals are used for graph geometry. Compound/fuzzy locations retain identity evidence but do not acquire guessed directed ranges.",
+      "The user selects original boundary bindings and a forward/reverse graph axis. Measurements span their outer edges, with interior length separately reported; total plasmid length is not a payload budget.",
+      "No expression, packaging, titre, propagation-stability, replication-competence or safety verdict. No packaging/helper-system design, tropism, host-range modification or pathogenic-virus design is provided.",
+      "No reference DNA is installed. All element reference sequences, exact revisions, source provenance and rights are explicit caller inputs.",
+      "ITR orientation here is the explicit feature orientation relative to its supplied oriented literal reference and declared axis. It does not certify an ITR hairpin, flip/flop conformation or nicking activity."
+    ]
+  },
+  {
+    "id": "sin-lentiviral-transfer-declared-graph-2026",
+    "edition": "1",
+    "name": "SIN lentiviral declared transfer-plasmid graph",
+    "scope": "Ordinary research transfer-plasmid annotation/reference geometry with a caller-pinned SIN-labelled 3-prime LTR premise. No SIN function, deletion adequacy or replication-competence assessment is performed.",
+    "start_role": "five-prime-ltr",
+    "end_role": "three-prime-sin-ltr",
+    "roles": [
+      {
+        "id": "five-prime-ltr",
+        "description": "Declared 5-prime LTR boundary",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "id": "psi",
+        "description": "Declared cis Psi-labelled reference element",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "id": "rre",
+        "description": "Declared cis RRE-labelled reference element",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "id": "internal-promoter",
+        "description": "Declared internal expression-cassette promoter",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "id": "payload",
+        "description": "Declared user payload; no coding/function inference",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "id": "three-prime-sin-ltr",
+        "description": "Caller-pinnedSIN-labelled 3-prime LTR boundary; function not inferred",
+        "minimum": 1,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "zufferey-1998-sin"
+        ]
+      },
+      {
+        "id": "cppt",
+        "description": "Optional caller-declared cPPT-labelled element",
+        "minimum": 0,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "id": "wpre",
+        "description": "Optional caller-declared WPRE-labelled element",
+        "minimum": 0,
+        "maximum": 1,
+        "orientation": "SameAsAxis",
+        "within_boundaries": true,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      }
+    ],
+    "order": [
+      {
+        "upstream_role": "five-prime-ltr",
+        "downstream_role": "psi",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "upstream_role": "five-prime-ltr",
+        "downstream_role": "rre",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "upstream_role": "psi",
+        "downstream_role": "three-prime-sin-ltr",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "upstream_role": "rre",
+        "downstream_role": "three-prime-sin-ltr",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "upstream_role": "five-prime-ltr",
+        "downstream_role": "internal-promoter",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "upstream_role": "internal-promoter",
+        "downstream_role": "payload",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      },
+      {
+        "upstream_role": "payload",
+        "downstream_role": "three-prime-sin-ltr",
+        "minimum_gap": 0,
+        "maximum_gap": null,
+        "source_ids": [
+          "addgene-lentiviral-guide"
+        ]
+      }
+    ],
+    "numeric_context": [],
+    "sources": [
+      {
+        "id": "addgene-lentiviral-guide",
+        "url": "https://www.addgene.org/guides/lentivirus/",
+        "locator": "SIN transfer-plasmid description, Figure4 and plasmid-elements table",
+        "revision": "Live official guide checked 2026-11-28; immutable upstream version not supplied",
+        "reviewed_on": "2026-11-28",
+        "rights": "Independent small factual curation. No supplier prose, diagrams or viral sequences redistributed."
+      },
+      {
+        "id": "zufferey-1998-sin",
+        "url": "https://doi.org/10.1128/jvi.72.12.9873-9880.1998",
+        "locator": "SIN structural premise in Abstract/Introduction; no deletion sequence or protocol copied",
+        "revision": "Zufferey et al., J. Virol. 72(12):9873\u20139880, 1998",
+        "reviewed_on": "2026-11-28",
+        "rights": "Copyright 1998 American Society for Microbiology; factual premise only, no prose, experimental dataset or sequence redistributed."
+      }
+    ],
+    "limitations": [
+      "Only the explicitly declared annotation/reference graph is checked. Matching supplied literals never authenticates their biological role, source rights, structure or function.",
+      "Missing, stale, unreviewed, ambiguous or reference-mismatching role premises remain indeterminate for dependent geometry. Native literal-reference mismatch remains a failed identity claim.",
+      "Graph-node cardinality is not exhaustive biological copy number. Optional explicit literal-reference scans separately report complete/incomplete identity-interval counts; absence of one supplied literal is not biological absence.",
+      "Only exact simple feature intervals are used for graph geometry. Compound/fuzzy locations retain identity evidence but do not acquire guessed directed ranges.",
+      "The user selects original boundary bindings and a forward/reverse graph axis. Measurements span their outer edges, with interior length separately reported; total plasmid length is not a payload budget.",
+      "No expression, packaging, titre, propagation-stability, replication-competence or safety verdict. No packaging/helper-system design, tropism, host-range modification or pathogenic-virus design is provided.",
+      "No reference DNA is installed. All element reference sequences, exact revisions, source provenance and rights are explicit caller inputs.",
+      "No universal cPPT/WPRE necessity, relative cPPT/RRE ordering, cargo-size ceiling, per-kb titre slope, intron effect or sense-polyadenylation prediction is admitted."
+    ]
+  }
+]

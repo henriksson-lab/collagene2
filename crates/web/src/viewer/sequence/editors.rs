@@ -1,8 +1,8 @@
 //! Document and feature editors commit against an explicit base revision.
-use collagene_core::sequence::{annotations, editing};
+use collagene_core::documents::reference_edit::Operation;
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 use leptos::prelude::*;
-type Commit = Callback<(String, Molecule), Result<(), String>>;
+type Commit = Callback<(String, Vec<Operation>), Result<(), String>>;
 
 #[derive(Clone)]
 struct QualifierRow {
@@ -136,13 +136,11 @@ pub fn FeatureEditor(
             feature.qualifiers.retain(|(key, _)| key != "translation");
             feature.needs_review = true;
         }
-        match editing::set_feature(&source, index, feature) {
-            Ok(edited) => {
-                if let Err(e) = on_commit.run((base_revision.clone(), edited)) {
-                    error.set(e)
-                }
-            }
-            Err(e) => error.set(e.to_string()),
+        if let Err(e) = on_commit.run((
+            base_revision.clone(),
+            vec![Operation::SetFeature { index, feature }],
+        )) {
+            error.set(e);
         }
     };
     view! {<div class="feature-editor"><p>"Locations use one-based inclusive coordinates. Compound examples: join(1..4,13..16), complement(join(13..16,1..4)). Fuzzy and unresolved locations stay distinct from exact sequence."</p><Show when=move||!error.get().is_empty()><p class="dialog-error" role="alert">{move||error.get()}</p></Show><label>"Display name"<input aria-label="Annotation name" prop:value=move||label.get() on:input=move|e|label.set(event_target_value(&e))/></label><label>"Feature type"<input aria-label="Annotation type" prop:value=move||kind.get() on:input=move|e|kind.set(event_target_value(&e))/></label><label>"Location"<input aria-label="Annotation location" prop:value=move||location.get() on:input=move|e|location.set(event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" prop:checked=move||review.get() on:change=move|e|review.set(event_target::<web_sys::HtmlInputElement>(&e).checked())/>"Review required"</label><h3>"Qualifiers"</h3><For each=move||rows.get() key=|row|row.id children=move|row|view!{<QualifierFields row=row on_remove=Callback::new(move|id|rows.update(|rows|rows.retain(|row|row.id!=id)))/>}/><button class="button secondary" on:click=move|_|{let id=next.get_untracked();next.set(id+1);rows.update(|rows|rows.push(QualifierRow::new(id,"note".into(),Some(String::new()))));}>"Add qualifier"</button><button class="button primary" on:click=save>"Save annotation"</button></div>}
@@ -164,7 +162,7 @@ pub fn DocumentEditor(
     let error = RwSignal::new(String::new());
     let base = molecule.revision();
     let source = StoredValue::new(molecule);
-    let commit = move |result: Result<Molecule, Error>| match result {
+    let commit = move |result: Result<Vec<Operation>, Error>| match result {
         Ok(value) => {
             if let Err(e) = on_commit.run((base.clone(), value)) {
                 error.set(e);
@@ -175,5 +173,5 @@ pub fn DocumentEditor(
     let commit_settings = commit.clone();
     let commit_reverse = commit.clone();
     let commit_origin = commit.clone();
-    view! {<div class="document-editor"><p>"These controls edit the reference document. Physical cleavage, end chemistry and ligation belong in a cloning plan. Changes can be undone."</p><Show when=move||!error.get().is_empty()><p class="dialog-error" role="alert">{move||error.get()}</p></Show><label>"Document name"<input aria-label="Document name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Reference topology"<select aria-label="Reference topology" prop:value=move||topology.get() on:change=move|e|topology.set(if event_target_value(&e)=="circular"{"circular"}else{"linear"})><option value="linear">"Linear"</option><option value="circular">"Circular"</option></select></label><button class="button primary" on:click=move|_|{let source=source.get_value();let result=editing::rename(&source,&name.get_untracked()).and_then(|m|editing::set_reference_topology(&m,if topology.get_untracked()=="circular"{Topology::Circular}else{Topology::Linear}));commit_settings(result);}>"Apply document settings"</button><hr/><button class="button secondary" disabled=move||source.with_value(|m|m.sequence.alphabet()==Alphabet::Protein) on:click=move|_|commit_reverse(annotations::reverse_complement(&source.get_value()))>"Reverse complement document"</button><label>"New origin (one-based base number)"<input aria-label="New origin" type="number" min="1" prop:value=move||origin.get() on:input=move|e|origin.set(event_target_value(&e))/></label><button class="button secondary" disabled=move||source.with_value(|m|m.topology!=Topology::Circular) on:click=move|_|{let result=origin.get_untracked().parse::<usize>().ok().and_then(|n|n.checked_sub(1)).ok_or_else(||Error::Coordinates("origin must be a one-based base number".into())).and_then(|n|annotations::rotate_origin(&source.get_value(),n));commit_origin(result);}>"Rotate origin"</button></div>}
+    view! {<div class="document-editor"><p>"These controls edit the reference document. Physical cleavage, end chemistry and ligation belong in a cloning plan. Changes can be undone."</p><Show when=move||!error.get().is_empty()><p class="dialog-error" role="alert">{move||error.get()}</p></Show><label>"Document name"<input aria-label="Document name" prop:value=move||name.get() on:input=move|e|name.set(event_target_value(&e))/></label><label>"Reference topology"<select aria-label="Reference topology" prop:value=move||topology.get() on:change=move|e|topology.set(if event_target_value(&e)=="circular"{"circular"}else{"linear"})><option value="linear">"Linear"</option><option value="circular">"Circular"</option></select></label><button class="button primary" on:click=move|_|{let result=Ok(vec![Operation::Rename {name:name.get_untracked()},Operation::SetTopology {topology:if topology.get_untracked()=="circular"{Topology::Circular}else{Topology::Linear}}]);commit_settings(result);}>"Apply document settings"</button><hr/><button class="button secondary" disabled=move||source.with_value(|m|m.sequence.alphabet()==Alphabet::Protein) on:click=move|_|commit_reverse(Ok(vec![Operation::ReverseComplement]))>"Reverse complement document"</button><label>"New origin (one-based base number)"<input aria-label="New origin" type="number" min="1" prop:value=move||origin.get() on:input=move|e|origin.set(event_target_value(&e))/></label><button class="button secondary" disabled=move||source.with_value(|m|m.topology!=Topology::Circular) on:click=move|_|{let result=origin.get_untracked().parse::<usize>().ok().and_then(|n|n.checked_sub(1)).ok_or_else(||Error::Coordinates("origin must be a one-based base number".into())).map(|n|vec![Operation::RotateOrigin {new_origin:n}]);commit_origin(result);}>"Rotate origin"</button></div>}
 }

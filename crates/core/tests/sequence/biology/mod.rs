@@ -5,6 +5,7 @@ mod crispr;
 mod crispr_audit;
 mod crispr_bulges;
 mod crispr_protocol;
+mod design_picker_protocol;
 mod genome_crispr;
 mod ivt_protocol;
 mod methylation;

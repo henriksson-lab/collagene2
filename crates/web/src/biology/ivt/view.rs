@@ -2,6 +2,7 @@
 use super::model::{Capture, Draft};
 use crate::{platform::worker::CachedWorker, sources::identity::SourceInfo};
 use collagene_core::{
+    documents::workspace::Workspace,
     protocol::{
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
@@ -57,6 +58,7 @@ pub(crate) fn IvtPanel(
     source: Memo<SourceInfo>,
     epoch: RwSignal<u64>,
     workspace_busy: RwSignal<bool>,
+    get_workspace: Callback<(), Result<Workspace, String>>,
     on_select: Callback<(String, Location), Result<(), String>>,
 ) -> impl IntoView {
     let draft = RwSignal::new(Draft::default());
@@ -265,6 +267,8 @@ pub(crate) fn IvtPanel(
                 {coordinate(draft,"First poly(A) transcript base",|d|&d.poly_a_first,|d,v|d.poly_a_first=v)}
                 {coordinate(draft,"Last poly(A) transcript base",|d|&d.poly_a_last,|d,v|d.poly_a_last=v)}
             </details>
+            <super::linearization_view::IvtLinearizationPanel
+                molecule source epoch workspace_busy get_workspace ivt_draft=draft/>
             <button class="text-tool" disabled=move ||busy.get()||workspace_busy.get() on:click=run>"Check template"</button>
             <p class="helper" role="status">{move ||status.get()}</p>
             {move ||report.get().map(|(capture,r)| {

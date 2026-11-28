@@ -54,16 +54,16 @@ impl SequenceEditor {
                         })
                     })
                     .ok_or_else(|| "The source document is no longer open.".to_string())?;
-                let edited = current
-                    .replace(a, b, &replacement)
-                    .map_err(|e| e.to_string())?;
-                // Sequence::new normalizes whitespace/case. Raw clipboard byte length
-                // must never determine the committed cursor boundary.
-                let replacement_len = before
-                    .length
-                    .checked_sub(b.saturating_sub(a))
-                    .and_then(|retained| edited.sequence.len().checked_sub(retained));
-                session.commit_document(&base, edited)?;
+                session.commit_document(
+                    &base,
+                    vec![
+                        collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                            start: a,
+                            end: b,
+                            replacement,
+                        },
+                    ],
+                )?;
                 let after = documents.with_untracked(|docs| {
                     docs.get(active.get_untracked()).map(|doc| {
                         crate::viewer::sequence::sequence_edit_transition::SourcePin::of(
@@ -71,6 +71,14 @@ impl SequenceEditor {
                             doc,
                         )
                     })
+                });
+                // Normalized committed lengths, rather than raw clipboard bytes,
+                // determine the resulting caret after the actual transaction.
+                let replacement_len = after.as_ref().and_then(|after| {
+                    before
+                        .length
+                        .checked_sub(b.saturating_sub(a))
+                        .and_then(|retained| after.length.checked_sub(retained))
                 });
                 let transition = after.zip(replacement_len).and_then(|(after, n)| {
                     crate::viewer::sequence::sequence_edit_transition::EditTransition::attest(

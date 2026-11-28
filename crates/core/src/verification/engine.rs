@@ -32,6 +32,7 @@ use collagene_model::{Alphabet, Error, MAX_SEQUENCE_LEN, Molecule, Topology};
 use std::collections::{BTreeMap, BTreeSet};
 mod execution;
 mod operation;
+use super::replay_budget::ReplayBudget;
 use execution::Execution;
 pub fn verify(plan: &DesignPlan, target: &Molecule) -> VerificationReport {
     evaluate(plan, target).0
@@ -104,12 +105,15 @@ fn evaluate(
             .expect("fixed native cleavage bound"),
     )
 }
-pub(crate) fn verify_with_tracked_budget(
+/// Execute a native scientific scope even when no coordinate receipt is needed.
+/// QC callers retain the same borrowed owner across nested source replays.
+pub(crate) fn verify_with_tracked_scoped(
     plan: &DesignPlan,
     target: &Molecule,
-    budget: &mut modified_duplex::CleavageBudget,
+    scientific: &mut ReplayBudget<'_>,
 ) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
-    evaluate_captured(plan, target, &mut None, budget)
+    let (report, material, _) = evaluate_native(plan, target, &mut None, scientific, None);
+    (report, material)
 }
 fn evaluate_captured(
     plan: &DesignPlan,
@@ -117,6 +121,69 @@ fn evaluate_captured(
     final_golden_gate: &mut Option<crate::cloning::golden_gate::GoldenGateReport>,
     cleavage_budget: &mut modified_duplex::CleavageBudget,
 ) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
+    let mut scientific = ReplayBudget::plan_local(cleavage_budget);
+    let (report, material, _) =
+        evaluate_native(plan, target, final_golden_gate, &mut scientific, None);
+    (report, material)
+}
+
+/// One fresh execution, with private coordinate receipts produced only by its
+/// actual native operations. Receipt refusal never changes ordinary outcomes.
+pub(crate) fn verify_with_ancestry(
+    plan: &DesignPlan,
+    target: &Molecule,
+) -> (
+    VerificationReport,
+    Result<super::ancestry::ReconstructionTrace, Error>,
+) {
+    let mut cleavage =
+        modified_duplex::CleavageBudget::new(100_000_000).expect("fixed native cleavage bound");
+    let mut scientific = ReplayBudget::plan_local(&mut cleavage);
+    let (report, _, trace) = evaluate_native(
+        plan,
+        target,
+        &mut None,
+        &mut scientific,
+        Some(
+            super::ancestry::TraceBudget::new(super::ancestry::Limits::default())
+                .expect("fixed trace limits"),
+        ),
+    );
+    (report, trace.expect("requested native ancestry result"))
+}
+
+/// Nested retained-origin replay shares the enclosing actual trace budget.
+/// The returned private receipts come from the same pass as tracked material.
+pub(crate) fn verify_with_tracked_ancestry_budget(
+    plan: &DesignPlan,
+    target: &Molecule,
+    scientific: &mut ReplayBudget<'_>,
+    trace_budget: super::ancestry::TraceBudget,
+) -> (
+    VerificationReport,
+    Vec<Option<TrackedDuplex>>,
+    Result<super::ancestry::ReconstructionTrace, Error>,
+) {
+    let (report, material, trace) =
+        evaluate_native(plan, target, &mut None, scientific, Some(trace_budget));
+    (
+        report,
+        material,
+        trace.expect("requested shared native ancestry result"),
+    )
+}
+
+fn evaluate_native(
+    plan: &DesignPlan,
+    target: &Molecule,
+    final_golden_gate: &mut Option<crate::cloning::golden_gate::GoldenGateReport>,
+    scientific: &mut ReplayBudget<'_>,
+    capture_ancestry: Option<super::ancestry::TraceBudget>,
+) -> (
+    VerificationReport,
+    Vec<Option<TrackedDuplex>>,
+    Option<Result<super::ancestry::ReconstructionTrace, Error>>,
+) {
     let mut report = VerificationReport {
         plan_revision: String::new(), target_revision: String::new(),
         engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
@@ -151,7 +218,15 @@ fn evaluate_captured(
             message,
         ));
         report.status = Status::Invalid;
-        return (report, vec![]);
+        return (
+            report,
+            vec![],
+            capture_ancestry.map(|_| {
+                Err(Error::Unsupported(
+                    "Native ancestry request failed bounded plan admission".into(),
+                ))
+            }),
+        );
     }
     report.plan_revision = plan.revision();
     report.target_revision = target.revision();
@@ -164,7 +239,17 @@ fn evaluate_captured(
             blocked_by: vec![],
         })
         .collect();
-    let mut execution = Execution::new(report, final_golden_gate, cleavage_budget);
+    let (trace, trace_error) = match capture_ancestry
+        .map(|budget| super::ancestry::TraceBuilder::with_budget(plan.steps.len(), budget))
+    {
+        Some(Ok(mut trace)) => match trace.bind_plan(&report.plan_revision) {
+            Ok(()) => (Some(trace), None),
+            Err(error) => (None, Some(error)),
+        },
+        Some(Err(error)) => (None, Some(error)),
+        None => (None, None),
+    };
+    let mut execution = Execution::new(report, final_golden_gate, scientific, trace, trace_error);
     execution.reconstruct(plan, target);
     execution.finish()
 }
@@ -202,6 +287,9 @@ fn assemble_overlap(
     circular: bool,
     index: usize,
     findings: &mut Vec<String>,
+    ancestry: &mut super::ancestry::native::NativeStep<'_>,
+    source_tokens: &[Option<super::ancestry::SnapshotToken>],
+    product_token: &mut Option<super::ancestry::SnapshotToken>,
 ) -> Result<Molecule, Error> {
     if fragments.is_empty()
         || fragments.len() > 1000
@@ -310,13 +398,23 @@ fn assemble_overlap(
                 reverse: false,
             });
         }
-        project_into_with_collapse(
+        let native_projection = project_into_with_collapse(
             fragment,
             &map,
             &mut product,
             findings,
             circular && fragments.len() == 1,
         )?;
+        ancestry.project(
+            source_tokens.get(i).copied().flatten(),
+            fragment,
+            product_token,
+            &product,
+            &map,
+            &native_projection,
+            super::ancestry::ProjectionKind::HomologyCollapse,
+            &[],
+        );
         offset += length;
         if i < overlaps.len() {
             offset -= overlaps[i];

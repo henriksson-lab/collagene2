@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::{
         transfer::Candidate,
@@ -32,7 +35,14 @@ fn pcr(template: Source) -> Operation {
 }
 fn add(w: &mut Workspace, id: &str, m: Molecule) {
     let revision = m.revision();
-    let e = RevisionEvent::new(id, revision.clone(), vec![], "Imported document").unwrap();
+    let e = RevisionEvent::new(
+        id,
+        revision.clone(),
+        vec![],
+        "Imported document",
+        Transition::IndependentReference,
+    )
+    .unwrap();
     w.documents.push(WorkspaceDocument {
         id: id.into(),
         head: revision.clone(),
@@ -152,18 +162,32 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
         steps: vec![pcr(Source::Input("private".into()))],
     }));
     let old = binding(&w, "document-1");
-    let edit = Molecule::dna(
-        "PRIVATE UNPUBLISHED SOURCE EDIT",
-        "TTTTGGGGCCCCAAAA",
-        Topology::Linear,
-    )
-    .unwrap();
+    let previous_source = w.revisions.get(&old.revision).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous_source.sequence.len(),
+            replacement: "TTTTGGGGCCCCAAAA".into(),
+        },
+        Edit::Rename {
+            name: "PRIVATE UNPUBLISHED SOURCE EDIT".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let edit = Edit::apply_all(previous_source, &actions).unwrap();
     let revision = edit.revision();
     let event = RevisionEvent::new(
         "document-1",
         revision.clone(),
         vec![old.event_id.clone()],
         "Unpublished private source edit",
+        Transition::ReferenceEdit {
+            source: old.clone(),
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     let d = w

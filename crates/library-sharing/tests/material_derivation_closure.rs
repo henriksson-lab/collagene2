@@ -1,4 +1,8 @@
 //! Actual target-free PCR→digest followed by a separately verified physical run.
+use collagene_core::documents::{
+    history::transition::{AnalysisOrigin, AnalysisProducer, Transition},
+    reference_edit::Operation as Edit,
+};
 use collagene_core::{
     cloning::{overlap::assembly as homology_assembly, restriction::catalog as catalog_digest},
     documents::{
@@ -234,12 +238,21 @@ fn fixture() -> Fixture {
     };
     let mut w = saved.workspace;
     // A later private current branch of the required source must stay local.
-    let private = Molecule::dna(
-        "Unpublished source branch",
-        "GGGGCCCCAAAATTTT",
-        Topology::Linear,
-    )
-    .unwrap();
+    let previous_source = w.head(&source_id).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous_source.sequence.len(),
+            replacement: "GGGGCCCCAAAATTTT".into(),
+        },
+        Edit::Rename {
+            name: "Unpublished source branch".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let private = Edit::apply_all(previous_source, &actions).unwrap();
     let private_head = private.revision();
     let previous = w.documents[0].head.clone();
     let previous_event = w.documents[0].head_event.clone().unwrap();
@@ -248,6 +261,15 @@ fn fixture() -> Fixture {
         &private_head,
         vec![previous_event.clone()],
         "Private source edit after derivation",
+        Transition::ReferenceEdit {
+            source: EventBinding {
+                document_id: source_id.clone(),
+                event_id: previous_event.clone(),
+                revision: previous.clone(),
+            },
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     w.revisions.insert(private_head.clone(), private);
@@ -373,6 +395,7 @@ fn missing_owner_wrong_hash_and_exact_event_aliases_cannot_supply_derivation_aut
         &f.digest.revision,
         vec![],
         "Imported equal reference",
+        Transition::IndependentReference,
     )
     .unwrap();
     let alias = EventBinding {
@@ -397,8 +420,16 @@ fn missing_owner_wrong_hash_and_exact_event_aliases_cannot_supply_derivation_aut
     let orphan = RevisionEvent::new(
         &alias.document_id,
         &alias.revision,
-        vec![],
+        vec![alias.event_id.clone()],
         native::EVENT_OPERATION,
+        Transition::Analysis {
+            origin: AnalysisOrigin::context(
+                AnalysisProducer::MaterialDerivation,
+                native::load_record(&capsule.record_bytes)
+                    .unwrap()
+                    .context_revision,
+            ),
+        },
     )
     .unwrap();
     w.documents.last_mut().unwrap().head_event = Some(orphan.id.clone());
@@ -407,6 +438,6 @@ fn missing_owner_wrong_hash_and_exact_event_aliases_cannot_supply_derivation_aut
         event_id: orphan.id.clone(),
         revision: alias.revision,
     };
-    *w.history.last_mut().unwrap() = orphan;
+    w.history.push(orphan);
     assert!(sharing::project_document_closure(&w, &selection(&orphan_pin)).is_err());
 }

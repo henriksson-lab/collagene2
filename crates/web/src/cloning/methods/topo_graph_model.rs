@@ -1,4 +1,6 @@
 //! A graph save binds an immutable native request to the complete local frame.
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::{cloning::topo::graph_history as graph, documents::workspace::Workspace};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CaptureKind {
@@ -205,9 +207,13 @@ mod tests {
         let mut docs =
             collagene_core::documents::history::DocumentHistory::restore_all(&reopened).unwrap();
         for doc in docs.iter_mut().take(3) {
-            let mut changed = doc.molecule.clone();
-            changed.name.push_str(" private");
-            doc.commit(changed, "Private source branch").unwrap();
+            doc.commit(
+                vec![ReferenceEdit::Rename {
+                    name: format!("{} private", doc.molecule.name),
+                }],
+                "Private source branch",
+            )
+            .unwrap();
         }
         reopened.documents.clear();
         reopened.history.clear();

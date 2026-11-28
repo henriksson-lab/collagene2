@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -58,9 +59,14 @@ fn declarations_roundtrip_exact_historical_events_without_cached_quantities_or_s
     assert_eq!(native::capture(&saved, &r).unwrap().0.attachments.len(), 1);
     let loaded = workspace::load_workspace(&workspace::save_workspace(&saved).unwrap()).unwrap();
     let mut histories = DocumentHistory::restore_all(&loaded).unwrap();
-    let mut changed = histories[0].molecule.clone();
-    changed.name = "Later edit".into();
-    histories[0].commit(changed, "Change display name").unwrap();
+    histories[0]
+        .commit(
+            vec![Edit::Rename {
+                name: "Later edit".into(),
+            }],
+            "Change display name",
+        )
+        .unwrap();
     let mut advanced = loaded.clone();
     advanced.documents.clear();
     advanced.history.clear();

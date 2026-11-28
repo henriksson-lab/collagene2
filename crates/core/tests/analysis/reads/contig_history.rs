@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -45,9 +46,22 @@ fn fixture() -> (Workspace, SavedAssembly, Vec<ReadInput>) {
     options.both_strands = false;
     let report = contig::assemble(&inputs, &options).unwrap();
     let record = SavedAssembly::new(report, bindings).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
         .commit(
-            Molecule::dna("newer edited read head", "GATTACA", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "GATTACA".into(),
+                },
+                Edit::Rename {
+                    name: "newer edited read head".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Edit after assembly",
         )
         .unwrap();

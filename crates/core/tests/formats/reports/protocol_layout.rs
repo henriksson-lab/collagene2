@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     chemistry::Terminus,
     cloning::assembly::recipe::Preparation,
@@ -370,9 +371,22 @@ fn stale_preview_cannot_be_new_capture_and_archive_layout_survives_later_heads()
     let r = request(&w, &h, p::Plate::Wells96);
     let c = p::capture(&w, &r).unwrap();
     let mut docs = DocumentHistory::restore_all(&c.workspace).unwrap();
+    let edit_end = docs[0].molecule.sequence.len();
     docs[0]
         .commit(
-            Molecule::dna("Later stock", "TCCC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TCCC".into(),
+                },
+                Edit::Rename {
+                    name: "Later stock".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Later edit",
         )
         .unwrap();

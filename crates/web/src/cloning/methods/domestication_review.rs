@@ -1,5 +1,6 @@
 //! Exact-event installation of independently checked substitution intent.
 //! Opening a candidate does not retain positive reaction verification.
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use collagene_core::{
     cloning::golden_gate::domestication::{self as design, preparation as physical},
     documents::{
@@ -165,7 +166,10 @@ pub fn stage(frame: &Workspace, opened: &Open) -> Result<Staged, String> {
             .map(|n| format!("{prefix}-{n}"))
             .find(|id| !docs.iter().any(|d| d.id == *id))
             .ok_or("No intended-reference identity is available.")?;
-        let derived=original.derive_event(&opened.source.event_id,id,opened.target.clone(),"Checked source-coordinate substitution intent; reference only, no experimental outcome established").map_err(|e|e.to_string())?;
+        let derived={
+            let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::DomesticationIntent, opened.target.revision());
+            original.derive_event(&opened.source.event_id, id, opened.target.clone(), "Checked source-coordinate substitution intent; reference only, no experimental outcome established", analysis_origin)
+        }.map_err(|e|e.to_string())?;
         let binding = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),

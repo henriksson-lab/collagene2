@@ -1,5 +1,9 @@
 //! Saved reference documents are not stock: material must be reconstructed from
 //! the exact retained run and an uninterrupted name-only descendant path.
+use collagene_core::documents::{
+    history::transition::{AnalysisOrigin, AnalysisProducer},
+    reference_edit::Operation as Edit,
+};
 use collagene_core::{
     chemistry::{
         Strand, Terminus,
@@ -446,9 +450,14 @@ fn wrong_run_step_stale_event_and_unrelated_equal_reference_cannot_supply_materi
 fn name_only_descendants_are_allowed_but_reverted_real_edits_break_material_ancestry() {
     let committed = pcr();
     let (renamed, selection) = changed_named_output(&committed, |history| {
-        let mut name = history.molecule.clone();
-        name.name = "Renamed again".into();
-        history.commit(name, "Changed display name only").unwrap();
+        history
+            .commit(
+                vec![Edit::Rename {
+                    name: "Renamed again".into(),
+                }],
+                "Changed display name only",
+            )
+            .unwrap();
     });
     let before = run_lineage::workspace_fingerprint(&renamed).unwrap();
     let fresh = run_material::reconstruct(&renamed, &selection).unwrap();
@@ -461,21 +470,60 @@ fn name_only_descendants_are_allowed_but_reverted_real_edits_break_material_ance
     for metadata in [false, true] {
         let (changed, selection) = changed_named_output(&committed, |history| {
             let baseline = history.molecule.clone();
-            let altered = if metadata {
+            if metadata {
+                // A forged computational preview is retained as an unverified
+                // producer, never converted into a literal-reference edit.
                 let mut altered = baseline.clone();
                 altered
                     .metadata
                     .insert("operator-note".into(), "Temporary changed assertion".into());
-                altered
+                let origin = AnalysisOrigin::preview(
+                    AnalysisProducer::MaterialDerivation,
+                    altered.revision(),
+                );
+                history
+                    .commit_analysis(
+                        altered,
+                        "Unverified temporary metadata preview",
+                        origin,
+                        &[],
+                    )
+                    .unwrap();
+                let origin = AnalysisOrigin::preview(
+                    AnalysisProducer::MaterialDerivation,
+                    baseline.revision(),
+                );
+                history
+                    .commit_analysis(
+                        baseline,
+                        "Unverified preview reverted exactly to old reference",
+                        origin,
+                        &[],
+                    )
+                    .unwrap();
             } else {
-                baseline.replace(0, 1, "T").unwrap()
-            };
-            history
-                .commit(altered, "Real temporary sequence/metadata edit")
-                .unwrap();
-            history
-                .commit(baseline, "Reverted exactly to the old reference")
-                .unwrap();
+                let original_call = baseline.sequence.as_str()[..1].to_owned();
+                history
+                    .commit(
+                        vec![Edit::ReplaceSequence {
+                            start: 0,
+                            end: 1,
+                            replacement: "T".into(),
+                        }],
+                        "Real temporary literal sequence edit",
+                    )
+                    .unwrap();
+                history
+                    .commit(
+                        vec![Edit::ReplaceSequence {
+                            start: 0,
+                            end: 1,
+                            replacement: original_call,
+                        }],
+                        "Reverted literal sequence edit",
+                    )
+                    .unwrap();
+            }
         });
         assert_eq!(
             selection.event.revision,
@@ -563,8 +611,15 @@ fn documentary_origin_and_forged_preview_summary_do_not_promote_reference_only_o
     let (changed, selection) = changed_named_output(&committed, |history| {
         let mut reference = history.molecule.clone();
         reference.metadata.insert("duplex_model".into(), forged);
+        let origin =
+            AnalysisOrigin::preview(AnalysisProducer::MaterialDerivation, reference.revision());
         history
-            .commit(reference, "Added a plausible physical preview summary")
+            .commit_analysis(
+                reference,
+                "Added a plausible physical preview summary",
+                origin,
+                &[],
+            )
             .unwrap();
     });
     let before = run_lineage::workspace_fingerprint(&changed).unwrap();

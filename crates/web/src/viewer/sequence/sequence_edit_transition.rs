@@ -156,12 +156,20 @@ mod tests {
         text: &str,
     ) {
         let before = SourcePin::of(7, document);
-        let next = document.molecule.replace(start, end, text).unwrap();
-        let n = next.sequence.len() - (before.length - (end - start));
         document
-            .commit(next, "Local keyboard/clipboard edit")
+            .commit(
+                vec![
+                    collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                        start,
+                        end,
+                        replacement: text.into(),
+                    },
+                ],
+                "Local keyboard/clipboard edit",
+            )
             .unwrap();
         let after = SourcePin::of(7, document);
+        let n = after.length - (before.length - (end - start));
         tracker.record(EditTransition::attest(before, after, start, end, n).unwrap());
     }
     #[test]
@@ -219,7 +227,13 @@ mod tests {
         );
         other
             .commit(
-                other.molecule.replace(0, 0, "G").unwrap(),
+                vec![
+                    collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                        start: 0,
+                        end: 0,
+                        replacement: "G".into(),
+                    },
+                ],
                 "Other tab changed",
             )
             .unwrap();
@@ -238,7 +252,13 @@ mod tests {
             Decision::PreserveCaret(2)
         );
         d.commit(
-            d.molecule.replace(0, 0, "G").unwrap(),
+            vec![
+                collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                    start: 0,
+                    end: 0,
+                    replacement: "G".into(),
+                },
+            ],
             "External annotation/editor route",
         )
         .unwrap();
@@ -264,9 +284,12 @@ mod tests {
             Decision::Clear
         );
         let mut d = doc("same-content-events");
-        let initial = d.molecule.clone();
         d.commit_with_source_events(
-            initial,
+            vec![
+                collagene_core::documents::reference_edit::Operation::Rename {
+                    name: d.molecule.name.clone(),
+                },
+            ],
             "Explicit new event at equal content",
             &[d.head_event().into()],
         )
@@ -274,7 +297,11 @@ mod tests {
         let mut tracker = Tracker::new(Some(SourcePin::of(7, &d)));
         let before = SourcePin::of(7, &d);
         d.commit_with_source_events(
-            d.molecule.clone(),
+            vec![
+                collagene_core::documents::reference_edit::Operation::Rename {
+                    name: d.molecule.name.clone(),
+                },
+            ],
             "Another source event at equal content",
             &[d.head_event().into()],
         )
@@ -287,7 +314,13 @@ mod tests {
         let mut tracker = Tracker::new(Some(SourcePin::of(7, &d)));
         replace(&mut d, &mut tracker, 0, 0, "T");
         d.commit(
-            d.molecule.replace(0, 0, "G").unwrap(),
+            vec![
+                collagene_core::documents::reference_edit::Operation::ReplaceSequence {
+                    start: 0,
+                    end: 0,
+                    replacement: "G".into(),
+                },
+            ],
             "External intervening commit",
         )
         .unwrap();

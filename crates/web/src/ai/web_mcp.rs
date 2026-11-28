@@ -1,4 +1,6 @@
 //! Optional current-browser WebMCP read/navigation tools. No scientific or storage authority.
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::material::lineage::EventBinding;
 use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
@@ -280,8 +282,15 @@ mod tests {
     fn unsaved_edits_and_equal_sequence_new_events_are_distinct() {
         let mut doc = document();
         let original = pin(&doc, 3);
-        let next = doc.molecule.replace(0, 1, "T").unwrap();
-        doc.commit(next, "Unsaved edit").unwrap();
+        doc.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 0,
+                end: 1,
+                replacement: "T".into(),
+            }],
+            "Unsaved edit",
+        )
+        .unwrap();
         let changed = pin(&doc, 3);
         let (context, _) = execute(
             "collagene_current_context",
@@ -295,9 +304,15 @@ mod tests {
         let context: serde_json::Value = serde_json::from_str(&context).unwrap();
         assert_eq!(context["pin"], serde_json::to_value(&changed).unwrap());
         assert_eq!(context["selection"], serde_json::json!([0, 1]));
-        let next = doc.molecule.replace(0, 1, "A").unwrap();
-        doc.commit(next, "Restore literal sequence with a new event")
-            .unwrap();
+        doc.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 0,
+                end: 1,
+                replacement: "A".into(),
+            }],
+            "Restore literal sequence with a new event",
+        )
+        .unwrap();
         let restored = pin(&doc, 3);
         assert_eq!(original.source.revision, restored.source.revision);
         assert_ne!(original.source.event_id, restored.source.event_id);

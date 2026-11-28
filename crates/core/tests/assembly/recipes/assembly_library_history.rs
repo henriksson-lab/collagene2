@@ -1,4 +1,7 @@
 //! Recovery is raw editable data, atomically retained with one active draft.
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     cloning::assembly::library_history::{self as history, Impact},
     documents::workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
@@ -196,13 +199,32 @@ fn historical_exact_sources_survive_later_heads_but_equal_dna_never_proves_membe
     );
     let commit = history::install(w, record, draft(9, "after")).unwrap();
     let mut later = commit.workspace;
-    let molecule = Molecule::dna("edited later", "GGCC", Topology::Linear).unwrap();
+    let previous = later.revisions.get(&first.revision).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: "GGCC".into(),
+        },
+        Edit::Rename {
+            name: "edited later".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let molecule = Edit::apply_all(previous, &actions).unwrap();
     let rev = molecule.revision();
     let event = RevisionEvent::new(
         first.document_id.clone(),
         rev.clone(),
         vec![first.event_id.clone()],
         "later source edit",
+        Transition::ReferenceEdit {
+            source: first.clone(),
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     later.revisions.insert(rev.clone(), molecule);

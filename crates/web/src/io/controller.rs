@@ -1,3 +1,4 @@
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use collagene_core::documents::transfer;
 use collagene_core::formats::sequence as formats;
 use collagene_core::material::lineage::EventBinding;
@@ -565,7 +566,10 @@ impl ImportController {
             if docs.len()>=1000||docs.iter().map(|d|document_bytes(&d.molecule)).sum::<usize>().saturating_add(document_bytes(&molecule))>MAX_WORKSPACE_BYTES{return Err("This allele design exceeds the open-document budget.".into());}
             let source=docs.iter().find(|doc|format!("{}:{}:{}",workspace_epoch.get_untracked(),doc.id,doc.head_event())==identity).ok_or("The exact reference document event changed. Check the allele again.")?;
             let mut suffix=1usize;let id=loop{let id=format!("variant-design-{}-{suffix}",&source.head_revision()[..12]);if !docs.iter().any(|d|d.id==id){break id;}suffix+=1;};
-            let derived=source.derive_event(source.head_event(),id,molecule,"Selected-allele design preview; file evidence is unverified and confers no prepared chemistry").map_err(|e|e.to_string())?;
+            let derived={
+                let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::SelectedAllele, molecule.revision());
+                source.derive_event(source.head_event(), id, molecule, "Selected-allele design preview; file evidence is unverified and confers no prepared chemistry", analysis_origin)
+            }.map_err(|e|e.to_string())?;
             let mut staged=docs.clone();staged.push(derived);Ok(staged)
         })?;
                 let index = staged.len() - 1;

@@ -1,4 +1,5 @@
 use crate::platform::worker;
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use collagene_core::documents::transfer;
 use collagene_core::material::lineage::EventBinding;
 use collagene_core::protocol;
@@ -622,8 +623,10 @@ impl PcrController {
                             }
                             suffix += 1;
                         };
-                        let derived = source.derive_event(&choice.review.source.event_id,id,product,
-                        "Selected exact-PCR reference preview; ordered primers retained, physical chemistry and experimental success unverified")
+                        let derived = {
+                            let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::MaterialDerivation, product.revision());
+                            source.derive_event(&choice.review.source.event_id, id, product, "Selected exact-PCR reference preview; ordered primers retained, physical chemistry and experimental success unverified", analysis_origin)
+                        }
                         .map_err(|e|e.to_string())?;
                         product_event = Some(current_event_binding(&derived));
                         staged_active = staged_docs.len();
@@ -791,8 +794,10 @@ impl PcrController {
                         }
                         suffix += 1;
                     };
-                    let derived=source.derive_event(&opened.source.event_id,id,product,
-                "Selected intentional-mismatch PCR reference preview; no independent target or physical chemistry verification asserted")
+                    let derived={
+                        let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::MaterialDerivation, product.revision());
+                        source.derive_event(&opened.source.event_id, id, product, "Selected intentional-mismatch PCR reference preview; no independent target or physical chemistry verification asserted", analysis_origin)
+                    }
                 .map_err(|e|e.to_string())?;
                     product_event = Some(current_event_binding(&derived));
                     staged_active = staged_docs.len();

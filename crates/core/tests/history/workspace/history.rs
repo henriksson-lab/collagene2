@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::documents::{
     history::DocumentHistory,
     workspace::{self, RevisionEvent, Workspace},
@@ -28,9 +29,11 @@ fn archive(docs: &[DocumentHistory]) -> Workspace {
 fn duplicate_content_commits_retain_exact_navigation_events_after_native_reopen() {
     let mut d = DocumentHistory::new("doc", m("A")).unwrap();
     let root = d.head_event().to_owned();
-    d.commit(m("B"), "rename").unwrap();
+    d.commit(vec![Edit::Rename { name: "B".into() }], "rename")
+        .unwrap();
     let middle = d.head_event().to_owned();
-    d.commit(m("A"), "return to A").unwrap();
+    d.commit(vec![Edit::Rename { name: "A".into() }], "return to A")
+        .unwrap();
     let returned = d.head_event().to_owned();
     assert_ne!(root, returned);
     assert_eq!(d.event_count(), 3);
@@ -52,12 +55,15 @@ fn duplicate_content_commits_retain_exact_navigation_events_after_native_reopen(
 #[test]
 fn editing_after_undo_retains_the_old_branch_and_checkout_is_reversible() {
     let mut d = DocumentHistory::new("doc", m("A")).unwrap();
-    d.commit(m("B"), "B").unwrap();
+    d.commit(vec![Edit::Rename { name: "B".into() }], "B")
+        .unwrap();
     let b = d.head_event().to_owned();
-    d.commit(m("C"), "C").unwrap();
+    d.commit(vec![Edit::Rename { name: "C".into() }], "C")
+        .unwrap();
     let c = d.head_event().to_owned();
     d.undo().unwrap();
-    d.commit(m("D"), "D").unwrap();
+    d.commit(vec![Edit::Rename { name: "D".into() }], "D")
+        .unwrap();
     let current = d.head_event().to_owned();
     assert!(!d.can_redo());
     assert_eq!(d.event_count(), 4);
@@ -83,7 +89,13 @@ fn navigation_window_does_not_destroy_older_revision_evidence() {
     let mut d = DocumentHistory::new("doc", m("initial")).unwrap();
     let first = d.head_event().to_owned();
     for i in 0..105 {
-        d.commit(m(&format!("state_{i}")), "rename").unwrap();
+        d.commit(
+            vec![Edit::Rename {
+                name: format!("state_{i}"),
+            }],
+            "rename",
+        )
+        .unwrap();
     }
     assert_eq!(d.event_count(), 106);
     let w = archive(&[d.clone()]);
@@ -96,25 +108,55 @@ fn navigation_window_does_not_destroy_older_revision_evidence() {
 fn invalid_commits_are_atomic_and_external_unrecorded_changes_are_detected() {
     let mut d = DocumentHistory::new("doc", m("initial")).unwrap();
     let head = d.head_event().to_owned();
-    let mut invalid = m("invalid");
-    invalid.features.push(Feature {
+    let invalid = Feature {
         kind: "misc_feature".into(),
         location: Location::range(0, 99),
         qualifiers: vec![],
         needs_review: false,
-    });
-    assert!(d.commit(invalid, "bad").is_err());
+    };
+    assert!(
+        d.commit(
+            vec![Edit::SetFeature {
+                index: None,
+                feature: invalid
+            }],
+            "bad"
+        )
+        .is_err()
+    );
     assert_eq!(d.head_event(), head);
     assert_eq!(d.event_count(), 1);
     assert!(!d.can_undo());
     d.molecule.name = "unrecorded".into();
-    assert!(d.commit(m("next"), "edit").is_err());
+    assert!(
+        d.commit(
+            vec![Edit::Rename {
+                name: "next".into()
+            }],
+            "edit"
+        )
+        .is_err()
+    );
 }
 #[test]
 fn native_navigation_rejects_missing_event_ids_instead_of_inventing_recovery_roots() {
     let mut document = DocumentHistory::new("exact", m("root")).unwrap();
-    document.commit(m("middle"), "first edit").unwrap();
-    document.commit(m("last"), "second edit").unwrap();
+    document
+        .commit(
+            vec![Edit::Rename {
+                name: "middle".into(),
+            }],
+            "first edit",
+        )
+        .unwrap();
+    document
+        .commit(
+            vec![Edit::Rename {
+                name: "last".into(),
+            }],
+            "second edit",
+        )
+        .unwrap();
     document.undo().unwrap();
     let current = archive(&[document]);
     assert_eq!(current.documents[0].undo_events.len(), 1);
@@ -161,6 +203,13 @@ fn shared_revisions_and_cross_document_parents_survive_restore_and_new_edits() {
         w.documents[1].head.clone(),
         vec![origin.clone()],
         "Derived reference snapshot",
+        collagene_core::documents::history::transition::Transition::Fork {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: w.documents[0].id.clone(),
+                event_id: origin.clone(),
+                revision: w.documents[0].head.clone(),
+            },
+        },
     )
     .unwrap();
     w.documents[1].head_event = Some(derived.id.clone());
@@ -168,7 +217,14 @@ fn shared_revisions_and_cross_document_parents_survive_restore_and_new_edits() {
     w.validate().unwrap();
     let mut docs = DocumentHistory::restore_all(&w).unwrap();
     assert_eq!(archive(&docs).revisions.len(), 1);
-    docs[0].commit(m("changed"), "edit").unwrap();
+    docs[0]
+        .commit(
+            vec![Edit::Rename {
+                name: "changed".into(),
+            }],
+            "edit",
+        )
+        .unwrap();
     let restored = archive(&docs);
     assert!(
         restored
@@ -183,9 +239,13 @@ fn shared_revisions_and_cross_document_parents_survive_restore_and_new_edits() {
 fn exact_navigation_and_cross_document_fork_do_not_conflate_repeated_content() {
     let mut source = DocumentHistory::new("source", m("A")).unwrap();
     let root = source.head_event().to_owned();
-    source.commit(m("B"), "rename").unwrap();
+    source
+        .commit(vec![Edit::Rename { name: "B".into() }], "rename")
+        .unwrap();
     let middle = source.head_event().to_owned();
-    source.commit(m("A"), "return").unwrap();
+    source
+        .commit(vec![Edit::Rename { name: "A".into() }], "return")
+        .unwrap();
     let returned = source.head_event().to_owned();
     assert_ne!(root, returned);
     assert_eq!(

@@ -217,7 +217,14 @@ impl ReferenceController {
                 let destination = staged_docs
                     .get_mut(index)
                     .ok_or("The destination is unavailable.")?;
-                destination.commit_with_source_events(value.report.product.clone(),
+                destination.commit_with_source_events(vec![collagene_core::documents::reference_edit::Operation::PasteReference {
+                    source: request.source,
+                    source_event: opened.copied.source.clone(),
+                    selection: request.selection,
+                    fragment_revision: request.fragment_revision,
+                    start: request.start,
+                    end: request.end,
+                }],
             "Annotated reference paste from an exact source event; no physical cloning reaction is asserted",
             &[opened.copied.source.event_id.clone()]).map_err(|e|e.to_string())?;
                 if staged_docs.len() > 1000

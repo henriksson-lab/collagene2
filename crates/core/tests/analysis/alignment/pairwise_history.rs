@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     alignment::{
         AlignmentOptions,
@@ -41,9 +42,22 @@ fn fixture() -> (Workspace, EventBinding, EventBinding, Report) {
 }
 fn advance_reference(frame: &Workspace) -> Workspace {
     let mut docs = DocumentHistory::restore_all(frame).unwrap();
+    let edit_end = docs[0].molecule.sequence.len();
     docs[0]
         .commit(
-            Molecule::dna("later reference", "TCGTTAGC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TCGTTAGC".into(),
+                },
+                Edit::Rename {
+                    name: "later reference".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Later reference edit",
         )
         .unwrap();

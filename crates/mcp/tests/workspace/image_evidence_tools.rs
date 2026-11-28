@@ -1,5 +1,6 @@
 //! Actual in-memory MCP SDK calls; no HTTP listener, browser or filesystem tool.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -282,9 +283,22 @@ async fn image_cas_and_association_refusals_publish_nothing_and_old_revisions_re
     .await;
     let mut changed = restore(&c, &next).await;
     let mut histories = DocumentHistory::restore_all(&changed).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
         .commit(
-            Molecule::dna("edited", "ACGTTGCC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "ACGTTGCC".into(),
+                },
+                Edit::Rename {
+                    name: "edited".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Sequence edit",
         )
         .unwrap();

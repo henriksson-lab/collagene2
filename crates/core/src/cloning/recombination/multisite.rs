@@ -262,6 +262,7 @@ fn document(
     components: &[ComponentIdentity],
     identities: &[SourceIdentity],
     work: &mut adapter::Work,
+    capture: &mut Option<adapter::native::Capture>,
 ) -> Result<ProductDocument, Error> {
     // Reserve every source's mapping/copy budget before cloning any DNA/features.
     let mut mappings = Vec::with_capacity(inputs.len());
@@ -331,6 +332,19 @@ fn document(
                         .iter()
                         .filter(|f| f.needs_review)
                         .count();
+                    if let Some(capture) = capture
+                        .as_mut()
+                        .filter(|capture| capture.selection == selection)
+                    {
+                        capture.append(
+                            input,
+                            &segments,
+                            &projection,
+                            molecule.features.len(),
+                            &request.annotation_limits,
+                            work,
+                        )?;
+                    }
                     molecule.features.extend(projection.features);
                     (
                         count,
@@ -341,6 +355,12 @@ fn document(
                     )
                 }
                 Err(error) => {
+                    if let Some(capture) = capture
+                        .as_mut()
+                        .filter(|capture| capture.selection == selection)
+                    {
+                        capture.complete = false;
+                    }
                     let mut features = source.molecule.features.clone();
                     for feature in &mut features {
                         feature.needs_review = true;
@@ -410,6 +430,13 @@ fn document(
     })
 }
 pub fn simulate(inputs: &[reference::Input], request: &Request) -> Result<Batch, Error> {
+    simulate_native(inputs, request, &mut None)
+}
+fn simulate_native(
+    inputs: &[reference::Input],
+    request: &Request,
+    capture: &mut Option<adapter::native::Capture>,
+) -> Result<Batch, Error> {
     preflight(inputs, request)?;
     let raw = multisite::recombine(inputs, &request.reaction)?;
     let identities = sources(inputs);
@@ -433,6 +460,7 @@ pub fn simulate(inputs: &[reference::Input], request: &Request) -> Result<Batch,
                 &components,
                 &identities,
                 &mut work,
+                capture,
             )?);
         }
     }
@@ -445,7 +473,6 @@ pub fn product(
     request: &Request,
     selection: &Selection,
 ) -> Result<ProductDocument, Error> {
-    preflight(inputs, request)?;
     if selection.batch_revision != revision(inputs, request)? {
         return Err(bad(
             "selection belongs to a different ordered source/profile/options request",
@@ -453,6 +480,23 @@ pub fn product(
     }
     simulate(inputs, request)?.selected(selection)
 }
+pub(crate) fn simulate_with_projections(
+    inputs: &[reference::Input],
+    request: &Request,
+    selection: &Selection,
+) -> Result<
+    (
+        Batch,
+        Option<Vec<crate::verification::projection::SourceProjection>>,
+    ),
+    Error,
+> {
+    let mut capture = Some(adapter::native::Capture::new(selection.clone()));
+    let batch = simulate_native(inputs, request, &mut capture)?;
+    let capture = capture.unwrap();
+    Ok((batch, capture.complete.then_some(capture.projections)))
+}
+
 fn target_matches(product: &Molecule, target: &Molecule) -> bool {
     product.topology == target.topology
         && product.sequence.len() == target.sequence.len()

@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{history::DocumentHistory, workspace::Workspace},
     material::{
@@ -138,8 +139,26 @@ fn edited_output_is_preserved_and_original_product_fork_is_reused() {
     let mut changed = c.workspace.clone();
     let mut histories = DocumentHistory::restore_all(&changed).unwrap();
     let h = histories.iter_mut().find(|h| h.id == old).unwrap();
-    let edited = Molecule::dna("user changed construct", "TTTT", Topology::Linear).unwrap();
-    h.commit(edited.clone(), "User changed DNA").unwrap();
+    let edit_end = h.molecule.sequence.len();
+    h.commit(
+        vec![
+            Edit::ReplaceSequence {
+                start: 0,
+                end: edit_end,
+                replacement: "TTTT".into(),
+            },
+            Edit::Rename {
+                name: "user changed construct".into(),
+            },
+            Edit::SetTopology {
+                topology: Topology::Linear,
+            },
+        ],
+        "User changed DNA",
+    )
+    .unwrap();
+    let edited = h.molecule.clone();
+    assert_eq!(edited.sequence.as_str(), "TTTT");
     changed.documents.clear();
     changed.history.clear();
     for h in &histories {
@@ -230,10 +249,27 @@ fn historical_source_binding_survives_source_head_edits_and_context_changes() {
         finalize_revision(&w, &p, target.clone(), inputs.clone(), &Options::default()).unwrap();
     let mut changed = w.clone();
     let mut histories = DocumentHistory::restore_all(&changed).unwrap();
-    let edited = Molecule::dna("advanced source", "CCCC", Topology::Linear).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
-        .commit(edited.clone(), "User edit after selecting source")
+        .commit(
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "CCCC".into(),
+                },
+                Edit::Rename {
+                    name: "advanced source".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
+            "User edit after selecting source",
+        )
         .unwrap();
+    let edited = histories[0].molecule.clone();
+    assert_eq!(edited.sequence.as_str(), "CCCC");
     changed.documents.clear();
     changed.history.clear();
     for h in &histories {

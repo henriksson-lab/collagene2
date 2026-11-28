@@ -1,6 +1,7 @@
 //! Atomic selected-row release over existing native finalization.
 //! Historical batch summaries never authorize outputs. Each row is compiled afresh
 //! and cloning_outputs::finalize performs the only scientific verifier pass here.
+use crate::documents::history::transition::{AnalysisOrigin, AnalysisProducer, Transition};
 use crate::{
     documents::workspace::{
         self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument,
@@ -265,11 +266,17 @@ fn target_event(
         "Declared combinatorial target for {}; original source expectation only, not a physical product or experimental confirmation",
         resolved.construct_id
     );
+    let origin =
+        AnalysisOrigin::preview(AnalysisProducer::AssemblyIntent, expected_revision.clone());
     // Historical exact targets may be reused without rewinding their edited heads.
     if let Some(event) = workspace.history.iter().find(|event| {
         event.revision == expected_revision
             && event.parents == parents
             && event.operation == operation
+            && event.transition
+                == (Transition::Analysis {
+                    origin: origin.clone(),
+                })
     }) {
         return Ok(EventBinding {
             document_id: event.document_id.clone(),
@@ -299,7 +306,13 @@ fn target_event(
         }
         id = format!("{base}-{suffix}");
     }
-    let event = RevisionEvent::new(id.clone(), expected_revision.clone(), parents, operation)?;
+    let event = RevisionEvent::new(
+        id.clone(),
+        expected_revision.clone(),
+        parents,
+        operation,
+        Transition::Analysis { origin },
+    )?;
     let target = EventBinding {
         document_id: id.clone(),
         event_id: event.id.clone(),
@@ -783,6 +796,35 @@ impl Manifest {
                 design::resolve_event(workspace, &input.event)?;
             }
             design::resolve_event(workspace, &row.target)?;
+            if matches!(
+                &declared.target,
+                design::TargetDeclaration::OriginalRegions { .. }
+            ) {
+                let event = workspace
+                    .history
+                    .iter()
+                    .find(|event| event.id == row.target.event_id)
+                    .ok_or_else(|| bad("declared target event unavailable"))?;
+                let mut parents = Vec::new();
+                for input in &row.inputs {
+                    if !parents.contains(&input.event.event_id) {
+                        parents.push(input.event.event_id.clone());
+                    }
+                }
+                if event.parents != parents
+                    || event.transition
+                        != (Transition::Analysis {
+                            origin: AnalysisOrigin::preview(
+                                AnalysisProducer::AssemblyIntent,
+                                row.target.revision.clone(),
+                            ),
+                        })
+                {
+                    return Err(bad(
+                        "declared target typed intent producer or exact source parents differ",
+                    ));
+                }
+            }
             design::resolve_event(workspace, &row.output.construct)?;
             let asset = workspace
                 .attachments

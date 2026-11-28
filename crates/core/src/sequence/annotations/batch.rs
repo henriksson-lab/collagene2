@@ -66,6 +66,29 @@ fn color_key(key: &str) -> bool {
 /// reinterpreted as preserved biological calls. Type and color edits leave other
 /// qualifiers intact.
 pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
+    apply_native(source, request, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn apply_with_projection(
+    source: &Molecule,
+    request: &Request,
+) -> Result<(Molecule, crate::sequence::editing::AnnotationIdentity), Error> {
+    let (molecule, identity) = apply_native(source, request, true)?;
+    Ok((
+        molecule,
+        identity.ok_or_else(|| bad("native annotation receipt unavailable"))?,
+    ))
+}
+fn apply_native(
+    source: &Molecule,
+    request: &Request,
+    capture: bool,
+) -> Result<
+    (
+        Molecule,
+        Option<crate::sequence::editing::AnnotationIdentity>,
+    ),
+    Error,
+> {
     collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
     if request.source_revision.len() != 64
@@ -115,7 +138,14 @@ pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
         return Err(bad("source revision changed"));
     }
     let mut result = source.clone();
+    let mut identity = capture
+        .then(|| crate::sequence::editing::AnnotationIdentity::retained(source.features.len()));
     for &index in &request.indices {
+        if request.kind.is_some() || request.flip_strand {
+            if let Some(identity) = &mut identity {
+                identity.reassign(index);
+            }
+        }
         let feature = &mut result.features[index];
         if let Some(kind) = &request.kind {
             feature.kind.clone_from(kind);
@@ -139,7 +169,7 @@ pub fn apply(source: &Molecule, request: &Request) -> Result<Molecule, Error> {
     }
     collagene_model::bounds::model_preflight(&[&result])?;
     result.validate()?;
-    Ok(result)
+    Ok((result, identity))
 }
 
 fn qualifier_rgb(feature: &Feature, name: &str) -> Result<Option<[u8; 3]>, ()> {

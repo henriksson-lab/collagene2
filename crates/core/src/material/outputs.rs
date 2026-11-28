@@ -2,6 +2,7 @@
 use crate::{
     documents::{
         history::DocumentHistory,
+        reference_edit::Operation as ReferenceEdit,
         workspace::{self, Workspace, WorkspaceAttachment},
     },
     material::lineage::{self as run_lineage, EventBinding, InputEventBinding, RunReceipt},
@@ -273,9 +274,12 @@ pub fn finalize(
                 suffix += 1;
             }
             let mut fork = h.fork_event(&final_product.event_id, final_id.clone())?;
-            let mut named = fork.molecule.clone();
-            named.name = options.name.clone();
-            fork.commit(named, "Name finalized assembly construct")?;
+            fork.commit(
+                vec![ReferenceEdit::Rename {
+                    name: options.name.clone(),
+                }],
+                "Name finalized assembly construct",
+            )?;
             histories.push(fork);
             next.documents.clear();
             next.history.clear();
@@ -289,9 +293,12 @@ pub fn finalize(
             .iter_mut()
             .find(|h| h.id == final_id)
             .ok_or_else(|| bad("missing product history"))?;
-        let mut named = h.molecule.clone();
-        named.name = options.name.clone();
-        h.commit(named, "Name finalized assembly construct")?;
+        h.commit(
+            vec![ReferenceEdit::Rename {
+                name: options.name.clone(),
+            }],
+            "Name finalized assembly construct",
+        )?;
         next.documents.clear();
         next.history.clear();
         for h in &histories {

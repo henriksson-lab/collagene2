@@ -1,4 +1,6 @@
 //! Documentary numeric declarations with exact native event identity.
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::{
     documents::workspace::Workspace,
     material::lineage::{EventBinding, InputEventBinding},
@@ -1076,9 +1078,13 @@ mod tests {
             revision: alias.head_revision().into(),
         };
         for d in docs.iter_mut().take(2) {
-            let mut private = d.molecule.clone();
-            private.name.push_str(" private working head");
-            d.commit(private, "Unpublished working branch").unwrap();
+            d.commit(
+                vec![ReferenceEdit::Rename {
+                    name: format!("{} private working head", d.molecule.name),
+                }],
+                "Unpublished working branch",
+            )
+            .unwrap();
         }
         frame.documents.clear();
         frame.history.clear();

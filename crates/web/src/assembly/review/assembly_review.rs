@@ -1,5 +1,8 @@
 //! Atomic installation of an intended reference and its proposed preparation.
 //! Exact source events are checked; no scientific success is restored or inferred.
+use collagene_core::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::{
     cloning::assembly::intent::{self as assembly_intent, Report},
     documents::{history::DocumentHistory, transfer::Candidate, workspace::Workspace},
@@ -236,7 +239,10 @@ pub fn stage(
             .map(|n| format!("{prefix}-{n}"))
             .find(|id| !docs.iter().any(|d| d.id == *id))
             .ok_or("No assembly document identity is available.")?;
-        let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,"Declared assembly design intent from pinned source regions; expected reference only, preparation and experimental outcome unverified").map_err(|e|e.to_string())?;
+        let derived={
+            let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::AssemblyIntent, fresh.target.revision());
+            DocumentHistory::derive_from_events(&parents, id, fresh.target, "Declared assembly design intent from pinned source regions; expected reference only, preparation and experimental outcome unverified", analysis_origin)
+        }.map_err(|e|e.to_string())?;
         let target = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),
@@ -366,7 +372,10 @@ fn stage_edited(
             .map(|n| format!("{prefix}-{n}"))
             .find(|id| !docs.iter().any(|d| d.id == *id))
             .ok_or("No assembly document identity is available.")?;
-        let derived=DocumentHistory::derive_from_events(&parents,id,fresh.target,"Declared assembly design intent from pinned source regions and explicit junction edits; synthetic junction bases are design intent, not observed DNA or verified physical preparation").map_err(|e|e.to_string())?;
+        let derived={
+            let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::AssemblyIntent, fresh.target.revision());
+            DocumentHistory::derive_from_events(&parents, id, fresh.target, "Declared assembly design intent from pinned source regions and explicit junction edits; synthetic junction bases are design intent, not observed DNA or verified physical preparation", analysis_origin)
+        }.map_err(|e|e.to_string())?;
         let target = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),
@@ -518,7 +527,10 @@ fn stage_internal_edits(
             .map(|n| format!("{prefix}-{n}"))
             .find(|id| !docs.iter().any(|d| d.id == *id))
             .ok_or("No assembly document identity is available.")?;
-        let derived=DocumentHistory::derive_from_events(&parents,id,fresh_target,"Declared assembly design intent from pinned source regions and explicit junction edits and literal internal edits; declared bases are design intent, not observed DNA or verified physical preparation").map_err(|e|e.to_string())?;
+        let derived={
+            let analysis_origin = AnalysisOrigin::preview(AnalysisProducer::AssemblyIntent, fresh_target.revision());
+            DocumentHistory::derive_from_events(&parents, id, fresh_target, "Declared assembly design intent from pinned source regions and explicit junction edits and literal internal edits; declared bases are design intent, not observed DNA or verified physical preparation", analysis_origin)
+        }.map_err(|e|e.to_string())?;
         let target = EventBinding {
             document_id: derived.id.clone(),
             event_id: derived.head_event().into(),
@@ -1281,7 +1293,11 @@ mod tests {
             .unwrap();
         source
             .commit(
-                source.molecule.replace(0, 1, "T").unwrap(),
+                vec![ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 1,
+                    replacement: "T".into(),
+                }],
                 "Changed original after inverse-PCR design",
             )
             .unwrap();
@@ -1335,12 +1351,23 @@ mod tests {
         let original = intended.molecule.clone();
         intended
             .commit(
-                original.replace(0, 1, "T").unwrap(),
+                vec![ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 1,
+                    replacement: "T".into(),
+                }],
                 "Temporary target edit",
             )
             .unwrap();
         intended
-            .commit(original, "Reverted DNA in a distinct target event")
+            .commit(
+                vec![ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 1,
+                    replacement: original.sequence.as_str()[..1].into(),
+                }],
+                "Reverted DNA in a distinct target event",
+            )
             .unwrap();
         assert_eq!(intended.head_revision(), target.revision);
         let next = EventBinding {
@@ -1419,9 +1446,15 @@ mod tests {
     fn a_pinned_historical_source_is_resolved_without_rewinding_its_head() {
         let (mut frame, intent, bindings, candidate) = fixture();
         let mut docs = DocumentHistory::restore_all(&frame).unwrap();
-        let edited = docs[0].molecule.replace(0, 1, "T").unwrap();
         docs[0]
-            .commit(edited, "Edited after selecting assembly region")
+            .commit(
+                vec![ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 1,
+                    replacement: "T".into(),
+                }],
+                "Edited after selecting assembly region",
+            )
             .unwrap();
         let advanced = docs[0].head_revision().to_owned();
         frame.documents.clear();

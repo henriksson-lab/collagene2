@@ -2,7 +2,9 @@
 use super::{
     ENGINE_VERSION,
     pcr::project_pcr_annotations,
-    projection::{project_into, region_map, reverse_reference_map},
+    projection::{
+        ProjectedDocument, ReferenceProjection, project_into, region_map, reverse_reference_map,
+    },
 };
 use crate::{
     chemistry::{self, Duplex},
@@ -61,7 +63,7 @@ pub(crate) fn repaired_document(
     report: &chemistry::EndRepairReport,
     name: String,
     findings: &mut Vec<String>,
-) -> Result<Molecule, Error> {
+) -> Result<ProjectedDocument, Error> {
     let mut product = report.duplex.molecule(name)?;
     let map = report
         .mappings
@@ -78,7 +80,7 @@ pub(crate) fn repaired_document(
             reverse: m.reverse,
         })
         .collect::<Vec<_>>();
-    project_into(source, &map, &mut product, findings)?;
+    let native = project_into(source, &map, &mut product, findings)?;
     carry_unmapped_evidence(source, &mut product);
     product
         .metadata
@@ -90,7 +92,20 @@ pub(crate) fn repaired_document(
         .metadata
         .insert("end_repair:engine_version".into(), ENGINE_VERSION.into());
     product.validate()?;
-    Ok(product)
+    let introduced = report
+        .mappings
+        .iter()
+        .filter(|m| m.product_strand == chemistry::Strand::Top && m.synthesized)
+        .map(|m| (m.product_start, m.product_end))
+        .collect();
+    Ok(ProjectedDocument {
+        molecule: product,
+        projections: vec![ReferenceProjection {
+            map,
+            native,
+            introduced,
+        }],
+    })
 }
 /// Standalone preview reconstructs the digest rather than accepting an imported
 /// duplex summary. The returned molecule is reference/evidence, not physical authority.
@@ -147,7 +162,8 @@ pub fn simulate_end_repair(
         &repair,
         format!("{}_repaired_{}", source.name, fragment_index + 1),
         &mut findings,
-    )?;
+    )?
+    .molecule;
     molecule.metadata.insert(
         "end_repair:original_source_revision".into(),
         source.revision(),
@@ -204,7 +220,7 @@ pub(super) fn tailed_document(
     report: &crate::cloning::ligation::tailing::TailingReport,
     name: String,
     findings: &mut Vec<String>,
-) -> Result<Molecule, Error> {
+) -> Result<ProjectedDocument, Error> {
     let mut product = report.duplex.molecule(name)?;
     let maps = report
         .mappings
@@ -221,7 +237,7 @@ pub(super) fn tailed_document(
             reverse: m.reverse,
         })
         .collect::<Vec<_>>();
-    project_into(source, &maps, &mut product, findings)?;
+    let native = project_into(source, &maps, &mut product, findings)?;
     carry_unmapped_evidence(source, &mut product);
     product
         .metadata
@@ -233,7 +249,20 @@ pub(super) fn tailed_document(
         .metadata
         .insert("tailing:engine_version".into(), ENGINE_VERSION.into());
     product.validate()?;
-    Ok(product)
+    let introduced = report
+        .additions
+        .iter()
+        .filter(|addition| addition.strand == chemistry::Strand::Top)
+        .map(|addition| (addition.product_start, addition.product_end))
+        .collect();
+    Ok(ProjectedDocument {
+        molecule: product,
+        projections: vec![ReferenceProjection {
+            map: maps,
+            native,
+            introduced,
+        }],
+    })
 }
 /// Readonly evidence reconstructed from an explicit digest or unique exact PCR.
 /// The returned molecule metadata never establishes physical authority in a later plan.
@@ -296,7 +325,8 @@ pub fn simulate_tailing(
                     &report,
                     "Blunted tailing substrate".into(),
                     &mut findings,
-                )?;
+                )?
+                .molecule;
                 (repaired, report.duplex)
             } else {
                 (molecule, fragment.duplex.clone())
@@ -333,7 +363,8 @@ pub fn simulate_tailing(
         &tailing,
         format!("{}_{}-tailed", source.name, base.as_str()),
         &mut findings,
-    )?;
+    )?
+    .molecule;
     molecule
         .metadata
         .insert("tailing:original_source_revision".into(), source.revision());
@@ -420,36 +451,28 @@ pub(crate) fn annealed_document_inner(
     report: &chemistry::AnnealReport,
     candidate_index: usize,
     findings: &mut Vec<String>,
-) -> Result<Molecule, Error> {
+) -> Result<ProjectedDocument, Error> {
     let candidate = report
         .candidates
         .get(candidate_index)
         .ok_or_else(|| Error::Format("selected annealing candidate is unavailable".into()))?;
     let mut product = candidate.duplex.molecule("Annealed oligos")?;
-    project_into(
-        top,
-        &[MappingSegment {
-            source_start: 0,
-            source_end: top.sequence.len(),
-            destination_start: 0,
-            reverse: false,
-        }],
-        &mut product,
-        findings,
-    )?;
+    let top_map = vec![MappingSegment {
+        source_start: 0,
+        source_end: top.sequence.len(),
+        destination_start: 0,
+        reverse: false,
+    }];
+    let top_native = project_into(top, &top_map, &mut product, findings)?;
     let end = candidate.duplex.bottom_start + bottom.sequence.len() as i64;
-    project_into(
-        bottom,
-        &reverse_reference_map(
-            bottom.sequence.len(),
-            end,
-            0,
-            product.sequence.len(),
-            Topology::Linear,
-        )?,
-        &mut product,
-        findings,
+    let bottom_map = reverse_reference_map(
+        bottom.sequence.len(),
+        end,
+        0,
+        product.sequence.len(),
+        Topology::Linear,
     )?;
+    let bottom_native = project_into(bottom, &bottom_map, &mut product, findings)?;
     carry_unmapped_evidence(top, &mut product);
     carry_unmapped_evidence(bottom, &mut product);
     product
@@ -466,7 +489,21 @@ pub(crate) fn annealed_document_inner(
         .insert("anneal:engine_version".into(), ENGINE_VERSION.into());
     product.validate()?;
     crate::protocol::save_document(&product)?;
-    Ok(product)
+    Ok(ProjectedDocument {
+        molecule: product,
+        projections: vec![
+            ReferenceProjection {
+                map: top_map,
+                native: top_native,
+                introduced: vec![],
+            },
+            ReferenceProjection {
+                map: bottom_map,
+                native: bottom_native,
+                introduced: vec![],
+            },
+        ],
+    })
 }
 /// Reconstruct standalone read-only preview evidence; no imported report can
 /// provide physical authority or edited annotation coordinates.
@@ -495,4 +532,135 @@ pub fn annealed_document(
         candidate_index,
         &mut Vec::new(),
     )
+    .map(|projected| projected.molecule)
+}
+
+#[cfg(test)]
+mod receipt_tests {
+    use super::*;
+    use collagene_model::{Feature, Location};
+    fn annotate(source: &mut Molecule, label: &str) {
+        source.features.push(Feature {
+            kind: "misc_feature".into(),
+            location: Location::range(0, source.sequence.len()),
+            qualifiers: vec![("label".into(), Some(label.into()))],
+            needs_review: false,
+        });
+    }
+    #[test]
+    fn repair_and_tail_receipts_bind_actual_retained_maps_and_top_synthesis() {
+        // A single cut of this circular substrate creates TWO known cut
+        // termini. A linear upstream fragment would retain its unknown outer
+        // end, and repairing the cut end must not establish that outer3OH.
+        let source = Molecule::dna(
+            "Literal circular EcoRI substrate",
+            "AAGAATTCTT",
+            Topology::Circular,
+        )
+        .unwrap();
+        let fragment = chemistry::digest(
+            &Duplex::from_molecule(&source).unwrap(),
+            &[analysis::starter_enzymes()
+                .into_iter()
+                .find(|e| e.name == "EcoRI")
+                .unwrap()],
+        )
+        .unwrap()
+        .remove(0);
+        // Motif starts2; EcoRI cuts original top3/bottom7. The linearized
+        // top is source[3:] + source[:3], with a four-base5′ stagger.
+        assert_eq!(fragment.top_start, 3);
+        assert_eq!(fragment.duplex.top.as_str(), "AATTCTTAAG");
+        assert_eq!(fragment.duplex.bottom_start, 4);
+        assert_eq!(fragment.duplex.left, chemistry::Terminus::CLEAVED);
+        assert_eq!(fragment.duplex.right, chemistry::Terminus::CLEAVED);
+        let mut intermediate = fragment.duplex.molecule("Actual cut intermediate").unwrap();
+        annotate(&mut intermediate, "Retained top");
+        let repair =
+            chemistry::repair_ends(&fragment.duplex, chemistry::EndRepairMethod::Blunt).unwrap();
+        let repaired =
+            repaired_document(&intermediate, &repair, "Actual repair".into(), &mut vec![]).unwrap();
+        assert_eq!(repaired.projections.len(), 1);
+        let synthesized = repair
+            .mappings
+            .iter()
+            .filter(|m| m.product_strand == chemistry::Strand::Top && m.synthesized)
+            .map(|m| (m.product_start, m.product_end))
+            .collect::<Vec<_>>();
+        assert_eq!(repaired.projections[0].introduced, synthesized);
+        assert!(
+            !synthesized.is_empty(),
+            "literal staggered circular EcoRI fragment requires top fill-in"
+        );
+        assert_eq!(
+            repaired.projections[0]
+                .native
+                .projection
+                .source_feature_indices,
+            vec![0]
+        );
+        // The right-hand bottom overhang templates AATT at displayed top
+        // positions10..14; repair retains the genuinely known cut-end3OHs.
+        assert_eq!(synthesized, [(10, 14)]);
+        assert_eq!(repair.duplex.top.as_str(), "AATTCTTAAGAATT");
+        assert_eq!(repair.duplex.left, chemistry::Terminus::CLEAVED);
+        assert_eq!(repair.duplex.right, chemistry::Terminus::CLEAVED);
+        let tail = crate::cloning::ligation::tailing::tail_blunt_duplex(
+            &repair.duplex,
+            crate::cloning::ligation::tailing::TailingBase::A,
+        )
+        .unwrap();
+        let tailed =
+            tailed_document(&repaired.molecule, &tail, "Actual tail".into(), &mut vec![]).unwrap();
+        assert_eq!(tailed.projections.len(), 1);
+        assert_eq!(
+            tailed.projections[0].introduced,
+            vec![(repair.duplex.top.len(), repair.duplex.top.len() + 1)]
+        );
+        for (feature, index) in tailed.projections[0]
+            .native
+            .projection
+            .features
+            .iter()
+            .zip(&tailed.projections[0].native.destination_feature_indices)
+        {
+            assert_eq!(feature, &tailed.molecule.features[*index]);
+        }
+    }
+    #[test]
+    fn annealing_receipts_keep_top_then_bottom_source_ordinals_from_native_projection() {
+        let mut top = Molecule::dna("Top oligo", "ACGTTGCA", Topology::Linear).unwrap();
+        let mut bottom = Molecule::dna("Bottom oligo", "TGCAACGT", Topology::Linear).unwrap();
+        annotate(&mut top, "Top annotation");
+        annotate(&mut bottom, "Bottom annotation");
+        let mut options = chemistry::AnnealOptions::default();
+        options.min_paired_bases = 8;
+        let preview = simulate_oligo_annealing(&top, &bottom, &options).unwrap();
+        let index = preview
+            .annealing
+            .candidates
+            .iter()
+            .position(|c| c.duplex.top.as_str() == "ACGTTGCA" && c.duplex.bottom_start == 0)
+            .unwrap();
+        let product =
+            annealed_document_inner(&top, &bottom, &preview.annealing, index, &mut vec![]).unwrap();
+        assert_eq!(product.projections.len(), 2);
+        assert!(!product.projections[0].map[0].reverse);
+        assert!(product.projections[1].map[0].reverse);
+        for receipt in &product.projections {
+            assert!(receipt.introduced.is_empty());
+            assert_eq!(receipt.native.projection.source_feature_indices, vec![0]);
+        }
+        let top_original = product.projections[0].native.destination_feature_indices[0];
+        let top_final = product.projections[1].native.previous_feature_indices[top_original];
+        assert_eq!(
+            product.molecule.features[top_final].label(),
+            "Top annotation"
+        );
+        let bottom_final = product.projections[1].native.destination_feature_indices[0];
+        assert_eq!(
+            product.molecule.features[bottom_final].label(),
+            "Bottom annotation"
+        );
+    }
 }

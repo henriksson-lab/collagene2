@@ -10,6 +10,8 @@
 use crate::assembly::draft::model;
 use crate::assembly::draft::model::Draft;
 use crate::sources::identity::SourceInfo;
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::documents::workspace::{Workspace, WorkspaceAttachment};
 use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
@@ -922,7 +924,19 @@ mod tests {
         let replacement =
             Molecule::dna("New current reference", "TTTTGGGG", Topology::Linear).unwrap();
         docs[0]
-            .commit(replacement.clone(), "Reference edit")
+            .commit(
+                vec![
+                    ReferenceEdit::Rename {
+                        name: "New current reference".into(),
+                    },
+                    ReferenceEdit::ReplaceSequence {
+                        start: 0,
+                        end: 8,
+                        replacement: "TTTTGGGG".into(),
+                    },
+                ],
+                "Reference edit",
+            )
             .unwrap();
         let mut advanced = saved.clone();
         advanced.documents.clear();

@@ -16,6 +16,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("Stripped WebAssembly debug names: {name}: {before} -> {after} bytes");
     }
     let m = collagene_web_assets::package_worker(&staging, &public)?;
+    for asset in &m.files {
+        eprintln!(
+            "Packaged worker asset {}: {} bytes",
+            asset.name, asset.bytes
+        );
+    }
     println!("{}", m.loader_url);
     Ok(())
 }

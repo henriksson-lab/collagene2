@@ -262,6 +262,19 @@ mod tests {
             changed.documents[0].head.clone(),
             vec![changed.documents[0].head_event.clone().unwrap()],
             "New descriptive history",
+            collagene_core::documents::history::transition::Transition::ReferenceEdit {
+                source: collagene_core::material::lineage::EventBinding {
+                    document_id: changed.documents[0].id.clone(),
+                    event_id: changed.documents[0].head_event.clone().unwrap(),
+                    revision: changed.documents[0].head.clone(),
+                },
+                actions: vec![
+                    collagene_core::documents::reference_edit::Operation::Rename {
+                        name: changed.revisions[&changed.documents[0].head].name.clone(),
+                    },
+                ],
+                supplemental_sources: vec![],
+            },
         )
         .unwrap();
         changed.history.push(event);

@@ -1,4 +1,5 @@
 //! Literal source/target/event fixtures for private atomic output release.
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     chemistry::{EndTreatment, Terminus},
     cloning::assembly::recipe::Preparation,
@@ -480,9 +481,22 @@ fn changed_live_workspace_prevents_installation_and_safe_archive_names_never_use
     session.advance(&context, 0).unwrap();
     session.advance(&context, 1).unwrap();
     let mut docs = DocumentHistory::restore_all(&workspace).unwrap();
+    let edit_end = docs[0].molecule.sequence.len();
     docs[0]
         .commit(
-            Molecule::dna("later edit", "TCCC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TCCC".into(),
+                },
+                Edit::Rename {
+                    name: "later edit".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Later source edit",
         )
         .unwrap();

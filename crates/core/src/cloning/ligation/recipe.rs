@@ -311,8 +311,9 @@ pub(crate) fn preview_with_tracked(
 > {
     let context_revision = preview_revision(inputs, target, recipe, policy)?;
     let compiled = compile(inputs, target, recipe, policy)?;
+    let mut scientific = verification::replay_budget::ReplayBudget::plan_local(budget);
     let (verification, mut trace) =
-        verification::engine::verify_with_tracked_budget(&compiled.plan, target, budget);
+        verification::engine::verify_with_tracked_scoped(&compiled.plan, target, &mut scientific);
     let available = compiled
         .rows
         .iter()

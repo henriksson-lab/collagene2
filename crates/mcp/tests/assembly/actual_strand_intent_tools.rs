@@ -1,4 +1,5 @@
 //! Actual SDK intent requests hydrate only exact small native origin selectors.
+use collagene_core::documents::reference_edit::Operation as Edit;
 #[path = "../../../core/tests/common/actual_strand.rs"]
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -72,8 +73,21 @@ async fn all_four_intents_keep_actual_bottom_before_new_preparation_and_reject_a
     let mut histories = DocumentHistory::restore_all(&w).unwrap();
     for h in &mut histories {
         if h.id == selection.event().document_id || h.id == w.documents[2].id {
+            let edit_end = h.molecule.sequence.len();
             h.commit(
-                Molecule::dna("Later unrelated viewer head", "TTTTGGGG", Topology::Linear).unwrap(),
+                vec![
+                    Edit::ReplaceSequence {
+                        start: 0,
+                        end: edit_end,
+                        replacement: "TTTTGGGG".into(),
+                    },
+                    Edit::Rename {
+                        name: "Later unrelated viewer head".into(),
+                    },
+                    Edit::SetTopology {
+                        topology: Topology::Linear,
+                    },
+                ],
                 "Later edit after native event",
             )
             .unwrap();

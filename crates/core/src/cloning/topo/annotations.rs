@@ -233,6 +233,22 @@ pub fn project(
     view: &DuplexView,
     destination: &Molecule,
 ) -> Result<AnnotationEvidence, Error> {
+    project_native(inputs, preparation, view, destination, false).map(|(evidence, _)| evidence)
+}
+/// The same feature projection execution also records exact original ordinals.
+pub(crate) fn project_native(
+    inputs: &[topo::Input],
+    preparation: &PreparationEvidence,
+    view: &DuplexView,
+    destination: &Molecule,
+    capture: bool,
+) -> Result<
+    (
+        AnnotationEvidence,
+        Option<Vec<crate::verification::projection::SourceProjection>>,
+    ),
+    Error,
+> {
     preflight(inputs, preparation, view, destination)?;
     let roles: BTreeMap<_, _> = inputs
         .iter()
@@ -388,6 +404,8 @@ pub fn project(
     let mut top_calls: Vec<Vec<(usize, usize)>> =
         vec![Vec::new(); preparation.substrates.strands.len()];
     let mut cursor = 0;
+    let mut introduced = Vec::new();
+    let mut introduced_complete = true;
     for run in &view.source_maps {
         if run.length == 0 || run.reference_start != cursor {
             return Err(bad("view maps must cover the reference exactly in order"));
@@ -426,6 +444,49 @@ pub fn project(
             charge(&mut work, 1)?;
             if map.strand != run.top_strand {
                 continue;
+            }
+            // Only explicitly synthesized preparation calls are introductions;
+            // missing source correspondence alone never supplies that authority.
+            if capture && introduced_complete {
+                let mut retain = |start: usize, stop: usize| {
+                    let lo = run.top_start.max(start);
+                    let hi = te.min(stop);
+                    if lo < hi && introduced_complete {
+                        if introduced.len() >= 4096 {
+                            introduced_complete = false;
+                            introduced.clear();
+                        } else {
+                            introduced.push((
+                                run.reference_start + lo - run.top_start,
+                                run.reference_start + hi - run.top_start,
+                            ));
+                        }
+                    }
+                };
+                match &map.origin {
+                    Origin::SynthesizedTail { .. } => {
+                        retain(map.strand_start, map.strand_start + map.length)
+                    }
+                    Origin::ExactPcrCopy {
+                        template_length,
+                        forward_tail_length,
+                        reverse_tail_length,
+                        reverse,
+                        ..
+                    } => {
+                        let lead = if *reverse {
+                            *reverse_tail_length
+                        } else {
+                            *forward_tail_length
+                        };
+                        retain(map.strand_start, map.strand_start + lead);
+                        retain(
+                            map.strand_start + lead + template_length,
+                            map.strand_start + map.length,
+                        );
+                    }
+                    Origin::ReferenceCorrespondence(_) => {}
+                }
             }
             let (role, start, length, reverse, offset) = match &map.origin {
                 Origin::ReferenceCorrespondence(i) => (
@@ -526,7 +587,24 @@ pub fn project(
         return Err(Error::TooLarge);
     }
     let mut evidence=AnnotationEvidence{sources:Vec::new(),features:Vec::new(),warnings:vec!["Annotation correspondence follows selected top-reference source calls only. It establishes neither inherited atoms/chemical state nor biological feature validity; bottom pairing is not duplicate annotation ancestry.".into()]};
+    // Extra receipt retention cannot change a valid scientific projection.
+    // Refuse only trace retention when the independent copy allowance is spent.
+    let capture = capture
+        && feature_bytes
+            .checked_add(expansion.saturating_mul(16))
+            .is_some_and(|bytes| bytes <= 8 * 1024 * 1024);
+    let mut receipts = capture.then(Vec::new);
     for (role, input) in inputs.iter().enumerate() {
+        let previous = evidence.features.len();
+        let mut native = annotations::Projection {
+            features: vec![],
+            source_feature_indices: vec![],
+            warnings: vec![],
+            unmapped_features: vec![],
+            unmapped_source_feature_indices: vec![],
+            dropped_features: 0,
+            dropped_source_feature_indices: vec![],
+        };
         let mut maps = std::mem::take(&mut per_role[role]);
         maps.sort_by_key(|m| (m.source_start, m.source_end, m.destination_start, m.reverse));
         let repeated = maps.windows(2).any(|p| p[0].source_end > p[1].source_start);
@@ -541,6 +619,7 @@ pub fn project(
             warnings: Vec::new(),
         };
         if repeated {
+            receipts = None;
             warning(
                 &mut result.warnings,
                 "Repeated source-to-multiple-destination correspondence is unsupported; all annotations for this role remain read-only source evidence.",
@@ -579,6 +658,10 @@ pub fn project(
                 None
             };
             if let Some(reason) = withheld {
+                if receipts.is_some() {
+                    native.unmapped_features.push(original.clone());
+                    native.unmapped_source_feature_indices.push(source_index);
+                }
                 let mut feature = original.clone();
                 feature.needs_review = true;
                 result.unmapped.push(UnmappedAnnotation {
@@ -604,6 +687,15 @@ pub fn project(
                         warning(&mut result.warnings, &message);
                     }
                     if projected.features.is_empty() {
+                        if receipts.is_some() {
+                            if projected.dropped_features > 0 {
+                                native.dropped_features += 1;
+                                native.dropped_source_feature_indices.push(source_index);
+                            } else {
+                                native.unmapped_features.push(original.clone());
+                                native.unmapped_source_feature_indices.push(source_index);
+                            }
+                        }
                         let mut feature = shadow.features.pop().unwrap();
                         feature.needs_review = true;
                         result.unmapped.push(UnmappedAnnotation{source_index,feature,reason:if projected.dropped_features>0{"Original feature is outside selected top-reference source intervals"}else{"Coordinate projection withheld this original feature"}.into()});
@@ -619,11 +711,19 @@ pub fn project(
                                 feature.qualifiers.push(("note".into(),Some("TOPO PCR-derived template correspondence; primer/tail changes and biological validity require review. Recalculate translation/frame assertions.".into())));
                             }
                             result.projected += 1;
+                            if receipts.is_some() {
+                                native.features.push(feature.clone());
+                                native.source_feature_indices.push(source_index);
+                            }
                             evidence.features.push(feature);
                         }
                     }
                 }
                 Err(error) => {
+                    if receipts.is_some() {
+                        native.unmapped_features.push(original.clone());
+                        native.unmapped_source_feature_indices.push(source_index);
+                    }
                     let mut feature = shadow.features.pop().unwrap();
                     feature.needs_review = true;
                     result.unmapped.push(UnmappedAnnotation {
@@ -638,8 +738,30 @@ pub fn project(
                 }
             }
         }
+        if let Some(receipts) = &mut receipts {
+            receipts.push(crate::verification::projection::SourceProjection {
+                input: role,
+                reference: crate::verification::projection::ReferenceProjection {
+                    map: result.maps.clone(),
+                    introduced: vec![],
+                    native: crate::verification::projection::NativeProjection {
+                        destination_feature_indices: (previous..evidence.features.len()).collect(),
+                        previous_feature_indices: (0..previous).collect(),
+                        projection: native,
+                    },
+                },
+            });
+        }
         evidence.sources.push(result);
     }
+    if !introduced_complete {
+        receipts = None;
+    }
+    if let Some(receipts) = &mut receipts {
+        if let Some(first) = receipts.first_mut() {
+            first.reference.introduced = introduced;
+        }
+    }
     size(&evidence, MAX_OUTPUT_BYTES)?;
-    Ok(evidence)
+    Ok((evidence, receipts))
 }

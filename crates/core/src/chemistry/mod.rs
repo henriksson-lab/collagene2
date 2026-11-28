@@ -444,6 +444,22 @@ fn extract(
 /// Complete digestion, sorted by ascending top-reference cut. The last circular fragment wraps.
 /// Cut-free circular input remains circular; it is never presented as a linear fragment.
 pub fn digest(duplex: &Duplex, enzymes: &[Enzyme]) -> Result<Vec<DigestFragment>, Error> {
+    digest_inner(duplex, enzymes, None)
+}
+/// Plain assumed-complete cleavage with shared native recognition work. This is
+/// the ordinary digest model, not a substitution with positional checked cleavage.
+pub fn digest_with_budget(
+    duplex: &Duplex,
+    enzymes: &[Enzyme],
+    budget: &mut tracked_duplex::CleavageBudget,
+) -> Result<Vec<DigestFragment>, Error> {
+    digest_inner(duplex, enzymes, Some(budget))
+}
+fn digest_inner(
+    duplex: &Duplex,
+    enzymes: &[Enzyme],
+    mut budget: Option<&mut tracked_duplex::CleavageBudget>,
+) -> Result<Vec<DigestFragment>, Error> {
     duplex.validate()?;
     if enzymes.is_empty() || enzymes.len() > 64 {
         return Err(invalid("digest needs 1–64 enzymes"));
@@ -458,7 +474,21 @@ pub fn digest(duplex: &Duplex, enzymes: &[Enzyme]) -> Result<Vec<DigestFragment>
     for enzyme in enzymes {
         let recognition = Sequence::dna(&enzyme.recognition)?;
         let delta = i64::from(enzyme.bottom_cut) - i64::from(enzyme.top_cut);
-        for site in analysis::restriction_sites(&molecule, enzyme)? {
+        let sites = if let Some(shared) = budget.as_deref_mut() {
+            let allowed = shared.remaining().min(analysis::MAX_EXACT_SEARCH_WORK);
+            if allowed == 0 {
+                return Err(Error::TooLarge);
+            }
+            let mut exact = analysis::ExactSearchBudget::new(allowed)?;
+            let result = analysis::restriction_sites_with_budget(&molecule, enzyme, &mut exact);
+            // Charge actual native work even when malformed/out-of-frame/limited
+            // search fails. No source-length estimate or replacement scan is used.
+            shared.charge(exact.used())?;
+            result?
+        } else {
+            analysis::restriction_sites(&molecule, enzyme)?
+        };
+        for site in sites {
             add_digest_cut(duplex, &site, &recognition.len(), &delta, &mut cuts)?;
         }
     }

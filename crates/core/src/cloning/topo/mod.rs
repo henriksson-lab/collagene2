@@ -46,8 +46,20 @@ dto! {pub struct TargetAssessment {pub engine_version:String,pub batch_revision:
 // questions. There is one Product document, with documentary annotations only.
 dto! {pub struct MaterialLayout{pub owner:Option<String>,pub material:usize,pub source_strands:Vec<usize>,pub source_roles:Vec<(String,String)>}}
 dto! {pub struct GraphOriginEvidence{pub selection:crate::cloning::topo::graph_history::Selection,pub strand_start:usize,pub strand_end:usize,pub after_steps:usize,pub activation_unmap:Vec<(String,String)>,pub step_map:Vec<usize>,pub incomplete:bool}}
+enum PreparedSourceScope {
+    CurrentInput {
+        index: usize,
+    },
+    RetainedGraph {
+        role: String,
+        scopes: Vec<crate::verification::projection::TopoScope>,
+    },
+}
 pub(crate) struct PreparedContext {
     pub inputs: Vec<Input>,
+    source_scopes: Vec<PreparedSourceScope>,
+    source_origin_indices: Vec<Option<usize>>,
+    native_origins: Vec<crate::material::run::RetainedReplay>,
     pub evidence: PreparationEvidence,
     pub effective_steps: Vec<physical::Step>,
     pub incomplete: bool,
@@ -57,6 +69,9 @@ pub(crate) struct PreparedContext {
 
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("TOPO source adapter: {s}"))
+}
+fn invalid(s: &str) -> Error {
+    Error::Format(format!("TOPO source adapter: {s}"))
 }
 fn text(s: &str, max: usize) -> Result<(), Error> {
     if s.is_empty() || s.len() > max || s.trim().is_empty() {
@@ -100,15 +115,26 @@ fn hash<T: Serialize>(v: &T) -> Result<String, Error> {
     serde_json::to_writer(&mut h, v).map_err(|_| Error::TooLarge)?;
     Ok(h.0.finalize().to_hex().to_string())
 }
-fn engine_error(e: impl std::fmt::Display) -> Error {
-    bad(&e.to_string())
+fn engine_error(error: physical::Error) -> Error {
+    match error {
+        physical::Error::Invalid(reason) => invalid(&reason),
+        physical::Error::Limit { .. } => Error::TooLarge,
+    }
+}
+fn projection_error(error: projection::Error) -> Error {
+    match error {
+        projection::Error::Engine(error) => engine_error(error),
+        projection::Error::InvalidSelection(reason) => invalid(reason),
+        projection::Error::InvalidLimits => invalid("invalid paired-contour limits"),
+        projection::Error::ReportBytes { .. } => Error::TooLarge,
+    }
 }
 fn source<'a>(inputs: &'a [Input], role: &str) -> Result<&'a Molecule, Error> {
     inputs
         .iter()
         .find(|x| x.role == role)
         .map(|x| &x.molecule)
-        .ok_or_else(|| bad("unknown source role"))
+        .ok_or_else(|| invalid("unknown source role"))
 }
 fn interval(inputs: &[Input], p: &SourceInterval) -> Result<(), Error> {
     text(&p.source_role, 256)?;
@@ -119,7 +145,7 @@ fn interval(inputs: &[Input], p: &SourceInterval) -> Result<(), Error> {
         || p.length > n
         || m.topology == Topology::Linear && p.start.checked_add(p.length).is_none_or(|e| e > n)
     {
-        return Err(bad("invalid source interval"));
+        return Err(invalid("invalid source interval"));
     }
     Ok(())
 }
@@ -181,7 +207,7 @@ fn source_preflight_flat(
     for i in inputs {
         text(&i.role, 256)?;
         if !roles.insert(i.role.as_str()) || i.molecule.sequence.alphabet() != Alphabet::Dna {
-            return Err(bad("unique DNA source roles required"));
+            return Err(invalid("unique DNA source roles required"));
         }
         bases = bases
             .checked_add(i.molecule.sequence.len())
@@ -211,13 +237,11 @@ fn source_preflight_flat(
                 }
                 for s in ss {
                     text(&s.id, 256)?;
-                    if !ids.insert(s.id.as_str())
-                        || s.segments.is_empty()
-                        || s.segments.len() > 1024
-                    {
-                        return Err(bad(
-                            "unique strand ids and bounded nonempty segments required",
-                        ));
+                    if s.segments.len() > 1024 {
+                        return Err(Error::TooLarge);
+                    }
+                    if !ids.insert(s.id.as_str()) || s.segments.is_empty() {
+                        return Err(invalid("unique strand ids and nonempty segments required"));
                     }
                     if let physical::ThreePrime::Phosphotyrosyl { activation_id, .. } =
                         &s.three_prime
@@ -235,7 +259,15 @@ fn source_preflight_flat(
                             || original.metadata.contains_key("tracked_modifications")
                             || original.metadata.keys().any(|k| k.starts_with("topo:"))
                         {
-                            return Err(bad(
+                            // A genuine freshly reconstructed Step can be a PCR
+                            // template, but activation from its tracked strands
+                            // is not implemented by the Prepared-reference path.
+                            if reconstructed_templates.contains(&p.source_role) {
+                                return Err(bad(
+                                    "Prepared activation hypotheses require original references; activation from actual tracked Step material is not modeled",
+                                ));
+                            }
+                            return Err(invalid(
                                 "Prepared activation hypotheses require original references; a saved/marked physical document must use its exact native graph instead of redeclaring stock",
                             ));
                         }
@@ -247,7 +279,7 @@ fn source_preflight_flat(
                 }
                 for p in pairing {
                     if p.strand_a >= ss.len() || p.strand_b >= ss.len() {
-                        return Err(bad("prepared pairing indices are material-local"));
+                        return Err(invalid("prepared pairing indices are material-local"));
                     }
                 }
             }
@@ -447,7 +479,7 @@ pub(crate) fn source_preflight_reconstructed(
     for (role, _) in templates {
         text(role, 256)?;
         if !roles.insert(role.clone()) || inputs.iter().filter(|i| i.role == *role).count() != 1 {
-            return Err(bad(
+            return Err(invalid(
                 "reconstructed PCR templates require unique actual source roles",
             ));
         }
@@ -478,7 +510,7 @@ pub(crate) fn source_preflight_reconstructed(
             }
         }
         if !used {
-            return Err(bad(
+            return Err(invalid(
                 "reconstructed template role is not used by any exact-PCR material",
             ));
         }
@@ -490,7 +522,7 @@ pub(crate) fn source_preflight_reconstructed(
         tracked.validate()?;
         let molecule = source(inputs, role)?;
         if tracked.duplex.top != molecule.sequence || tracked.duplex.topology != molecule.topology {
-            return Err(bad(
+            return Err(invalid(
                 "actual tracked PCR template differs from its exact Step sequence/topology",
             ));
         }
@@ -508,7 +540,7 @@ pub(crate) fn source_preflight_reconstructed(
                 || key.starts_with("source:recombination:")
                 || key == crate::cloning::recombination::CHEMISTRY_UNMAPPED_KEY
         }) {
-            return Err(bad(
+            return Err(invalid(
                 "reference-only, variant or unmapped reference ancestry cannot establish a physical PCR template",
             ));
         }
@@ -554,6 +586,8 @@ fn mark(coverage: &mut [bool], start: usize, length: usize) {
 }
 struct Expanded {
     inputs: Vec<Input>,
+    source_scopes: Vec<PreparedSourceScope>,
+    source_origin_keys: Vec<Option<String>>,
     request: Request,
     bindings: Vec<crate::cloning::topo::graph_history::SourceBinding>,
     origins: Vec<GraphOriginEvidence>,
@@ -588,6 +622,8 @@ fn expand(
     crate::material::capsule::native_origins_preflight(roots)?;
     let mut out = Expanded {
         inputs: vec![],
+        source_scopes: vec![],
+        source_origin_keys: vec![],
         request: Request {
             recipe: GenerationRecipe {
                 schema_version: 1,
@@ -612,6 +648,7 @@ fn expand(
         r,
         None,
         root_bindings,
+        &[],
         &mut seen,
         &mut used,
         &mut counter,
@@ -665,6 +702,7 @@ fn expand_node(
     r: &Request,
     owner: Option<&str>,
     bindings: Option<&[crate::cloning::topo::graph_history::SourceBinding]>,
+    scopes: &[crate::verification::projection::TopoScope],
     seen: &mut BTreeSet<String>,
     used: &mut BTreeSet<String>,
     counter: &mut usize,
@@ -684,11 +722,27 @@ fn expand_node(
             input.role.clone()
         };
         roles.insert(input.role.clone(), role.clone());
+        let binding = bindings
+            .and_then(|bindings| bindings.iter().find(|binding| binding.role == input.role));
+        out.source_origin_keys.push(
+            binding
+                .and_then(|binding| binding.origin.as_ref().map(|origin| (binding, origin)))
+                .map(|(binding, origin)| hash(&(&binding.event, origin.selection())))
+                .transpose()?,
+        );
+        out.source_scopes.push(if scopes.is_empty() {
+            PreparedSourceScope::CurrentInput { index: i }
+        } else {
+            PreparedSourceScope::RetainedGraph {
+                role: input.role.clone(),
+                scopes: scopes.to_vec(),
+            }
+        });
         out.inputs.push(Input {
             role: role.clone(),
             molecule: input.molecule.clone(),
         });
-        if let Some(binding) = bindings.and_then(|b| b.iter().find(|b| b.role == input.role)) {
+        if let Some(binding) = binding {
             let mut b = binding.clone();
             b.role = role;
             out.bindings.push(b)
@@ -786,11 +840,31 @@ fn expand_node(
                 }
                 let steps_before = out.request.steps.len();
                 let activation_namespace = origin.selection.record_hash.clone();
+                let mut child_scopes = scopes.to_vec();
+                child_scopes.push(crate::verification::projection::TopoScope {
+                    occurrence: u32::try_from(*counter).map_err(|_| Error::TooLarge)?,
+                    binding: std::sync::Arc::new(
+                        crate::verification::ancestry::OriginBinding::TopoGraph {
+                            selection: origin.selection.clone(),
+                            context_revision: record.context_revision.clone(),
+                            sources: record
+                                .request
+                                .bindings
+                                .iter()
+                                .map(|binding| crate::verification::ancestry::TopoRootBinding {
+                                    role: binding.role.clone(),
+                                    event: Some(binding.event.clone()),
+                                })
+                                .collect(),
+                        },
+                    ),
+                });
                 let indices = expand_node(
                     &origin.source_snapshots,
                     &record.request.request,
                     Some(&activation_namespace),
                     Some(&record.request.bindings),
+                    &child_scopes,
                     seen,
                     used,
                     counter,
@@ -944,7 +1018,11 @@ fn flat_activation(materials: &[MaterialRecipe], index: usize) -> Option<String>
     }
     None
 }
-fn prepare_declared(inputs: &[Input], r: &Request) -> Result<PreparationEvidence, Error> {
+fn prepare_declared(
+    inputs: &[Input],
+    r: &Request,
+    mut budget: Option<&mut analysis::ExactSearchBudget>,
+) -> Result<PreparationEvidence, Error> {
     let mut substrates = physical::Substrates {
         strands: vec![],
         pairing: vec![],
@@ -1014,13 +1092,28 @@ fn prepare_declared(inputs: &[Input], r: &Request) -> Result<PreparationEvidence
                         primer.annealing.as_str(),
                         &primer.tail,
                     )?;
-                    f += analysis::find_matches(template, canonical.annealing.as_str(), false)?
-                        .len();
-                    b += analysis::find_matches(
-                        template,
-                        canonical.annealing.reverse_complement()?.as_str(),
-                        false,
-                    )?
+                    f += match budget.as_deref_mut() {
+                        Some(budget) => analysis::find_matches_with_budget(
+                            template,
+                            canonical.annealing.as_str(),
+                            false,
+                            budget,
+                        )?,
+                        None => {
+                            analysis::find_matches(template, canonical.annealing.as_str(), false)?
+                        }
+                    }
+                    .len();
+                    let reverse = canonical.annealing.reverse_complement()?;
+                    b += match budget.as_deref_mut() {
+                        Some(budget) => analysis::find_matches_with_budget(
+                            template,
+                            reverse.as_str(),
+                            false,
+                            budget,
+                        )?,
+                        None => analysis::find_matches(template, reverse.as_str(), false)?,
+                    }
                     .len();
                 }
                 let upper = f
@@ -1029,7 +1122,15 @@ fn prepare_declared(inputs: &[Input], r: &Request) -> Result<PreparationEvidence
                     .filter(|x| *x <= 1_000_000)
                     .ok_or(Error::TooLarge)?;
                 let _ = upper;
-                let possibilities = analysis::simulate_pcr_geometry(template, forward, reverse)?;
+                let possibilities = match budget.as_deref_mut() {
+                    Some(budget) => analysis::simulate_pcr_geometry_view_with_budget(
+                        analysis::TemplateView::reference(template),
+                        forward,
+                        reverse,
+                        budget,
+                    )?,
+                    None => analysis::simulate_pcr_geometry(template, forward, reverse)?,
+                };
                 if possibilities.len() != 1 {
                     return Err(bad(
                         "PCR preparation requires exactly one exact current geometry",
@@ -1156,12 +1257,22 @@ fn prepare_declared(inputs: &[Input], r: &Request) -> Result<PreparationEvidence
     })
 }
 pub(crate) fn prepare(inputs: &[Input], r: &Request) -> Result<PreparedContext, Error> {
-    prepare_bound(inputs, r, &[])
+    prepare_with_ancestry(inputs, r, None, None)
+}
+fn prepare_with_ancestry(
+    inputs: &[Input],
+    r: &Request,
+    budget: Option<crate::verification::ancestry::TraceBudget>,
+    replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
+) -> Result<PreparedContext, Error> {
+    prepare_bound(inputs, r, &[], budget, replay)
 }
 fn prepare_bound(
     inputs: &[Input],
     r: &Request,
     root_bindings: &[crate::cloning::topo::graph_history::SourceBinding],
+    trace_budget: Option<crate::verification::ancestry::TraceBudget>,
+    mut replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
 ) -> Result<PreparedContext, Error> {
     let expanded = expand(
         inputs,
@@ -1194,9 +1305,14 @@ fn prepare_bound(
             let input = source(&expanded.inputs, &b.role)?;
             let key = hash(&(&b.event, origin.selection()))?;
             if !cache.contains_key(&key) {
-                cache.insert(key.clone(), origin.replay(input)?);
+                let fresh = if let Some(replay) = replay.as_deref_mut() {
+                    origin.replay_scoped(input, replay, trace_budget.clone())?
+                } else {
+                    (origin.replay(input)?, None)
+                };
+                cache.insert(key.clone(), fresh);
             }
-            let fresh = &cache[&key];
+            let fresh = &cache[&key].0;
             incomplete |= fresh.incomplete();
             if fresh.incomplete() {
                 conditional_roles.insert(b.role.clone());
@@ -1217,7 +1333,7 @@ fn prepare_bound(
     for b in &expanded.bindings {
         if let Some(origin) = &b.origin {
             let key = hash(&(&b.event, origin.selection()))?;
-            templates.push((b.role.clone(), cache[&key].tracked()));
+            templates.push((b.role.clone(), cache[&key].0.tracked()));
         }
     }
     // Root Step callers already proved their actual PCR-template eligibility in
@@ -1236,7 +1352,11 @@ fn prepare_bound(
             ));
         }
     }
-    let mut evidence = prepare_declared(&expanded.inputs, &expanded.request)?;
+    let budget = match replay.as_deref_mut() {
+        Some(replay) if replay.is_qc_job() => Some(&mut replay.pcr),
+        _ => None,
+    };
+    let mut evidence = prepare_declared(&expanded.inputs, &expanded.request, budget)?;
     let prefix = expanded
         .request
         .steps
@@ -1252,8 +1372,24 @@ fn prepare_bound(
     // These flags are compared with actual scoped execution before any result
     // is published; the retained record is never authority for completeness.
     incomplete |= evidence.graph_origins.iter().any(|o| o.incomplete);
+    let mut native_origins = Vec::new();
+    let mut origin_indices = std::collections::BTreeMap::new();
+    for (key, (_, retained)) in cache {
+        if let Some(retained) = retained {
+            origin_indices.insert(key, native_origins.len());
+            native_origins.push(retained);
+        }
+    }
+    let source_origin_indices = expanded
+        .source_origin_keys
+        .into_iter()
+        .map(|key| key.and_then(|key| origin_indices.get(&key).copied()))
+        .collect();
     Ok(PreparedContext {
         inputs: expanded.inputs,
+        source_scopes: expanded.source_scopes,
+        source_origin_indices,
+        native_origins,
         evidence,
         effective_steps: expanded.request.steps,
         incomplete,
@@ -1343,7 +1479,7 @@ fn check_origin_incompleteness(
     actual: &physical::Report,
 ) -> Result<(), Error> {
     if prepared.origin_source_incomplete.len() != prepared.evidence.graph_origins.len() {
-        return Err(bad("source completeness scope changed"));
+        return Err(invalid("source completeness scope changed"));
     }
     for (origin, source_incomplete) in prepared
         .evidence
@@ -1357,11 +1493,11 @@ fn check_origin_incompleteness(
                 .steps
                 .get(*index)
                 .filter(|_| *index < origin.after_steps)
-                .ok_or_else(|| bad("source transfer completeness map changed"))?;
+                .ok_or_else(|| invalid("source transfer completeness map changed"))?;
             computed |= step.outcome() != physical::Outcome::Applied;
         }
         if computed != origin.incomplete {
-            return Err(bad(
+            return Err(invalid(
                 "native graph incomplete claim differs from fresh scoped source/transfer execution",
             ));
         }
@@ -1401,7 +1537,9 @@ pub(crate) fn execute(
         if hash(&(crate::cloning::topo::graph_history::ENGINE_VERSION, product))?
             != origin.selection.state_revision
         {
-            return Err(bad("native graph prefix differs from retained exact state"));
+            return Err(invalid(
+                "native graph prefix differs from retained exact state",
+            ));
         }
     }
     Ok(fresh)
@@ -1417,7 +1555,7 @@ pub(crate) fn simulate_bound(
         .map(|b| b.role.clone())
         .collect::<BTreeSet<_>>();
     source_preflight_inner(inputs, r, &roles)?;
-    let prepared = prepare_bound(inputs, r, bindings)?;
+    let prepared = prepare_bound(inputs, r, bindings, None, None)?;
     report_prepared(inputs, r, prepared)
 }
 fn report_prepared(
@@ -1450,7 +1588,7 @@ fn simulate_preflighted(inputs: &[Input], r: &Request) -> Result<TopoReport, Err
 pub fn product_revision(inputs: &[Input], r: &Request, s: &Selection) -> Result<String, Error> {
     let batch = batch_revision(inputs, r)?;
     if s.batch_revision.len() != 64 || s.batch_revision != batch || s.component >= 64 {
-        return Err(bad("selection does not bind current source/recipe"));
+        return Err(invalid("selection does not bind current source/recipe"));
     }
     hash(&(ENGINE_VERSION, "selected-physical-component", &batch, s))
 }
@@ -1460,12 +1598,27 @@ pub fn product(inputs: &[Input], r: &Request, s: &Selection) -> Result<Product, 
     product_preflighted(inputs, r, s)
 }
 fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<Product, Error> {
+    product_native(inputs, r, s, None, None).map(|(product, _)| product)
+}
+fn product_native(
+    inputs: &[Input],
+    r: &Request,
+    s: &Selection,
+    capture: Option<crate::verification::ancestry::TraceBudget>,
+    replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
+) -> Result<
+    (
+        Product,
+        Option<crate::verification::projection::GraphProjections>,
+    ),
+    Error,
+> {
     let batch = batch_binding(inputs, r)?;
     if s.batch_revision != batch || s.component >= 64 {
-        return Err(bad("selection does not bind current source/recipe"));
+        return Err(invalid("selection does not bind current source/recipe"));
     }
     let batch_revision = hash(&(ENGINE_VERSION, "selected-physical-component", &batch, s))?;
-    let prepared = prepare(inputs, r)?;
+    let prepared = prepare_with_ancestry(inputs, r, capture.clone(), replay)?;
     let fresh = execute(&prepared, &r.engine_limits)?;
     let select = projection::Selection {
         source_batch_revision: fresh.report().batch_revision.clone(),
@@ -1480,7 +1633,7 @@ fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<P
         &r.projection_options,
         fresh,
     )
-    .map_err(engine_error)?;
+    .map_err(projection_error)?;
     let reference = if let projection::Outcome::Proven(v) = &projection.outcome {
         let mut m = Molecule::dna(
             "TOPO paired-contour view",
@@ -1516,20 +1669,84 @@ fn product_preflighted(inputs: &[Input], r: &Request, s: &Selection) -> Result<P
         reference,
     };
     bounded(&p, MAX_REPORT_BYTES)?;
-    annotate_fresh_product(&prepared.inputs, p)
+    let (product, receipts) = annotate_fresh_product(&prepared.inputs, p, capture.is_some())?;
+    Ok((
+        product,
+        graph_projections(
+            prepared.inputs,
+            prepared.source_scopes,
+            prepared.source_origin_indices,
+            prepared.native_origins,
+            receipts,
+        ),
+    ))
+}
+/// Bind source occurrences recorded at expansion time. No later role/content
+/// lookup reconstructs which retained graph supplied a source.
+fn graph_projections(
+    prepared: Vec<Input>,
+    scopes: Vec<PreparedSourceScope>,
+    origin_indices: Vec<Option<usize>>,
+    retained: Vec<crate::material::run::RetainedReplay>,
+    receipts: Option<Vec<crate::verification::projection::SourceProjection>>,
+) -> Option<crate::verification::projection::GraphProjections> {
+    use crate::verification::projection::{GraphProjectionSource, GraphProjections};
+    let projections = receipts?;
+    if prepared.len() != scopes.len()
+        || prepared.len() != origin_indices.len()
+        || crate::encoding::bounded_json::preflight(&prepared, 8 * 1024 * 1024).is_err()
+    {
+        return None;
+    }
+    let sources = prepared
+        .into_iter()
+        .zip(scopes)
+        .zip(origin_indices)
+        .map(|((input, scope), retained_index)| match scope {
+            PreparedSourceScope::CurrentInput { index } => {
+                GraphProjectionSource::CurrentInput { index }
+            }
+            PreparedSourceScope::RetainedGraph { role, scopes } => {
+                GraphProjectionSource::RetainedGraph {
+                    role,
+                    scopes,
+                    molecule: input.molecule,
+                    retained_index,
+                }
+            }
+        })
+        .collect();
+    Some(GraphProjections {
+        sources,
+        projections,
+        retained,
+    })
 }
 /// Annotation correspondence is attached to the same fresh canonical Product.
 /// It never supplies native graph/terminal authority.
-fn annotate_fresh_product(inputs: &[Input], mut product: Product) -> Result<Product, Error> {
+fn annotate_fresh_product(
+    inputs: &[Input],
+    mut product: Product,
+    capture: bool,
+) -> Result<
+    (
+        Product,
+        Option<Vec<crate::verification::projection::SourceProjection>>,
+    ),
+    Error,
+> {
+    let mut receipts = None;
     if let (projection::Outcome::Proven(view), Some(reference)) =
         (&product.projection.outcome, &mut product.reference)
     {
-        let evidence = crate::cloning::topo::annotations::project(
+        let (evidence, captured) = crate::cloning::topo::annotations::project_native(
             inputs,
             &product.preparation,
             view,
             reference,
+            capture,
         )?;
+        receipts = captured;
         reference.features = evidence.features.clone();
         reference.metadata.insert(
             "topo:annotation_engine".into(),
@@ -1544,7 +1761,7 @@ fn annotate_fresh_product(inputs: &[Input], mut product: Product) -> Result<Prod
         product.annotations = Some(evidence);
     }
     bounded(&product, MAX_REPORT_BYTES)?;
-    Ok(product)
+    Ok((product, receipts))
 }
 pub fn target_revision(
     inputs: &[Input],
@@ -1630,7 +1847,7 @@ pub fn replay_product(
     }
     bounded(claim, MAX_REPORT_BYTES)?;
     if hash(&fresh)? != hash(claim)? {
-        return Err(bad("product differs from fresh reconstruction"));
+        return Err(invalid("product differs from fresh reconstruction"));
     }
     Ok(())
 }
@@ -1689,7 +1906,7 @@ pub fn inspect_orientations(
     directional: bool,
 ) -> Result<OrientationInspection, Error> {
     source_preflight(inputs, r)?;
-    orientations_preflighted(inputs, r, vector, insert, directional)
+    orientations_preflighted(inputs, r, vector, insert, directional, None)
 }
 fn orientations_preflighted(
     inputs: &[Input],
@@ -1697,19 +1914,20 @@ fn orientations_preflighted(
     vector: [usize; 2],
     insert: [usize; 2],
     directional: bool,
+    replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
 ) -> Result<OrientationInspection, Error> {
     if !r.steps.is_empty() {
         return Err(bad(
             "orientation inspection requires an empty transfer list; orientation-specific requests are returned explicitly",
         ));
     }
-    let prepared = prepare(inputs, r)?;
+    let prepared = prepare_with_ancestry(inputs, r, None, replay)?;
     if vector
         .iter()
         .chain(&insert)
         .any(|i| *i >= prepared.evidence.substrates.strands.len())
     {
-        return Err(bad("orientation source outside actual graph layout"));
+        return Err(invalid("orientation source outside actual graph layout"));
     }
     let checkpoints = prepared
         .evidence
@@ -1789,11 +2007,44 @@ pub(crate) fn inspect_reconstructed_task(
     templates: &[(String, &crate::chemistry::tracked_duplex::TrackedDuplex)],
     task: &crate::cloning::topo::run_preparation::Task,
 ) -> Result<crate::cloning::topo::run_preparation::Reply, Error> {
+    inspect_reconstructed_task_native(inputs, templates, task, None, None).map(|(reply, _)| reply)
+}
+pub(crate) fn inspect_reconstructed_task_with_projections(
+    inputs: &[Input],
+    templates: &[(String, &crate::chemistry::tracked_duplex::TrackedDuplex)],
+    task: &crate::cloning::topo::run_preparation::Task,
+    capture: Option<crate::verification::ancestry::TraceBudget>,
+    replay: &mut crate::verification::replay_budget::ReplayBudget<'_>,
+) -> Result<
+    (
+        crate::cloning::topo::run_preparation::Reply,
+        Option<crate::verification::projection::GraphProjections>,
+    ),
+    Error,
+> {
+    inspect_reconstructed_task_native(inputs, templates, task, capture, Some(replay))
+}
+fn inspect_reconstructed_task_native(
+    inputs: &[Input],
+    templates: &[(String, &crate::chemistry::tracked_duplex::TrackedDuplex)],
+    task: &crate::cloning::topo::run_preparation::Task,
+    capture: Option<crate::verification::ancestry::TraceBudget>,
+    mut replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
+) -> Result<
+    (
+        crate::cloning::topo::run_preparation::Reply,
+        Option<crate::verification::projection::GraphProjections>,
+    ),
+    Error,
+> {
     use crate::cloning::topo::run_preparation::{Reply, Task};
     source_preflight_reconstructed(inputs, task.preparation(), templates)?;
-    Ok(match task {
+    let mut receipts = None;
+    let reply = match task {
         Task::Simulate { request } => {
-            Reply::Simulated(report_prepared(inputs, request, prepare(inputs, request)?)?)
+            let prepared =
+                prepare_with_ancestry(inputs, request, capture.clone(), replay.as_deref_mut())?;
+            Reply::Simulated(report_prepared(inputs, request, prepared)?)
         }
         Task::Orientations {
             request,
@@ -1806,9 +2057,18 @@ pub(crate) fn inspect_reconstructed_task(
             *vector,
             *insert,
             *directional,
+            replay.as_deref_mut(),
         )?),
         Task::Project { request, selection } => {
-            Reply::Projected(product_preflighted(inputs, request, selection)?)
+            let (product, captured) = product_native(
+                inputs,
+                request,
+                selection,
+                capture.clone(),
+                replay.as_deref_mut(),
+            )?;
+            receipts = captured;
+            Reply::Projected(product)
         }
         Task::Check {
             request,
@@ -1816,17 +2076,21 @@ pub(crate) fn inspect_reconstructed_task(
             target,
             policy,
         } => {
+            let (fresh, captured) = product_native(
+                inputs,
+                request,
+                selection,
+                capture.clone(),
+                replay.as_deref_mut(),
+            )?;
+            receipts = captured;
             let TargetAssessment {
                 product,
                 policy,
                 target_revision,
                 outcome,
                 ..
-            } = check_fresh_product(
-                product_preflighted(inputs, request, selection)?,
-                target,
-                policy,
-            )?;
+            } = check_fresh_product(fresh, target, policy)?;
             Reply::Checked(TargetAssessment {
                 engine_version: ENGINE_VERSION.into(),
                 batch_revision: hash(&(
@@ -1842,10 +2106,25 @@ pub(crate) fn inspect_reconstructed_task(
                 outcome,
             })
         }
-        Task::ProcessActions { request } => Reply::ActionsProcessed(
-            crate::cloning::topo::actions::inspect_reconstructed(inputs, request, templates)?,
-        ),
-    })
+        Task::ProcessActions { request } => {
+            let report = if replay.is_some() {
+                let (report, captured) =
+                    crate::cloning::topo::actions::inspect_reconstructed_with_projections(
+                        inputs,
+                        request,
+                        templates,
+                        capture.clone(),
+                        replay.as_deref_mut().expect("scoped native entry"),
+                    )?;
+                receipts = captured;
+                report
+            } else {
+                crate::cloning::topo::actions::inspect_reconstructed(inputs, request, templates)?
+            };
+            Reply::ActionsProcessed(report)
+        }
+    };
+    Ok((reply, receipts))
 }
 // Bounds/declaration check only. Never returns tracked material or bypasses native
 // replay; caller must independently bind the supplied capsule and exact event.
@@ -1859,7 +2138,7 @@ pub(crate) fn declared_template_preflight(
     roles.insert(role.to_string());
     source_preflight_inner(inputs, r, &roles)?;
     if inputs.iter().filter(|i| i.role == role).count() != 1 {
-        return Err(bad("saved template role must occur exactly once"));
+        return Err(invalid("saved template role must occur exactly once"));
     }
     let mut used = false;
     for material in &r.recipe.materials {
@@ -1879,7 +2158,7 @@ pub(crate) fn declared_template_preflight(
         }
     }
     if !used {
-        return Err(bad("saved template must feed explicit exact PCR"));
+        return Err(invalid("saved template must feed explicit exact PCR"));
     }
     Ok(())
 }

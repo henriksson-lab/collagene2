@@ -434,6 +434,30 @@ impl Molecule {
     /// Intersected annotation envelopes are retained for review; stale biological
     /// assertions become bounded source evidence rather than active destination claims.
     pub fn replace(&self, start: usize, end: usize, replacement: &str) -> Result<Self, Error> {
+        self.replace_native(start, end, replacement, false)
+            .map(|(molecule, _)| molecule)
+    }
+    /// Actual normalized edit and feature ordinals from the same native execution.
+    /// The receipt is local evidence; it is deliberately not deserializable.
+    pub fn replace_with_projection(
+        &self,
+        start: usize,
+        end: usize,
+        replacement: &str,
+    ) -> Result<(Self, annotations::ReplacementProjection), Error> {
+        let (molecule, projection) = self.replace_native(start, end, replacement, true)?;
+        Ok((
+            molecule,
+            projection.ok_or_else(|| Error::Format("native edit receipt unavailable".into()))?,
+        ))
+    }
+    fn replace_native(
+        &self,
+        start: usize,
+        end: usize,
+        replacement: &str,
+        capture: bool,
+    ) -> Result<(Self, Option<annotations::ReplacementProjection>), Error> {
         if replacement.len() > MAX_SEQUENCE_LEN.saturating_mul(2) {
             return Err(Error::TooLarge);
         }
@@ -456,10 +480,28 @@ impl Molecule {
         }
         // A normalized no-op preserves opaque source assertions and creates no edit recipe.
         if self.sequence.as_str()[start..end] == replacement {
-            return Ok(self.clone());
+            let projection = capture.then(|| annotations::ReplacementProjection {
+                map: if len == 0 {
+                    vec![]
+                } else {
+                    vec![annotations::MappingSegment {
+                        source_start: 0,
+                        source_end: len,
+                        destination_start: 0,
+                        reverse: false,
+                    }]
+                },
+                source_feature_indices: (0..self.features.len()).collect(),
+                dropped_source_feature_indices: vec![],
+                start,
+                end,
+                inserted_length: replacement.len(),
+                unchanged: true,
+            });
+            return Ok((self.clone(), projection));
         }
-        let features = annotations::editing::Edit::new(start, end, replacement.len())
-            .features(self, new_len)?;
+        let (features, projection) = annotations::editing::Edit::new(start, end, replacement.len())
+            .features(self, new_len, capture)?;
         let mut bases = self.sequence.bases.clone();
         bases.replace_range(start..end, &replacement);
         let sequence = Sequence::new(self.sequence.alphabet(), &bases)?;
@@ -488,6 +530,6 @@ impl Molecule {
         }
         bounds::annotation_edit_preflight(&[&result])?;
         result.validate()?;
-        Ok(result)
+        Ok((result, projection))
     }
 }

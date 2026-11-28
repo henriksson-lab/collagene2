@@ -1,5 +1,6 @@
 //! One native target-free OE execution path shared by reusable material and digest inspection.
 //! Private execution takes only freshly reconstructed source strands; reports never supply state.
+use crate::verification::projection::ReferenceProjection;
 use crate::{
     chemistry::{self, tracked_duplex::TrackedDuplex},
     cloning::{
@@ -11,9 +12,8 @@ use crate::{
     },
     verification::{self, pcr::PcrDocument},
 };
-use collagene_model::annotations::{self, MappingSegment};
+use collagene_model::annotations::MappingSegment;
 use collagene_model::{Error, Molecule};
-use std::collections::BTreeSet;
 const MAX_GEOMETRIES: usize = 10_000;
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("overlap-extension execution: {s}"))
@@ -29,6 +29,16 @@ pub(crate) struct Execution {
     pub product: Option<Molecule>,
     pub incomplete: bool,
     pub findings: Vec<String>,
+    pub native: Option<NativeStages>,
+}
+pub(crate) struct NativeStages {
+    pub left: Molecule,
+    pub left_projection: ReferenceProjection,
+    pub right: Molecule,
+    pub right_projection: ReferenceProjection,
+    pub extended: Molecule,
+    pub extension_projections: Vec<ReferenceProjection>,
+    pub outer_projection: ReferenceProjection,
 }
 pub(crate) fn preflight(
     source: &Molecule,
@@ -100,55 +110,77 @@ fn pcr_stage(
     }
     Ok((summary, product))
 }
+/// Receipt ordinals remain the native geometry vector's ordinals. Only the
+/// actual singleton selected by pcr_stage can supply a stage receipt.
+fn pcr_receipt(
+    result: Result<(Vec<PcrDocument>, Option<Vec<ReferenceProjection>>), Error>,
+) -> (Result<Vec<PcrDocument>, Error>, Option<ReferenceProjection>) {
+    match result {
+        Ok((documents, projections)) => {
+            let projection = if documents.len() == 1 {
+                projections
+                    .filter(|projections| projections.len() == 1)
+                    .and_then(|mut projections| projections.pop())
+            } else {
+                None
+            };
+            (Ok(documents), projection)
+        }
+        Err(error) => (Err(error), None),
+    }
+}
 fn project(
     source: &Molecule,
     offset: usize,
     product: &mut Molecule,
     findings: &mut Vec<String>,
-) -> Result<(), Error> {
-    if source.features.is_empty() {
-        return Ok(());
-    }
-    let projected = annotations::project_features_with_topology(
-        source,
-        &[MappingSegment {
-            source_start: 0,
-            source_end: source.sequence.len(),
-            destination_start: offset,
-            reverse: false,
-        }],
-        product.sequence.len(),
-        product.topology,
-    )?;
-    product.features.extend(projected.features);
-    if !projected.unmapped_features.is_empty() {
-        product.metadata.insert(
-            format!("annotation_mapping:unmapped:{}", source.revision()),
-            serde_json::to_string(&projected.unmapped_features).map_err(|_| Error::TooLarge)?,
-        );
-    }
-    findings.extend(
-        projected
-            .warnings
-            .iter()
-            .take(100)
-            .map(|s| s.chars().take(2048).collect()),
-    );
-    let mut seen = BTreeSet::new();
-    let mut features = Vec::with_capacity(product.features.len());
-    for feature in product.features.drain(..) {
-        if seen.insert(crate::encoding::bounded_json::hash(&feature)?) {
-            features.push(feature);
-        }
-    }
-    product.features = features;
-    Ok(())
+) -> Result<ReferenceProjection, Error> {
+    let map = vec![MappingSegment {
+        source_start: 0,
+        source_end: source.sequence.len(),
+        destination_start: offset,
+        reverse: false,
+    }];
+    let native = verification::projection::project_into(source, &map, product, findings)?;
+    Ok(ReferenceProjection {
+        map,
+        native,
+        introduced: vec![],
+    })
 }
 
 pub(crate) fn execute(
     source: &Molecule,
     tracked: Option<&TrackedDuplex>,
     preparation: &overlap_extension_pcr::Request,
+) -> Result<Execution, Error> {
+    execute_native(source, tracked, preparation, false, None)
+}
+pub(crate) fn execute_scoped(
+    source: &Molecule,
+    tracked: Option<&TrackedDuplex>,
+    preparation: &overlap_extension_pcr::Request,
+    capture: bool,
+    replay: &mut verification::replay_budget::ReplayBudget<'_>,
+) -> Result<Execution, Error> {
+    execute_native(
+        source,
+        tracked,
+        preparation,
+        capture,
+        if replay.is_qc_job() {
+            Some(&mut replay.pcr)
+        } else {
+            None
+        },
+    )
+}
+fn execute_native(
+    source: &Molecule,
+    tracked: Option<&TrackedDuplex>,
+    preparation: &overlap_extension_pcr::Request,
+    capture: bool,
+    mut budget: Option<&mut crate::sequence::analysis::ExactSearchBudget>,
 ) -> Result<Execution, Error> {
     preflight(source, preparation)?;
     if let Some(tracked) = tracked.filter(|m| m.duplex.nicks.is_empty()) {
@@ -168,30 +200,45 @@ pub(crate) fn execute(
     }
     let mut findings=vec!["Fresh ideal exact-PCR branches, selected reciprocal extension and outer PCR. There is no intended target input. Geometry uniqueness is conditional on this model and is not experimental isolation or reaction success.".into()];
     let mut incomplete = false;
-    let initial = |pair: &overlap_extension_pcr::PrimerPair| {
-        if let Some(tracked) = tracked {
-            verification::pcr::simulate_pcr_documents_from_fresh(
-                source,
-                &pair.forward,
-                &pair.reverse,
-                tracked,
-                pair.template_strand,
-            )
-        } else {
-            verification::pcr::simulate_pcr_documents(
-                source,
-                &pair.forward,
-                &pair.reverse,
-                pair.template_strand,
-            )
+    let mut initial = |pair: &overlap_extension_pcr::PrimerPair|
+     -> Result<(Vec<PcrDocument>, Option<Vec<ReferenceProjection>>), Error> {
+        match (tracked, capture) {
+            (Some(tracked), true) => {
+                verification::pcr::simulate_pcr_documents_from_fresh_with_projections(
+                    source, &pair.forward, &pair.reverse, tracked,
+                    pair.template_strand, budget.as_deref_mut(),
+                )
+            }
+            (None, true) => verification::pcr::simulate_pcr_documents_with_projections(
+                source, &pair.forward, &pair.reverse, pair.template_strand,
+                budget.as_deref_mut(),
+            ),
+            (Some(tracked), false) => match budget.as_deref_mut() {
+                Some(budget) => verification::pcr::simulate_pcr_documents_from_fresh_with_budget(
+                    source, &pair.forward, &pair.reverse, tracked, pair.template_strand, budget,
+                ),
+                None => verification::pcr::simulate_pcr_documents_from_fresh(
+                    source, &pair.forward, &pair.reverse, tracked, pair.template_strand,
+                ),
+            }.map(|documents| (documents, None)),
+            (None, false) => match budget.as_deref_mut() {
+                Some(budget) => verification::pcr::simulate_pcr_documents_with_budget(
+                    source, &pair.forward, &pair.reverse, pair.template_strand, budget,
+                ),
+                None => verification::pcr::simulate_pcr_documents(
+                    source, &pair.forward, &pair.reverse, pair.template_strand,
+                ),
+            }.map(|documents| (documents, None)),
         }
     };
-    let (left_stage, left) = pcr_stage("left", source, initial(&preparation.left), &mut findings)?;
-    let (right_stage, right) =
-        pcr_stage("right", source, initial(&preparation.right), &mut findings)?;
+    let (left_result, left_projection) = pcr_receipt(initial(&preparation.left));
+    let (right_result, right_projection) = pcr_receipt(initial(&preparation.right));
+    let (left_stage, left) = pcr_stage("left", source, left_result, &mut findings)?;
+    let (right_stage, right) = pcr_stage("right", source, right_result, &mut findings)?;
     let mut pcr_stages = vec![left_stage, right_stage];
     let mut extension = None;
     let mut product_document = None;
+    let mut native = None;
     if let (Some(left), Some(right)) = (left, right) {
         let a = TrackedDuplex::exact_pcr(&left.molecule.sequence)?;
         let b = TrackedDuplex::exact_pcr(&right.molecule.sequence)?;
@@ -203,29 +250,64 @@ pub(crate) fn execute(
                 let mut reference = extended
                     .duplex
                     .molecule("Fresh reciprocal overlap-extension substrate")?;
-                project(&left.molecule, 0, &mut reference, &mut findings)?;
-                project(
+                let left_map = project(&left.molecule, 0, &mut reference, &mut findings)?;
+                let right_map = project(
                     &right.molecule,
                     a.duplex.top.len() - preparation.extension.overlap,
                     &mut reference,
                     &mut findings,
                 )?;
                 let outer = &preparation.outer;
-                let (outer_stage, product) = pcr_stage(
-                    "outer",
-                    &reference,
-                    verification::pcr::simulate_pcr_documents_from_fresh(
+                let outer_result = if capture {
+                    verification::pcr::simulate_pcr_documents_from_fresh_with_projections(
                         &reference,
                         &outer.forward,
                         &outer.reverse,
                         &extended,
                         outer.template_strand,
-                    ),
-                    &mut findings,
-                )?;
+                        budget.as_deref_mut(),
+                    )
+                } else {
+                    match budget.as_deref_mut() {
+                        Some(budget) => {
+                            verification::pcr::simulate_pcr_documents_from_fresh_with_budget(
+                                &reference,
+                                &outer.forward,
+                                &outer.reverse,
+                                &extended,
+                                outer.template_strand,
+                                budget,
+                            )
+                        }
+                        None => verification::pcr::simulate_pcr_documents_from_fresh(
+                            &reference,
+                            &outer.forward,
+                            &outer.reverse,
+                            &extended,
+                            outer.template_strand,
+                        ),
+                    }
+                    .map(|documents| (documents, None))
+                };
+                let (outer_result, outer_projection) = pcr_receipt(outer_result);
+                let (outer_stage, product) =
+                    pcr_stage("outer", &reference, outer_result, &mut findings)?;
                 pcr_stages.push(outer_stage);
                 if let Some(product) = product {
                     product_document = Some(product.molecule);
+                    if let (Some(left_projection), Some(right_projection), Some(outer_projection)) =
+                        (left_projection, right_projection, outer_projection)
+                    {
+                        native = Some(NativeStages {
+                            left: left.molecule,
+                            left_projection,
+                            right: right.molecule,
+                            right_projection,
+                            extended: reference,
+                            extension_projections: vec![left_map, right_map],
+                            outer_projection,
+                        });
+                    }
                 } else {
                     incomplete = true;
                 }
@@ -246,6 +328,7 @@ pub(crate) fn execute(
         product: product_document,
         incomplete,
         findings,
+        native,
     })
 }
 

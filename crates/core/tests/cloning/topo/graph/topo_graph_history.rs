@@ -1,4 +1,5 @@
 //! Native saved graphs retain actual steps and source calls; no report is stock.
+use collagene_core::documents::reference_edit::Operation as Edit;
 #[path = "../../../common/topo_graph.rs"]
 mod literal;
 use collagene_core::cloning::topo::physical as p;
@@ -65,10 +66,15 @@ fn saved_source_events_survive_both_head_advances_and_reopen_without_ordinary_du
     let mut w = first.workspace;
     let mut histories = DocumentHistory::restore_all(&w).unwrap();
     for history in histories.iter_mut().take(2) {
-        let source = history.revision_molecule(history.head_event()).unwrap();
-        let changed = source.replace(0, 1, "T").unwrap();
         history
-            .commit(changed, "Explicitly advance source head")
+            .commit(
+                vec![Edit::ReplaceSequence {
+                    start: 0,
+                    end: 1,
+                    replacement: "T".into(),
+                }],
+                "Explicitly advance source head",
+            )
             .unwrap();
     }
     w.documents.clear();
@@ -318,6 +324,45 @@ fn nested_capture_final_run_and_protocols_keep_all_calls_without_historical_olig
         serde_json::to_vec(&commit.workspace.documents[..w.documents.len()]).unwrap(),
         before
     );
+    // There are no current PlanInputs: the actual native parents come from
+    // the closed saved-graph recipe, including its nested retained sources.
+    assert!(plan.inputs.is_empty());
+    let retained = g::load(&w, &full.receipt.selection.record_hash).unwrap();
+    let expected_parents: std::collections::BTreeSet<_> = g::source_bindings(&retained)
+        .unwrap()
+        .into_iter()
+        .map(|binding| binding.event_id)
+        .collect();
+    let literal_sources: std::collections::BTreeSet<_> = (0..4)
+        .map(|index| literal::event(&w, index).event_id)
+        .collect();
+    assert_eq!(expected_parents, literal_sources);
+    assert!(!expected_parents.contains(&literal::event(&w, 4).event_id));
+    let product_event = commit
+        .workspace
+        .history
+        .iter()
+        .find(|event| event.id == commit.receipt.run.products[0].event_id)
+        .unwrap();
+    assert_eq!(
+        product_event
+            .parents
+            .iter()
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>(),
+        expected_parents
+    );
+    // Erasing an event dependency must fail both event integrity and native
+    // run cross-references, even though the DNA and run record are unchanged.
+    let mut erased = commit.workspace.clone();
+    erased
+        .history
+        .iter_mut()
+        .find(|event| event.id == product_event.id)
+        .unwrap()
+        .parents
+        .clear();
+    assert!(erased.validate().is_err());
     let restart = reopened(&commit.workspace);
     let replay = run_lineage::replay_run(&restart, &commit.receipt.run.run_id).unwrap();
     assert!(replay.engine_matches);

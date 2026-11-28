@@ -1436,6 +1436,41 @@ pub(crate) struct Replayed {
 }
 /// Native operation implementation: every use performs a new scoped evaluation.
 pub(crate) fn replay(origin: &Capsule, source: &Molecule) -> Result<Replayed, Error> {
+    replay_native(origin, source, None).map(|(fresh, _, _, _)| fresh)
+}
+/// Retained run receipts are produced by the same pass that proves tracked state.
+pub(crate) fn replay_scoped(
+    origin: &Capsule,
+    source: &Molecule,
+    replay: &mut crate::verification::replay_budget::ReplayBudget<'_>,
+    trace: Option<crate::verification::ancestry::TraceBudget>,
+) -> Result<
+    (
+        Replayed,
+        crate::verification::ancestry::OriginBinding,
+        Option<Result<crate::verification::ancestry::ReconstructionTrace, Error>>,
+        Option<Molecule>,
+    ),
+    Error,
+> {
+    replay_native(origin, source, Some((replay, trace)))
+}
+fn replay_native(
+    origin: &Capsule,
+    source: &Molecule,
+    capture: Option<(
+        &mut crate::verification::replay_budget::ReplayBudget<'_>,
+        Option<crate::verification::ancestry::TraceBudget>,
+    )>,
+) -> Result<
+    (
+        Replayed,
+        crate::verification::ancestry::OriginBinding,
+        Option<Result<crate::verification::ancestry::ReconstructionTrace, Error>>,
+        Option<Molecule>,
+    ),
+    Error,
+> {
     origin.validate_documentary()?;
     if source.revision() != origin.selection.event.revision {
         return Err(Error::Format(
@@ -1443,8 +1478,68 @@ pub(crate) fn replay(origin: &Capsule, source: &Molecule) -> Result<Replayed, Er
         ));
     }
     let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
-    let (report, mut states) =
-        verification::engine::verify_with_tracked(&candidate.plan, &origin.target);
+    let binding = crate::verification::ancestry::OriginBinding::Run {
+        selection: origin.selection.clone(),
+        plan_revision: candidate.plan.revision(),
+        target_event: origin.target_event.clone(),
+        inputs: origin.inputs.clone(),
+        products: origin.products.clone(),
+    };
+    let (mut report, mut states, trace) = match capture {
+        Some((replay, trace_budget)) => {
+            if replay.is_qc_job() {
+                match trace_budget {
+                    Some(trace_budget) => {
+                        let (report, states, trace) =
+                            verification::engine::verify_with_tracked_ancestry_budget(
+                                &candidate.plan,
+                                &origin.target,
+                                replay,
+                                trace_budget,
+                            );
+                        (report, states, Some(trace))
+                    }
+                    None => {
+                        let (report, states) = verification::engine::verify_with_tracked_scoped(
+                            &candidate.plan,
+                            &origin.target,
+                            replay,
+                        );
+                        (report, states, None)
+                    }
+                }
+            } else {
+                let mut cleavage =
+                    crate::chemistry::tracked_duplex::CleavageBudget::new(100_000_000)?;
+                let mut local =
+                    crate::verification::replay_budget::ReplayBudget::plan_local(&mut cleavage);
+                match trace_budget {
+                    Some(trace_budget) => {
+                        let (report, states, trace) =
+                            verification::engine::verify_with_tracked_ancestry_budget(
+                                &candidate.plan,
+                                &origin.target,
+                                &mut local,
+                                trace_budget,
+                            );
+                        (report, states, Some(trace))
+                    }
+                    None => {
+                        let (report, states) = verification::engine::verify_with_tracked(
+                            &candidate.plan,
+                            &origin.target,
+                        );
+                        (report, states, None)
+                    }
+                }
+            }
+        }
+        None => {
+            let (report, states) =
+                verification::engine::verify_with_tracked(&candidate.plan, &origin.target);
+            (report, states, None)
+        }
+    };
     report.validate_documentary()?;
     if report.status == Status::Invalid
         || report.steps.len() != origin.products.len()
@@ -1481,14 +1576,122 @@ pub(crate) fn replay(origin: &Capsule, source: &Molecule) -> Result<Replayed, Er
     let incomplete = report.status == Status::Incomplete;
     let mut writer = Bounded(Vec::new());
     serde_json::to_writer(&mut writer, &report).map_err(|_| Error::TooLarge)?;
-    Ok(Replayed {
-        reference: source.clone(),
-        tracked,
-        incomplete,
-        evidence: ReplayEvidence {
-            origin: origin.clone(),
-            current_report: writer.0,
-            material_revision,
+    // The complete documentary report is already retained. Move the actual
+    // admitted native model into its private receipt rather than copying it.
+    let actual = trace.as_ref().map(|_| {
+        report.steps[origin.selection.step_index]
+            .product
+            .take()
+            .expect("validated selected native product")
+    });
+    Ok((
+        Replayed {
+            reference: source.clone(),
+            tracked,
+            incomplete,
+            evidence: ReplayEvidence {
+                origin: origin.clone(),
+                current_report: writer.0,
+                material_revision,
+            },
         },
-    })
+        binding,
+        trace,
+        actual,
+    ))
+}
+
+#[cfg(test)]
+mod scoped_replay_tests {
+    use super::*;
+    use crate::{
+        chemistry::{Strand, tracked_duplex::CleavageBudget},
+        documents::workspace::Workspace,
+        material::{lineage::InputEventBinding, outputs},
+        planning::plan::{Operation, PlanInput, Source},
+        sequence::analysis::{ExactSearchBudget, Primer},
+        verification::replay_budget::ReplayBudget,
+    };
+    use collagene_model::Topology;
+
+    fn event(workspace: &Workspace, index: usize) -> EventBinding {
+        let document = &workspace.documents[index];
+        EventBinding {
+            document_id: document.id.clone(),
+            event_id: document.head_event.clone().unwrap(),
+            revision: document.head.clone(),
+        }
+    }
+
+    #[test]
+    fn nested_saved_run_charges_one_qc_ledger_without_ancestry_capture() {
+        let source = Molecule::dna("template", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
+        let target =
+            Molecule::dna("independent target", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
+        let plan = DesignPlan {
+            name: "saved exact PCR".into(),
+            target_revision: target.revision(),
+            inputs: vec![PlanInput {
+                id: "original".into(),
+                revision: source.revision(),
+                molecule: source.clone(),
+            }],
+            steps: vec![Operation::Pcr {
+                template: Source::Input("original".into()),
+                forward: Primer::new("forward", "ACGACCCC", "").unwrap(),
+                reverse: Primer::new("reverse", "GTTACCCC", "").unwrap(),
+                template_strand: Strand::Top,
+            }],
+        };
+        let workspace =
+            Workspace::from_documents("native saved run", vec![source, target], 1).unwrap();
+        let commit = outputs::finalize(
+            &workspace,
+            &plan,
+            event(&workspace, 1),
+            vec![InputEventBinding {
+                input_id: "original".into(),
+                event: event(&workspace, 0),
+            }],
+            &outputs::Options {
+                name: "saved PCR".into(),
+                save_primers: false,
+                show_prepared: false,
+                allow_incomplete: true,
+            },
+        )
+        .unwrap();
+        let selected = crate::material::run::Selection {
+            run_id: commit.receipt.run.run_id,
+            step_index: 0,
+            event: commit.receipt.construct,
+        };
+        let origin = capsule(&commit.workspace, &selected).unwrap();
+        let saved = commit
+            .workspace
+            .head(&selected.event.document_id)
+            .unwrap()
+            .clone();
+        let mut cleavage = CleavageBudget::new(100_000_000).unwrap();
+        let mut baseline = ReplayBudget::qc_job(&mut cleavage);
+        let (fresh, _, trace, actual) =
+            replay_scoped(&origin, &saved, &mut baseline, None).unwrap();
+        assert_eq!(fresh.reference, saved);
+        assert!(trace.is_none() && actual.is_none());
+        let work = baseline.pcr_used();
+        assert!(work > 0);
+
+        let mut cleavage = CleavageBudget::new(100_000_000).unwrap();
+        let mut shared = ReplayBudget::qc_job(&mut cleavage);
+        shared.pcr = ExactSearchBudget::new(work + work / 2).unwrap();
+        assert!(replay_scoped(&origin, &saved, &mut shared, None).is_ok());
+        assert_eq!(shared.pcr_used(), work);
+        assert!(replay_scoped(&origin, &saved, &mut shared, None).is_err());
+        assert!(shared.exhausted());
+        let charged = shared.pcr_used();
+        assert!(replay_scoped(&origin, &saved, &mut shared, None).is_err());
+        assert_eq!(shared.pcr_used(), charged);
+        // Ordinary replay still owns the original independent native scope.
+        assert!(replay(&origin, &saved).is_ok());
+    }
 }

@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current source registry has 219 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current source registry has 227 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -1293,3 +1293,13 @@ This brings the regular native tool inventory to190. [Scientific profile](SEQUEN
 `search_oligo_collection {document, collection, options, budget, conditions, hit_start?, max_hits?}` searches a declared bounded `collagene_oligo_binding::Collection` against an immutable DNA source. Each oligo retains its ordered sequence and explicit nonannealing 5′ tail. Options specify the ungapped 3′-anchored annealing-suffix model, extra unpaired bases, mismatch/terminal-pairing policy and scores; unsupported gap fields are refused. `conditions` supplies the existing sodium-molar/total-strand-molar perfect-duplex thermodynamic assumptions. Native work/hit/output budgets and completion remain visible. Inline rows contain original-coordinate footprints, orientation, origin crossing, annealing/tail boundaries, mismatch/score envelopes and certainty; per-base columns remain in the complete `oligo-collection-binding.json` artifact (at most 24 MiB). Actual mismatch or mixture binding does not receive a perfect-duplex annealing Tm. A whole-oligo value is explicitly hypothetical perfect-duplex thermodynamics, not evidence that its tail anneals or that PCR succeeds.
 
 All finding/hit pages default to 25 and permit 1–100 entries; an offset beyond the retained result count is rejected. Each page freshly invokes the native owner and identical complete evidence deduplicates to the same immutable artifact. Store/source guards run before owned source snapshots. Reports bind exact sources and declared request/profile/options/conditions; artifacts remain historical producer evidence, requiring their original request and fresh native replay for scientific reuse. These tools create no sequence, plan, workspace or library record, and do not write to the joint lab database.
+
+`assess_construct_causal_qc` accepts an immutable `WorkspaceRef` and explicit
+native source/product CDS pairs, annotation assumptions, genetic code and resource
+limits. It freshly follows supported retained native history; operation labels,
+sequence similarity and unretained producer previews cannot provide a recipe.
+Pair pages show typed findings, correspondence completeness, register segments
+and definite internal-stop comparisons, with explicit preview truncation. The
+complete source/request/workspace-bound JSON is available through the immutable
+artifact. No workspace, source, history or material is modified; this is structural
+evidence under declared annotation assumptions, without an overall biological pass.

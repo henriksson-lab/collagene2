@@ -1,5 +1,8 @@
 //! Real SDK routing: no direct tool-method shortcuts or mock quality/verification verdicts.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::{
         transfer::Candidate,
@@ -119,6 +122,19 @@ fn archive_fixture(documents: usize) -> Workspace {
         &changed_revision,
         vec![root_event.clone()],
         "Explicit base edit",
+        Transition::ReferenceEdit {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: "document-1".into(),
+                event_id: root_event.clone(),
+                revision: root.clone(),
+            },
+            actions: vec![Edit::ReplaceSequence {
+                start: 2,
+                end: 3,
+                replacement: "C".into(),
+            }],
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     archive.documents[0].head = changed_revision.clone();

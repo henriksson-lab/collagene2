@@ -2,11 +2,17 @@
 //! Navigation never establishes scientific verification or executes event descriptions.
 use crate::documents::workspace::{RevisionEvent, Workspace, WorkspaceDocument};
 use collagene_model::{Error, Molecule};
+use serde::Serialize;
 use std::{
     collections::{BTreeMap, BTreeSet},
     io,
     sync::Arc,
 };
+pub mod transition;
+use crate::{
+    documents::reference_edit::Operation as ReferenceEdit, material::lineage::EventBinding,
+};
+use transition::{AnalysisOrigin, Transition};
 pub const MAX_UNDO_STATES: usize = 100;
 pub const MAX_HISTORY_EVENTS: usize = 10_000;
 pub const MAX_HISTORY_BYTES: usize = 64 * 1024 * 1024;
@@ -15,6 +21,7 @@ struct Node {
     event: Arc<RevisionEvent>,
     molecule: Arc<Molecule>,
     bytes: usize,
+    event_bytes: usize,
 }
 #[derive(Debug, Clone)]
 pub struct HistorySummary {
@@ -48,18 +55,29 @@ impl io::Write for Count {
         Ok(())
     }
 }
-fn size(m: &Molecule) -> Result<usize, Error> {
+fn size(m: &impl Serialize) -> Result<usize, Error> {
     let mut count = Count(0);
     serde_json::to_writer(&mut count, m).map_err(|_| Error::TooLarge)?;
     Ok(count.0)
 }
 impl DocumentHistory {
     pub fn new(id: impl Into<String>, molecule: Molecule) -> Result<Self, Error> {
+        collagene_model::bounds::native_frame_preflight(
+            std::iter::once(&molecule),
+            crate::documents::reference_edit::MAX_EDIT_BYTES,
+        )?;
         molecule.validate()?;
         let id = id.into();
         let revision = molecule.revision();
         let bytes = size(&molecule)?;
-        let event = RevisionEvent::new(id.clone(), revision, vec![], "Opened document")?;
+        let event = RevisionEvent::new(
+            id.clone(),
+            revision,
+            vec![],
+            "Opened document",
+            Transition::IndependentReference,
+        )?;
+        let event_bytes = size(&event)?;
         Ok(Self {
             id,
             molecule: molecule.clone(),
@@ -68,6 +86,7 @@ impl DocumentHistory {
                 event: Arc::new(event),
                 molecule: Arc::new(molecule),
                 bytes,
+                event_bytes,
             }],
             undo: vec![],
             redo: vec![],
@@ -93,6 +112,13 @@ impl DocumentHistory {
             .event
             .revision
     }
+    pub fn binding(&self) -> EventBinding {
+        EventBinding {
+            document_id: self.id.clone(),
+            event_id: self.head.clone(),
+            revision: self.head_revision().into(),
+        }
+    }
     /// Exact reversible navigation event identities, oldest entry first and next
     /// operation last. These stacks describe navigation, not biological ancestry.
     pub fn navigation_event_ids(&self) -> (Vec<String>, Vec<String>) {
@@ -113,7 +139,15 @@ impl DocumentHistory {
             source.event.revision.clone(),
             vec![source.event.id.clone()],
             "Opened retained revision as new document",
+            Transition::Fork {
+                source: EventBinding {
+                    document_id: self.id.clone(),
+                    event_id: source.event.id.clone(),
+                    revision: source.event.revision.clone(),
+                },
+            },
         )?;
+        let event_bytes = size(&fork)?;
         Ok(Self {
             id,
             molecule: source.molecule.as_ref().clone(),
@@ -122,6 +156,7 @@ impl DocumentHistory {
                 event: Arc::new(fork),
                 molecule: source.molecule.clone(),
                 bytes: source.bytes,
+                event_bytes,
             }],
             undo: vec![],
             redo: vec![],
@@ -137,6 +172,7 @@ impl DocumentHistory {
         id: impl Into<String>,
         molecule: Molecule,
         operation: impl Into<String>,
+        origin: AnalysisOrigin,
     ) -> Result<Self, Error> {
         let source = self.node(event)?.event.id.clone();
         let id = id.into();
@@ -151,7 +187,9 @@ impl DocumentHistory {
             derived.molecule.revision(),
             vec![source],
             operation,
+            Transition::Analysis { origin },
         )?;
+        derived.nodes[0].event_bytes = size(&node)?;
         derived.head = node.id.clone();
         derived.nodes[0].event = Arc::new(node);
         Ok(derived)
@@ -164,6 +202,7 @@ impl DocumentHistory {
         id: impl Into<String>,
         molecule: Molecule,
         operation: impl Into<String>,
+        origin: AnalysisOrigin,
     ) -> Result<Self, Error> {
         if sources.is_empty() {
             return Err(Error::Format(
@@ -193,7 +232,9 @@ impl DocumentHistory {
             derived.molecule.revision(),
             parents,
             operation,
+            Transition::Analysis { origin },
         )?;
+        derived.nodes[0].event_bytes = size(&event)?;
         derived.head = event.id.clone();
         derived.nodes[0].event = Arc::new(event);
         Ok(derived)
@@ -219,12 +260,20 @@ impl DocumentHistory {
             .collect()
     }
     pub fn retained_bytes(&self) -> usize {
-        self.revision_sizes().values().sum()
+        self.revision_sizes()
+            .values()
+            .copied()
+            .chain(self.nodes.iter().map(|node| node.event_bytes))
+            .fold(0, usize::saturating_add)
     }
     /// Atomic commit: stale current state, invalid data or capacity errors leave every
     /// navigation stack and event unchanged. Redo branches stay in immutable history.
-    pub fn commit(&mut self, next: Molecule, operation: impl Into<String>) -> Result<(), Error> {
-        self.commit_with_source_events(next, operation, &[])
+    pub fn commit(
+        &mut self,
+        actions: Vec<ReferenceEdit>,
+        operation: impl Into<String>,
+    ) -> Result<(), Error> {
+        self.commit_with_source_events(actions, operation, &[])
     }
     /// Commit a reversible reference edit with explicitly retained source events.
     /// The host must validate cross-document event ownership in its staged workspace.
@@ -233,19 +282,93 @@ impl DocumentHistory {
     /// even when the resulting molecular content is unchanged.
     pub fn commit_with_source_events(
         &mut self,
-        next: Molecule,
+        actions: Vec<ReferenceEdit>,
         operation: impl Into<String>,
         source_events: &[String],
     ) -> Result<(), Error> {
         if source_events.len() > 128 {
             return Err(Error::TooLarge);
         }
-        next.validate()?;
+        if source_events
+            .iter()
+            .any(|event| !crate::documents::workspace::event_id(event))
+        {
+            return Err(Error::Format(
+                "invalid supplemental source event identity".into(),
+            ));
+        }
+        self.ensure_current()?;
+        let source = self.binding();
+        let next = ReferenceEdit::apply_all(&self.molecule, &actions)?;
+        let supplemental_sources =
+            source_events
+                .iter()
+                .filter(|id| **id != self.head)
+                .fold(Vec::new(), |mut ids, id| {
+                    if !ids.contains(id) {
+                        ids.push(id.clone());
+                    }
+                    ids
+                });
+        let transition = Transition::ReferenceEdit {
+            source,
+            actions,
+            supplemental_sources,
+        };
+        self.commit_result(next, operation, source_events, transition)
+    }
+    /// Retain an actual named computational producer, without claiming a
+    /// reference edit or treating its descriptive label as a replay recipe.
+    pub fn commit_analysis(
+        &mut self,
+        next: Molecule,
+        operation: impl Into<String>,
+        origin: AnalysisOrigin,
+        source_events: &[String],
+    ) -> Result<(), Error> {
+        self.commit_result(
+            next,
+            operation,
+            source_events,
+            Transition::Analysis { origin },
+        )
+    }
+    fn ensure_current(&self) -> Result<(), Error> {
+        collagene_model::bounds::native_frame_preflight(
+            std::iter::once(&self.molecule),
+            crate::documents::reference_edit::MAX_EDIT_BYTES,
+        )?;
         if self.node(&self.head)?.event.revision != self.molecule.revision() {
             return Err(Error::Format(
                 "current state was changed outside its history controller".into(),
             ));
         }
+        Ok(())
+    }
+    fn commit_result(
+        &mut self,
+        next: Molecule,
+        operation: impl Into<String>,
+        source_events: &[String],
+        transition: Transition,
+    ) -> Result<(), Error> {
+        if source_events.len() > 128 {
+            return Err(Error::TooLarge);
+        }
+        if source_events
+            .iter()
+            .any(|event| !crate::documents::workspace::event_id(event))
+        {
+            return Err(Error::Format(
+                "invalid supplemental source event identity".into(),
+            ));
+        }
+        self.ensure_current()?;
+        collagene_model::bounds::native_frame_preflight(
+            std::iter::once(&next),
+            crate::documents::reference_edit::MAX_EDIT_BYTES,
+        )?;
+        next.validate()?;
         let revision = next.revision();
         if revision == self.node(&self.head)?.event.revision && source_events.is_empty() {
             return Ok(());
@@ -256,7 +379,14 @@ impl DocumentHistory {
                 parents.push(source.clone());
             }
         }
-        let event = RevisionEvent::new(self.id.clone(), revision.clone(), parents, operation)?;
+        let event = RevisionEvent::new(
+            self.id.clone(),
+            revision.clone(),
+            parents,
+            operation,
+            transition,
+        )?;
+        let event_bytes = size(&event)?;
         let existing = self.nodes.iter().find(|n| n.event.id == event.id).cloned();
         let node = if let Some(existing) = existing {
             existing
@@ -265,19 +395,25 @@ impl DocumentHistory {
                 return Err(Error::Unsupported("Document history capacity reached; export the workspace or open a revision as a new document before continuing".into()));
             }
             let shared = self.nodes.iter().find(|n| n.event.revision == revision);
+            let additional_molecule_bytes = if shared.is_some() { 0 } else { size(&next)? };
+            if self
+                .retained_bytes()
+                .saturating_add(additional_molecule_bytes)
+                .saturating_add(event_bytes)
+                > MAX_HISTORY_BYTES
+            {
+                return Err(Error::Unsupported("Retained document history and typed actions exceed64MiB; export the workspace or fork a new document before continuing".into()));
+            }
             let (molecule, bytes) = if let Some(shared) = shared {
                 (shared.molecule.clone(), shared.bytes)
             } else {
-                let bytes = size(&next)?;
-                if self.retained_bytes().saturating_add(bytes) > MAX_HISTORY_BYTES {
-                    return Err(Error::Unsupported("Retained document history exceeds 64 MiB; export the workspace or fork a new document before continuing".into()));
-                }
-                (Arc::new(next.clone()), bytes)
+                (Arc::new(next.clone()), additional_molecule_bytes)
             };
             Node {
                 event: Arc::new(event),
                 molecule,
                 bytes,
+                event_bytes,
             }
         };
         if !self.nodes.iter().any(|n| n.event.id == node.event.id) {
@@ -394,13 +530,14 @@ impl DocumentHistory {
                 .filter(|e| e.document_id == doc.id)
                 .map(|event| {
                     let (molecule, bytes) = &shared[&event.revision];
-                    Node {
+                    Ok(Node {
                         event: Arc::new(event.clone()),
                         molecule: molecule.clone(),
                         bytes: *bytes,
-                    }
+                        event_bytes: size(event)?,
+                    })
                 })
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, Error>>()?;
             let head = doc
                 .head_event
                 .as_ref()

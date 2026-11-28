@@ -1,5 +1,6 @@
 //! User-owned feature libraries and reviewable automatic annotation proposals.
 use crate::platform::worker;
+use collagene_core::documents::reference_edit::Operation;
 use collagene_core::{
     protocol::{
         request::Request,
@@ -55,7 +56,7 @@ pub fn FeatureLibraryPanel(
     selected_feature: RwSignal<Option<usize>>,
     libraries: RwSignal<Vec<LibraryRevision>>,
     on_keep: Callback<FeatureLibrary, Result<(), String>>,
-    on_commit: Callback<(String, Molecule), Result<(), String>>,
+    on_commit: Callback<(String, Vec<Operation>), Result<(), String>>,
     selection: RwSignal<Option<(usize, usize)>>,
 ) -> impl IntoView {
     let name = RwSignal::new("My features".to_string());
@@ -304,6 +305,11 @@ pub fn FeatureLibraryPanel(
         status.set("Rechecking selected proposals…".into());
         let alive = apply_alive.clone();
         spawn_local(async move {
+            let action = Operation::ApplyFeatureLibrary {
+                library: lib.as_ref().clone(),
+                report: computed.as_ref().clone(),
+                selected: ids.clone(),
+            };
             let result = analyze(
                 AnalysisJob::ApplyFeatureLibrary {
                     molecule: source,
@@ -320,8 +326,8 @@ pub fn FeatureLibraryPanel(
             }
             busy.set(false);
             match result {
-                Ok(AnalysisResult::AnnotatedDocument(edited)) => {
-                    match on_commit.run((revision, edited)) {
+                Ok(AnalysisResult::AnnotatedDocument(_)) => {
+                    match on_commit.run((revision, vec![action])) {
                         Ok(()) => {
                             report.set(None);
                             selected.set(BTreeSet::new());
@@ -352,7 +358,7 @@ pub fn AnnotationFilesPanel(
     molecule: Memo<Molecule>,
     source: RwSignal<String>,
     format: RwSignal<collagene_core::formats::annotations::AnnotationFormat>,
-    on_commit: Callback<(String, Molecule), Result<(), String>>,
+    on_commit: Callback<(String, Vec<Operation>), Result<(), String>>,
     selection: RwSignal<Option<(usize, usize)>>,
     selected_feature: RwSignal<Option<usize>>,
 ) -> impl IntoView {
@@ -500,6 +506,10 @@ pub fn AnnotationFilesPanel(
         status.set("Rechecking source evidence and selected annotations…".into());
         let alive = apply_alive.clone();
         spawn_local(async move {
+            let action = Operation::ImportAnnotations {
+                report: computed.as_ref().clone(),
+                selected: indices.clone(),
+            };
             let result = analyze(
                 AnalysisJob::ApplyAnnotations {
                     molecule: source_mol,
@@ -515,8 +525,8 @@ pub fn AnnotationFilesPanel(
             }
             busy.set(false);
             match result {
-                Ok(AnalysisResult::AnnotatedDocument(edited)) => {
-                    match on_commit.run((revision, edited)) {
+                Ok(AnalysisResult::AnnotatedDocument(_)) => {
+                    match on_commit.run((revision, vec![action])) {
                         Ok(()) => {
                             report.set(None);
                             selected.set(BTreeSet::new());

@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{rna_history, workspace::Workspace},
     material::lineage::EventBinding,
@@ -110,9 +111,17 @@ fn ancestor_declarations_follow_a_new_head_without_becoming_a_model_for_that_hea
     let (mut w, hash) = rna_history::capture(&w, &r).unwrap();
     let mut histories =
         collagene_core::documents::history::DocumentHistory::restore_all(&w).unwrap();
-    let mut later = histories[0].molecule.clone();
-    later.sequence = Sequence::new(Alphabet::Rna, "AG").unwrap();
-    histories[0].commit(later, "Edit RNA sequence").unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
+    histories[0]
+        .commit(
+            vec![Edit::ReplaceSequence {
+                start: 0,
+                end: edit_end,
+                replacement: "AG".into(),
+            }],
+            "Edit RNA sequence",
+        )
+        .unwrap();
     w.documents.clear();
     w.history.clear();
     for d in histories {

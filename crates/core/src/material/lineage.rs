@@ -1,6 +1,7 @@
 //! Retained cloning runs are historical evidence, never cached verification authority.
 use crate::{
     documents::{
+        history::transition::Transition,
         transfer::Candidate,
         workspace::{RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
     },
@@ -281,6 +282,29 @@ fn parents(r: &RunRecord, i: usize) -> Result<Vec<String>, Error> {
             out.push(id.clone())
         }
     }
+    // Saved graph recipes can be the entire native input, with no current
+    // PlanInput operands. Preserve their exact retained event closure rather
+    // than pretending that a graph with no explicit Source has no parents.
+    let graph_request = match &r.plan.steps[i] {
+        Operation::Topo { request, .. } | Operation::CheckedTopo { request, .. } => Some(request),
+        Operation::TopoActions { request, .. } => Some(&request.preparation),
+        _ => None,
+    };
+    if let Some(request) = graph_request {
+        for material in &request.recipe.materials {
+            if let crate::cloning::topo::MaterialRecipe::SavedGraph { origin, .. } = material {
+                let record = origin.validate_shallow()?;
+                for binding in crate::cloning::topo::graph_history::source_bindings(&record)? {
+                    if seen.insert(binding.event_id.clone()) {
+                        if out.len() == 128 {
+                            return Err(Error::TooLarge);
+                        }
+                        out.push(binding.event_id);
+                    }
+                }
+            }
+        }
+    }
     Ok(out)
 }
 fn crossrefs(w: &Workspace, r: &RunRecord) -> Result<(), Error> {
@@ -309,7 +333,14 @@ fn crossrefs(w: &Workspace, r: &RunRecord) -> Result<(), Error> {
             },
         )?;
         let e = w.history.iter().find(|e| e.id == p.event_id).unwrap();
-        if e.parents != parents(r, i)? || e.operation != operation_label(&r.run_id, i) {
+        if e.parents != parents(r, i)?
+            || e.operation != operation_label(&r.run_id, i)
+            || e.transition
+                != (Transition::CloningStep {
+                    run_id: r.run_id.clone(),
+                    step_index: i,
+                })
+        {
             return Err(bad("product event provenance mismatch"));
         }
     }
@@ -498,6 +529,10 @@ pub fn record_run(
             m.revision(),
             parents(&r, i)?,
             operation_label(&r.run_id, i),
+            Transition::CloningStep {
+                run_id: r.run_id.clone(),
+                step_index: i,
+            },
         )?;
         r.products[i].event_id = event.id.clone();
         next.documents.push(WorkspaceDocument {

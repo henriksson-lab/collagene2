@@ -396,6 +396,37 @@ pub fn paste_revision(request: &RequestPaste) -> Result<String, Error> {
     crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "paste", request))
 }
 pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
+    paste_native(request, false).map(|(report, _)| report)
+}
+/// Destination edit and donor projection from the exact same native paste.
+pub(crate) fn paste_with_projections(
+    request: &RequestPaste,
+) -> Result<
+    (
+        Report,
+        collagene_model::annotations::ReplacementProjection,
+        crate::sequence::annotations::ReferenceProjectionReceipt,
+    ),
+    Error,
+> {
+    let (report, receipts) = paste_native(request, true)?;
+    let (destination, donor) =
+        receipts.ok_or_else(|| bad("native reference paste receipts unavailable"))?;
+    Ok((report, destination, donor))
+}
+fn paste_native(
+    request: &RequestPaste,
+    capture: bool,
+) -> Result<
+    (
+        Report,
+        Option<(
+            collagene_model::annotations::ReplacementProjection,
+            crate::sequence::annotations::ReferenceProjectionReceipt,
+        )>,
+    ),
+    Error,
+> {
     let context_revision = paste_revision(request)?;
     let fragment = copy(&RequestCopy {
         source: request.source.clone(),
@@ -407,11 +438,23 @@ pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
         ));
     }
     let destination_revision = request.destination.revision();
-    let mut product = request.destination.replace(
-        request.start,
-        request.end,
-        fragment.molecule.sequence.as_str(),
-    )?;
+    let (mut product, destination_projection) = if capture {
+        let (product, projection) = request.destination.replace_with_projection(
+            request.start,
+            request.end,
+            fragment.molecule.sequence.as_str(),
+        )?;
+        (product, Some(projection))
+    } else {
+        (
+            request.destination.replace(
+                request.start,
+                request.end,
+                fragment.molecule.sequence.as_str(),
+            )?,
+            None,
+        )
+    };
     // Project from the original source into the final topology. The clipboard
     // preview is linear and can mark an origin-spanning circular feature broken;
     // carrying that intermediate annotation forward would lose valid continuity
@@ -420,15 +463,31 @@ pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
     for segment in &mut maps {
         segment.destination_start += request.start;
     }
-    let projection = annotations::project_features_with_topology(
+    let mut projection = annotations::project_features_with_topology(
         &request.source,
         &maps,
         product.sequence.len(),
         product.topology,
     )?;
-    let mut copied = projection.features;
+    let mut copied = std::mem::take(&mut projection.features);
     let source_citation_count = source_citations(&mut copied);
     let copied_features = copied.len();
+    let donor_projection = capture.then(|| {
+        let base = product.features.len();
+        crate::sequence::annotations::ReferenceProjectionReceipt {
+            map: maps,
+            source_feature_indices: projection.source_feature_indices.clone(),
+            destination_feature_indices: (base..base + copied.len()).collect(),
+            previous_feature_indices: (0..base).collect(),
+            unmapped_source_feature_indices: projection.unmapped_source_feature_indices.clone(),
+            unmapped_review: projection
+                .unmapped_features
+                .iter()
+                .map(|feature| feature.needs_review)
+                .collect(),
+            dropped_source_feature_indices: projection.dropped_source_feature_indices.clone(),
+        }
+    });
     product.features.extend(copied);
     preserve_source(&mut product, &request.source, "source")?;
     preserve_source(&mut product, &request.destination, "destination")?;
@@ -487,7 +546,11 @@ pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
         warnings,
     };
     report.validate_binding(&report.context_revision)?;
-    Ok(report)
+    let receipts = match (destination_projection, donor_projection) {
+        (Some(destination), Some(donor)) => Some((destination, donor)),
+        _ => None,
+    };
+    Ok((report, receipts))
 }
 impl Fragment {
     /// Readonly structure guard; paste reconstructs from the actual original source.

@@ -1,6 +1,8 @@
 //! Exact-event source choices for manual plan editing. Equal content supplies
 //! display metadata only; it never combines or chooses distinct event identities.
 use crate::sources::identity::SourceInfo;
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::{documents::history::DocumentHistory, material::lineage::EventBinding};
 use collagene_model::{Alphabet, Molecule, Topology};
 use std::collections::{BTreeMap, BTreeSet};
@@ -245,7 +247,15 @@ mod tests {
         let a = DocumentHistory::new("doc-A", molecule("ACGTAC")).unwrap();
         let mut b = DocumentHistory::new("doc-B", molecule("ACGTAC")).unwrap();
         let old_b = binding(&b);
-        b.commit(molecule("ACGTACA"), "Edited B").unwrap();
+        b.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 6,
+                end: 6,
+                replacement: "A".into(),
+            }],
+            "Edited B",
+        )
+        .unwrap();
         let required = BTreeSet::from([a.head_revision().to_string()]);
         let docs = vec![a, b];
         let c = catalog(&docs, &required, 4096).unwrap();
@@ -272,9 +282,24 @@ mod tests {
     fn repeated_content_in_one_document_keeps_distinct_historical_events() {
         let mut d = DocumentHistory::new("doc-A", molecule("ACGTAC")).unwrap();
         let first = binding(&d);
-        d.commit(molecule("ACGTACA"), "Temporary edit").unwrap();
-        d.commit(molecule("ACGTAC"), "Return to earlier content")
-            .unwrap();
+        d.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 6,
+                end: 6,
+                replacement: "A".into(),
+            }],
+            "Temporary edit",
+        )
+        .unwrap();
+        d.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 6,
+                end: 7,
+                replacement: String::new(),
+            }],
+            "Return to earlier content",
+        )
+        .unwrap();
         let final_event = binding(&d);
         assert_eq!(first.revision, final_event.revision);
         assert_ne!(first.event_id, final_event.event_id);
@@ -313,10 +338,33 @@ mod tests {
     fn historical_cap_reports_all_omissions_without_hiding_current_heads_or_nonrequired_events() {
         let mut a = DocumentHistory::new("doc-A", molecule("ACGTAC")).unwrap();
         let required = BTreeSet::from([a.head_revision().to_string()]);
-        a.commit(molecule("ACGTACA"), "Other revision").unwrap();
-        a.commit(molecule("ACGTAC"), "Same original revision")
-            .unwrap();
-        a.commit(molecule("ACGTACAA"), "Current revision").unwrap();
+        a.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 6,
+                end: 6,
+                replacement: "A".into(),
+            }],
+            "Other revision",
+        )
+        .unwrap();
+        a.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 6,
+                end: 7,
+                replacement: String::new(),
+            }],
+            "Same original revision",
+        )
+        .unwrap();
+        a.commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 6,
+                end: 6,
+                replacement: "AA".into(),
+            }],
+            "Current revision",
+        )
+        .unwrap();
         let b = DocumentHistory::new("doc-B", molecule("GGCC")).unwrap();
         let docs = vec![a, b];
         let none = catalog(&docs, &required, 0).unwrap();
@@ -346,10 +394,24 @@ mod tests {
         let mut target = DocumentHistory::new("target", molecule("AGTCCGAT")).unwrap();
         let target_event = binding(&target);
         source
-            .commit(molecule("TTTTAAAA"), "Later source edit")
+            .commit(
+                vec![ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 8,
+                    replacement: "TTTTAAAA".into(),
+                }],
+                "Later source edit",
+            )
             .unwrap();
         target
-            .commit(molecule("CCCCGGGG"), "Later target edit")
+            .commit(
+                vec![ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 8,
+                    replacement: "CCCCGGGG".into(),
+                }],
+                "Later target edit",
+            )
             .unwrap();
         let docs = vec![source, target];
         let before = docs.iter().map(binding).collect::<Vec<_>>();

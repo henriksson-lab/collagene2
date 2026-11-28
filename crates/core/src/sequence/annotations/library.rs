@@ -710,6 +710,33 @@ pub fn apply_selected(
     report: &ScanReport,
     selected: &[String],
 ) -> Result<Molecule, Error> {
+    apply_selected_native(molecule, library, report, selected, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn apply_selected_with_projection(
+    molecule: &Molecule,
+    library: &FeatureLibrary,
+    report: &ScanReport,
+    selected: &[String],
+) -> Result<(Molecule, crate::sequence::editing::AnnotationIdentity), Error> {
+    let (molecule, identity) = apply_selected_native(molecule, library, report, selected, true)?;
+    Ok((
+        molecule,
+        identity.ok_or_else(|| invalid("native annotation receipt unavailable"))?,
+    ))
+}
+fn apply_selected_native(
+    molecule: &Molecule,
+    library: &FeatureLibrary,
+    report: &ScanReport,
+    selected: &[String],
+    capture: bool,
+) -> Result<
+    (
+        Molecule,
+        Option<crate::sequence::editing::AnnotationIdentity>,
+    ),
+    Error,
+> {
     molecule.validate()?;
     library.validate()?;
     report.options.validate()?;
@@ -750,6 +777,8 @@ pub fn apply_selected(
         .filter_map(feature_key)
         .collect::<BTreeSet<_>>();
     let mut result = molecule.clone();
+    let mut identity = capture
+        .then(|| crate::sequence::editing::AnnotationIdentity::retained(molecule.features.len()));
     for id in selected {
         if !seen.insert(id) {
             return Err(invalid("duplicate selected annotation proposal"));
@@ -765,6 +794,9 @@ pub fn apply_selected(
             return Err(invalid(
                 "selected feature already exists at this location/orientation; existing annotations were not overwritten",
             ));
+        }
+        if let Some(identity) = &mut identity {
+            identity.added.push(result.features.len());
         }
         result.features.push(proposal.feature.clone());
     }
@@ -786,5 +818,5 @@ pub fn apply_selected(
     );
     result.validate()?;
     crate::protocol::save_document(&result)?;
-    Ok(result)
+    Ok((result, identity))
 }

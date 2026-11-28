@@ -151,20 +151,83 @@ fn derived(
     Ok(result)
 }
 
+/// Compact actual native projection, without duplicated feature payloads.
+/// Feature content is read only at these recorded ordinals after trace admission.
+pub(crate) struct ReferenceProjectionReceipt {
+    pub map: Vec<MappingSegment>,
+    pub source_feature_indices: Vec<usize>,
+    pub destination_feature_indices: Vec<usize>,
+    pub unmapped_source_feature_indices: Vec<usize>,
+    pub unmapped_review: Vec<bool>,
+    pub dropped_source_feature_indices: Vec<usize>,
+    pub previous_feature_indices: Vec<usize>,
+}
+fn captured_projection(
+    capture: bool,
+    map: &[MappingSegment],
+    projection: &Projection,
+) -> Option<ReferenceProjectionReceipt> {
+    capture.then(|| ReferenceProjectionReceipt {
+        map: map.to_vec(),
+        source_feature_indices: projection.source_feature_indices.clone(),
+        destination_feature_indices: (0..projection.features.len()).collect(),
+        unmapped_source_feature_indices: projection.unmapped_source_feature_indices.clone(),
+        unmapped_review: projection
+            .unmapped_features
+            .iter()
+            .map(|feature| feature.needs_review)
+            .collect(),
+        dropped_source_feature_indices: projection.dropped_source_feature_indices.clone(),
+        previous_feature_indices: vec![],
+    })
+}
+/// The actual owner has just retained the whole reference and feature order.
+pub(crate) fn retained_reference_projection(source: &Molecule) -> ReferenceProjectionReceipt {
+    ReferenceProjectionReceipt {
+        map: if source.sequence.is_empty() {
+            vec![]
+        } else {
+            vec![MappingSegment {
+                source_start: 0,
+                source_end: source.sequence.len(),
+                destination_start: 0,
+                reverse: false,
+            }]
+        },
+        source_feature_indices: (0..source.features.len()).collect(),
+        destination_feature_indices: (0..source.features.len()).collect(),
+        unmapped_source_feature_indices: vec![],
+        unmapped_review: vec![],
+        dropped_source_feature_indices: vec![],
+        previous_feature_indices: vec![],
+    }
+}
 pub fn reverse_complement(source: &Molecule) -> Result<Molecule, Error> {
+    reverse_complement_native(source, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn reverse_complement_with_projection(
+    source: &Molecule,
+) -> Result<(Molecule, ReferenceProjectionReceipt), Error> {
+    let (molecule, projection) = reverse_complement_native(source, true)?;
+    Ok((
+        molecule,
+        projection.ok_or_else(|| unsupported("native reference projection unavailable"))?,
+    ))
+}
+fn reverse_complement_native(
+    source: &Molecule,
+    capture: bool,
+) -> Result<(Molecule, Option<ReferenceProjectionReceipt>), Error> {
     ensure_document_transform(source)?;
     let n = source.sequence.len();
-    let projection = project_features_with_topology(
-        source,
-        &[MappingSegment {
-            source_start: 0,
-            source_end: n,
-            destination_start: 0,
-            reverse: true,
-        }],
-        n,
-        source.topology,
-    )?;
+    let map = [MappingSegment {
+        source_start: 0,
+        source_end: n,
+        destination_start: 0,
+        reverse: true,
+    }];
+    let projection = project_features_with_topology(source, &map, n, source.topology)?;
+    let receipt = captured_projection(capture, &map, &projection);
     let mut result = derived(
         source,
         source.sequence.reverse_complement()?,
@@ -195,10 +258,27 @@ pub fn reverse_complement(source: &Molecule) -> Result<Molecule, Error> {
     }
     result.validate()?;
     crate::protocol::save_document(&result)?;
-    Ok(result)
+    Ok((result, receipt))
 }
 
 pub fn rotate_origin(source: &Molecule, new_origin: usize) -> Result<Molecule, Error> {
+    rotate_origin_native(source, new_origin, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn rotate_origin_with_projection(
+    source: &Molecule,
+    new_origin: usize,
+) -> Result<(Molecule, ReferenceProjectionReceipt), Error> {
+    let (molecule, projection) = rotate_origin_native(source, new_origin, true)?;
+    Ok((
+        molecule,
+        projection.ok_or_else(|| unsupported("native reference projection unavailable"))?,
+    ))
+}
+fn rotate_origin_native(
+    source: &Molecule,
+    new_origin: usize,
+    capture: bool,
+) -> Result<(Molecule, Option<ReferenceProjectionReceipt>), Error> {
     ensure_document_transform(source)?;
     if source.topology != Topology::Circular {
         return Err(unsupported(
@@ -210,7 +290,10 @@ pub fn rotate_origin(source: &Molecule, new_origin: usize) -> Result<Molecule, E
         return Err(bad("new origin is outside the source sequence"));
     }
     if new_origin == 0 {
-        return Ok(source.clone());
+        return Ok((
+            source.clone(),
+            capture.then(|| retained_reference_projection(source)),
+        ));
     }
     let segments = [
         MappingSegment {
@@ -227,6 +310,7 @@ pub fn rotate_origin(source: &Molecule, new_origin: usize) -> Result<Molecule, E
         },
     ];
     let projection = project_features_with_topology(source, &segments, n, Topology::Circular)?;
+    let receipt = captured_projection(capture, &segments, &projection);
     let bases = format!(
         "{}{}",
         &source.sequence.as_str()[new_origin..],
@@ -239,11 +323,31 @@ pub fn rotate_origin(source: &Molecule, new_origin: usize) -> Result<Molecule, E
         projection,
         &format!("origin set to source boundary {new_origin}"),
     )
+    .map(|molecule| (molecule, receipt))
 }
 
 /// A half-open interval. Circular end may exceed sequence length by at most one turn;
 /// e.g. start=8,end=13 extracts five bases across the origin of a ten-base circle.
 pub fn extract_region(source: &Molecule, start: usize, end: usize) -> Result<Molecule, Error> {
+    extract_region_native(source, start, end, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn extract_region_with_projection(
+    source: &Molecule,
+    start: usize,
+    end: usize,
+) -> Result<(Molecule, ReferenceProjectionReceipt), Error> {
+    let (molecule, projection) = extract_region_native(source, start, end, true)?;
+    Ok((
+        molecule,
+        projection.ok_or_else(|| unsupported("native reference projection unavailable"))?,
+    ))
+}
+fn extract_region_native(
+    source: &Molecule,
+    start: usize,
+    end: usize,
+    capture: bool,
+) -> Result<(Molecule, Option<ReferenceProjectionReceipt>), Error> {
     ensure_document_transform(source)?;
     let n = source.sequence.len();
     if start >= n
@@ -270,6 +374,7 @@ pub fn extract_region(source: &Molecule, start: usize, end: usize) -> Result<Mol
         });
     }
     let projection = project_features(source, &segments, end - start)?;
+    let receipt = captured_projection(capture, &segments, &projection);
     let bases = if end <= n {
         source.sequence.as_str()[start..end].to_owned()
     } else {
@@ -292,15 +397,35 @@ pub fn extract_region(source: &Molecule, start: usize, end: usize) -> Result<Mol
     result.name = format!("{} region {}–{}", source.name, start + 1, end);
     result.validate()?;
     crate::protocol::save_document(&result)?;
-    Ok(result)
+    Ok((result, receipt))
 }
 
 /// Change the declared reference topology; this is not a physical ligation/end-repair operation.
 /// Linearizing a circle marks features spanning its new free boundary as interrupted.
 pub fn change_reference_topology(source: &Molecule, topology: Topology) -> Result<Molecule, Error> {
+    change_reference_topology_native(source, topology, false).map(|(molecule, _)| molecule)
+}
+pub(crate) fn change_reference_topology_with_projection(
+    source: &Molecule,
+    topology: Topology,
+) -> Result<(Molecule, ReferenceProjectionReceipt), Error> {
+    let (molecule, projection) = change_reference_topology_native(source, topology, true)?;
+    Ok((
+        molecule,
+        projection.ok_or_else(|| unsupported("native reference projection unavailable"))?,
+    ))
+}
+fn change_reference_topology_native(
+    source: &Molecule,
+    topology: Topology,
+    capture: bool,
+) -> Result<(Molecule, Option<ReferenceProjectionReceipt>), Error> {
     source.validate()?;
     if source.topology == topology {
-        return Ok(source.clone());
+        return Ok((
+            source.clone(),
+            capture.then(|| retained_reference_projection(source)),
+        ));
     }
     ensure_document_transform(source)?;
     if topology == Topology::Circular && source.sequence.alphabet() == Alphabet::Protein {
@@ -312,17 +437,14 @@ pub fn change_reference_topology(source: &Molecule, topology: Topology) -> Resul
         ));
     }
     let n = source.sequence.len();
-    let projection = project_features_with_topology(
-        source,
-        &[MappingSegment {
-            source_start: 0,
-            source_end: n,
-            destination_start: 0,
-            reverse: false,
-        }],
-        n,
-        topology,
-    )?;
+    let map = [MappingSegment {
+        source_start: 0,
+        source_end: n,
+        destination_start: 0,
+        reverse: false,
+    }];
+    let projection = project_features_with_topology(source, &map, n, topology)?;
+    let receipt = captured_projection(capture, &map, &projection);
     let mut result = derived(
         source,
         source.sequence.clone(),
@@ -333,7 +455,7 @@ pub fn change_reference_topology(source: &Molecule, topology: Topology) -> Resul
     result.metadata.insert("annotation_mapping:reference_topology_note".into(), "Reference topology declaration only; no physical junction, phosphorylation, nick repair or experimental circularity was established.".into());
     result.validate()?;
     crate::protocol::save_document(&result)?;
-    Ok(result)
+    Ok((result, receipt))
 }
 
 pub mod batch;

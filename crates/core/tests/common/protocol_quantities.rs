@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::workspace::{RevisionEvent, Workspace},
     material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
@@ -109,13 +112,31 @@ pub fn fixture() -> (Workspace, q::Request) {
 }
 #[allow(dead_code)] // Only the native transport consumer advances these shared fixtures.
 pub fn advance(w: &mut Workspace, index: usize, name: &str) {
-    let m = Molecule::dna(name, "TTTTCCCCAAAAGGGG", Topology::Linear).unwrap();
+    let source = pin(w, index);
+    let previous = w.head(&source.document_id).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: "TTTTCCCCAAAAGGGG".into(),
+        },
+        Edit::Rename { name: name.into() },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let m = Edit::apply_all(previous, &actions).unwrap();
     let doc = &mut w.documents[index];
     let e = RevisionEvent::new(
         doc.id.clone(),
         m.revision(),
         vec![doc.head_event.clone().unwrap()],
         "Later unrelated head edit",
+        Transition::ReferenceEdit {
+            source,
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     doc.head = m.revision();

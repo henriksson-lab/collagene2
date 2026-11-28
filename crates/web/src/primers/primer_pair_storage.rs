@@ -2,6 +2,8 @@
 use crate::primers::primer_pair_model::PairDraft;
 use crate::primers::primer_pair_model::anchor_reference;
 use crate::primers::primer_pair_model::selected_guard;
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::material::lineage::EventBinding;
 use collagene_model::Molecule;
 use serde::{Deserialize, Serialize};
@@ -120,7 +122,16 @@ mod tests {
         // An intentional mismatch stays in the draft, independently of its anchor.
         draft.reverse.annealing = "CGGCT".into();
         doc.commit(
-            Molecule::dna("edited head", "TTTTTTTTTT", Topology::Linear).unwrap(),
+            vec![
+                ReferenceEdit::Rename {
+                    name: "edited head".into(),
+                },
+                ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 10,
+                    replacement: "TTTTTTTTTT".into(),
+                },
+            ],
             "edit",
         )
         .unwrap();
@@ -229,7 +240,16 @@ mod tests {
         draft.reverse.annealing = "incomplete ?".into();
         let bytes = encode(&draft).unwrap();
         doc.commit(
-            Molecule::dna("later circle", "TTTTTTTT", Topology::Circular).unwrap(),
+            vec![
+                ReferenceEdit::Rename {
+                    name: "later circle".into(),
+                },
+                ReferenceEdit::ReplaceSequence {
+                    start: 0,
+                    end: 8,
+                    replacement: "TTTTTTTT".into(),
+                },
+            ],
             "head changed",
         )
         .unwrap();

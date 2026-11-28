@@ -49,7 +49,7 @@
   "limitations": [
     "No installer GUI, installation, offline GUI or chosen-remote acceptance is claimed.",
     "Windows requires the OS WebView2 runtime; macOS output is the hosted runner architecture.",
-    "The current uncommitted F39 verification-contract batch is outside this package evidence. Successful packaging does not establish scientific or full CI acceptance."
+    "This last successful package inventory predates published checkpoint 39d70f4. It does not establish packaging, scientific or full CI acceptance of that checkpoint or the current source."
   ],
   "frontend": {
     "job_id": 141015898912,
@@ -64,5 +64,21 @@
     "conclusion": "failure",
     "source_commit": "c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
     "scope": "Two stale schema assertions fail in the scientific jobs on Windows, macOS and Linux; the web job fails cargo fmt --all -- --check. This is not a scientific or full-CI green claim; current uncommitted corrections are excluded."
+  },
+  "subsequent_checkpoint": {
+    "source_commit": "39d70f4cb4e64e23ec038ad66d150b0f644803e0",
+    "desktop_run": 46165940229,
+    "desktop_conclusion": "failure",
+    "check_run": 46165940016,
+    "check_conclusion": "failure",
+    "findings": [
+      "Two PDF assertions expect obsolete verifier prose on all three scientific platforms.",
+      "Frontend asset packaging rejects an asset-size limit; the old diagnostic does not identify the asset and exact observed size."
+    ],
+    "current_source_corrections": [
+      "PDF assertions updated for typed verdicts and current independently bound target diagnostics.",
+      "Frontend-only development-derived profile uses opt-level=1 with debug=0; packaging retains existing limits and reports actual observed sizes."
+    ],
+    "verification": "Current-source native/WASM checks and selected packager/PDF fixtures pass in the causal/history integration batch. Actual frontend-profile bundling and exact-head desktop packaging remain pending CI; no size measurement or package success is claimed."
   }
 }

@@ -91,7 +91,8 @@ pub fn preview_annealed_oligos(
             &preview.annealing,
             index,
             &mut findings,
-        )?;
+        )?
+        .molecule;
         protect_anneal_preview(&mut product)?;
         products.push(product);
     }

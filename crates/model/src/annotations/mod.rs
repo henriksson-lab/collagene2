@@ -2,7 +2,9 @@
 //! into a derived document; biological feature order is retained, not sorted by display position.
 use crate::{Alphabet, Error, Feature, Location, MAX_SEQUENCE_LEN, Molecule, Topology};
 use serde::{Deserialize, Serialize};
+pub mod biological_path;
 pub(crate) mod editing;
+pub use editing::ReplacementProjection;
 pub mod insdc;
 mod qualifiers;
 
@@ -30,11 +32,15 @@ impl MappingSegment {
 #[derive(Debug, Clone)]
 pub struct Projection {
     pub features: Vec<Feature>,
+    /// Original source ordinals aligned with each emitted feature.
+    pub source_feature_indices: Vec<usize>,
     pub warnings: Vec<String>,
     /// Original, unprojectable source features, not annotations asserted to exist in the product.
     /// Callers constructing a product must retain these as evidence or retain their source graph.
     pub unmapped_features: Vec<Feature>,
+    pub unmapped_source_feature_indices: Vec<usize>,
     pub dropped_features: usize,
+    pub dropped_source_feature_indices: Vec<usize>,
 }
 fn bad(message: impl Into<String>) -> Error {
     Error::Coordinates(message.into())
@@ -486,16 +492,22 @@ fn project_with_maps(
     let is_identity = identity(&segments, source.sequence.len(), destination_length);
     let mut projection = Projection {
         features: vec![],
+        source_feature_indices: vec![],
         warnings: vec![],
         unmapped_features: vec![],
+        unmapped_source_feature_indices: vec![],
         dropped_features: 0,
+        dropped_source_feature_indices: vec![],
     };
-    for original in &source.features {
+    for (source_index, original) in source.features.iter().enumerate() {
         budget(&mut work)?;
         if has_unresolved(&original.location) && !is_identity {
             let mut evidence = original.clone();
             evidence.needs_review = true;
             projection.unmapped_features.push(evidence);
+            projection
+                .unmapped_source_feature_indices
+                .push(source_index);
             warn(
                 &mut projection.warnings,
                 format!(
@@ -556,6 +568,9 @@ fn project_with_maps(
                 let mut evidence = original.clone();
                 evidence.needs_review = true;
                 projection.unmapped_features.push(evidence);
+                projection
+                    .unmapped_source_feature_indices
+                    .push(source_index);
                 warn(
                     &mut projection.warnings,
                     format!(
@@ -577,6 +592,7 @@ fn project_with_maps(
         };
         let Some(mut location) = mapped else {
             projection.dropped_features += 1;
+            projection.dropped_source_feature_indices.push(source_index);
             continue;
         };
         let broken = if has_unresolved(&original.location) {
@@ -636,6 +652,7 @@ fn project_with_maps(
                 ))
             })?;
         projection.features.push(feature);
+        projection.source_feature_indices.push(source_index);
     }
     if projection.dropped_features > 0 {
         warn(

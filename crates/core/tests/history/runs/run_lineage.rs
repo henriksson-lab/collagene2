@@ -1,3 +1,5 @@
+use collagene_core::documents::history::transition::Transition;
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     chemistry::EndTreatment,
     documents::workspace::{self, RevisionEvent, Workspace},
@@ -283,7 +285,14 @@ fn capacity_failure_is_transactional_and_ids_avoid_collisions() {
     let mut collision = w.clone();
     let id = c.receipt.products[0].document_id.clone();
     let m = collision.head("document-1").unwrap().clone();
-    let e = RevisionEvent::new(id.clone(), m.revision(), vec![], "unrelated").unwrap();
+    let e = RevisionEvent::new(
+        id.clone(),
+        m.revision(),
+        vec![],
+        "unrelated",
+        Transition::IndependentReference,
+    )
+    .unwrap();
     let mut d = collision.documents[0].clone();
     d.id = id;
     d.head_event = Some(e.id.clone());
@@ -298,7 +307,14 @@ fn capacity_failure_is_transactional_and_ids_avoid_collisions() {
     for n in 3..workspace::MAX_DOCUMENTS {
         let id = format!("capacity-{n}");
         let mut d = full.documents[0].clone();
-        let e = RevisionEvent::new(id.clone(), d.head.clone(), vec![], "import").unwrap();
+        let e = RevisionEvent::new(
+            id.clone(),
+            d.head.clone(),
+            vec![],
+            "import",
+            Transition::IndependentReference,
+        )
+        .unwrap();
         d.id = id;
         d.head_event = Some(e.id.clone());
         full.documents.push(d);
@@ -464,6 +480,10 @@ fn historical_engines_are_retained_but_current_replay_reports_the_difference() {
             binding.revision.clone(),
             parents,
             format!("Cloning run {} step {}", r.run_id, i + 1),
+            Transition::CloningStep {
+                run_id: r.run_id.clone(),
+                step_index: binding.step_index,
+            },
         )
         .unwrap();
         let document = c
@@ -676,12 +696,31 @@ fn native_loaded_product_metadata_never_grants_physical_input_authority() {
 fn retained_historical_source_event_remains_exact_after_head_changes() {
     let (mut w, p) = fixture();
     let old = binding(&w, 1);
-    let m = Molecule::dna("new source", "CCCCAAAA", Topology::Linear).unwrap();
+    let source = w.head(&old.document_id).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: source.sequence.len(),
+            replacement: "CCCCAAAA".into(),
+        },
+        Edit::Rename {
+            name: "new source".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let m = Edit::apply_all(source, &actions).unwrap();
     let event = RevisionEvent::new(
         old.document_id.clone(),
         m.revision(),
         vec![old.event_id.clone()],
         "edit after design",
+        Transition::ReferenceEdit {
+            source: old.clone(),
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     let d = &mut w.documents[1];

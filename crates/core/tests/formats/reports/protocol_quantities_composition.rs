@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -211,15 +212,25 @@ fn arithmetic_and_molecular_statuses_are_independent_and_neither_is_restored() {
     );
     let (mut invalid, mut plan, mut r) = base_fixture();
     // Independent target is a frozen literal different from the real PCR output.
-    let wrong = Molecule::dna(
-        "Different independent target16",
-        "TTTTGGGGAAAACCCC",
-        Topology::Linear,
-    )
-    .unwrap();
     let mut histories = DocumentHistory::restore_all(&invalid).unwrap();
+    let edit_end = histories[1].molecule.sequence.len();
     histories[1]
-        .commit(wrong, "Explicit independent target change")
+        .commit(
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TTTTGGGGAAAACCCC".into(),
+                },
+                Edit::Rename {
+                    name: "Different independent target16".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
+            "Explicit independent target change",
+        )
         .unwrap();
     invalid.documents.clear();
     invalid.history.clear();
@@ -249,9 +260,22 @@ fn historic_exact_pins_survive_heads_while_changed_inputs_plan_or_hash_refuse() 
     let mut later = c.workspace.clone();
     let mut histories = DocumentHistory::restore_all(&later).unwrap();
     for index in [0, 1] {
+        let edit_end = histories[index].molecule.sequence.len();
         histories[index]
             .commit(
-                Molecule::dna("Unrelated later head", "TTTTGGGG", Topology::Linear).unwrap(),
+                vec![
+                    Edit::ReplaceSequence {
+                        start: 0,
+                        end: edit_end,
+                        replacement: "TTTTGGGG".into(),
+                    },
+                    Edit::Rename {
+                        name: "Unrelated later head".into(),
+                    },
+                    Edit::SetTopology {
+                        topology: Topology::Linear,
+                    },
+                ],
                 "User edit after recording",
             )
             .unwrap();

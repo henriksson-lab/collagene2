@@ -2,7 +2,11 @@
 //! save/load against the same implementation. No filesystem extraction is used.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    documents::{transfer::Candidate, workspace::*},
+    documents::{
+        history::transition::Transition, reference_edit::Operation as ReferenceEdit,
+        transfer::Candidate, workspace::*,
+    },
+    material::lineage::EventBinding,
     planning::plan::{DesignPlan, Operation, PlanInput, Source},
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
@@ -108,6 +112,7 @@ fn manual_fixture() -> Vec<u8> {
     let name = b"manual";
     let bases = b"ACGT";
     let features = b"[]";
+    let transition = br#""IndependentReference""#;
     let molecule_json=br#"{"name":"manual","sequence":{"alphabet":"Dna","bases":"ACGT"},"topology":"Circular","features":[],"metadata":{},"original_genbank":null}"#;
     let revision = hash(molecule_json);
     let record=serde_json::to_vec(&json!({"name":hash(name),"sequence":hash(bases),"alphabet":"Dna","topology":"Circular","features":hash(features),"metadata":{},"original_genbank":null})).unwrap();
@@ -117,23 +122,25 @@ fn manual_fixture() -> Vec<u8> {
         bases.as_slice(),
         features.as_slice(),
         record.as_slice(),
+        transition.as_slice(),
     ] {
         blobs.insert(hash(bytes), bytes.to_vec());
     }
     // Independently specify a current native history root and its content ID.
     let mut event_digest = blake3::Hasher::new();
-    event_digest.update(b"collagene-history-event-v1\0");
+    event_digest.update(b"collagene-history-event-v2\0");
     event_digest.update(
         &serde_json::to_vec(&(
             "manual-doc",
             &revision,
             Vec::<String>::new(),
             "Imported manual fixture",
+            "IndependentReference",
         ))
         .unwrap(),
     );
     let event_id = format!("event-{}", event_digest.finalize().to_hex());
-    let manifest=serde_json::to_vec(&json!({"format":"collagene-workspace","version":1,"molecule_schema":1,"plan_schema":PLAN_SCHEMA_VERSION,"name":"Manual fixture","active_document":"manual-doc","documents":[{"id":"manual-doc","head":revision,"undo":[],"redo":[],"head_event":event_id,"undo_events":[],"redo_events":[]}],"history":[{"id":event_id,"document_id":"manual-doc","revision":revision,"parents":[],"operation":"Imported manual fixture"}],"revisions":{revision:hash(&record)},"candidates":[],"unresolved_candidate_targets":[],"attachments":{},"blobs":blobs.iter().map(|(h,b)|(h.clone(),json!({"length":b.len()}))).collect::<BTreeMap<_,_>>()})).unwrap();
+    let manifest=serde_json::to_vec(&json!({"format":"collagene-workspace","version":2,"molecule_schema":1,"plan_schema":PLAN_SCHEMA_VERSION,"name":"Manual fixture","active_document":"manual-doc","documents":[{"id":"manual-doc","head":revision,"undo":[],"redo":[],"head_event":event_id,"undo_events":[],"redo_events":[]}],"history":[{"id":event_id,"document_id":"manual-doc","revision":revision,"parents":[],"operation":"Imported manual fixture","transition_blob":hash(transition)}],"revisions":{revision:hash(&record)},"candidates":[],"unresolved_candidate_targets":[],"attachments":{},"blobs":blobs.iter().map(|(h,b)|(h.clone(),json!({"length":b.len()}))).collect::<BTreeMap<_,_>>()})).unwrap();
     let mut entries = vec![("manifest.json".into(), manifest)];
     entries.extend(blobs.into_iter().map(|(h, b)| (format!("blobs/{h}"), b)));
     stored(&entries)
@@ -218,15 +225,59 @@ fn branch_events_repeated_content_exact_navigation_and_opaque_evidence_survive()
         one.revision(),
         vec![e0.clone()],
         "Replace 4..5 with T",
+        Transition::ReferenceEdit {
+            source: EventBinding {
+                document_id: doc.clone(),
+                event_id: e0.clone(),
+                revision: root.revision(),
+            },
+            actions: vec![ReferenceEdit::ReplaceSequence {
+                start: 4,
+                end: 5,
+                replacement: "T".into(),
+            }],
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
-    let e2 =
-        RevisionEvent::new(&doc, two.revision(), vec![e0.clone()], "Alternative branch").unwrap();
+    let e2 = RevisionEvent::new(
+        &doc,
+        two.revision(),
+        vec![e0.clone()],
+        "Alternative branch",
+        Transition::ReferenceEdit {
+            source: EventBinding {
+                document_id: doc.clone(),
+                event_id: e0.clone(),
+                revision: root.revision(),
+            },
+            actions: vec![ReferenceEdit::ReplaceSequence {
+                start: 5,
+                end: 6,
+                replacement: "A".into(),
+            }],
+            supplemental_sources: vec![],
+        },
+    )
+    .unwrap();
     let e3 = RevisionEvent::new(
         &doc,
         root.revision(),
         vec![e1.id.clone()],
         "Return to original bases",
+        Transition::ReferenceEdit {
+            source: EventBinding {
+                document_id: doc.clone(),
+                event_id: e1.id.clone(),
+                revision: one.revision(),
+            },
+            actions: vec![ReferenceEdit::ReplaceSequence {
+                start: 4,
+                end: 5,
+                replacement: "C".into(),
+            }],
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     assert_ne!(e0, e3.id);
@@ -325,8 +376,25 @@ fn large_original_attachments_are_stored_once_across_revision_history() {
         let old_event = parent.clone();
         let mut next = source.clone();
         next.name = format!("r{i}");
-        let event =
-            RevisionEvent::new("document-1", next.revision(), vec![parent], "Rename").unwrap();
+        let binding = EventBinding {
+            document_id: "document-1".into(),
+            event_id: parent.clone(),
+            revision: workspace.documents[0].head.clone(),
+        };
+        let event = RevisionEvent::new(
+            "document-1",
+            next.revision(),
+            vec![parent],
+            "Rename",
+            Transition::ReferenceEdit {
+                source: binding,
+                actions: vec![ReferenceEdit::Rename {
+                    name: next.name.clone(),
+                }],
+                supplemental_sources: vec![],
+            },
+        )
+        .unwrap();
         parent = event.id.clone();
         let old_head = workspace.documents[0].head.clone();
         workspace.documents[0].undo.push(old_head);
@@ -403,7 +471,7 @@ fn invalid_revision_graph_navigation_and_attachment_hashes_fail_before_save() {
 #[test]
 fn manifest_versions_unknown_fields_duplicate_json_and_blob_tampering_are_rejected() {
     let bytes = save_workspace(&simple()).unwrap();
-    let future = mutate_manifest(&bytes, |m| m["version"] = json!(2));
+    let future = mutate_manifest(&bytes, |m| m["version"] = json!(3));
     assert!(is_workspace_archive(&future));
     assert!(matches!(
         load_workspace(&future),
@@ -518,7 +586,16 @@ fn truncation_and_workspace_dimensions_are_bounded() {
     workspace.documents[0].undo = vec![workspace.documents[0].head.clone(); 1001];
     assert!(save_workspace(&workspace).is_err());
     assert!(Workspace::from_documents("empty", vec![], 0).is_err());
-    assert!(RevisionEvent::new("../bad", "0".repeat(64), vec![], "x").is_err());
+    assert!(
+        RevisionEvent::new(
+            "../bad",
+            "0".repeat(64),
+            vec![],
+            "x",
+            Transition::IndependentReference
+        )
+        .is_err()
+    );
     assert!(!is_workspace_archive(b">not a zip\nACGT\n"));
 }
 
@@ -692,4 +769,123 @@ fn native_zip_preserves_full_document_and_retained_revision_capacities() {
     assert_eq!(loaded.documents.len(), MAX_DOCUMENTS);
     assert_eq!(loaded.revisions.len(), MAX_REVISIONS);
     assert_eq!(save_workspace(&loaded).unwrap(), bytes);
+}
+
+#[test]
+fn native_v2_history_uses_deduplicated_closed_transition_blob_references() {
+    let source = Molecule::dna("Two independent references", "ACGT", Topology::Linear).unwrap();
+    let workspace =
+        Workspace::from_documents("Transition blobs", vec![source.clone(), source], 0).unwrap();
+    let bytes = save_workspace(&workspace).unwrap();
+    let files = unpack(&bytes);
+    let manifest: Value =
+        serde_json::from_slice(&files.iter().find(|(n, _)| n == "manifest.json").unwrap().1)
+            .unwrap();
+    assert_eq!(manifest["version"], 2);
+    let first = &manifest["history"][0]["transition_blob"];
+    assert_eq!(first, &manifest["history"][1]["transition_blob"]);
+    assert!(manifest["history"][0].get("transition").is_none());
+    let transition = br#""IndependentReference""#;
+    let expected_transition_hash = hash(transition);
+    assert_eq!(first.as_str(), Some(expected_transition_hash.as_str()));
+    assert_eq!(
+        files
+            .iter()
+            .filter(|(_, b)| b.as_slice() == transition)
+            .count(),
+        1
+    );
+    let reopened = load_workspace(&bytes).unwrap();
+    assert_eq!(
+        serde_json::to_value(&reopened.history).unwrap(),
+        serde_json::to_value(&workspace.history).unwrap()
+    );
+    let missing = mutate_manifest(&bytes, |manifest| {
+        manifest["history"][0]["transition_blob"] = json!("0".repeat(64))
+    });
+    assert!(load_workspace(&missing).is_err());
+    let inline = mutate_manifest(&bytes, |manifest| {
+        manifest["history"][0]["transition"] = json!("IndependentReference");
+    });
+    assert!(load_workspace(&inline).is_err());
+    let unsupported = mutate_manifest(&bytes, |manifest| manifest["version"] = json!(1));
+    assert!(matches!(
+        load_workspace(&unsupported),
+        Err(Error::Unsupported(_))
+    ));
+
+    // Rehash an unsupported transition payload and close every blob reference.
+    // Hash-valid ZIP contents still cannot introduce an unknown transition.
+    let mut files = files.into_iter().collect::<BTreeMap<_, _>>();
+    let mut manifest: Value =
+        serde_json::from_slice(&files.remove("manifest.json").unwrap()).unwrap();
+    let original = first.as_str().unwrap();
+    files.remove(&format!("blobs/{original}"));
+    manifest["blobs"].as_object_mut().unwrap().remove(original);
+    let unknown=br#"{"Analysis":{"origin":{"producer":"CodonDesign","record":{"Context":{"revision":"0000000000000000000000000000000000000000000000000000000000000000"}},"authority":true}}}"#.to_vec();
+    let altered = hash(&unknown);
+    for entry in manifest["history"].as_array_mut().unwrap() {
+        entry["transition_blob"] = json!(altered);
+    }
+    manifest["blobs"][&altered] = json!({"length":unknown.len()});
+    files.insert(format!("blobs/{altered}"), unknown);
+    files.insert(
+        "manifest.json".into(),
+        serde_json::to_vec(&manifest).unwrap(),
+    );
+    assert!(load_workspace(&stored(&files.into_iter().collect::<Vec<_>>())).is_err());
+}
+
+#[test]
+fn typed_reference_action_larger_than_manifest_limit_roundtrips_in_its_own_blob() {
+    use collagene_core::documents::history::DocumentHistory;
+    let source = Molecule::dna("Large explicit reference edit", "ACGT", Topology::Linear).unwrap();
+    let mut workspace =
+        Workspace::from_documents("Large action archive", vec![source.clone()], 0).unwrap();
+    let mut document = DocumentHistory::new("large-action", source).unwrap();
+    // Preserve an actual user literal above16MiB while normalization produces
+    // one valid base, staying within the native10M sequence bound.
+    document
+        .commit(
+            vec![ReferenceEdit::ReplaceSequence {
+                start: 0,
+                end: 4,
+                replacement: format!("{}T", " ".repeat(MAX_MANIFEST_BYTES + 1)),
+            }],
+            "Literal large replacement",
+        )
+        .unwrap();
+    workspace.documents.clear();
+    workspace.revisions.clear();
+    workspace.history.clear();
+    document.contribute(&mut workspace).unwrap();
+    workspace.active_document = document.id.clone();
+    let bytes = save_workspace(&workspace).unwrap();
+    let files = unpack(&bytes);
+    let manifest = &files
+        .iter()
+        .find(|(name, _)| name == "manifest.json")
+        .unwrap()
+        .1;
+    assert!(
+        manifest.len() < 4096,
+        "typed action bytes must stay out of the manifest"
+    );
+    let manifest: Value = serde_json::from_slice(manifest).unwrap();
+    let event = manifest["history"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["operation"] == "Literal large replacement")
+        .unwrap();
+    let path = format!("blobs/{}", event["transition_blob"].as_str().unwrap());
+    let transition = &files.iter().find(|(name, _)| name == &path).unwrap().1;
+    assert!(transition.len() > MAX_MANIFEST_BYTES && transition.len() <= MAX_ENTRY_BYTES);
+    drop(files);
+    let loaded = load_workspace(&bytes).unwrap();
+    assert_eq!(loaded.head("large-action").unwrap(), &document.molecule);
+    assert_eq!(
+        serde_json::to_value(&loaded.history).unwrap(),
+        serde_json::to_value(&workspace.history).unwrap()
+    );
 }

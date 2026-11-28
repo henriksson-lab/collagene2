@@ -10,3 +10,5 @@ mod transfer;
 mod workspace;
 mod workspace_alignment;
 mod workspace_protocol;
+
+mod typed_transitions;

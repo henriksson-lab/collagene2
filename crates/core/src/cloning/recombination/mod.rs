@@ -5,6 +5,8 @@ use collagene_model::{Error, Feature, Location, Molecule, Topology};
 pub use collagene_recombination as reference;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
+mod native;
+use native::Capture;
 pub const ENGINE_VERSION: &str = "recombination-reference-adapter-2";
 pub const RECIPE_KEY: &str = "recombination:unverified_recipe";
 pub const REFERENCE_ONLY_KEY: &str = "recombination:reference_only";
@@ -291,6 +293,7 @@ fn documents(
     request: &Request,
     report: &reference::Report,
     batch: &str,
+    capture: &mut Option<Capture>,
 ) -> Result<(Vec<ProductDocument>, Work), Error> {
     let identities = inputs
         .iter()
@@ -360,6 +363,19 @@ fn documents(
                             .iter()
                             .filter(|f| f.needs_review)
                             .count();
+                        if let Some(capture) = capture
+                            .as_mut()
+                            .filter(|capture| capture.selection == selection)
+                        {
+                            capture.append(
+                                input,
+                                &segments,
+                                &projection,
+                                molecule.features.len(),
+                                &request.annotation_limits,
+                                &mut work,
+                            )?;
+                        }
                         molecule.features.extend(projection.features);
                         (
                             mapped,
@@ -370,6 +386,12 @@ fn documents(
                         )
                     }
                     Err(error) => {
+                        if let Some(capture) = capture
+                            .as_mut()
+                            .filter(|capture| capture.selection == selection)
+                        {
+                            capture.complete = false;
+                        }
                         let mut original = source.molecule.features.clone();
                         for f in &mut original {
                             f.needs_review = true;
@@ -448,6 +470,13 @@ pub fn simulate(
     inputs: &[reference::Input],
     request: &Request,
 ) -> Result<RecombinationReport, Error> {
+    simulate_native(inputs, request, &mut None)
+}
+fn simulate_native(
+    inputs: &[reference::Input],
+    request: &Request,
+    capture: &mut Option<Capture>,
+) -> Result<RecombinationReport, Error> {
     let batch_revision = batch_revision(inputs, request)?;
     let reference = reference::recombine(
         inputs,
@@ -455,7 +484,7 @@ pub fn simulate(
         request.reaction,
         &request.limits,
     )?;
-    let (documents, work) = documents(inputs, request, &reference, &batch_revision)?;
+    let (documents, work) = documents(inputs, request, &reference, &batch_revision, capture)?;
     let report=RecombinationReport{engine_version:ENGINE_VERSION.into(),batch_revision,reference,documents,annotation_work:work.units,annotation_copy_bytes:work.bytes,annotation_features:work.features,warnings:vec!["All reciprocal components and source/profile uncertainty remain in the reference report. Producer recipes are descriptive, never imported reaction/chemistry authority. Unsupported annotation projection requires the retained immutable sources.".into()]};
     report.validate()?;
     size(&report, request.annotation_limits.max_report_bytes)?;
@@ -466,9 +495,7 @@ pub fn product(
     request: &Request,
     selection: &Selection,
 ) -> Result<ProductDocument, Error> {
-    if !hex(&selection.batch_revision)
-        || selection.batch_revision != batch_revision(inputs, request)?
-    {
+    if selection.batch_revision != batch_revision(inputs, request)? {
         return Err(bad(
             "selection belongs to a different ordered source/profile/options request",
         ));
@@ -476,9 +503,27 @@ pub fn product(
     simulate(inputs, request)?
         .documents
         .into_iter()
-        .find(|p| &p.selection == selection)
-        .ok_or_else(|| bad("selected candidate/component is not a reconstructed reference product"))
+        .find(|product| &product.selection == selection)
+        .ok_or_else(|| bad("selected candidate/component is not reconstructed"))
 }
+/// Receipts are captured in the exact selected product's native annotation loop.
+pub(crate) fn simulate_with_projections(
+    inputs: &[reference::Input],
+    request: &Request,
+    selection: &Selection,
+) -> Result<
+    (
+        RecombinationReport,
+        Option<Vec<crate::verification::projection::SourceProjection>>,
+    ),
+    Error,
+> {
+    let mut capture = Some(Capture::new(selection.clone()));
+    let batch = simulate_native(inputs, request, &mut capture)?;
+    let capture = capture.unwrap();
+    Ok((batch, capture.complete.then_some(capture.projections)))
+}
+
 pub fn check_revision(
     inputs: &[reference::Input],
     request: &Request,

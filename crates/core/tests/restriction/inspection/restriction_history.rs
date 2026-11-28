@@ -1,8 +1,9 @@
 //! Source-role, native-history and real product integration fixtures for the MVP path.
+use collagene_core::documents::{history::DocumentHistory, reference_edit::Operation as Edit};
 use collagene_core::{
     chemistry,
     cloning::restriction::{history::*, inspection::InspectionOptions},
-    documents::workspace::{RevisionEvent, Workspace},
+    documents::workspace::Workspace,
     formats::sequence as formats,
     material::lineage::EventBinding as SourceBinding,
     sequence::analysis,
@@ -85,16 +86,35 @@ fn identical_content_roles_and_new_same_content_events_never_reuse_old_binding()
     assert_ne!(source_role(&a).unwrap(), source_role(&b).unwrap());
     assert!(prepare_install(&w, &b, &enzyme(), &InspectionOptions::default(), 0).is_err());
     let old = installation_revision(&w, &a, &enzyme(), &InspectionOptions::default(), 0).unwrap();
-    let new = RevisionEvent::new(
-        &a.document_id,
-        &a.revision,
-        vec![a.event_id.clone()],
-        "New event with unchanged content",
-    )
-    .unwrap();
-    w.documents[0].head_event = Some(new.id.clone());
-    w.history.push(new);
+    let mut histories = DocumentHistory::restore_all(&w).unwrap();
+    let current = histories
+        .iter_mut()
+        .find(|history| history.id == a.document_id)
+        .unwrap();
+    let original_name = current.molecule.name.clone();
+    current
+        .commit(
+            vec![Edit::Rename {
+                name: format!("{original_name} temporary"),
+            }],
+            "Explicit temporary name edit",
+        )
+        .unwrap();
+    current
+        .commit(
+            vec![Edit::Rename {
+                name: original_name,
+            }],
+            "Explicit return to original name",
+        )
+        .unwrap();
+    w.documents.clear();
+    w.history.clear();
+    for history in histories {
+        history.contribute(&mut w).unwrap();
+    }
     w.validate().unwrap();
+
     assert!(prepare_install(&w, &a, &enzyme(), &InspectionOptions::default(), 0).is_err());
     let current = binding(&w, 0);
     assert_ne!(

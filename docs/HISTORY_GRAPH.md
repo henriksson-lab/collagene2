@@ -23,7 +23,7 @@ without inferring a physical reaction from those computational history edges.
 
 Dashed graph continuations distinguish parents elsewhere on the current graph's pages from parents outside the current document. External parent display metadata comes from other retained workspace documents. An unavailable display name is explicitly labeled unavailable, never replaced by an inferred source. Full parent IDs remain inspectable. External labels are bounded display text; event IDs and revision IDs retain their full values.
 
-Saved candidate targets can match a node's molecule revision. This is labeled a content match, not proof that the event created or verified that candidate. Candidate snapshots remain proposals for separate review and deterministic verification against exact active inputs and an independently selected target. History operations do not execute recorded operation labels or establish a scientific verification result.
+Saved candidate targets can match a node's molecule revision. This is labeled a content match, not proof that the event created or verified that candidate. Candidate snapshots remain proposals for separate review and deterministic verification against exact active inputs and an independently selected target. History operations do not execute recorded operation labels or establish a scientific verification result. Native workspace version2 separately retains typed edit, fork, cloning-step and analysis transitions. Requested causal checks replay supported native owners against exact source events; an unavailable computational recipe remains indeterminate. The graph itself displays retained parent relationships and does not perform that scientific assessment.
 
 ## Display bounds
 

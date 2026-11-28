@@ -150,6 +150,19 @@ mod tests {
             d.head.clone(),
             vec![d.head_event.clone().unwrap()],
             "Reopened equal DNA under a new event",
+            collagene_core::documents::history::transition::Transition::ReferenceEdit {
+                source: collagene_core::material::lineage::EventBinding {
+                    document_id: d.id.clone(),
+                    event_id: d.head_event.clone().unwrap(),
+                    revision: d.head.clone(),
+                },
+                actions: vec![
+                    collagene_core::documents::reference_edit::Operation::Rename {
+                        name: w.revisions[&d.head].name.clone(),
+                    },
+                ],
+                supplemental_sources: vec![],
+            },
         )
         .unwrap();
         d.head_event = Some(e.id.clone());

@@ -8,6 +8,7 @@ use std::{
     io::Write,
 };
 
+pub mod causal;
 mod cds;
 #[cfg(test)]
 mod context_orf_tests;
@@ -20,6 +21,7 @@ pub mod required_parts;
 #[cfg(test)]
 mod tests;
 pub mod unannotated_orfs;
+pub mod vector_class;
 
 pub const ENGINE_VERSION: &str = "construct-qc-3";
 pub const STATEMENT: &str = "Construct QC checks declared structural requirements against the current sequence and annotations. Passing checks do not establish that a construct will express, package, produce titre or behave as intended; failing or indeterminate checks do not establish that it will not.";
@@ -561,6 +563,7 @@ struct Checks<'a> {
     m: &'a Molecule,
     o: &'a Options,
     source_revision: String,
+    context_revision: String,
     findings: Vec<Finding>,
     budget: Budget,
     frames: BTreeMap<usize, cds::CodingFrame>,
@@ -570,6 +573,53 @@ struct Checks<'a> {
 struct ReferenceFacts {
     pin_matches: bool,
     concrete: bool,
+}
+impl<'a> Checks<'a> {
+    fn new(m: &'a Molecule, o: &'a Options) -> Result<Self, Error> {
+        let context_revision = revision(m, o)?;
+        let source_revision = m.revision();
+        let assumptions = o
+            .annotations
+            .iter()
+            .filter(|a| {
+                a.source_revision == source_revision
+                    && !m.features[a.feature_index].needs_review
+                    && annotation_revision(&m.features[a.feature_index])
+                        .is_ok_and(|r| r == a.annotation_revision)
+            })
+            .map(|a| a.feature_index)
+            .collect();
+        // Each captured reference is hashed/classified once per job. Reusing one
+        // long reference across many tiny feature claims must not amplify that work.
+        let reference_facts = o
+            .references
+            .iter()
+            .map(|r| {
+                Ok((
+                    r.id.clone(),
+                    ReferenceFacts {
+                        pin_matches: r.sequence_revision == reference_revision(&r.sequence)?,
+                        concrete: r
+                            .sequence
+                            .as_str()
+                            .bytes()
+                            .all(|b| crate::sequence::analysis::base_mask(b).is_power_of_two()),
+                    },
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, Error>>()?;
+        Ok(Self {
+            m,
+            o,
+            source_revision,
+            context_revision,
+            findings: vec![],
+            budget: Budget(MAX_REPORT_BYTES / 2),
+            frames: BTreeMap::new(),
+            assumptions,
+            reference_facts,
+        })
+    }
 }
 impl Checks<'_> {
     fn assumed(&self, index: usize) -> bool {
@@ -653,48 +703,9 @@ impl Checks<'_> {
     }
 }
 pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
-    let context_revision = revision(m, o)?;
-    let source_revision = m.revision();
-    let assumptions = o
-        .annotations
-        .iter()
-        .filter(|a| {
-            a.source_revision == source_revision
-                && !m.features[a.feature_index].needs_review
-                && annotation_revision(&m.features[a.feature_index])
-                    .is_ok_and(|r| r == a.annotation_revision)
-        })
-        .map(|a| a.feature_index)
-        .collect();
-    // Each captured reference is hashed/classified once per job. Reusing one
-    // long reference across many tiny feature claims must not amplify that work.
-    let reference_facts = o
-        .references
-        .iter()
-        .map(|r| {
-            Ok((
-                r.id.clone(),
-                ReferenceFacts {
-                    pin_matches: r.sequence_revision == reference_revision(&r.sequence)?,
-                    concrete: r
-                        .sequence
-                        .as_str()
-                        .bytes()
-                        .all(|b| crate::sequence::analysis::base_mask(b).is_power_of_two()),
-                },
-            ))
-        })
-        .collect::<Result<BTreeMap<_, _>, Error>>()?;
-    let mut checks = Checks {
-        m,
-        o,
-        source_revision: source_revision.clone(),
-        findings: vec![],
-        budget: Budget(MAX_REPORT_BYTES / 2),
-        frames: BTreeMap::new(),
-        assumptions,
-        reference_facts,
-    };
+    let mut checks = Checks::new(m, o)?;
+    let context_revision = checks.context_revision.clone();
+    let source_revision = checks.source_revision.clone();
     cds::inspect(&mut checks)?;
     geometry::inspect(&mut checks)?;
     let element_chains = element_chain::inspect(&mut checks)?;

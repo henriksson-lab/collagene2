@@ -79,7 +79,19 @@ fn verified_embedded_pdf_has_unicode_font_vector_map_and_independent_cross_refer
     assert!(text.contains("Assembly α → β / café"), "{text}");
     assert!(text.contains("β reverse compound"));
     assert!(text.contains("Junction overlaps [4] bp"));
-    assert!(text.contains("Reconstructed product matches the separately bound target"));
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized.contains("The designated final product matches the separately bound target")
+    );
+    assert!(
+        verification::engine::verify(&plan, &target)
+            .findings
+            .iter()
+            .any(
+                |finding| finding.rule == verification::checks::RuleId::TargetAgreement
+                    && finding.verdict == verification::checks::CheckVerdict::Pass
+            )
+    );
     assert!(
         text.split_whitespace()
             .collect::<Vec<_>>()
@@ -112,14 +124,38 @@ fn pdf_reverifies_current_binding_and_marks_every_invalid_page() {
     assert_eq!(output.status, Status::Invalid);
     let text = extracted(&output.bytes);
     assert_eq!(text.matches("DRAFT - INVALID").count(), output.pages);
-    assert!(text.contains("Reconstructed product does not match"));
-    assert!(!text.contains("Reconstructed product matches"));
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        normalized
+            .contains("The designated final product differs from the independently bound target")
+    );
+    assert!(!normalized.contains("The designated final product matches"));
+    assert!(
+        verification::engine::verify(&plan, &target)
+            .findings
+            .iter()
+            .any(
+                |finding| finding.rule == verification::checks::RuleId::TargetAgreement
+                    && finding.verdict == verification::checks::CheckVerdict::Fail
+            )
+    );
     let (plan, mut target) = fixture();
     target.name.push_str(" changed");
     let output = pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert_eq!(output.status, Status::Invalid);
+    let normalized = extracted(&output.bytes)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    assert!(normalized.contains("The independent target binding failed"));
     assert!(
-        extracted(&output.bytes).contains("target revision changed or was not bound separately")
+        verification::engine::verify(&plan, &target)
+            .findings
+            .iter()
+            .any(
+                |finding| finding.rule == verification::checks::RuleId::TargetAgreement
+                    && finding.verdict == verification::checks::CheckVerdict::Blocked
+            )
     );
 }
 #[test]

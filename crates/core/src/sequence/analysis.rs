@@ -95,6 +95,21 @@ impl ExactSearchBudget {
     }
 }
 
+/// Same exact/IUPAC search with a caller-owned actual-work ledger.
+pub fn find_matches_with_budget(
+    mol: &Molecule,
+    query: &str,
+    both_strands: bool,
+    budget: &mut ExactSearchBudget,
+) -> Result<Vec<Match>, Error> {
+    find_with_work(
+        TemplateView::reference(mol),
+        query,
+        both_strands,
+        &mut budget.work,
+    )
+}
+
 pub fn find_matches_view(
     mol: TemplateView<'_>,
     query: &str,
@@ -208,6 +223,15 @@ pub struct CutSite {
 }
 
 pub fn restriction_sites(mol: &Molecule, enzyme: &Enzyme) -> Result<Vec<CutSite>, Error> {
+    restriction_sites_with_budget(mol, enzyme, &mut ExactSearchBudget::default())
+}
+/// Same native recognition/cut kernel with a caller-owned actual matching ledger.
+/// Failed searches retain their charges and do not publish partial cut lists.
+pub fn restriction_sites_with_budget(
+    mol: &Molecule,
+    enzyme: &Enzyme,
+    budget: &mut ExactSearchBudget,
+) -> Result<Vec<CutSite>, Error> {
     if mol.sequence.alphabet() != Alphabet::Dna {
         return Err(Error::Unsupported(
             "restriction analysis requires DNA".into(),
@@ -217,7 +241,7 @@ pub fn restriction_sites(mol: &Molecule, enzyme: &Enzyme) -> Result<Vec<CutSite>
     let n = mol.sequence.len() as i64;
     let m = recognition.len() as i64;
     let mut sites = vec![];
-    for hit in find_matches(mol, &enzyme.recognition, true)? {
+    for hit in find_matches_with_budget(mol, &enzyme.recognition, true, budget)? {
         let offset = hit.start as i64;
         let (top, bottom) = if hit.reverse {
             (
@@ -553,4 +577,109 @@ pub fn rotation_offset(a: &str, b: &str) -> Option<usize> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod restriction_budget_tests {
+    use super::*;
+    use crate::chemistry::{
+        self,
+        tracked_duplex::{self, CleavageBudget, TrackedDuplex},
+    };
+
+    #[test]
+    fn plain_digest_shared_actual_work_preserves_literal_cuts_and_native_modification_projection() {
+        let source = Molecule::dna("literal EcoRI", "AAAAGAATTCTTTT", Topology::Linear).unwrap();
+        let enzyme = Enzyme {
+            name: "EcoRI".into(),
+            recognition: "GAATTC".into(),
+            top_cut: 1,
+            bottom_cut: 5,
+        };
+        let mut exact = ExactSearchBudget::new(100_000).unwrap();
+        let sites = restriction_sites_with_budget(&source, &enzyme, &mut exact).unwrap();
+        assert_eq!(sites.len(), 1);
+        assert_eq!(
+            (
+                sites[0].recognition_start,
+                sites[0].top_cut,
+                sites[0].bottom_cut
+            ),
+            (4, 5, 9)
+        );
+        assert!(exact.used() > 0);
+        let duplex = chemistry::Duplex::from_molecule(&source).unwrap();
+        let mut shared = CleavageBudget::new(100_000).unwrap();
+        let fragments =
+            chemistry::digest_with_budget(&duplex, &[enzyme.clone()], &mut shared).unwrap();
+        assert_eq!(shared.used(), exact.used());
+        assert_eq!(
+            fragments
+                .iter()
+                .map(|f| (f.duplex.top.len(), f.duplex.bottom.len()))
+                .collect::<Vec<_>>(),
+            [(5, 9), (9, 5)]
+        );
+        let ordinary = chemistry::digest(&duplex, &[enzyme.clone()]).unwrap();
+        assert_eq!(
+            serde_json::to_value(&fragments).unwrap(),
+            serde_json::to_value(&ordinary).unwrap()
+        );
+        let tracked = TrackedDuplex::from_unknown_duplex(&duplex).unwrap();
+        let mut tracked_budget = CleavageBudget::new(100_000).unwrap();
+        let retained =
+            tracked_duplex::digest_with_budget(&tracked, &[enzyme.clone()], &mut tracked_budget)
+                .unwrap();
+        let ordinary = tracked_duplex::digest(&tracked, &[enzyme]).unwrap();
+        assert_eq!(tracked_budget.used(), exact.used());
+        assert_eq!(
+            serde_json::to_value(retained).unwrap(),
+            serde_json::to_value(ordinary).unwrap()
+        );
+    }
+
+    #[test]
+    fn failed_plain_restriction_queries_keep_spent_work_and_cannot_reset_the_enclosing_budget() {
+        let source = Molecule::dna("absent site", "ACGTACGTACGTACGT", Topology::Linear).unwrap();
+        let enzyme = Enzyme {
+            name: "EcoRI".into(),
+            recognition: "GAATTC".into(),
+            top_cut: 1,
+            bottom_cut: 5,
+        };
+        let mut exact = ExactSearchBudget::new(100_000).unwrap();
+        assert!(
+            restriction_sites_with_budget(&source, &enzyme, &mut exact)
+                .unwrap()
+                .is_empty()
+        );
+        assert!(exact.used() > 0);
+        let duplex = chemistry::Duplex::from_molecule(&source).unwrap();
+        let mut shared = CleavageBudget::new(1).unwrap();
+        assert!(chemistry::digest_with_budget(&duplex, &[enzyme.clone()], &mut shared).is_err());
+        assert_eq!(shared.used(), 1);
+        assert_eq!(shared.remaining(), 0);
+        assert!(matches!(
+            chemistry::digest_with_budget(&duplex, &[enzyme], &mut shared),
+            Err(Error::TooLarge)
+        ));
+        assert_eq!(shared.used(), 1);
+
+        // Native Type-IIS geometry refusal occurs AFTER actual recognition work.
+        let edge =
+            Molecule::dna("reverse Type-IIS edge", "TTTTGAGACCTTTT", Topology::Linear).unwrap();
+        let bsa = Enzyme {
+            name: "BsaI".into(),
+            recognition: "GGTCTC".into(),
+            top_cut: 7,
+            bottom_cut: 11,
+        };
+        let mut attempted = ExactSearchBudget::new(100_000).unwrap();
+        assert!(restriction_sites_with_budget(&edge, &bsa, &mut attempted).is_err());
+        let mut shared = CleavageBudget::new(100_000).unwrap();
+        let duplex = chemistry::Duplex::from_molecule(&edge).unwrap();
+        assert!(chemistry::digest_with_budget(&duplex, &[bsa], &mut shared).is_err());
+        assert_eq!(shared.used(), attempted.used());
+        assert!(shared.used() > 0);
+    }
 }

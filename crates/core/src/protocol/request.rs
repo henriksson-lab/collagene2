@@ -45,6 +45,37 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::AssessConstructCausalQc { workspace, request } => {
+                if crate::construct_qc::causal::revision(workspace, request)? != self.revision {
+                    return Err(Error::Format(
+                        "Causal construct-QC workspace/request context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::ListVectorClassProfiles => {
+                if crate::construct_qc::vector_class::catalogue_revision()? != self.revision {
+                    return Err(Error::Format(
+                        "Vector-class catalogue context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::AssessVectorClass { molecule, request } => {
+                if crate::construct_qc::vector_class::revision(molecule, request)? != self.revision
+                {
+                    return Err(Error::Format(
+                        "Vector-class source/declaration context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::AssessIvtLinearization { molecule, request } => {
+                if crate::cloning::restriction::ivt_linearization::revision(molecule, request)?
+                    != self.revision
+                {
+                    return Err(Error::Format(
+                        "IVT linearization source/declaration context changed".into(),
+                    ));
+                }
+            }
             AnalysisJob::AnalyzeBaseEditing { molecule, request } => {
                 if crate::sequence::crispr::base_editing::revision(molecule, request)?
                     != self.revision
@@ -683,7 +714,8 @@ impl Request {
         }
         let maximum = if matches!(
             self.job,
-            AnalysisJob::SaveWorkspace { .. }
+            AnalysisJob::AssessConstructCausalQc { .. }
+                | AnalysisJob::SaveWorkspace { .. }
                 | AnalysisJob::SimulateTopo { .. }
                 | AnalysisJob::InspectTopoOrientations { .. }
                 | AnalysisJob::ProjectTopoProduct { .. }

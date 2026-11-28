@@ -22,9 +22,6 @@ dto! {pub struct Report {
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("TOPO source actions product: {s}"))
 }
-fn physical_error(e: impl std::fmt::Display) -> Error {
-    bad(&e.to_string())
-}
 fn digest(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
@@ -35,7 +32,7 @@ fn digest(s: &str) -> bool {
 pub fn resource_preflight(r: &Request) -> Result<(), Error> {
     physical::steps_resource_preflight(&r.preparation.steps, &r.preparation.engine_limits)
         .map_err(|error| Error::Unsupported(format!("TOPO transcript resources: {error}")))?;
-    r.options.limits.validate().map_err(physical_error)
+    r.options.limits.validate().map_err(topo::projection_error)
 }
 fn shape(r: &Request) -> Result<(), Error> {
     resource_preflight(r)?;
@@ -170,7 +167,7 @@ pub(crate) fn bridge(
 pub fn inspect(inputs: &[topo::Input], r: &Request) -> Result<Report, Error> {
     preflight(inputs, r)?;
     let preparation_revision = topo::batch_revision(inputs, &r.preparation)?;
-    inspect_preflighted(inputs, r, preparation_revision)
+    inspect_preflighted(inputs, r, preparation_revision, None, None).map(|(report, _)| report)
 }
 /// Fresh plan-only PCR synthesis route. Actual tracked Step templates establish
 /// eligibility, not inherited atoms/modifications or imported receipt authority.
@@ -179,18 +176,56 @@ pub(crate) fn inspect_reconstructed(
     r: &Request,
     templates: &[(String, &tracked::TrackedDuplex)],
 ) -> Result<Report, Error> {
+    inspect_reconstructed_native(inputs, r, templates, None, None).map(|(report, _)| report)
+}
+pub(crate) fn inspect_reconstructed_with_projections(
+    inputs: &[topo::Input],
+    r: &Request,
+    templates: &[(String, &tracked::TrackedDuplex)],
+    capture: Option<crate::verification::ancestry::TraceBudget>,
+    replay: &mut crate::verification::replay_budget::ReplayBudget<'_>,
+) -> Result<
+    (
+        Report,
+        Option<crate::verification::projection::GraphProjections>,
+    ),
+    Error,
+> {
+    inspect_reconstructed_native(inputs, r, templates, capture, Some(replay))
+}
+fn inspect_reconstructed_native(
+    inputs: &[topo::Input],
+    r: &Request,
+    templates: &[(String, &tracked::TrackedDuplex)],
+    capture: Option<crate::verification::ancestry::TraceBudget>,
+    replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
+) -> Result<
+    (
+        Report,
+        Option<crate::verification::projection::GraphProjections>,
+    ),
+    Error,
+> {
     shape(r)?;
     let preparation_revision =
         topo::batch_revision_reconstructed(inputs, &r.preparation, templates)?;
-    inspect_preflighted(inputs, r, preparation_revision)
+    inspect_preflighted(inputs, r, preparation_revision, capture, replay)
 }
 fn inspect_preflighted(
     inputs: &[topo::Input],
     r: &Request,
     preparation_revision: String,
-) -> Result<Report, Error> {
+    capture: Option<crate::verification::ancestry::TraceBudget>,
+    replay: Option<&mut crate::verification::replay_budget::ReplayBudget<'_>>,
+) -> Result<
+    (
+        Report,
+        Option<crate::verification::projection::GraphProjections>,
+    ),
+    Error,
+> {
     let original = &r.preparation;
-    let prepared = topo::prepare(inputs, original)?;
+    let prepared = topo::prepare_with_ancestry(inputs, original, capture.clone(), replay)?;
     let sources = topo::identities(&prepared.inputs);
     let context_revision = binding(&preparation_revision, &sources, r)?;
     let fresh = topo::execute(&prepared, &original.engine_limits)?;
@@ -202,8 +237,9 @@ fn inspect_preflighted(
         &r.options,
         fresh,
     )
-    .map_err(physical_error)?;
+    .map_err(topo::projection_error)?;
     let preparation = prepared.evidence;
+    let mut receipts = None;
     let (mut duplex, mut tracked, mut product, mut annotations) = (None, None, None, None);
     let mut bridge_notes=vec!["This source-backed graph bridge preserves unknown internal modification calls. Reference features describe correspondence, not inherited atoms, methylation or experimentally established material.".into()];
     bridge_notes.push("Any requested ideal flap cleavage describes only explicit graph geometry and declared new terminal chemistry. It is not a named nuclease profile, host-repair model, enzyme efficiency or biochemical mixture guarantee.".into());
@@ -217,8 +253,8 @@ fn inspect_preflighted(
                 m.metadata.insert("duplex_model".into(),ENGINE_VERSION.into());
                 m.metadata.insert("topo:actions_context".into(),context_revision.clone());
                 m.metadata.insert("topo:physical_evidence_required".into(),"true".into());
-                match topo_annotations::project(&prepared.inputs,&preparation,view,&m){
-                    Ok(evidence)=>{m.features=evidence.features.clone();annotations=Some(evidence);},
+                match topo_annotations::project_native(&prepared.inputs,&preparation,view,&m,capture.is_some()){
+                    Ok((evidence,captured))=>{receipts=captured;m.features=evidence.features.clone();annotations=Some(evidence);},
                     Err(error)=>bridge_notes.push(format!("Source annotations withheld: {error}. Actual duplex geometry remains retained; no substitute features were invented.")),
                 }
                 m.validate()?;duplex=Some(d);tracked=Some(t);product=Some(m);
@@ -242,7 +278,16 @@ fn inspect_preflighted(
         bridge_notes,
     };
     report.validate_binding(&context_revision)?;
-    Ok(report)
+    Ok((
+        report,
+        topo::graph_projections(
+            prepared.inputs,
+            prepared.source_scopes,
+            prepared.source_origin_indices,
+            prepared.native_origins,
+            receipts,
+        ),
+    ))
 }
 impl Report {
     /// Bounded readonly binding and representability, not chemistry replay.
@@ -311,7 +356,7 @@ impl Report {
             &self.request.options,
             &self.projection,
         )
-        .map_err(physical_error)?;
+        .map_err(topo::projection_error)?;
         match (
             &self.projection.outcome,
             &self.duplex,

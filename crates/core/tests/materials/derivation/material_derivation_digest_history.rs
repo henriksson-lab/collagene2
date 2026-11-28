@@ -1,5 +1,6 @@
 //! Literal independent saved-PCR/circle cut products. A derived fragment is not
 //! given a fabricated independent target merely to fit the cloning-run schema.
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     chemistry::{
         Duplex, FivePrime, methylation::MethylationState, tracked_duplex::GenerationAssumptions,
@@ -401,10 +402,13 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
         .iter_mut()
         .find(|history| history.id == request.sources[0].event.document_id)
         .unwrap();
-    let mut renamed = source.molecule.clone();
-    renamed.name = "A later saved source head".into();
     source
-        .commit(renamed, "Name change after digest request")
+        .commit(
+            vec![Edit::Rename {
+                name: "A later saved source head".into(),
+            }],
+            "Name change after digest request",
+        )
         .unwrap();
     changed.documents.clear();
     changed.history.clear();

@@ -34,3 +34,20 @@ pub(super) fn assess(
         .map(AnalysisResult::IvtTemplate)
         .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
+
+pub(super) fn linearization(
+    context: &RequestContext,
+    molecule: Molecule,
+    request: crate::cloning::restriction::ivt_linearization::Request,
+) -> Result<AnalysisResult, Error> {
+    use crate::cloning::restriction::ivt_linearization;
+    if ivt_linearization::revision(&molecule, &request)? != *context.revision {
+        return Err(Error::Format(
+            "IVT linearization source/declaration context changed".into(),
+        ));
+    }
+    context.admit(None)?;
+    Ok(ivt_linearization::assess(&molecule, &request)
+        .map(AnalysisResult::IvtLinearization)
+        .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+}

@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{history::DocumentHistory, workspace::Workspace},
     formats::oligos::{self as oligo_formats, QualityEncoding},
@@ -266,12 +267,26 @@ fn edited_reviewed_output_is_preserved_and_new_derivation_is_idempotently_reused
     let original = first.target.clone().unwrap();
     let mut changed = first.workspace.clone();
     let mut histories = DocumentHistory::restore_all(&changed).unwrap();
-    histories
+    let edited_history = histories
         .iter_mut()
         .find(|d| d.id == original.document_id)
-        .unwrap()
+        .unwrap();
+    let edit_end = edited_history.molecule.sequence.len();
+    edited_history
         .commit(
-            Molecule::dna("User edited reviewed output", "AAAA", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "AAAA".into(),
+                },
+                Edit::Rename {
+                    name: "User edited reviewed output".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "User edit after review",
         )
         .unwrap();

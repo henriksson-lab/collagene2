@@ -124,35 +124,39 @@ impl FindingBudget {
     }
 }
 
-pub(super) struct Execution<'a> {
+pub(super) struct Execution<'a, 'scope> {
     report: VerificationReport,
+    ancestry: Option<super::super::ancestry::TraceBuilder>,
+    ancestry_error: Option<Error>,
     physical: Vec<Option<TrackedDuplex>>,
     reference_only: Vec<bool>,
     final_golden_gate: &'a mut Option<crate::cloning::golden_gate::GoldenGateReport>,
-    cleavage_budget: &'a mut modified_duplex::CleavageBudget,
+    scientific: &'a mut ReplayBudget<'scope>,
     finding_budget: FindingBudget,
     material_budget: MaterialBudget,
-    pcr_budget: analysis::ExactSearchBudget,
     limited: bool,
     retained_bytes: usize,
 }
-impl<'a> Execution<'a> {
+impl<'a, 'scope> Execution<'a, 'scope> {
     pub fn new(
         report: VerificationReport,
         final_golden_gate: &'a mut Option<crate::cloning::golden_gate::GoldenGateReport>,
-        cleavage_budget: &'a mut modified_duplex::CleavageBudget,
+        scientific: &'a mut ReplayBudget<'scope>,
+        ancestry: Option<super::super::ancestry::TraceBuilder>,
+        ancestry_error: Option<Error>,
     ) -> Self {
         let count = report.planned_steps;
         let retained_bytes = evidence_bytes(&report, 60 * 1024 * 1024).unwrap_or(60 * 1024 * 1024);
         Self {
             report,
+            ancestry,
+            ancestry_error,
             physical: vec![None; count],
             reference_only: vec![false; count],
             final_golden_gate,
-            cleavage_budget,
+            scientific,
             finding_budget: FindingBudget::new(count),
             material_budget: MaterialBudget::new(),
-            pcr_budget: analysis::ExactSearchBudget::default(),
             limited: false,
             retained_bytes,
         }
@@ -247,6 +251,17 @@ impl<'a> Execution<'a> {
             } else {
                 invalid_inputs.insert(input.id.clone());
             }
+        }
+        if let Some(trace) = &mut self.ancestry {
+            for (id, molecule) in &inputs {
+                if let Err(error) = trace.register_input(id, molecule) {
+                    self.ancestry_error = Some(error);
+                    break;
+                }
+            }
+        }
+        if self.ancestry_error.is_some() {
+            self.ancestry = None;
         }
         let checks = match ReferenceChecks::new(plan) {
             Ok(checks) => checks,
@@ -368,8 +383,8 @@ impl<'a> Execution<'a> {
                     CheckScope::Step { step_index: index }, "Reconstruction is blocked by the explicit unavailable original input or earlier producing step(s) retained on this outcome."));
                 continue;
             }
-            if matches!(operation, Operation::Pcr { .. }) && self.pcr_budget.remaining() == 0 {
-                self.not_evaluated(index, "The shared enclosing-plan exact-PCR work budget is exhausted; no fresh binding search or product was evaluated.");
+            if matches!(operation, Operation::Pcr { .. }) && self.scientific.pcr.remaining() == 0 {
+                self.not_evaluated(index, "The shared native exact-PCR work budget is exhausted; no fresh binding search or product was evaluated.");
                 continue;
             }
             let attempt = StepAttempt::run(
@@ -383,10 +398,17 @@ impl<'a> Execution<'a> {
                 &self.reference_only,
                 &mut self.material_budget,
                 self.report.physical_processing_reports.len(),
-                self.cleavage_budget,
-                &mut self.pcr_budget,
+                self.scientific,
+                self.ancestry.as_mut(),
             );
             self.commit(index, operation, attempt);
+            if self.report.steps[index].state != StepState::Reconstructed {
+                if let Some(trace) = &mut self.ancestry {
+                    if let Err(error) = trace.discard_step(index) {
+                        self.ancestry_error = Some(error);
+                    }
+                }
+            }
         }
         if self.finding_budget.exhausted {
             self.mandatory(CheckFinding::new(RuleId::CheckBudget, CheckVerdict::Indeterminate, CheckScope::Plan,
@@ -460,7 +482,12 @@ impl<'a> Execution<'a> {
             physical_processing_reports,
             reference_step_reports,
             golden_gate,
+            ancestry_error,
         } = attempt;
+        if let Some(error) = ancestry_error {
+            self.ancestry_error = Some(error);
+            self.ancestry = None;
+        }
         // The fresh final enumeration is a separate diagnostic receipt. A
         // truncated pool or unavailable selected candidate must remain visible
         // even when no product/private material can be committed. Consumers
@@ -586,7 +613,13 @@ impl<'a> Execution<'a> {
                 CheckScope::Target { step_index: index }, "Target comparison is blocked because the designated final step has no established product; another successful branch is not substituted."));
         }
     }
-    pub fn finish(mut self) -> (VerificationReport, Vec<Option<TrackedDuplex>>) {
+    pub fn finish(
+        mut self,
+    ) -> (
+        VerificationReport,
+        Vec<Option<TrackedDuplex>>,
+        Option<Result<super::super::ancestry::ReconstructionTrace, Error>>,
+    ) {
         self.report.status = if self
             .report
             .findings
@@ -612,7 +645,12 @@ impl<'a> Execution<'a> {
         } else {
             Status::Incomplete
         };
-        (self.report, self.physical)
+        let trace = match (self.ancestry_error, self.ancestry) {
+            (Some(error), _) => Some(Err(error)),
+            (None, Some(trace)) => Some(Ok(trace.finish())),
+            (None, None) => None,
+        };
+        (self.report, self.physical, trace)
     }
 }
 fn error_verdict(error: &Error) -> CheckVerdict {

@@ -261,14 +261,58 @@ impl FreshMaterial {
         )
     }
 }
+/// Private same-execution retained-origin receipts; never a stored authority.
+#[derive(Debug)]
+pub(crate) struct RetainedReplay {
+    pub binding: crate::verification::ancestry::OriginBinding,
+    pub trace: Result<crate::verification::ancestry::ReconstructionTrace, Error>,
+    pub selected_step: usize,
+    pub actual_reference: Option<Molecule>,
+}
 impl MaterialOrigin {
     /// Execute the unchanged closed native recipe; imported state is never
     /// deserialized into material. This does not attest an unrelated workspace.
     pub fn replay(&self, source: &Molecule) -> Result<FreshMaterial, Error> {
+        self.replay_native(source, None).map(|(fresh, _)| fresh)
+    }
+    pub(crate) fn replay_scoped(
+        &self,
+        source: &Molecule,
+        replay: &mut crate::verification::replay_budget::ReplayBudget<'_>,
+        budget: Option<crate::verification::ancestry::TraceBudget>,
+    ) -> Result<(FreshMaterial, Option<RetainedReplay>), Error> {
+        self.replay_native(source, Some((replay, budget)))
+    }
+    fn replay_native(
+        &self,
+        source: &Molecule,
+        capture: Option<(
+            &mut crate::verification::replay_budget::ReplayBudget<'_>,
+            Option<crate::verification::ancestry::TraceBudget>,
+        )>,
+    ) -> Result<(FreshMaterial, Option<RetainedReplay>), Error> {
+        let mut retained = None;
         let (reference, tracked, incomplete, findings, total, prior_truncated, reaction_conditions) =
             match self {
                 Self::Run(origin) => {
-                    let fresh = crate::material::capsule::replay(origin, source)?;
+                    let fresh = match capture {
+                        Some((replay, budget)) => {
+                            let (fresh, binding, trace, actual_reference) =
+                                crate::material::capsule::replay_scoped(
+                                    origin, source, replay, budget,
+                                )?;
+                            if let Some(trace) = trace {
+                                retained = Some(RetainedReplay {
+                                    binding,
+                                    trace,
+                                    selected_step: origin.selection.step_index,
+                                    actual_reference,
+                                });
+                            }
+                            fresh
+                        }
+                        None => crate::material::capsule::replay(origin, source)?,
+                    };
                     let report = fresh.evidence.decode_report()?;
                     let reaction_conditions =
                         crate::material::derivation::reaction_conditions::from_origin_report(
@@ -299,7 +343,40 @@ impl MaterialOrigin {
                     )
                 }
                 Self::Derived(origin) => {
-                    let fresh = crate::material::derivation::replay(origin, source)?;
+                    let fresh = match capture {
+                        Some((replay, budget)) => {
+                            let copy_budget = budget.clone();
+                            let (fresh, binding, trace) =
+                                crate::material::derivation::replay_scoped(
+                                    origin, source, replay, budget,
+                                )?;
+                            if let Some(mut trace) = trace {
+                                let actual_reference = if trace.is_ok() {
+                                    match copy_budget
+                                        .as_ref()
+                                        .expect("requested native trace budget")
+                                        .retain_model(fresh.reference())
+                                    {
+                                        Ok(()) => Some(fresh.reference().clone()),
+                                        Err(error) => {
+                                            trace = Err(error);
+                                            None
+                                        }
+                                    }
+                                } else {
+                                    None
+                                };
+                                retained = Some(RetainedReplay {
+                                    binding,
+                                    trace,
+                                    selected_step: 0,
+                                    actual_reference,
+                                });
+                            }
+                            fresh
+                        }
+                        None => crate::material::derivation::replay(origin, source)?,
+                    };
                     let conditions = crate::material::derivation::reaction_conditions::collect(
                         fresh.reaction_conditions(),
                     )?;
@@ -323,15 +400,18 @@ impl MaterialOrigin {
                 }
             })
             .collect();
-        Ok(FreshMaterial {
-            reaction_conditions,
-            reference,
-            tracked,
-            incomplete,
-            findings,
-            findings_total: total,
-            findings_truncated: truncated,
-        })
+        Ok((
+            FreshMaterial {
+                reaction_conditions,
+                reference,
+                tracked,
+                incomplete,
+                findings,
+                findings_total: total,
+                findings_truncated: truncated,
+            },
+            retained,
+        ))
     }
 }
 pub const MATERIAL_INSPECTION_ENGINE_VERSION: &str = "material-origin-inspection-1";

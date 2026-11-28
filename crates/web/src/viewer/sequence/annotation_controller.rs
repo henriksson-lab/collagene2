@@ -106,15 +106,10 @@ impl AnnotationController {
                 .get_mut(index)
                 .ok_or("Active annotation document is unavailable.")?;
             let previous = current_event_binding(doc);
-            let edited = collagene_core::sequence::annotations::batch::apply(&doc.molecule, &request)
-                .map_err(|e| e.to_string())?;
-            if edited == doc.molecule {
-                return Ok(());
-            }
             let hidden = attachments.with_untracked(|assets| {
                 crate::viewer::sequence::annotation_visibility::load(assets, &previous, doc.molecule.features.len())
             })?;
-            doc.commit(edited, "Batch edited annotations")
+            doc.commit(vec![collagene_core::documents::reference_edit::Operation::EditAnnotations {request}], "Batch edited annotations")
                 .map_err(|e| e.to_string())?;
             let source = current_event_binding(doc);
             let count = doc.molecule.features.len();

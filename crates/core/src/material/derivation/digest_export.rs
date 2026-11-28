@@ -74,7 +74,11 @@ impl Request {
             save_primers: false,
         };
         request.validate_shallow()?;
-        let fresh = super::fresh_template(source, &request, &context_revision)?;
+        let mut cleavage = crate::chemistry::tracked_duplex::CleavageBudget::new(100_000_000)?;
+        let mut replay =
+            crate::verification::replay_budget::ReplayBudget::plan_local(&mut cleavage);
+        let fresh =
+            super::fresh_template(source, &request, &context_revision, &mut None, &mut replay)?;
         let reaction_conditions = super::reaction_conditions::collect(fresh.reaction_conditions())?;
         let (mut molecule, tracked, incomplete, mut findings, total, truncated) =
             fresh.into_parts();

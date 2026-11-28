@@ -1,5 +1,7 @@
 //! Read-only exact-version navigation from a retained cloning run. Opening a
 //! version never restores a scientific assessment or changes a document head.
+#[cfg(test)]
+use collagene_core::documents::reference_edit::Operation as ReferenceEdit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -269,11 +271,34 @@ mod tests {
         let original = source.molecule.clone();
         source
             .commit(
-                Molecule::dna("later source", "TCGACCCCGGGGTAAC", Topology::Linear).unwrap(),
+                vec![
+                    ReferenceEdit::Rename {
+                        name: "later source".into(),
+                    },
+                    ReferenceEdit::ReplaceSequence {
+                        start: 0,
+                        end: 1,
+                        replacement: "T".into(),
+                    },
+                ],
                 "Later source edit",
             )
             .unwrap();
-        source.commit(original, "Restore original letters").unwrap();
+        source
+            .commit(
+                vec![
+                    ReferenceEdit::Rename {
+                        name: original.name.clone(),
+                    },
+                    ReferenceEdit::ReplaceSequence {
+                        start: 0,
+                        end: 1,
+                        replacement: "A".into(),
+                    },
+                ],
+                "Restore original letters",
+            )
+            .unwrap();
         let mut next = frame.clone();
         next.documents.clear();
         next.history.clear();

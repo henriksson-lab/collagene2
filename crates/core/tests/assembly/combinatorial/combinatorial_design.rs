@@ -1,4 +1,5 @@
 //! Independent source-choice, exact-event and literal-target fixtures.
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     cloning::assembly::recipe::Preparation,
     documents::workspace::Workspace,
@@ -374,9 +375,22 @@ fn historical_choice_keeps_its_event_without_rewinding_later_source_heads() {
     let row = construct();
     let original = design::resolve(&d, &row, &w).unwrap();
     let mut docs = DocumentHistory::restore_all(&w).unwrap();
+    let edit_end = docs[0].molecule.sequence.len();
     docs[0]
         .commit(
-            Molecule::dna("edited source", "TCCC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TCCC".into(),
+                },
+                Edit::Rename {
+                    name: "edited source".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Later source change",
         )
         .unwrap();

@@ -1,3 +1,4 @@
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -276,9 +277,22 @@ fn historic_source_and_target_heads_may_advance_but_new_preview_context_changes(
     let mut later = captured.workspace.clone();
     let mut histories = DocumentHistory::restore_all(&later).unwrap();
     for index in [0, 1] {
+        let edit_end = histories[index].molecule.sequence.len();
         histories[index]
             .commit(
-                Molecule::dna("Later edited head", "TTTTGGGG", Topology::Linear).unwrap(),
+                vec![
+                    Edit::ReplaceSequence {
+                        start: 0,
+                        end: edit_end,
+                        replacement: "TTTTGGGG".into(),
+                    },
+                    Edit::Rename {
+                        name: "Later edited head".into(),
+                    },
+                    Edit::SetTopology {
+                        topology: Topology::Linear,
+                    },
+                ],
                 "Later user edit",
             )
             .unwrap();

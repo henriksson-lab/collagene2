@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::workspace::{RevisionEvent, Workspace, WorkspaceDocument},
     material::{
@@ -35,7 +38,14 @@ fn event(w: &Workspace, index: usize) -> EventBinding {
 fn add(w: &mut Workspace, id: &str, name: &str, text: &str) {
     let m = Molecule::dna(name, text, Topology::Linear).unwrap();
     let revision = m.revision();
-    let e = RevisionEvent::new(id, revision.clone(), vec![], "Local import").unwrap();
+    let e = RevisionEvent::new(
+        id,
+        revision.clone(),
+        vec![],
+        "Local import",
+        Transition::IndependentReference,
+    )
+    .unwrap();
     w.documents.push(WorkspaceDocument {
         id: id.into(),
         head: revision.clone(),
@@ -50,13 +60,36 @@ fn add(w: &mut Workspace, id: &str, name: &str, text: &str) {
 }
 fn advance(w: &mut Workspace, id: &str, text: &str) -> Selection {
     let before = pin(w, id);
-    let m = Molecule::dna("Local branch", text, Topology::Linear).unwrap();
+    let previous = w.head(id).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: text.into(),
+        },
+        Edit::Rename {
+            name: "Local branch".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let m = Edit::apply_all(previous, &actions).unwrap();
     let revision = m.revision();
     let e = RevisionEvent::new(
         id,
         revision.clone(),
         before.head_event.iter().cloned().collect(),
         "Local edit",
+        Transition::ReferenceEdit {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: id.into(),
+                event_id: before.head_event.clone().unwrap(),
+                revision: before.revision.clone(),
+            },
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     let d = w.documents.iter_mut().find(|d| d.id == id).unwrap();
@@ -369,6 +402,7 @@ fn fastforward_requires_exact_expected_event_ancestry_even_when_sequence_matches
         &d.head,
         vec![],
         "Different root event for same exact molecule",
+        Transition::IndependentReference,
     )
     .unwrap();
     d.head_event = Some(alternate.id.clone());

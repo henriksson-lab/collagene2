@@ -1,4 +1,5 @@
 //! Independent ZIP decoding and literal sequence/order/protocol expectations.
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     chemistry::EndTreatment,
     cloning::assembly::recipe::Preparation,
@@ -262,12 +263,26 @@ fn subset_and_sequence_only_exchange_are_explicitly_historical_and_do_not_rebase
     let old = manifest.rows[0].output.construct.clone();
     let mut changed = release.workspace.clone();
     let mut histories = DocumentHistory::restore_all(&changed).unwrap();
-    histories
+    let edited_history = histories
         .iter_mut()
         .find(|d| d.id == old.document_id)
-        .unwrap()
+        .unwrap();
+    let edit_end = edited_history.molecule.sequence.len();
+    edited_history
         .commit(
-            Molecule::dna("later edited head", "AAAA", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "AAAA".into(),
+                },
+                Edit::Rename {
+                    name: "later edited head".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "Later edit",
         )
         .unwrap();

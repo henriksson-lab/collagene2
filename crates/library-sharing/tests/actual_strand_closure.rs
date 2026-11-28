@@ -1,4 +1,7 @@
 //! Documentary intended targets retain actual native source ancestry without widening it.
+use collagene_core::documents::history::transition::{
+    AnalysisOrigin, AnalysisProducer, Transition,
+};
 #[path = "../../core/tests/common/actual_strand.rs"]
 mod fixture;
 use collagene_core::{
@@ -9,7 +12,12 @@ use collagene_core::{
     },
 };
 use collagene_library_sharing::{self as sharing, Selection};
-fn adopt(w: &mut Workspace, target: collagene_model::Molecule, parents: Vec<String>) -> Selection {
+fn adopt(
+    w: &mut Workspace,
+    target: collagene_model::Molecule,
+    parents: Vec<String>,
+    transition: Transition,
+) -> Selection {
     let id = "independent-actual-strand-design".to_string();
     let revision = target.revision();
     let event = RevisionEvent::new(
@@ -17,6 +25,7 @@ fn adopt(w: &mut Workspace, target: collagene_model::Molecule, parents: Vec<Stri
         revision.clone(),
         parents,
         "Independently declared actual source strand",
+        transition,
     )
     .unwrap();
     w.revisions.insert(revision.clone(), target);
@@ -56,12 +65,20 @@ fn actual_material_target_requires_existing_exact_parents_and_replays_their_owne
     let report = assembly_intent::build(&[input], &r, Some(&w)).unwrap();
     assert_eq!(report.target.sequence.as_str(), "AATTCGTAAG");
     let mut missing = w.clone();
-    let orphan = adopt(&mut missing, report.target.clone(), vec![]);
+    let orphan = adopt(
+        &mut missing,
+        report.target.clone(),
+        vec![],
+        Transition::IndependentReference,
+    );
     assert!(sharing::project_document_closure(&missing, &orphan).is_err());
+    let origin =
+        AnalysisOrigin::preview(AnalysisProducer::AssemblyIntent, report.target.revision());
     let selection = adopt(
         &mut w,
         report.target,
         vec![selected.event().event_id.clone()],
+        Transition::Analysis { origin },
     );
     let before = workspace::save_workspace(&w).unwrap();
     for projection in [
@@ -151,7 +168,13 @@ fn forged_unkeyed_descriptor_cannot_publish_private_event_or_claim_another_run()
         // Shape/hash alone accepts this documentary claim, intentionally.
         assert!(assembly_intent::material_source_descriptors(&forged).is_ok());
         let mut copied = w.clone();
-        let selection = adopt(&mut copied, forged, vec![selected.event().event_id.clone()]);
+        let origin = AnalysisOrigin::preview(AnalysisProducer::AssemblyIntent, forged.revision());
+        let selection = adopt(
+            &mut copied,
+            forged,
+            vec![selected.event().event_id.clone()],
+            Transition::Analysis { origin },
+        );
         assert!(sharing::project_document_closure(&copied, &selection).is_err());
         assert!(sharing::project_private_document_closure(&copied, &selection).is_err());
     }

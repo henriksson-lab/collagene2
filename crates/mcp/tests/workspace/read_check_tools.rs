@@ -1,5 +1,6 @@
 //! Real MCP transport for exact construct/read event capture and fresh replay.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -276,15 +277,41 @@ async fn archived_engine_and_user_edited_heads_never_restore_a_current_verdict_o
         },
     );
     let mut histories = DocumentHistory::restore_all(&archive).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
         .commit(
-            Molecule::dna("user edited construct", "AAAA", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "AAAA".into(),
+                },
+                Edit::Rename {
+                    name: "user edited construct".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "User edit after read check",
         )
         .unwrap();
+    let edit_end = histories[2].molecule.sequence.len();
     histories[2]
         .commit(
-            Molecule::dna("user edited read", "CCCC", Topology::Linear).unwrap(),
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "CCCC".into(),
+                },
+                Edit::Rename {
+                    name: "user edited read".into(),
+                },
+                Edit::SetTopology {
+                    topology: Topology::Linear,
+                },
+            ],
             "User edit after read check",
         )
         .unwrap();

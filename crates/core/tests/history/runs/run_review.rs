@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
     material::{
@@ -66,13 +69,31 @@ fn fixture() -> (Workspace, String) {
     (saved.workspace, saved.receipt.run_id)
 }
 fn advance(w: &mut Workspace, index: usize, name: &str, dna: &str) {
-    let molecule = Molecule::dna(name, dna, Topology::Linear).unwrap();
+    let source = event(w, index);
+    let previous = w.head(&source.document_id).unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: dna.into(),
+        },
+        Edit::Rename { name: name.into() },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let molecule = Edit::apply_all(previous, &actions).unwrap();
     let d = &mut w.documents[index];
     let e = RevisionEvent::new(
         d.id.clone(),
         molecule.revision(),
-        vec![d.head_event.clone().unwrap()],
+        vec![source.event_id.clone()],
         "Independent subsequent edit",
+        Transition::ReferenceEdit {
+            source,
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     d.head = molecule.revision();
@@ -160,6 +181,10 @@ fn historical_engine_is_documentary_and_never_adopted_as_current_status() {
         p.revision.clone(),
         vec![r.inputs[0].event.event_id.clone()],
         format!("Cloning run {} step 1", r.run_id),
+        Transition::CloningStep {
+            run_id: r.run_id.clone(),
+            step_index: p.step_index,
+        },
     )
     .unwrap();
     p.event_id = e.id.clone();

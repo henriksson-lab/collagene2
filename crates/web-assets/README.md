@@ -28,6 +28,20 @@ The packager appends one `collagene-worker-bundle:v1` HTML comment. This permits
 
 Byte limits are 8 MiB HTML, 1 MiB loader, 16 MiB glue, 64 MiB WASM and 80 MiB total worker contents. Reads also check file length and modification metadata before/after. The explicitly chosen staging directory is canonicalized; its own final component and every managed input/output directory/file reject symlinks and Windows reparse points. Ancestors outside the explicitly chosen staging boundary may be canonicalized (including normal platform temporary-directory aliases). Run after staging finishes in a build-owned tree without hostile concurrent filesystem mutation: portable `std` path checks do not supply openat-style isolation against an actively racing filesystem attacker.
 
+Trunk selects the workspace `frontend` Cargo profile for both the main UI and
+worker. It inherits `dev` with optimization level 1 and no debug information;
+normal Cargo development/check/test commands retain their existing profiles.
+The post-build native helper also retains its normal development profile. This
+uses the existing Cargo target directory and cache, without release LTO or an
+additional wasm-opt pass. Explicit frontend release delivery can select
+`trunk build --cargo-profile release`; it is not run as an extra verification
+step. Optimization does not waive any packaging or runtime byte limit.
+
 The CLI requires `TRUNK_STAGING_DIR`, takes `TRUNK_PUBLIC_URL` (default `/`), packages the files, and prints the resulting loader URL. Errors are nonzero and avoid printing input bytes or credentials. With Trunk, run it in a `post_build` hook after both main and worker staging outputs exist.
+
+Size errors identify the managed input filename, observed bytes and limit. The
+separate staging-entry bound reports entry counts. Compiler-input stripping can
+stream a WebAssembly input up to 1 GiB; this does not increase the final 64 MiB
+worker or 80 MiB bundle limits.
 
 The library and CLI have only a BLAKE3 dependency. Tests use synthetic valid relative-loader/glue/WASM fixtures, check every file's hash influence and exact relative chain, both HTML quote styles and escaping, idempotence, changed inputs, corrupt existing bundles, missing/invalid input, metadata/size limits, CLI environment behavior and symlink rejection. No browser or external scientific program is used by the library.

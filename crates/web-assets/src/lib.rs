@@ -41,7 +41,15 @@ pub enum Error {
     Io(std::io::Error),
     InvalidStaging,
     UnsafePath,
-    TooLarge(&'static str),
+    TooLarge {
+        input: String,
+        observed: u64,
+        limit: u64,
+    },
+    TooManyStagingEntries {
+        observed: usize,
+        limit: usize,
+    },
     InvalidLoader,
     InvalidGlue,
     InvalidWasm,
@@ -54,11 +62,30 @@ pub enum Error {
 }
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TooLarge {
+                input,
+                observed,
+                limit,
+            } => {
+                return write!(
+                    f,
+                    "worker asset {input}: {observed} bytes exceeds limit {limit} bytes"
+                );
+            }
+            Self::TooManyStagingEntries { observed, limit } => {
+                return write!(
+                    f,
+                    "worker staging has at least {observed} entries; limit {limit}"
+                );
+            }
+            _ => {}
+        }
         f.write_str(match self {
             Self::Io(_) => "worker asset filesystem operation failed",
             Self::InvalidStaging => "staging must be an existing ordinary directory",
             Self::UnsafePath => "symlinks or nonordinary managed paths are forbidden",
-            Self::TooLarge(_) => "worker build input exceeds its byte limit",
+            Self::TooLarge { .. } | Self::TooManyStagingEntries { .. } => unreachable!(),
             Self::InvalidLoader => {
                 "unsupported worker loader: expected only the two named relative imports"
             }
@@ -117,18 +144,30 @@ fn read_file(path: &Path, limit: u64, label: &'static str) -> Result<Vec<u8>> {
         return Err(Error::UnsafePath);
     }
     if before.len() > limit {
-        return Err(Error::TooLarge(label));
+        return Err(Error::TooLarge {
+            input: label.into(),
+            observed: before.len(),
+            limit,
+        });
     }
     let f = File::open(path)?;
     let opened = f.metadata()?;
     if !opened.is_file() || opened.len() != before.len() {
         return Err(Error::ChangedInput);
     }
-    let capacity = usize::try_from(before.len()).map_err(|_| Error::TooLarge(label))?;
+    let capacity = usize::try_from(before.len()).map_err(|_| Error::TooLarge {
+        input: label.into(),
+        observed: before.len(),
+        limit: usize::MAX as u64,
+    })?;
     let mut bytes = Vec::with_capacity(capacity.saturating_add(1));
     f.take(limit + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > limit {
-        return Err(Error::TooLarge(label));
+        return Err(Error::TooLarge {
+            input: label.into(),
+            observed: bytes.len() as u64,
+            limit,
+        });
     }
     let after = fs::symlink_metadata(path)?;
     if reparse(&after)
@@ -422,7 +461,11 @@ fn index_bytes(html: &str, url: &str, hash: &str) -> Result<Vec<u8>> {
     base.replace_range(meta.start..meta.end, &escaped);
     let out = format!("{}\n{MARKER}{hash} -->\n", base.trim_end());
     if out.len() as u64 > MAX_HTML_BYTES {
-        return Err(Error::TooLarge("index.html"));
+        return Err(Error::TooLarge {
+            input: "index.html".into(),
+            observed: out.len() as u64,
+            limit: MAX_HTML_BYTES,
+        });
     }
     Ok(out.into_bytes())
 }
@@ -503,8 +546,13 @@ pub fn package_worker(staging: &Path, public_url: &str) -> Result<Manifest> {
         read_file(&root.join(FILES[1]), MAX_JS_BYTES, FILES[1])?,
         read_file(&root.join(FILES[2]), MAX_WASM_BYTES, FILES[2])?,
     ];
-    if data.iter().map(|d| d.len() as u64).sum::<u64>() > MAX_TOTAL_BYTES {
-        return Err(Error::TooLarge("complete worker bundle"));
+    let total_bytes = data.iter().map(|d| d.len() as u64).sum::<u64>();
+    if total_bytes > MAX_TOTAL_BYTES {
+        return Err(Error::TooLarge {
+            input: "complete worker bundle".into(),
+            observed: total_bytes,
+            limit: MAX_TOTAL_BYTES,
+        });
     }
     if !loader_valid(&data[0]) {
         return Err(Error::InvalidLoader);
@@ -599,7 +647,10 @@ pub fn strip_debug_names(staging: &Path) -> Result<Vec<(String, u64, u64)>> {
     let mut integrity = Vec::new();
     for (index, entry) in fs::read_dir(&root)?.enumerate() {
         if index >= 4096 {
-            return Err(Error::TooLarge("staging entries"));
+            return Err(Error::TooManyStagingEntries {
+                observed: index + 1,
+                limit: 4096,
+            });
         }
         let entry = entry?;
         let name = entry.file_name();
@@ -618,7 +669,11 @@ pub fn strip_debug_names(staging: &Path) -> Result<Vec<(String, u64, u64)>> {
             return Err(Error::UnsafePath);
         }
         if before.len() > 1024 * 1024 * 1024 {
-            return Err(Error::TooLarge("compiled WebAssembly"));
+            return Err(Error::TooLarge {
+                input: name.to_string(),
+                observed: before.len(),
+                limit: 1024 * 1024 * 1024,
+            });
         }
         let mut input = File::open(&path)?;
         let mut header = [0u8; 8];

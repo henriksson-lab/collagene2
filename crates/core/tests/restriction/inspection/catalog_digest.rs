@@ -1,3 +1,4 @@
+use collagene_core::documents::{history::DocumentHistory, reference_edit::Operation as Edit};
 use collagene_core::{
     chemistry,
     cloning::restriction::{
@@ -5,7 +6,7 @@ use collagene_core::{
         history as restriction_history,
         inspection::{self as restriction_inspection, InspectionOptions},
     },
-    documents::workspace::{self, RevisionEvent, Workspace},
+    documents::workspace::{self, Workspace},
     formats::sequence as formats,
     material::lineage::EventBinding as SourceBinding,
     sequence::analysis,
@@ -288,16 +289,35 @@ fn exact_current_source_event_and_identical_content_roles_are_required() {
     twins.active_document = b.document_id.clone();
     let rev_b = installation_revision(&c, &s, &twins, &b, &o, 0).unwrap();
     assert_ne!(rev_a, rev_b);
-    let next = RevisionEvent::new(
-        b.document_id.clone(),
-        b.revision.clone(),
-        vec![b.event_id.clone()],
-        "same DNA, new current event",
-    )
-    .unwrap();
-    twins.documents[1].head_event = Some(next.id.clone());
-    twins.history.push(next);
+    let mut histories = DocumentHistory::restore_all(&twins).unwrap();
+    let current = histories
+        .iter_mut()
+        .find(|history| history.id == b.document_id)
+        .unwrap();
+    let original_name = current.molecule.name.clone();
+    current
+        .commit(
+            vec![Edit::Rename {
+                name: format!("{original_name} temporary"),
+            }],
+            "Explicit temporary name edit",
+        )
+        .unwrap();
+    current
+        .commit(
+            vec![Edit::Rename {
+                name: original_name,
+            }],
+            "Explicit return to original name",
+        )
+        .unwrap();
+    twins.documents.clear();
+    twins.history.clear();
+    for history in histories {
+        history.contribute(&mut twins).unwrap();
+    }
     twins.validate().unwrap();
+
     assert!(prepare_install(&c, &s, &twins, &b, &o, 0).is_err());
 }
 #[test]

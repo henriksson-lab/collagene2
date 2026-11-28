@@ -1,5 +1,6 @@
 //! Actual SDK routing; no transport mocks, files, network, browser or scientific status adoption.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     documents::{
         history::DocumentHistory,
@@ -11,7 +12,7 @@ use collagene_core::{
     sequence::analysis::Primer,
 };
 use collagene_mcp::server::CollageneServer;
-use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
+use collagene_model::{Feature, Location, Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -131,17 +132,38 @@ fn fixture() -> (Workspace, String, EventBinding, EventBinding, Molecule) {
     let mut current_source = None;
     for h in &mut histories {
         if h.id == input_event.document_id {
-            let mut next = h.molecule.clone();
-            next.name = "Current <source> & display".into();
-            next.sequence = Sequence::dna("TTTTCCCCGGGGAAAA").unwrap();
-            h.commit(next.clone(), "Private source edit after run")
-                .unwrap();
-            current_source = Some(next);
+            let edit_end = h.molecule.sequence.len();
+            h.commit(
+                vec![
+                    Edit::ReplaceSequence {
+                        start: 0,
+                        end: edit_end,
+                        replacement: "TTTTCCCCGGGGAAAA".into(),
+                    },
+                    Edit::Rename {
+                        name: "Current <source> & display".into(),
+                    },
+                ],
+                "Private source edit after run",
+            )
+            .unwrap();
+            current_source = Some(h.molecule.clone());
         } else if h.id == target_event.document_id {
-            let mut next = h.molecule.clone();
-            next.name = "Current independent target changed".into();
-            next.sequence = Sequence::dna("TTTTTTTTTTTTTTTT").unwrap();
-            h.commit(next, "Target edit after historical run").unwrap();
+            let edit_end = h.molecule.sequence.len();
+            h.commit(
+                vec![
+                    Edit::ReplaceSequence {
+                        start: 0,
+                        end: edit_end,
+                        replacement: "TTTTTTTTTTTTTTTT".into(),
+                    },
+                    Edit::Rename {
+                        name: "Current independent target changed".into(),
+                    },
+                ],
+                "Target edit after historical run",
+            )
+            .unwrap();
         }
         h.contribute(&mut frame).unwrap();
     }

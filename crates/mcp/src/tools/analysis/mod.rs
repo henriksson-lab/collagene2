@@ -1,7 +1,10 @@
 mod base_editing;
+mod causal_qc;
 mod codon;
 mod design_checks;
 mod ivt;
+mod ivt_linearization;
+mod vector_class;
 
 use crate::tools::default_inspection_page;
 

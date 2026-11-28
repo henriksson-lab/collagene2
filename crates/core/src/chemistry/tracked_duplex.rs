@@ -842,8 +842,27 @@ pub fn digest(
     source: &TrackedDuplex,
     enzymes: &[Enzyme],
 ) -> Result<Vec<TrackedDigestFragment>, Error> {
+    digest_inner(source, enzymes, None)
+}
+/// Same plain digest and positional modification projection with shared native
+/// recognition work. This does not change its assumed-complete cleavage policy.
+pub fn digest_with_budget(
+    source: &TrackedDuplex,
+    enzymes: &[Enzyme],
+    budget: &mut CleavageBudget,
+) -> Result<Vec<TrackedDigestFragment>, Error> {
+    digest_inner(source, enzymes, Some(budget))
+}
+fn digest_inner(
+    source: &TrackedDuplex,
+    enzymes: &[Enzyme],
+    budget: Option<&mut CleavageBudget>,
+) -> Result<Vec<TrackedDigestFragment>, Error> {
     source.validate()?;
-    let fragments = chemistry::digest(&source.duplex, enzymes)?;
+    let fragments = match budget {
+        Some(budget) => chemistry::digest_with_budget(&source.duplex, enzymes, budget)?,
+        None => chemistry::digest(&source.duplex, enzymes)?,
+    };
     let mut out = vec![];
     let mut bytes = 0usize;
     for f in &fragments {

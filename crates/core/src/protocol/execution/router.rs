@@ -11,6 +11,16 @@ pub(super) fn dispatch(
     context: &RequestContext,
 ) -> Result<AnalysisResult, Error> {
     match job {
+        AnalysisJob::AssessConstructCausalQc { workspace, request } => {
+            super::design_checks::causal_qc(context, workspace, request)
+        }
+        AnalysisJob::ListVectorClassProfiles => super::design_checks::vector_profiles(context),
+        AnalysisJob::AssessVectorClass { molecule, request } => {
+            super::design_checks::vector_class(context, molecule, request)
+        }
+        AnalysisJob::AssessIvtLinearization { molecule, request } => {
+            super::ivt::linearization(context, molecule, request)
+        }
         AnalysisJob::AnalyzeBaseEditing { molecule, request } => {
             super::base_editing::assess(context, molecule, request)
         }

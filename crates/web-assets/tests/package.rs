@@ -228,10 +228,16 @@ fn each_file_limit_is_checked_before_reading_unbounded_bytes() {
             .unwrap()
             .set_len(limit + 1)
             .unwrap();
+        let error = package_worker(s.path(), "/").unwrap_err();
         assert!(matches!(
-            package_worker(s.path(), "/"),
-            Err(Error::TooLarge(_))
+            &error,
+            Error::TooLarge {input,observed,limit:actual_limit}
+                if input==name && *observed==limit+1 && *actual_limit==limit
         ));
+        let diagnostic = error.to_string();
+        assert!(diagnostic.contains(name));
+        assert!(diagnostic.contains(&(limit + 1).to_string()));
+        assert!(diagnostic.contains(&limit.to_string()));
         assert!(!s.0.join("workers").exists());
     }
 }

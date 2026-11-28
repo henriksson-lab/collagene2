@@ -12,7 +12,7 @@ pub(crate) mod codon_design;
 pub(crate) mod codon_preferences;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod construct_qc_elements;
-#[cfg(target_arch = "wasm32")]
+#[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod construct_qc_model;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod construct_qc_scans;
@@ -37,3 +37,10 @@ pub(crate) mod rna_model;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod rna_view;
 pub(crate) mod structure;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "construct_qc_view/vector_class/mod.rs"]
+mod vector_class_tests;
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "construct_qc_view/causal/mod.rs"]
+mod causal_qc_tests;

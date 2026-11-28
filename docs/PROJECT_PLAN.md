@@ -5232,7 +5232,7 @@ implementation split is:
 | --- | --- | --- |
 | F37 assembly-standard grammars | New independent `collagene-assembly-standards` crate | The shared grammar and catalogue adapters serve RFC10 part-sequence format and RFC1000 Level0 profiles. The current source adds original MoClo2011 Level0 with two primary-source module paths. Other toolkits and physical wizard integration remain open; never infer functional order or whole-standard compliance. |
 | F38 collection binding sweep | New independent `collagene-oligo-binding` crate | The bounded collection sweep retains original coordinates, both strands/circular sources and explicit completion. Core applies the canonical perfect-match model and the separately sourced isolated internal DNA-mismatch model only within their stated domains. Unsupported configurations retain unavailable thermodynamics; no PCR success claim. |
-| F36 construct QC | New core-owned `construct_qc` module | The shared core owner covers annotation/CDS/register/reference checks, element chains, literal copy requirements, sourced initiation-context comparison and explicit ORF scans. Causal junction history and sourced vector-class checks remain open. Reuse canonical translation/location owners; no biological overall-pass claim. |
+| F36 construct QC | New core-owned `construct_qc` module | The shared core owner covers annotation/CDS/register/reference checks, element chains, literal copy requirements, sourced initiation-context comparison and explicit ORF scans. Causal junction history and sourced vector-class checks are integrated through native/binary/MCP/web source. The first connected execution passed their core scientific cases; nine integration/fixture failures elsewhere in the batch are being corrected and rechecked. No biological overall-pass claim. |
 | F39 agent verification contract | Existing typed plan, verifier and MCP owners | The current source has typed cited checks and indexed outcomes; independent branches continue and dependent steps retain explicit direct blockers. Complete combined native/WASM and scientific/MCP verification of this contract. Preserve the sole plan/verifier representation; no prose-to-code adapter. |
 | F28/F17 design versus consensus | Existing sequence import, pairwise alignment and verification owners | Compare supplied consensus against separately bound design, with retained differences. Do not add raw read pipelines, BAM/BAI, new MSA ports or new caches under this item. |
 | F20 screening strategy | Existing outcome enumeration, digest/PCR/gel owners | Evaluate explicitly named intended and decoy products. Distinguish models that discriminate from ambiguous/unsearched outcomes; no success probabilities. |
@@ -5480,3 +5480,113 @@ and WASM checks and the core/binary/SDK/web-model cases pass. No efficiency or
 stability claim is made. Exact restriction-candidate discovery is authored in the
 next isolated batch and remains outside this checkpoint.
 [Admission limits and primary sources](audits/ivt-template-current.md).
+
+
+### Current parallel integration batch — source work, not yet verified
+
+The next coherent batch adds scoped research-vector role/geometry checks and an
+IVT single-enzyme linearization picker through the scientific core, binary
+worker137, MCP and web controls. Neither feature infers experimental success.
+Native projection receipts preserve actual annotation ordinals and source paths
+through cloning, material reconstruction and reference edits. Causal construct
+QC is being built on those receipts rather than sequence similarity or labels.
+
+Reference editing has one core operation type shared by the web editor, MCP and
+native history. Workspace version2 retains typed transitions and bounded,
+content-addressed action payloads. Old internal workspace versions are rejected;
+no compatibility decoder is retained. Genuine computational previews explicitly
+identify their producer and missing durable recipe and confer no causal-edit
+proof. Source, product, event identity and resource-bound validation remain
+mandatory. Source edits and fixtures are in progress; compiler and scientific
+checks await the complete connected batch.
+
+Published checkpoint `39d70f4` failed CI: two PDF tests assert obsolete verifier
+prose, and desktop frontend packaging exceeds an asset size limit without useful
+old size diagnostics. Current source corrects the assertions and adds a lightly
+optimized frontend-only profile plus precise bounded-asset diagnostics. These
+corrections remain unverified. The last successful desktop package inventory
+remains explicitly tied to `c58c95c`.
+
+
+Causal CDS controls are now authored under construct QC: lazy exact retained-event
+selection, explicit source/product CDS role assumptions and genetic code, native
+worker requests, individually typed findings, guarded coordinate navigation and
+paged register/stop evidence, plus full JSON export. Captured workspace, product
+event, settings and epoch must still match before a response, navigation or export
+is accepted. Focused stale-state, declaration, menu, navigation and report-binding UI-model fixtures are authored, not executed.
+The native comparison/replay owners and their source-bound binary/MCP integration
+remain in progress; this is not a completed causal-QC claim.
+
+The current reference-history static sweep covers 185 relevant constructor,
+derivation and commit calls and finds no obsolete signatures. Review also fixed
+supplemental-parent resource admission before edit execution/deduplication and
+preserved actual review flags in compact projection receipts. A focused admission
+regression was added. The archive documentation now describes only the current
+version2/event-v2 contract; compiler/scientific checks remain pending.
+
+
+Additional current-source history admission findings are corrected: indexed
+source ownership lookup replaces repeated full-history scans, and the complete
+typed transition must fit its archive entry cap before event hashing/retention.
+Focused adversarial fixtures are authored and remain unexecuted.
+[Concrete findings and checks](audits/history-admission-current.md).
+
+
+Parallel next-feature work has started on the already admitted F20 screening
+strategy extension. It evaluates explicitly named intended/decoy subjects,
+including declared mixtures such as parent carryover, using existing digest/PCR
+owners. It must retain indistinguishable and unsearched outcomes and make no
+probability or calibrated gel-resolution claim. Its new source stays isolated
+from registration until the causal-QC batch is coherent, so it does not keep that
+batch perpetually unfinished. This is current implementation work, not a second
+plan or compatibility representation.
+
+
+Causal replay now has a separate native scientific budget owner. Ordinary
+verification retains its existing local-plan behavior; one causal-QC job borrows
+a shared exact-PCR ledger (200 million work units) and cleavage ledger (100
+million), including nested retained producers. These are distinct from the
+request's receipt/comparison `max_work`. Actual search/cleavage kernels charge
+them; no source-size estimate substitutes for execution work. Optional projection
+capture cannot reset or bypass the scientific scope. The connected native,
+material and TOPO plumbing and its fixtures are in progress, with no compiler
+success claimed yet. A native regression is authored for shared PCR charges
+across separate reconstructions even when coordinate capture is disabled.
+
+
+### Causal/history batch — current compiler and execution evidence
+
+The native/WASM source is now compiled. Initial compile corrections updated one
+missed digest-export caller, a protein fixture constructor and a history fixture
+hash comparison. The first focused native execution ran 54 compiled harnesses:
+2,925 cases passed and nine failed. Nine failures traced to four concrete causes:
+TOPO semantic rejection classification, omitted saved-graph source-event parents,
+two independent fixture premises (circular origin and known end chemistry), and
+MCP fixtures supplying workspace summaries rather than immutable references.
+
+Corrections preserve strict invalid-source/provenance rejection, retain actual
+canonical graph source parents, and strengthen literal sequence/chemistry
+assertions. They do not loosen tests or infer ancestry. Corrected native and WASM
+integration targets compile; the unit-test harness and affected-case rerun are
+being completed. Unchanged passing cases are not selected again except TOPO
+cases affected by changed source guards. No browser, application HTTP or live
+provider checks have run. These are integration results, not full goal completion.
+
+Screening strategy, affine row-band proof/storage and assembly-standard wizard
+foundations remain isolated/unregistered next-feature source. Their source audits
+and fixtures are not compiler or execution evidence for those features.
+
+
+Causal/history integration checkpoint: selected native/WASM compilation and
+**2,934 distinct effective passing cases** across 54 executed harnesses now pass.
+The initial run's nine failures and one subsequent TOPO classification regression
+are fixed; focused reruns preserve Invalid for wrong source/provenance and
+Incomplete for genuine unsupported tracked-step activation. Immutable-reference
+MCP fixtures now use the actual reference contract. No unchanged passing cases
+were rerun without an affected-source reason.
+[Execution index, source stages and limitations](audits/causal-history-current-integration.json).
+Four final files received targeted rustfmt-only cleanup after verification;
+recorded checked and published hashes distinguish that formatting. Current-source
+frontend profile packaging and cross-platform CI remain pending publication.
+Unregistered screening, row-band and assembly-standard foundations are excluded
+from this checkpoint and remain next integration work. The full goal is active.

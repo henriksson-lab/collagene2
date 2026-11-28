@@ -1,5 +1,6 @@
 //! Exact-source digest derivation using the existing native workspace/history model.
 //! Installation reconstructs the product afresh. Imported recipe metadata is evidence only.
+use crate::documents::history::transition::{AnalysisOrigin, AnalysisProducer};
 use crate::material::lineage::EventBinding as SourceBinding;
 use crate::{
     cloning::restriction::inspection::{self as restriction_inspection, InspectionOptions},
@@ -168,7 +169,9 @@ pub(crate) fn prepare_fresh_install(
         id = format!("{prefix}-{suffix}");
         suffix = suffix.checked_add(1).ok_or(Error::TooLarge)?;
     }
-    let derived = history.derive_event(&b.event_id, id.clone(), product, description)?;
+    let origin =
+        AnalysisOrigin::preview(AnalysisProducer::RestrictionInspection, product.revision());
+    let derived = history.derive_event(&b.event_id, id.clone(), product, description, origin)?;
     let event_id = derived.head_event().to_owned();
     let product_revision = derived.molecule.revision();
     let mut next = w.clone();

@@ -1,3 +1,6 @@
+use collagene_core::documents::{
+    history::transition::Transition, reference_edit::Operation as Edit,
+};
 use collagene_core::{
     documents::workspace::{self, RevisionEvent, Workspace},
     material::{
@@ -144,13 +147,36 @@ fn import(
 }
 fn edit(frame: &mut Workspace, text: &str) {
     let old = pin(frame, "document-1");
-    let m = Molecule::dna("Private edited plasmid", text, Topology::Linear).unwrap();
+    let previous = frame.head("document-1").unwrap();
+    let actions = vec![
+        Edit::ReplaceSequence {
+            start: 0,
+            end: previous.sequence.len(),
+            replacement: text.into(),
+        },
+        Edit::Rename {
+            name: "Private edited plasmid".into(),
+        },
+        Edit::SetTopology {
+            topology: Topology::Linear,
+        },
+    ];
+    let m = Edit::apply_all(previous, &actions).unwrap();
     let revision = m.revision();
     let e = RevisionEvent::new(
         "document-1",
         &revision,
         old.head_event.iter().cloned().collect(),
         "Offline private edit",
+        Transition::ReferenceEdit {
+            source: collagene_core::material::lineage::EventBinding {
+                document_id: "document-1".into(),
+                event_id: old.head_event.clone().unwrap(),
+                revision: old.revision.clone(),
+            },
+            actions,
+            supplemental_sources: vec![],
+        },
     )
     .unwrap();
     let d = &mut frame.documents[0];

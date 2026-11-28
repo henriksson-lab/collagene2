@@ -1,5 +1,6 @@
 //! Real SDK JSON-RPC exercises independent Type IIS, mismatch, inverse-PCR and gel fixtures.
 use base64::{Engine, engine::general_purpose::STANDARD};
+use collagene_core::documents::reference_edit::Operation as Edit;
 use collagene_core::{
     cloning::{
         golden_gate::GoldenGateOptions,
@@ -631,11 +632,24 @@ async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_so
     let other = &frame.documents[1];
     let other_owner = other.id.clone();
     let other_event = other.head_event.clone().unwrap();
-    let later = dna("later edited source", "TTTACCTAAA", Topology::Linear);
     let mut histories = DocumentHistory::restore_all(&frame).unwrap();
+    let edit_end = histories[0].molecule.sequence.len();
     histories[0]
-        .commit(later.clone(), "Later source edit")
+        .commit(
+            vec![
+                Edit::ReplaceSequence {
+                    start: 0,
+                    end: edit_end,
+                    replacement: "TTTACCTAAA".into(),
+                },
+                Edit::Rename {
+                    name: "later edited source".into(),
+                },
+            ],
+            "Later source edit",
+        )
         .unwrap();
+    let later = histories[0].molecule.clone();
     frame.documents.clear();
     frame.history.clear();
     for history in histories {

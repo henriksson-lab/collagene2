@@ -846,6 +846,8 @@ mod tests {
         assert!(prepared.apply_to(&w).is_err());
         assert_eq!(serde_json::to_vec(&w).unwrap(), before);
         let mut w = workspace();
+        let edit_source =
+            crate::documents::history::DocumentHistory::restore_all(&w).unwrap()[0].binding();
         let newer = Molecule::dna("changed", "TGCA", Topology::Circular).unwrap();
         let revision = newer.revision();
         w.revisions.insert(revision.clone(), newer);
@@ -855,6 +857,23 @@ mod tests {
             &revision,
             vec![w.documents[0].head_event.clone().unwrap()],
             "Edited document",
+            crate::documents::history::transition::Transition::ReferenceEdit {
+                source: edit_source.clone(),
+                actions: vec![
+                    crate::documents::reference_edit::Operation::ReplaceSequence {
+                        start: 0,
+                        end: w.revisions[&edit_source.revision].sequence.len(),
+                        replacement: "TGCA".into(),
+                    },
+                    crate::documents::reference_edit::Operation::Rename {
+                        name: "changed".into(),
+                    },
+                    crate::documents::reference_edit::Operation::SetTopology {
+                        topology: Topology::Circular,
+                    },
+                ],
+                supplemental_sources: vec![],
+            },
         )
         .unwrap();
         w.documents[0].head_event = Some(event.id.clone());
@@ -868,6 +887,8 @@ mod tests {
         let capture = prepare(&w).apply_to(&w).unwrap();
         let original_binding = capture.summary.record.association.clone();
         let mut w = capture.workspace;
+        let edit_source =
+            crate::documents::history::DocumentHistory::restore_all(&w).unwrap()[0].binding();
         let newer = Molecule::dna("changed", "TGCA", Topology::Circular).unwrap();
         let revision = newer.revision();
         w.revisions.insert(revision.clone(), newer);
@@ -877,6 +898,23 @@ mod tests {
             &revision,
             vec![w.documents[0].head_event.clone().unwrap()],
             "Edited document",
+            crate::documents::history::transition::Transition::ReferenceEdit {
+                source: edit_source.clone(),
+                actions: vec![
+                    crate::documents::reference_edit::Operation::ReplaceSequence {
+                        start: 0,
+                        end: w.revisions[&edit_source.revision].sequence.len(),
+                        replacement: "TGCA".into(),
+                    },
+                    crate::documents::reference_edit::Operation::Rename {
+                        name: "changed".into(),
+                    },
+                    crate::documents::reference_edit::Operation::SetTopology {
+                        topology: Topology::Circular,
+                    },
+                ],
+                supplemental_sources: vec![],
+            },
         )
         .unwrap();
         w.documents[0].head_event = Some(event.id.clone());

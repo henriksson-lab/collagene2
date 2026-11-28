@@ -67,10 +67,10 @@ jobs:
       # every target before running it, and compile its native helper once.
       - run: cargo fetch --locked
       - run: cargo build --locked -p collagene-web-assets
-      - name: Build current main frontend and current worker
+      - name: Build current main frontend and current worker (frontend profile)
         run: |
           rm -rf dist
-          trunk build --locked true --offline true --skip-version-check
+          trunk build --cargo-profile frontend --locked true --offline true --skip-version-check
       - name: Bound the fresh artifact before uploading
         shell: python
         run: |

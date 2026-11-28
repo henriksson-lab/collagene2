@@ -80,7 +80,7 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
     let selection =
         collagene_core::cloning::restriction::catalog::select(&catalog, &[enzyme]).unwrap();
     let options = collagene_core::chemistry::tracked_duplex::checked_inspection_options();
-    let steps = json!([{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":selection,"options":options,"fragment_index":0}}]);
+    let steps = json!([{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"conditions":null,"template":{"Step":0},"selection":selection,"options":options,"fragment_index":0}}]);
     let propose = |steps: Value| json!({"name":"checked source generation","target":target,"inputs":[{"id":"s","document":source}],"steps":steps});
     let candidate = call(&c, "propose_plan", propose(steps.clone())).await;
     assert_eq!(candidate["verified"], false);
@@ -149,7 +149,7 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
     )
     .await;
     assert_eq!(invalid_pdf["status"], "Invalid");
-    let direct = json!([{"CheckedDigest":{"template":{"Input":"s"},"selection":selection,"options":options,"fragment_index":0}}]);
+    let direct = json!([{"CheckedDigest":{"conditions":null,"template":{"Input":"s"},"selection":selection,"options":options,"fragment_index":0}}]);
     let candidate = call(&c, "propose_plan", propose(direct)).await;
     let report = call(
         &c,

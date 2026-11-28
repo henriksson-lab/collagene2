@@ -19,23 +19,34 @@ use std::{
     rc::Rc,
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
 };
 use wasm_bindgen_futures::spawn_local;
+static NEXT_FORM: AtomicUsize = AtomicUsize::new(0);
+
+fn update_draft(draft: Signal<Draft>, on_change: Callback<Draft>, update: impl FnOnce(&mut Draft)) {
+    let mut next = draft.get_untracked();
+    update(&mut next);
+    on_change.run(next);
+}
 
 #[component]
-pub(super) fn ReactionConditionsPanel(
+pub(crate) fn ReactionConditionsPanel(
     catalog: StoredValue<Result<Arc<catalog::Catalog>, String>>,
     selection: Memo<Result<CatalogSelection, String>>,
-    source: Memo<SourceInfo>,
+    source: Memo<Option<SourceInfo>>,
     epoch: RwSignal<u64>,
-    origin: RwSignal<Option<PinnedOrigin>>,
+    origin: Memo<Option<PinnedOrigin>>,
+    draft: Signal<Draft>,
+    on_change: Callback<Draft>,
     conditions: RwSignal<Option<ReactionConditions>>,
     error: RwSignal<Option<String>>,
-    loaded: RwSignal<u64>,
 ) -> impl IntoView {
-    let draft = RwSignal::new(Draft::from_saved(conditions.get_untracked()));
+    let buffer_list_id = StoredValue::new(format!(
+        "reaction-buffer-options-{}",
+        NEXT_FORM.fetch_add(1, Ordering::Relaxed)
+    ));
     let report = RwSignal::new(None::<Arc<ConditionsReport>>);
     let status = RwSignal::new(String::new());
     let busy = RwSignal::new(false);
@@ -60,16 +71,12 @@ pub(super) fn ReactionConditionsPanel(
         });
     }
     Effect::new(move |_| {
-        let _ = loaded.get();
-        draft.set(Draft::from_saved(conditions.get_untracked()));
-    });
-    Effect::new(move |_| {
         if let Ok(s) = selection.get() {
             let old = draft.get_untracked();
             let mut next = old.clone();
             next.keep_selected(&s);
             if next != old {
-                draft.set(next);
+                on_change.run(next);
             }
         }
     });
@@ -114,7 +121,10 @@ pub(super) fn ReactionConditionsPanel(
                 let revision =
                     conditions::revision(&c, &selected, &options).map_err(|e| e.to_string())?;
                 let capture = Capture {
-                    source: source.get_untracked().binding,
+                    source: source
+                        .get_untracked()
+                        .ok_or("The reaction source is unavailable.")?
+                        .binding,
                     epoch: epoch.get_untracked(),
                     selection: selected,
                     options,
@@ -163,12 +173,14 @@ pub(super) fn ReactionConditionsPanel(
                     || !selection.get_untracked().is_ok_and(|selected| {
                         options.get_untracked().is_ok_and(|configured| {
                             configured.as_ref().is_some_and(|configured| {
-                                capture.current(
-                                    &source.get_untracked().binding,
-                                    epoch.get_untracked(),
-                                    &selected,
-                                    configured,
-                                )
+                                source.get_untracked().as_ref().is_some_and(|source| {
+                                    capture.current(
+                                        &source.binding,
+                                        epoch.get_untracked(),
+                                        &selected,
+                                        configured,
+                                    )
+                                })
                             })
                         })
                     })
@@ -205,44 +217,189 @@ pub(super) fn ReactionConditionsPanel(
         }
     };
     let choose = Callback::new(move |value: CommonCondition| {
-        draft.update(|d| {
+        update_draft(draft, on_change, |d| {
             d.buffer = value.buffer;
             d.temperature = celsius(value.temperature_milli_c);
             d.activity_context = value.activity_context;
             d.temperature_context = value.temperature_context;
         })
     });
-    view! {<details class="digest-reaction-conditions"><summary>"Reaction conditions"</summary>
-        <label class="checkbox-label"><input type="checkbox" prop:checked=move||draft.get().enabled on:change=move|e|draft.update(|d|d.enabled=event_target_checked(&e))/><span>"Retain an explicit reaction setup"</span></label>
-        <Show when=move||draft.get().enabled>
-            <p class="helper">"Choose the exact vendor formulation for each enzyme. Unselected formulations remain unknown; ordinary enzymes are never replaced by HF variants."</p>
-            {move||selection.get().ok().map(|selection|selection.enzymes.into_iter().map(|enzyme| {
-                let enzyme_id=enzyme.id.clone();let change=enzyme.id.clone();
-                let forms=catalog.with_value(|c|c.as_ref().ok().map(|c|c.edition().formulations.iter().filter(|f|f.enzyme==enzyme.id).cloned().collect::<Vec<_>>()).unwrap_or_default());
-                view!{<label>{format!("{} formulation",enzyme.enzyme.name)}<select prop:value=move||draft.with(|d|d.formulations.get(&enzyme_id).cloned().flatten().unwrap_or_default()) on:change=move|e|{let value=event_target_value(&e);draft.update(|d|{d.formulations.insert(change.clone(),if value.is_empty(){None}else{Some(value)});});}>
-                    <option value="">"Not selected · unknown"</option>{forms.into_iter().map(|f|view!{<option value=f.id>{format!("{} · {} {}",f.name,f.vendor,f.product_code)}</option>}).collect_view()}
-                </select></label>}
-            }).collect_view())}
-            <label>"Buffer"<input maxlength="128" list="digest-condition-buffer-list" prop:value=move||draft.get().buffer on:input=move|e|draft.update(|d|d.buffer=event_target_value(&e)) placeholder="Choose a recorded buffer or enter its name"/></label>
-            <datalist id="digest-condition-buffer-list">{move||catalog.with_value(|c|c.as_ref().ok().and_then(|c|selection.get().ok().map(|s|draft.get().buffers(c,&s))).unwrap_or_default().into_iter().map(|value|view!{<option value=value/>}).collect_view())}</datalist>
-            <label>"Temperature (°C)"<input type="number" min="0" max="100" step="0.001" prop:value=move||draft.get().temperature on:input=move|e|draft.update(|d|d.temperature=event_target_value(&e))/></label>
-            <label>"Incubation (minutes)"<input type="number" min="1" max="100800" step="1" prop:value=move||draft.get().minutes on:input=move|e|draft.update(|d|d.minutes=event_target_value(&e))/></label>
-            <label>"Minimum recorded activity (%)"<input type="number" min="1" max="100" step="1" prop:value=move||draft.get().minimum on:input=move|e|draft.update(|d|d.minimum=event_target_value(&e))/></label>
-            <details><summary>"Assay contexts"</summary><p class="helper">"Leave a context unspecified only when the catalog evidence resolves uniquely. Multiple contexts require an explicit choice."</p>
-                <label>"Buffer-activity context"<select prop:value=move||draft.get().activity_context on:change=move|e|draft.update(|d|d.activity_context=event_target_value(&e))><option value="">"Unspecified"</option>{move||context_options(catalog,selection,draft,false)}</select></label>
-                <label>"Incubation-temperature context"<select prop:value=move||draft.get().temperature_context on:change=move|e|draft.update(|d|d.temperature_context=event_target_value(&e))><option value="">"Unspecified"</option>{move||context_options(catalog,selection,draft,true)}</select></label>
-            </details>
-            <p class="digest-warning">{move||error.get().unwrap_or_default()}</p>
-            <div class="digest-actions"><button class="button secondary" disabled=move||busy.get()||!matches!(options.get(),Ok(Some(_))) on:click=run.clone()>"Assess reaction conditions"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Reaction assessment cancelled.".into());}>"Cancel assessment"</button></div>
-            <p class="helper" role="status">{move||status.get()}</p>
-            {move||report.get().map(|report|view!{<ConditionsEvidence report on_choose=Some(choose)/>})}
-        </Show>
-    </details>}
+    view! {
+        <details class="digest-reaction-conditions">
+            <summary>
+                "Reaction conditions"
+            </summary>
+            <label class="checkbox-label">
+                <input
+                    type="checkbox"
+                    prop:checked=move ||draft.get().enabled
+                    on:change=move |e|update_draft(draft, on_change, |d|d.enabled=event_target_checked(&e))/>
+                <span>
+                    "Retain an explicit reaction setup"
+                </span>
+            </label>
+            <Show when=move ||draft.get().enabled>
+                <p class="helper">
+                    "Choose the exact vendor formulation for each enzyme. Unselected formulations remain unknown; ordinary enzymes are never replaced by HF variants."
+                </p>
+                {
+                    move || selection.get().ok().map(|selection|selection.enzymes.into_iter().map(|enzyme| {
+                        let enzyme_id = enzyme.id.clone();
+                        let change = enzyme.id.clone();
+                        let forms = catalog.with_value(|c|
+                            c.as_ref()
+                                .ok()
+                                .map(|c|
+                                    c.edition().formulations
+                                        .iter()
+                                        .filter(|f| f.enzyme == enzyme.id)
+                                        .cloned()
+                                        .collect::<Vec<_>>()
+                                )
+                                .unwrap_or_default()
+                        );
+                        view! {
+                            <label>
+                                {format!("{} formulation", enzyme.enzyme.name)}
+                                <select
+                                    prop:value=move ||draft.with(|d|d.formulations.get(&enzyme_id).cloned().flatten().unwrap_or_default())
+                                    on:change=move|e| {
+                                        let value = event_target_value(&e);
+                                        update_draft(draft, on_change, |d| {
+                                            d.formulations.insert(change.clone(), if value.is_empty() {None}
+                                            else {Some(value)});
+                                        });
+                                    }
+                                    >
+                                    <option value="">
+                                        "Not selected · unknown"
+                                    </option>
+                                    {
+                                        forms.into_iter().map(|f|view! {
+                                            <option value=f.id>
+                                                {format!("{} · {} {}", f.name, f.vendor, f.product_code)}
+                                            </option>
+                                        }).collect_view()
+                                    }
+                                </select>
+                            </label>
+                        }
+                    }).collect_view())
+                }
+                <label>
+                    "Buffer"
+                    <input
+                        maxlength="128"
+                        list=buffer_list_id.get_value()
+                        prop:value=move ||draft.get().buffer
+                        on:input=move |e|update_draft(draft, on_change, |d|d.buffer=event_target_value(&e))
+                        placeholder="Choose a recorded buffer or enter its name"/>
+                </label>
+                <datalist id=buffer_list_id.get_value()>
+                    {
+                        move || catalog.with_value(|c|c.as_ref().ok().and_then(|c|selection.get().ok()
+                        .map(|s|draft.get().buffers(c, &s))).unwrap_or_default().into_iter().map(|value|view! {
+                            <option value=value/>
+                        }).collect_view())
+                    }
+                </datalist>
+                <label>
+                    "Temperature (°C)"
+                    <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.001"
+                        prop:value=move ||draft.get().temperature
+                        on:input=move |e|update_draft(draft, on_change, |d|d.temperature=event_target_value(&e))/>
+                </label>
+                <label>
+                    "Incubation (minutes)"
+                    <input
+                        type="number"
+                        min="1"
+                        max="100800"
+                        step="1"
+                        prop:value=move ||draft.get().minutes
+                        on:input=move |e|update_draft(draft, on_change, |d|d.minutes=event_target_value(&e))/>
+                </label>
+                <label>
+                    "Minimum recorded activity (%)"
+                    <input
+                        type="number"
+                        min="1"
+                        max="100"
+                        step="1"
+                        prop:value=move ||draft.get().minimum
+                        on:input=move |e|update_draft(draft, on_change, |d|d.minimum=event_target_value(&e))/>
+                </label>
+                <details>
+                    <summary>
+                        "Assay contexts"
+                    </summary>
+                    <p class="helper">
+                        "Leave a context unspecified only when the catalog evidence resolves uniquely. Multiple contexts require an explicit choice."
+                    </p>
+                    <label>
+                        "Buffer-activity context"
+                        <select
+                            prop:value=move ||draft.get().activity_context
+                            on:change=move |e|update_draft(draft, on_change, |d|d.activity_context=event_target_value(&e))>
+                            <option value="">
+                                "Unspecified"
+                            </option>
+                            {move || context_options(catalog, selection, draft, false)}
+                        </select>
+                    </label>
+                    <label>
+                        "Incubation-temperature context"
+                        <select
+                            prop:value=move ||draft.get().temperature_context
+                            on:change=move |e|update_draft(draft, on_change, |d|d.temperature_context=event_target_value(&e))>
+                            <option value="">
+                                "Unspecified"
+                            </option>
+                            {move || context_options(catalog, selection, draft, true)}
+                        </select>
+                    </label>
+                </details>
+                <p class="digest-warning">
+                    {move || error.get().unwrap_or_default()}
+                </p>
+                <div class="digest-actions">
+                    <button
+                        class="button secondary"
+                        disabled=move ||busy.get()||!matches!(options.get(),Ok(Some(_)))
+                        on:click=run.clone()>
+                        "Assess reaction conditions"
+                    </button>
+                    <button
+                        class="text-tool"
+                        disabled=move ||!busy.get()
+                        on:click=move|_| {
+                            stop.run(());
+                            status.set("Reaction assessment cancelled.".into());
+                        }
+                        >
+                        "Cancel assessment"
+                    </button>
+                </div>
+                <p class="helper" role="status">
+                    {move || status.get()}
+                </p>
+                {
+                    move || report.get().map(|report|view! {
+                        <ConditionsEvidence report on_choose=Some(choose)/>
+                    })
+                }
+            </Show>
+        </details>
+    }
 }
 fn context_options(
     c: StoredValue<Result<Arc<catalog::Catalog>, String>>,
     s: Memo<Result<CatalogSelection, String>>,
-    d: RwSignal<Draft>,
+    d: Signal<Draft>,
     temperature: bool,
 ) -> impl IntoView {
     c.with_value(|c| {
@@ -269,7 +426,11 @@ fn context_options(
                 } else {
                     value.clone()
                 };
-                view! {<option value=value>{label}</option>}
+                view! {
+                    <option value=value>
+                        {label}
+                    </option>
+                }
             })
             .collect_view()
     })
@@ -291,27 +452,147 @@ pub(super) fn ConditionsEvidence(
 ) -> impl IntoView {
     let suggestion = RwSignal::new(0usize);
     let saved = StoredValue::new(report.clone());
-    view! {<section class="digest-condition-results"><h4>"Documentary condition evidence"</h4><p><strong>{status_label(report.documentary_status)}</strong></p>
-        <p>{format!("{} · {} °C · {} minutes declared · minimum recorded activity {}%",report.options.buffer,celsius(report.options.temperature_milli_c),report.options.incubation_minutes,report.options.minimum_activity_percent)}</p>
-        <p class="helper">"Recorded unit-assay activity is not percent cleavage or reaction success. Star activity and incubation-duration suitability remain unknown; methylation is assessed separately."</p>
-        {report.formulations.iter().map(|row|{
-            let name=report.selection.enzymes.iter().find(|e|e.id==row.enzyme_id).map(|e|e.enzyme.name.clone()).unwrap_or_else(||row.enzyme_id.clone());
-            let formulation=row.formulation.as_ref().map(|f|format!("{} · {} {}",f.name,f.vendor,f.product_code)).unwrap_or_else(||"No formulation selected · unknown".into());
-            view!{<article><strong>{format!("{name} · {formulation}")}</strong><p>{format!("Buffer activity: {}. Incubation temperature: {}.",status_label(row.activity.status),status_label(row.temperature.status))}</p>
-                <details><summary>"Formulation qualifiers and citations"</summary>
-                    {row.formulation.as_ref().map(|form|{
-                        let facts=form.evidence.iter().map(|fact|view!{<section><p>{format!("{} · context: {} · {}",condition_label(&fact.condition),fact.context,value_label(&fact.value))}</p>{fact.qualifiers.iter().map(|q|view!{<p class="helper">{q.clone()}</p>}).collect_view()}{citations(&report.sources,&fact.citations)}</section>}).collect_view();
-                        view!{<div><p>{form.formulation_scope.clone()}</p>{facts}{citations(&report.sources,&form.citations)}</div>}
-                    })}
-                    <p class="helper">"No selected record can establish star-activity risk or that the declared incubation duration is sufficient."</p>
-                </details></article>}
-        }).collect_view()}
-        <details><summary>"Common recorded buffer and temperature combinations"</summary>
-            <p class="helper">{format!("{} combinations · catalogue search {}. Suggestions apply only to the exact chosen formulations and unit-assay contexts; they do not establish a successful joint reaction.",report.common_conditions.len(),if report.suggestions_complete{"complete"}else{"limited"})}</p>
-            {(!report.common_conditions.is_empty()).then(||view!{<select aria-label="Recorded common reaction conditions" on:change=move|e|suggestion.set(event_target_value(&e).parse().unwrap_or(usize::MAX))>{report.common_conditions.iter().enumerate().map(|(i,c)|view!{<option value=i.to_string()>{format!("{} · {} °C · {} / {}",c.buffer,celsius(c.temperature_milli_c),c.activity_context,c.temperature_context)}</option>}).collect_view()}</select>})}
-            {on_choose.map(|choose|view!{<button class="text-tool" disabled=report.common_conditions.is_empty() on:click=move|_|{if let Some(value)=saved.with_value(|r|r.common_conditions.get(suggestion.get_untracked()).cloned()){choose.run(value);}}>"Use selected recorded conditions"</button>})}
-        </details>
-    </section>}
+    view! {
+        <section class="digest-condition-results">
+            <h4>
+                "Documentary condition evidence"
+            </h4>
+            <p>
+                <strong>
+                    {status_label(report.documentary_status)}
+                </strong>
+            </p>
+            <p>
+                {
+                    format!("{} · {} °C · {} minutes declared · minimum recorded activity {}%", report.options.buffer, celsius(report.options.temperature_milli_c),
+                    report.options.incubation_minutes, report.options.minimum_activity_percent)
+                }
+            </p>
+            <p class="helper">
+                "Recorded unit-assay activity is not percent cleavage or reaction success. Star activity and incubation-duration suitability remain unknown; methylation is assessed separately."
+            </p>
+            {
+                report.formulations.iter().map(|row| {
+                    let name = report.selection.enzymes
+                        .iter()
+                        .find(|e| e.id == row.enzyme_id)
+                        .map(|e| e.enzyme.name.clone())
+                        .unwrap_or_else(|| row.enzyme_id.clone());
+                    let formulation = row.formulation
+                        .as_ref()
+                        .map(|f| format!("{} · {} {}", f.name, f.vendor, f.product_code))
+                        .unwrap_or_else(|| "No formulation selected · unknown".into());
+                    view! {
+                        <article>
+                            <strong>
+                                {format!("{name} · {formulation}")}
+                            </strong>
+                            <p>
+                                {
+                                    format!(
+                                        "Buffer activity: {}. Incubation temperature: {}.",
+                                        status_label(row.activity.status),
+                                        status_label(row.temperature.status)
+                                    )
+                                }
+                            </p>
+                            <details>
+                                <summary>
+                                    "Formulation qualifiers and citations"
+                                </summary>
+                                {
+                                    row.formulation.as_ref().map(|form| {
+                                        let facts = form.evidence.iter().map(|fact|view! {
+                                            <section>
+                                                <p>
+                                                    {
+                                                        format!("{} · context: {} · {}", condition_label(&fact.condition),
+                                                        fact.context, value_label(&fact.value))
+                                                    }
+                                                </p>
+                                                {
+                                                    fact.qualifiers.iter().map(|q|view! {
+                                                        <p class="helper">
+                                                            {q.clone()}
+                                                        </p>
+                                                    }).collect_view()
+                                                }
+                                                {citations(&report.sources, &fact.citations)}
+                                            </section>
+                                        }).collect_view();
+                                        view! {
+                                            <div>
+                                                <p>
+                                                    {form.formulation_scope.clone()}
+                                                </p>
+                                                {facts}
+                                                {citations(&report.sources, &form.citations)}
+                                            </div>
+                                        }
+                                    })
+                                }
+                                <p class="helper">
+                                    "No selected record can establish star-activity risk or that the declared incubation duration is sufficient."
+                                </p>
+                            </details>
+                        </article>
+                    }
+                }).collect_view()
+            }
+            <details>
+                <summary>
+                    "Common recorded buffer and temperature combinations"
+                </summary>
+                <p class="helper">
+                    {
+                        format!(
+                            "{} combinations · catalogue search {}. Suggestions apply only to the exact chosen formulations and unit-assay contexts; they do not establish a successful joint reaction.",
+                            report.common_conditions.len(),
+                            if report.suggestions_complete {
+                                "complete"
+                            } else {
+                                "limited"
+                            }
+                        )
+                    }
+                </p>
+                {
+                    (!report.common_conditions.is_empty()).then(|| view! {
+                        <select
+                            aria-label="Recorded common reaction conditions"
+                            on:change=move |e|suggestion.set(event_target_value(&e).parse().unwrap_or(usize::MAX))>
+                            {
+                                report.common_conditions.iter().enumerate().map(|(i, c)|view! {
+                                    <option value=i.to_string()>
+                                        {
+                                            format!("{} · {} °C · {} / {}", c.buffer, celsius(c.temperature_milli_c),
+                                            c.activity_context, c.temperature_context)
+                                        }
+                                    </option>
+                                }).collect_view()
+                            }
+                        </select>
+                    })
+                }
+                {
+                    on_choose.map(|choose|view! {
+                        <button
+                            class="text-tool"
+                            disabled=report.common_conditions.is_empty()
+                            on:click=move|_| {
+                                if let Some(value) = saved.with_value(|r|r.common_conditions.get(suggestion
+                                .get_untracked()).cloned()) {
+                                    choose.run(value);
+                                }
+                            }
+                            >
+                            "Use selected recorded conditions"
+                        </button>
+                    })
+                }
+            </details>
+        </section>
+    }
 }
 fn condition_label(condition: &catalog::Condition) -> String {
     match condition {
@@ -341,5 +622,25 @@ fn citations(
     sources: &[catalog::Source],
     citations: &[catalog::Citation],
 ) -> impl IntoView + use<> {
-    citations.iter().filter_map(|citation|sources.iter().find(|source|source.id==citation.source).filter(|source|source.url.starts_with("https://")).map(|source|view!{<p><a href=source.url.clone() target="_blank" rel="noopener noreferrer">{format!("{} · {}",source.publisher,citation.locator)}</a><span>{format!(" · retrieved {}",source.retrieved_on)}</span></p>})).collect_view()
+    citations
+        .iter()
+        .filter_map(|citation| {
+            sources
+                .iter()
+                .find(|source| source.id == citation.source)
+                .filter(|source| source.url.starts_with("https://"))
+                .map(|source| {
+                    view! {
+                        <p>
+                            <a href=source.url.clone() target="_blank" rel="noopener noreferrer">
+                                {format!("{} · {}", source.publisher, citation.locator)}
+                            </a>
+                            <span>
+                                {format!(" · retrieved {}", source.retrieved_on)}
+                            </span>
+                        </p>
+                    }
+                })
+        })
+        .collect_view()
 }

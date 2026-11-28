@@ -3,6 +3,16 @@ use collagene_model::Error;
 pub(super) fn validate_verification_report(
     report: &crate::verification::evidence::VerificationReport,
 ) -> Result<(), Error> {
+    if report.step_reports.len() > 1000 {
+        return Err(Error::TooLarge);
+    }
+    let mut seen_steps = std::collections::BTreeSet::new();
+    for step in &report.step_reports {
+        step.validate_documentary()?;
+        if !seen_steps.insert(step.step_index) {
+            return Err(Error::Format("duplicate retained step evidence".into()));
+        }
+    }
     if !report.reference_step_reports.is_empty() {
         if report.reference_step_reports.len() > 64 {
             return Err(Error::TooLarge);

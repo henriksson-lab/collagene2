@@ -171,6 +171,7 @@ fn derived_digest_roundtrip_retains_actual_preparation_and_rejects_superseded_en
                 ),
             }],
             derivation: collagene_core::material::derivation::Derivation::CatalogDigest {
+                conditions: None,
                 selection,
                 options: Default::default(),
                 fragment_index: 0,

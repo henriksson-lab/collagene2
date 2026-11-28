@@ -126,6 +126,7 @@ fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
     let (source, r) = fixture();
     let b = r.base;
     let prep = Preparation::MismatchPcrCatalogDigest {
+        conditions: None,
         forward: b.forward.clone(),
         reverse: b.reverse.clone(),
         options: r.pcr_options.clone(),
@@ -135,6 +136,7 @@ fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
     };
     assert_eq!(postcard::to_allocvec(&prep).unwrap()[0], 9);
     let run = RunPreparation::MismatchPcrCatalogDigest {
+        conditions: None,
         forward: b.forward,
         reverse: b.reverse,
         options: r.pcr_options,

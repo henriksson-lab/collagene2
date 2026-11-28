@@ -35,6 +35,7 @@ fn fixture() -> (DesignPlan, Molecule, CatalogSelection) {
             molecule,
         }],
         steps: vec![Operation::CatalogDigest {
+            conditions: None,
             template: Source::Input("source".into()),
             selection: selection.clone(),
             fragment_index: 0,
@@ -108,6 +109,7 @@ fn catalog_preparation_in_existing_recipe_jobs_cannot_claim_old_headers() {
             role: "backbone".into(),
             input_id: "source".into(),
             preparation: Preparation::CatalogDigest {
+                conditions: None,
                 selection,
                 fragment_index: 0,
                 repair: None,

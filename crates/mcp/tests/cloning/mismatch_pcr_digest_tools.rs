@@ -232,6 +232,7 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
                 origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
             }],
             derivation: d::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&catalog, &[eco_rv]).unwrap(),
                 options: Default::default(),
                 fragment_index: 0,

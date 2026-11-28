@@ -65,6 +65,7 @@ fn selection() -> catalog_digest::CatalogSelection {
 }
 fn preparation(repair: Option<EndRepairMethod>) -> Preparation {
     Preparation::OverlapExtensionPcrCatalogDigest {
+        conditions: None,
         request: request(),
         selection: selection(),
         fragment_index: 1,
@@ -124,9 +125,8 @@ fn outer_actual_pcr_is_cut_under_exact_catalog_pin_and_closes_real_sticky_ends()
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 58, 44, 44]
     );
-    assert!(
-        matches!(&p.compiled.plan.steps[4],Operation::CatalogDigest{template:Source::Step(3),selection:pin,fragment_index:1}if pin==&selection())
-    );
+    assert!(matches!(&p.compiled.plan.steps[4],Operation::CatalogDigest{
+ conditions: None,template:Source::Step(3),selection:pin,fragment_index:1}if pin==&selection()));
     assert_eq!(p.compiled.rows[0].preparation.preparation_step, Some(0));
     assert!(p.compiled.rows[0].preparation.repair_step.is_none());
     assert!(matches!(
@@ -241,6 +241,7 @@ fn exact_saved_origin_precedes_all_seven_preparation_steps_without_retargeting()
     let prep = Preparation::FromRun {
         origin: capsule,
         preparation: RunPreparation::OverlapExtensionPcrCatalogDigest {
+            conditions: None,
             request: request(),
             selection: selection(),
             fragment_index: 1,

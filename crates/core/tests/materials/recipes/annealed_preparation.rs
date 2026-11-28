@@ -51,6 +51,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, lig::Recipe) {
                     role: "vector".into(),
                     input_id: "backbone".into(),
                     preparation: Preparation::CatalogDigest {
+                        conditions: None,
                         selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                         fragment_index: 0,
                         repair: None,

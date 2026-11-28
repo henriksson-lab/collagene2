@@ -1130,6 +1130,7 @@ mod overlap_extension_digest_tests {
         let (_, rows) =
             crate::cloning::preparation::cloning_preparations::prepared_rows(&next, 2).unwrap();
         let collagene_core::cloning::assembly::recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+            conditions: _,
             request: prep,
             selection,
             fragment_index,

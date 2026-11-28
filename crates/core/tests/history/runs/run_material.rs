@@ -320,6 +320,7 @@ fn blocked_noti_reconstruction_preserves_four_literal_cpg_positions_and_generati
                 assumptions: assumptions.clone(),
             },
             Operation::CheckedDigest {
+                conditions: None,
                 selection: checked_selection(vec!["NotI".into()]),
                 options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),

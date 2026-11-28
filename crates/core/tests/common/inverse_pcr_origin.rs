@@ -119,6 +119,7 @@ pub fn fixture(derived: bool) -> (Workspace, MaterialOrigin, EventBinding, Molec
                 origin: derive::SourceOrigin::Saved(origin),
             }],
             derivation: derive::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 fragment_index: 0,

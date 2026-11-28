@@ -93,6 +93,7 @@ fn recipe(preparation: Preparation) -> ligation_recipe::Recipe {
 }
 fn compound() -> Preparation {
     Preparation::OverlapExtensionPcrCatalogDigest {
+        conditions: None,
         request: extension(),
         selection: selection(),
         fragment_index: 1,
@@ -262,6 +263,7 @@ fn saved() -> (
 fn flat_saved_child8_and_actual_origin_digest_inspection_keep_closed_event_bindings() {
     let (source, origin, workspace) = saved();
     let child = RunPreparation::OverlapExtensionPcrCatalogDigest {
+        conditions: None,
         request: extension(),
         selection: selection(),
         fragment_index: 1,

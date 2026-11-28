@@ -869,11 +869,17 @@ impl Execution<'_> {
                         ));
                     }
                     let fresh = crate::material::derivation::replay(origin, resolve(template)?)?;
+                    crate::material::derivation::reaction_conditions::validate(
+                        fresh.reaction_conditions(),
+                    )?;
+                    let reaction_conditions = fresh.reaction_conditions().to_vec();
+                    let condition_bytes = evidence_bytes(&reaction_conditions, 4 * 1024 * 1024)?;
                     let modification_summary = fresh.tracked().summary()?;
                     let duplex_summary = fresh.tracked().duplex.summary()?;
                     let bytes =
                         evidence_bytes(origin, crate::material::derivation::MAX_CAPSULE_BYTES)?
                             .checked_add(evidence_bytes(&modification_summary, 32 * 1024 * 1024)?)
+                            .and_then(|bytes| bytes.checked_add(condition_bytes))
                             .ok_or(Error::TooLarge)?;
                     step_evidence_bytes = step_evidence_bytes
                         .checked_add(bytes)
@@ -888,6 +894,7 @@ impl Execution<'_> {
                         origin_findings_truncated,
                     ) = fresh.into_parts();
                     let evidence = DerivedOriginEvidence {
+                        reaction_conditions,
                         origin: origin.clone(),
                         material: MaterialStateEvidence {
                             material_revision: modification_summary.state_revision.clone(),
@@ -1174,6 +1181,7 @@ impl Execution<'_> {
                     let preview = fresh.reference.clone();
                     step_reports.push(StepReport {
                         step_index: index,
+                        reaction_conditions: None,
                         topo: Some(fresh),
                     });
                     findings.push(format!("Step {} retains its complete freshly reconstructed TOPO preparation, transfer graph, all physical components and paired-contour proof. A selected reference view does not seal nicks, remove flaps or establish experimental success.",index+1));
@@ -1551,10 +1559,34 @@ impl Execution<'_> {
                     template,
                     selection,
                     options,
+                    conditions,
                     fragment_index,
                 } => {
                     options.validate()?;
                     let tracked = resolve_tracked(template)?;
+                    if let Some(options) = conditions {
+                        let substrate = resolve(template)?;
+                        let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+                        let evidence =
+                            crate::cloning::restriction::conditions::source::SourceReport::assess(
+                                &catalog, &substrate, &tracked, selection, options,
+                            )?;
+                        step_evidence_bytes = step_evidence_bytes
+                            .checked_add(evidence_bytes(
+                                &evidence,
+                                crate::cloning::restriction::conditions::MAX_REPORT_BYTES + 1024,
+                            )?)
+                            .filter(|n| *n <= 32 * 1024 * 1024)
+                            .ok_or(Error::TooLarge)?;
+                        if !evidence.satisfies_request() {
+                            incomplete.push(format!("Step {} has an unresolved declared documentary reaction-condition constraint: {:?}; reconstructed sequence products remain independent of this evidence.", index + 1, evidence.report.documentary_status));
+                        }
+                        step_reports.push(StepReport {
+                            step_index: index,
+                            topo: None,
+                            reaction_conditions: Some(evidence),
+                        });
+                    }
                     let report = modified_duplex::checked_digest_with_budget(
                         &tracked,
                         &CheckedDigestOptions {
@@ -1620,8 +1652,32 @@ impl Execution<'_> {
                 } => {
                     let source = resolve_tracked(template)?;
                     let enzymes = match step {
-                        Operation::CatalogDigest { selection, .. } => {
+                        Operation::CatalogDigest {
+                            selection,
+                            conditions,
+                            ..
+                        } => {
                             let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+                            if let Some(options) = conditions {
+                                let substrate = resolve(template)?;
+                                let evidence = crate::cloning::restriction::conditions::source::SourceReport::assess(&catalog, &substrate, &source, selection, options)?;
+                                step_evidence_bytes = step_evidence_bytes
+                                    .checked_add(evidence_bytes(
+                                        &evidence,
+                                        crate::cloning::restriction::conditions::MAX_REPORT_BYTES
+                                            + 1024,
+                                    )?)
+                                    .filter(|n| *n <= 32 * 1024 * 1024)
+                                    .ok_or(Error::TooLarge)?;
+                                if !evidence.satisfies_request() {
+                                    incomplete.push(format!("Step {} has an unresolved declared documentary reaction-condition constraint: {:?}; reconstructed sequence products remain independent of this evidence.", index + 1, evidence.report.documentary_status));
+                                }
+                                step_reports.push(StepReport {
+                                    step_index: index,
+                                    topo: None,
+                                    reaction_conditions: Some(evidence),
+                                });
+                            }
                             let resolved =
                                 selection.resolved_enzymes(&catalog).map_err(|error| {
                                     Error::Format(format!("Catalog digest pin rejected: {error}"))
@@ -1651,7 +1707,7 @@ impl Execution<'_> {
                     if !source.generation.is_empty() {
                         let state = source.summary()?;
                         if state.known_modified > 0 || state.unknown_eligible > 0 {
-                            incomplete.push(format!("Step {} uses legacy assumed-complete cleavage on explicitly tracked modified/unknown material. Use CheckedDigest to establish cleavage under the positional profile.",index+1));
+                            incomplete.push(format!("Step {} uses uncatalogued assumed-complete cleavage on explicitly tracked modified/unknown material. Use CheckedDigest to establish cleavage under the positional profile.",index+1));
                         }
                     }
                     let fragments = modified_duplex::digest(&source, &enzymes)?;

@@ -5,7 +5,7 @@ use crate::{chemistry::DuplexSummary, cloning::restriction::setups::Recipe};
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 
-pub const ENGINE_VERSION: &str = "material-digest-export-2";
+pub const ENGINE_VERSION: &str = "material-digest-export-3";
 const LOSS: &str = "Detached sequence export does not preserve reusable physical material, exact native history, both strand sequences and offsets, terminal chemistry, internal nicks or positional modification evidence. Any included comments and summaries are documentary only. Retain the native workspace and replay its exact origin for subsequent cloning. Complete cleavage and experimental fragment isolation remain assumptions; no intended target is assessed.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +31,10 @@ pub struct Product {
     pub findings: Vec<String>,
     pub findings_total: usize,
     pub findings_truncated: bool,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, crate::cloning::restriction::conditions::source::SourceReport, 32>"
+    )]
+    pub reaction_conditions: Vec<crate::cloning::restriction::conditions::source::SourceReport>,
 }
 
 impl Request {
@@ -62,6 +66,7 @@ impl Request {
             }],
             derivation: Derivation::CatalogDigest {
                 selection: self.recipe.selection.clone(),
+                conditions: self.recipe.conditions.clone(),
                 options: self.recipe.options.clone(),
                 fragment_index: self.fragment_index,
             },
@@ -70,6 +75,7 @@ impl Request {
         };
         request.validate_shallow()?;
         let fresh = super::fresh_template(source, &request, &context_revision)?;
+        let reaction_conditions = super::reaction_conditions::collect(fresh.reaction_conditions())?;
         let (mut molecule, tracked, incomplete, mut findings, total, truncated) =
             fresh.into_parts();
         molecule
@@ -101,6 +107,7 @@ impl Request {
             findings,
             findings_total,
             findings_truncated,
+            reaction_conditions,
         };
         product.validate_bindings_for(self, source)?;
         crate::protocol::save_document(&product.molecule)?;
@@ -112,6 +119,7 @@ impl Product {
     /// Documentary transport checks only. This cannot restore tracked strands.
     pub fn validate(&self) -> Result<(), Error> {
         self.molecule.validate()?;
+        super::reaction_conditions::validate(&self.reaction_conditions)?;
         super::summary_shape(&self.modifications)?;
         if self.engine_version != ENGINE_VERSION
             || !super::hex(&self.context_revision)
@@ -147,6 +155,24 @@ impl Product {
             .map(serde_json::to_string)
             .transpose()
             .map_err(|_| Error::TooLarge)?;
+        if let Some(options) = &request.recipe.conditions {
+            let evidence = self
+                .reaction_conditions
+                .iter()
+                .find(|evidence| {
+                    evidence.source_revision == source.revision()
+                        && evidence.report.selection == request.recipe.selection
+                        && evidence.report.options == *options
+                })
+                .ok_or_else(|| {
+                    super::bad("digest export drops declared documentary reaction setup")
+                })?;
+            evidence.report.validate_for(
+                &crate::cloning::restriction::catalog::builtin_catalog()?,
+                &request.recipe.selection,
+                options,
+            )?;
+        }
         if self.context_revision != request.revision(source)?
             || self.inspection_revision != request.recipe.inspection_revision(source)?
             || self.molecule.name != request.name

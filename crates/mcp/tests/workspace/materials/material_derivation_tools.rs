@@ -300,6 +300,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
             origin: Origin::Saved(origin.clone()),
         }],
         derivation: Derivation::CatalogDigest {
+            conditions: None,
             selection,
             options: Default::default(),
             fragment_index: 1,
@@ -469,6 +470,7 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
             origin: Origin::Saved(run_material::MaterialSelection::Derived(receipt.product)),
         }],
         derivation: Derivation::CatalogDigest {
+            conditions: None,
             selection: catalog_digest::select(&catalog, &[eco.id.clone()]).unwrap(),
             options: Default::default(),
             fragment_index: 1,

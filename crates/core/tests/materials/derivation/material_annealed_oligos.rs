@@ -109,7 +109,7 @@ fn literal_sticky_adapter_retains_both_source_roles_and_replays_before_terminal_
         .unwrap();
     assert_eq!(history.parents, vec![top.event_id, bottom.event_id]);
     let capsule = native::capsule(&reopened, &product).unwrap();
-    assert_eq!(capsule.schema_version, 2);
+    assert_eq!(capsule.schema_version, 3);
     assert_eq!(capsule.source_snapshots.len(), 2);
     let next = native::prepare_install(
         &reopened,

@@ -770,6 +770,7 @@ mod tests {
             name: "Reusable digest fragment".into(),
             save_primers: false,
             derivation: Derivation::CatalogDigest {
+                conditions: None,
                 selection,
                 options,
                 fragment_index: fragment.index,
@@ -843,6 +844,7 @@ mod tests {
             name: "Opened EcoRI circle".into(),
             save_primers: false,
             derivation: Derivation::CatalogDigest {
+                conditions: None,
                 selection: first_selection,
                 options: options.clone(),
                 fragment_index: preview.inspection.fragments[0].index,
@@ -892,6 +894,7 @@ mod tests {
             name: "Sequential SmaI fragment".into(),
             save_primers: false,
             derivation: Derivation::CatalogDigest {
+                conditions: None,
                 selection: second_selection,
                 options,
                 fragment_index: preview.inspection.fragments[0].index,
@@ -1033,6 +1036,7 @@ mod mismatch_repair_tests {
                     origin: SourceOrigin::OriginalReference,
                 }],
                 derivation: Derivation::CatalogDigest {
+                    conditions: None,
                     selection,
                     options: Default::default(),
                     fragment_index: 0,

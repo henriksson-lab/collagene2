@@ -287,6 +287,7 @@ fn cut_free_derived_circle_survives_archive_and_is_replayed_before_new_pcr() {
             origin: origin,
         }],
         derivation: derived::Derivation::CatalogDigest {
+            conditions: None,
             selection,
             options: Default::default(),
             fragment_index: 0,

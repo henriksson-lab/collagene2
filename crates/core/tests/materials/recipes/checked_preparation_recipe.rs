@@ -70,6 +70,7 @@ fn blocked_original_site_cannot_be_cut_by_a_checked_preparation() {
     .unwrap();
     let inputs = input(source);
     let r = recipe(Preparation::CatalogDigest {
+        conditions: None,
         selection: selection("SmaI"),
         fragment_index: 1,
         repair: None,
@@ -110,6 +111,7 @@ fn original_modified_template_then_new_pcr_is_unmodified_before_checked_cutting(
     let target = Molecule::dna("Independent cut DNA", "GGGGCTACGTA", Topology::Linear).unwrap();
     let inputs = input(source);
     let r = recipe(Preparation::PcrCatalogDigest {
+        conditions: None,
         forward: Primer::new("F", "AGTCCGAT", "").unwrap(),
         reverse: Primer::new("R", "TACGTAGC", "").unwrap(),
         selection: selection("SmaI"),

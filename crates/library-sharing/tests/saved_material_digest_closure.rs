@@ -102,6 +102,7 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
                 origin: material::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin)),
             }],
             derivation: material::Derivation::CatalogDigest {
+                conditions: None,
                 selection,
                 options:
                     collagene_core::cloning::restriction::inspection::InspectionOptions::default(),

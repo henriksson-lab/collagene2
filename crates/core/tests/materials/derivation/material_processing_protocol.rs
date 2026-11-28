@@ -176,6 +176,7 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
             )),
         }],
         derivation: native::Derivation::CatalogDigest {
+            conditions: None,
             selection: catalog_digest::select(&catalog, &[eco.id.clone()]).unwrap(),
             options: Default::default(),
             fragment_index: 1,

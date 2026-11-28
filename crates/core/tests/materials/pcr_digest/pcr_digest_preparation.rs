@@ -28,6 +28,7 @@ fn recipe() -> l::Recipe {
                 role: "insert".into(),
                 input_id: "s".into(),
                 preparation: Preparation::PcrCatalogDigest {
+                    conditions: None,
                     forward: Primer::new("F", "ACGACCCC", "GGTCTCA").unwrap(),
                     reverse: Primer::new("R", "GTTACCCC", "GGTCTCA").unwrap(),
                     selection,

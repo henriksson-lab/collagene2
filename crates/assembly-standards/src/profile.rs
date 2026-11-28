@@ -7,6 +7,16 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 pub const RFC10_ID: &str = "biobrick-rfc10-part-sequence-2007";
+pub const RFC1000_L0_ID: &str = "igem-rfc1000-level0-documented-body-2026";
+pub const BUILTIN_IDS: &[&str] = &[RFC10_ID, RFC1000_L0_ID];
+
+fn builtin_bytes(id: &str) -> Result<&'static [u8]> {
+    match id {
+        RFC10_ID => Ok(include_bytes!("../data/rfc10-2007/profile.json")),
+        RFC1000_L0_ID => Ok(include_bytes!("../data/rfc1000-l0-2026/profile.json")),
+        _ => Err(Error::UnsupportedProfile),
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ProfileKind {
@@ -207,10 +217,9 @@ impl Profile {
         if pin != CatalogPin::current(catalog) {
             return Err(Error::CatalogMismatch);
         }
-        let kind = if definition.id == RFC10_ID {
-            let canonical: Definition =
-                serde_json::from_slice(include_bytes!("../data/rfc10-2007/profile.json"))
-                    .map_err(|_| Error::Invalid("embedded RFC10 definition"))?;
+        let kind = if BUILTIN_IDS.contains(&definition.id.as_str()) {
+            let canonical: Definition = serde_json::from_slice(builtin_bytes(&definition.id)?)
+                .map_err(|_| Error::Invalid("embedded standard definition"))?;
             if definition != canonical {
                 return Err(Error::Invalid(
                     "reserved built-in profile identity/facts altered",
@@ -242,14 +251,7 @@ impl Profile {
         Self::new(definition, pin, catalog)
     }
     pub fn builtin(id: &str, catalog: &Catalog) -> Result<Self> {
-        if id != RFC10_ID {
-            return Err(Error::UnsupportedProfile);
-        }
-        Self::from_json(
-            include_bytes!("../data/rfc10-2007/profile.json"),
-            CatalogPin::current(catalog),
-            catalog,
-        )
+        Self::from_json(builtin_bytes(id)?, CatalogPin::current(catalog), catalog)
     }
     pub fn definition(&self) -> &Definition {
         &self.definition

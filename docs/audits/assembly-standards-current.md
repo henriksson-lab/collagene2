@@ -51,6 +51,7 @@ history or chemical compatibility. [Execution evidence](design-checks-current-in
 Other toolkit tables remain unadmitted. The existing research document's advice
 to consult MIT repositories is a source lead, not evidence that every toolkit
 table/sequence is licensed or complete. Primary/data-specific review is still
-required for MoClo, YTK, EMMA, PhytoBricks, SEVA and RFC1000. RFC10 original prose
+required for MoClo, YTK, EMMA, PhytoBricks and SEVA. The scoped RFC1000 Level-0
+profile is now [admitted and verified](rfc1000-level0-profile-current.md). RFC10 original prose
 is OpenWetWare CC BY-SA/GFDL; this independent implementation/factual selection
 does not copy that prose or any competitor's code.

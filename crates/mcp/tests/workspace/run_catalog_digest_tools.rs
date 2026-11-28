@@ -154,6 +154,7 @@ async fn predicted_catalog_gel_replays_run_and_derived_sources_with_exact_worksp
                 origin: derivation::SourceOrigin::Saved(MaterialOrigin::Run(origin.clone())),
             }],
             derivation: derivation::Derivation::CatalogDigest {
+                conditions: None,
                 selection: enzymes.clone(),
                 options: InspectionOptions::default(),
                 fragment_index: 0,

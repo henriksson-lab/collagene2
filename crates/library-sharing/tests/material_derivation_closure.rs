@@ -136,6 +136,7 @@ fn fixture() -> Fixture {
                 )),
             }],
             derivation: Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),
                 fragment_index: 1,

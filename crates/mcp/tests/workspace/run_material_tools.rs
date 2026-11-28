@@ -308,6 +308,7 @@ async fn derived_bottom_pcr_digest_keeps_native_extra_calls_through_sdk() {
                 origin: derived::SourceOrigin::Saved(origin),
             }],
             derivation: derived::Derivation::CatalogDigest {
+                conditions: None,
                 selection: selection("SmaI"),
                 options: Default::default(),
                 fragment_index: 0,

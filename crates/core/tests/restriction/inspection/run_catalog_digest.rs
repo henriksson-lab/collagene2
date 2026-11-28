@@ -244,6 +244,7 @@ fn inherited_cpg_positions_survive_conditional_not_i_cleavage_without_claiming_p
                 },
             },
             Operation::CheckedDigest {
+                conditions: None,
                 selection: checked_selection(vec!["NotI".into()]),
                 options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),

@@ -83,6 +83,7 @@ fn digest_request(source: EventBinding, origin: MaterialOrigin, index: usize) ->
             origin: SourceOrigin::Saved(origin),
         }],
         derivation: Derivation::CatalogDigest {
+            conditions: None,
             selection: catalog_digest::select(&c, &[id]).unwrap(),
             options: Default::default(),
             fragment_index: index,

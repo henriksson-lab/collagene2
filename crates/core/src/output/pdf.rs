@@ -1625,6 +1625,7 @@ fn export_protocol_pdf_checked_inner(
                 selection,
                 options,
                 fragment_index,
+                ..
             } => format!(
                 "Checked digest of {} with {}; select fragment index {} (zero based) under current positional profile {}. Catalog edition {} and complete limits {} are pinned; unknown/impaired effects withhold products. No enzyme conditions or reaction completion are inferred.",
                 source_name(template),
@@ -1711,6 +1712,7 @@ fn export_protocol_pdf_checked_inner(
                 template,
                 selection,
                 fragment_index,
+                ..
             } => format!(
                 "Catalog-pinned complete digest of {}. Exact ordered identity/name/geometry selection: {}. Select zero-based fragment {} in top-reference cut ordering. The embedded catalog pin is checked; complete cleavage/conditions remain assumptions. Supplier documentary observations do not prove methylation compatibility, reaction kinetics or experimental completion.",
                 source_name(template),
@@ -1828,6 +1830,33 @@ fn export_protocol_pdf_checked_inner(
             ),
         };
         layout.paragraph(&format!("Step {}. {body}", index + 1))?;
+        if matches!(
+            step,
+            Operation::CatalogDigest { .. } | Operation::CheckedDigest { .. }
+        ) {
+            if let Some(evidence) = report
+                .step_reports
+                .iter()
+                .find(|entry| entry.step_index == index)
+                .and_then(|entry| entry.reaction_conditions.as_ref())
+            {
+                for line in evidence.protocol_lines()? {
+                    layout.paragraph(&line)?;
+                }
+            } else {
+                layout.paragraph("Documentary reaction conditions unassessed: no explicit formulation/buffer/temperature/time choices were declared. Complete cleavage remains an explicit molecular assumption.")?;
+            }
+        }
+        if matches!(step, Operation::Digest { .. }) {
+            layout.paragraph("Documentary reaction conditions unsupported for uncatalogued Digest: use an exact catalog selection to retain formulation-specific choices.")?;
+        }
+        if matches!(
+            step,
+            Operation::GoldenGate { .. } | Operation::SelectedGoldenGate { .. }
+        ) {
+            layout.paragraph("Golden Gate mixture documentary conditions unassessed: supplier formulations, buffer, temperature schedule, ligase, duration and star-activity compatibility are not assessed.")?;
+        }
+
         if let Some(topo) = report
             .step_reports
             .iter()
@@ -1875,6 +1904,13 @@ fn export_protocol_pdf_checked_inner(
 
                 verification::evidence::PhysicalProcessingEvidence::DerivedOrigin(evidence) => {
                     evidence.validate_documentary()?;
+                    layout.paragraph("Origin report documentary reaction-condition provenance: these retained choices do not declare current reaction conditions or establish compatibility.")?;
+                    for conditions in &evidence.reaction_conditions {
+                        for line in conditions.protocol_lines()? {
+                            layout.paragraph(&line)?;
+                        }
+                    }
+
                     let material = &evidence.material;
                     layout.paragraph_size(&format!("Fresh material derivation event {}. Actual top/bottom lengths {}/{} nt, bottom start {}, retained nicks {}. Modified / chemically unknown eligible / known unmodified bases: {} / {} / {}. Origin incomplete: {}. Material identity {}. This documentary summary does not grant imported chemical authority, isolation or a newly performed historical reaction.", evidence.origin.product.event_id, material.duplex.top_length, material.duplex.bottom_length, material.duplex.bottom_start, material.duplex.nicks.len(), material.modifications.known_modified, material.modifications.unknown_eligible, material.modifications.known_unmodified, material.origin_incomplete, material.material_revision),9.0,INK)?;
                     layout.paragraph_size(
@@ -1919,6 +1955,18 @@ fn export_protocol_pdf_checked_inner(
                 verification::evidence::PhysicalProcessingEvidence::RunProduct(evidence) => {
                     evidence.validate_documentary()?;
                     let origin_report = evidence.decode_report()?;
+                    layout.paragraph("Origin report documentary reaction-condition provenance: these retained choices do not declare current reaction conditions or establish compatibility.")?;
+                    for conditions in
+                        crate::material::derivation::reaction_conditions::from_origin_report(
+                            &evidence.origin,
+                            &origin_report,
+                        )?
+                    {
+                        for line in conditions.protocol_lines()? {
+                            layout.paragraph(&line)?;
+                        }
+                    }
+
                     layout.paragraph_size(&format!("Fresh originating reconstruction: {:?}, engine {}, plan {}, target {}. Selected originating step {} of {}; material revision {}. Complete origin products and typed graph evidence are retained in the reconstruction report. No component isolation or newly performed historical reaction is inferred.",origin_report.status,origin_report.engine_version,origin_report.plan_revision,origin_report.target_revision,evidence.origin.selection.step_index+1,origin_report.products.len(),evidence.material_revision),9.0,INK)?;
                     for finding in &origin_report.findings {
                         layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;

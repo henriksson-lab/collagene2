@@ -56,6 +56,7 @@ fn primers() -> (Primer, Primer) {
 fn prep(repair: Option<EndRepairMethod>) -> Preparation {
     let (forward, reverse) = primers();
     Preparation::MismatchPcrCatalogDigest {
+        conditions: None,
         forward,
         reverse,
         options: options(),
@@ -217,6 +218,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
     let r = recipe(Preparation::FromRun {
         origin,
         preparation: RunPreparation::MismatchPcrCatalogDigest {
+            conditions: None,
             forward,
             reverse,
             options: options(),
@@ -439,6 +441,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
     let mut policy = options();
     policy.binding.min_three_prime_exact = 4;
     let preparation = Preparation::MismatchPcrCatalogDigest {
+        conditions: None,
         forward: forward.clone(),
         reverse: reverse.clone(),
         options: policy.clone(),
@@ -572,6 +575,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
     let existing = Preparation::FromRun {
         origin,
         preparation: RunPreparation::CatalogDigest {
+            conditions: None,
             selection: selection.clone(),
             fragment_index: 1,
             repair: None,

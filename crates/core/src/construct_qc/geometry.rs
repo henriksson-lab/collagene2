@@ -2,7 +2,7 @@
 //! infer an assembly event, annotation function or a changed frame in an ancestor.
 use super::*;
 
-fn single(l: &Location, reverse: bool) -> Option<(usize, usize, bool)> {
+pub(super) fn single(l: &Location, reverse: bool) -> Option<(usize, usize, bool)> {
     match l {
         Location::Range {
             start,
@@ -59,6 +59,61 @@ fn register(phase: usize, expected: u8, crossing: char) -> (Verdict, String) {
         )
     }
 }
+pub(super) struct ReferenceIdentity {
+    pub verdict: Verdict,
+    pub reason: String,
+}
+/// One current exact identity owner, shared by reference and element-chain checks.
+pub(super) fn reference_identity(
+    checks: &Checks<'_>,
+    index: usize,
+    id: &str,
+) -> Result<ReferenceIdentity, Error> {
+    let unresolved = |reason: String| ReferenceIdentity {
+        verdict: Verdict::Indeterminate,
+        reason,
+    };
+    let Some(reference) = checks.o.references.iter().find(|r| r.id == id) else {
+        return Ok(unresolved("No pinned reference is available for the declared element; annotation alone cannot establish identity.".into()));
+    };
+    if !checks
+        .reference_facts
+        .get(id)
+        .is_some_and(|r| r.pin_matches)
+    {
+        return Ok(unresolved("Declared reference identity does not match its captured sequence; no integrity comparison is admitted.".into()));
+    }
+    let extracted = match checks.m.features[index]
+        .location
+        .extract(&checks.m.sequence)
+    {
+        Ok(s) => s,
+        Err(e) => {
+            return Ok(unresolved(format!(
+                "Feature does not define an exact extractable reference interval: {e}"
+            )));
+        }
+    };
+    if reference.sequence.alphabet() != checks.m.sequence.alphabet()
+        || !checks.reference_facts.get(id).is_some_and(|r| r.concrete)
+        || !extracted
+            .bytes()
+            .all(|b| crate::sequence::analysis::base_mask(b).is_power_of_two())
+    {
+        return Ok(unresolved("Reference comparison requires the same nucleotide alphabet and fully concrete calls; IUPAC ambiguity is not silently resolved.".into()));
+    }
+    let same = extracted == reference.sequence.as_str();
+    Ok(ReferenceIdentity {
+        verdict: if same { Verdict::Pass } else { Verdict::Fail },
+        reason: format!(
+            "Literal oriented feature sequence {} pinned reference {} ({}). This checks sequence identity only, not biological role or provenance authenticity.",
+            if same { "matches" } else { "differs from" },
+            reference.id,
+            reference.sequence_revision
+        ),
+    })
+}
+
 pub(super) fn inspect(checks: &mut Checks<'_>) -> Result<(), Error> {
     let m = checks.m;
     let o = checks.o;
@@ -73,59 +128,13 @@ pub(super) fn inspect(checks: &mut Checks<'_>) -> Result<(), Error> {
             )?;
             continue;
         }
-        let Some(reference) = o.references.iter().find(|r| r.id == claim.reference_id) else {
-            checks.push(
-                Rule::ReferenceIntegrity,
-                Verdict::Indeterminate,
-                &[i],
-                "No pinned reference is available for the declared element; annotation alone cannot establish identity.",
-            )?;
-            continue;
-        };
-        if reference.sequence_revision != reference_revision(&reference.sequence)? {
-            checks.push(
-                Rule::ReferenceIntegrity,
-                Verdict::Indeterminate,
-                &[i],
-                "Declared reference identity does not match its captured sequence; no integrity comparison is admitted.",
-            )?;
-            continue;
-        }
-        let extracted = match m.features[i].location.extract(&m.sequence) {
-            Ok(s) => s,
-            Err(e) => {
-                checks.push(
-                    Rule::ReferenceIntegrity,
-                    Verdict::Indeterminate,
-                    &[i],
-                    &format!(
-                        "Feature does not define an exact extractable reference interval: {e}"
-                    ),
-                )?;
-                continue;
-            }
-        };
-        if reference.sequence.alphabet() != m.sequence.alphabet()
-            || !extracted
-                .bytes()
-                .chain(reference.sequence.as_str().bytes())
-                .all(|b| crate::sequence::analysis::base_mask(b).is_power_of_two())
-        {
-            checks.push(
-                Rule::ReferenceIntegrity,
-                Verdict::Indeterminate,
-                &[i],
-                "Reference comparison requires the same nucleotide alphabet and fully concrete calls; IUPAC ambiguity is not silently resolved.",
-            )?;
-        } else {
-            let same = extracted == reference.sequence.as_str();
-            checks.push(
-                Rule::ReferenceIntegrity,
-                if same {Verdict::Pass}else{Verdict::Fail},
-                &[i],
-                &format!("Literal oriented feature sequence {} pinned reference {} ({}). This checks sequence identity only, not biological role or provenance authenticity.",if same {"matches"}else{"differs from"},reference.id,reference.sequence_revision),
-            )?;
-        }
+        let identity = reference_identity(checks, i, &claim.reference_id)?;
+        checks.push(
+            Rule::ReferenceIntegrity,
+            identity.verdict,
+            &[i],
+            &identity.reason,
+        )?;
     }
     for claim in &o.fusions {
         let indices = [claim.cds_feature, claim.part_feature];

@@ -14,6 +14,7 @@ pub struct AssemblyFragment {
     pub source: SourceInfo,
     pub molecule: Arc<Molecule>,
     pub selection: CatalogSelection,
+    pub conditions: Option<collagene_core::cloning::restriction::conditions::ReactionConditions>,
     pub options: InspectionOptions,
     pub fragment_index: usize,
     /// Full source-origin inspection context, including explicit original-reference declarations.
@@ -79,11 +80,28 @@ mod tests {
             selection: catalog::select(&catalog, &[enzyme.id.clone()]).unwrap(),
             options: InspectionOptions::default(),
             cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
-            conditions: None,
+            conditions: Some(
+                collagene_core::cloning::restriction::conditions::ReactionConditions {
+                    schema_version: 1,
+                    formulations: vec![
+                        collagene_core::cloning::restriction::conditions::ChosenFormulation {
+                            enzyme_id: enzyme.id.clone(),
+                            formulation_id: Some("neb-r3101".into()),
+                        },
+                    ],
+                    buffer: "rCutSmart".into(),
+                    temperature_milli_c: 37000,
+                    incubation_minutes: 60,
+                    minimum_activity_percent: 50,
+                    activity_context: Some("NEB unit-assay relative activity".into()),
+                    temperature_context: Some("vendor recommended incubation".into()),
+                },
+            ),
         };
         let inspected = recipe.inspect(&molecule).unwrap();
         let fragment = &inspected.inspection.fragments[0];
         let payload = AssemblyFragment {
+            conditions: recipe.conditions,
             source,
             molecule: Arc::new(molecule),
             selection: recipe.selection,
@@ -99,7 +117,15 @@ mod tests {
             material_domain: None,
         };
         let mut draft = Draft::default();
+        let declared_conditions = payload.conditions.clone().unwrap();
         draft.set_digest_fragment(payload.clone()).unwrap();
+        assert_eq!(
+            draft.methods.rows[0]
+                .reaction_conditions
+                .options(&catalog, &payload.selection)
+                .unwrap(),
+            Some(declared_conditions),
+        );
         assert_eq!(
             draft.slots[0].captured.as_ref().unwrap().source.binding,
             payload.source.binding
@@ -232,6 +258,7 @@ mod tests {
         let f = &inspected.inspection.fragments[fragment_index];
         (
             AssemblyFragment {
+                conditions: None,
                 source: info,
                 molecule: Arc::new(molecule),
                 selection,
@@ -732,6 +759,7 @@ mod tests {
                     ),
                 }],
                 derivation: collagene_core::material::derivation::Derivation::CatalogDigest {
+                    conditions: None,
                     selection: chosen.selection.clone(),
                     options: chosen.options.clone(),
                     fragment_index: chosen.fragment_index,
@@ -761,6 +789,7 @@ mod tests {
         .unwrap();
         let f = &derived_preview.inspection.fragments[0];
         let derived_choice = AssemblyFragment {
+            conditions: None,
             source: SourceInfo {
                 binding: derived.receipt.product.clone(),
                 name: derived_molecule.name.clone(),

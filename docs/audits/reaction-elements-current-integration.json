@@ -1,0 +1,801 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "2bfcc6e55cccbac44901fdf4b792e99c1ee7831b",
+  "source_scope": "F21 plan/preparation/material/native-ancestry/HTML/PDF condition retention, F36 structural element chains and literal reference cardinality, F37 scoped RFC1000 Level-0 profile, shared web controls and actual MCP integration. Excludes unregistered mouse-reference and CRISPR alignment source.",
+  "versions": {
+    "worker": 131,
+    "candidate": 32,
+    "workspace_plan": 30,
+    "assembly_draft": 21,
+    "batch_record": 4,
+    "release": 2,
+    "scientific_engine": "science-36",
+    "construct_qc_options": 2,
+    "construct_qc": "construct-qc-2",
+    "material_derivation": 3,
+    "material_digest_export": "material-digest-export-3",
+    "native_mcp_tools": 219
+  },
+  "compilation": {
+    "native": "passed",
+    "wasm": "passed"
+  },
+  "native_scope": "Same broad fifteen-package configuration with core JSON-schema, all selected package test callers and web binary harness; shared existing /big/temp cache. Harnesses executed directly, no per-test rebuilds.",
+  "execution": {
+    "unique_cases": 86,
+    "passed": 86,
+    "failed": 0,
+    "ignored_executed": 0,
+    "cases": [
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "built_in_identity_requires_current_exact_facts_and_catalog_pin",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "coding_start_is_required_but_preferred_stop_is_advisory_not_a_functional_certificate",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "forbidden_sites_are_scanned_on_both_orientations_and_possible_is_not_certain",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "interrupted_or_truncated_checks_never_establish_conformance",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "replay_and_binary_roundtrip_bind_scope_source_order_body_and_options",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "rfc10_has_no_invented_functional_order_but_custom_grammars_enforce_declared_cardinality",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "source_profile_distinguishes_coding_prefix_and_mandatory_noti_from_advisory_sites",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc1000",
+        "test": "declared_body_retains_single_start_codon_overlapping_the_fusion_label",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc1000",
+        "test": "documented_body_inputs_refuse_unclaimed_vector_or_fusion_additions",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc1000",
+        "test": "exact_source_site_rules_are_required_in_both_orientations_and_extra_sites_are_not_invented",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc1000",
+        "test": "independent_primary_table_has_reference_oriented_four_base_fusions_and_no_invented_flanks",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc1000",
+        "test": "ordered_role_chain_and_partial_subpaths_have_explicitly_local_grammar",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc1000",
+        "test": "reserved_profile_ids_and_assessments_cannot_be_cross_rebound",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "cloning",
+        "test": "ligation::ligation_outcomes_protocol::current_worker_and_candidate_roundtrips_validate_full_outcome_geometry",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::ambiguous_source_and_palindromic_orientation_are_never_guessed",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::circular_chain_requires_a_nonreusing_single_turn",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::exact_flanking_chains_measure_zero_distance_on_both_strands",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::incomplete_chain_premises_remain_indeterminate_and_unrelated_cds_checks_run",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::missing_references_declaration_limits_and_changed_bindings_do_not_grant_a_pass",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::orientation_and_explicit_spacing_failures_are_structural",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::origin_spanning_reference_matches_retain_original_selectable_spans",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::repeated_chain_identity_extraction_is_admitted_as_one_aggregate_budget",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::required_intervals_count_overlapping_hits_and_only_complete_searches_prove_absence",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::element_tests::shared_query_work_and_match_caps_remain_explicit_and_bound",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::bindings_tampering_and_repeated_location_amplification_are_bounded",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::complete_literal_cds_has_independent_structural_facts_not_an_expression_verdict",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::fusion_and_junction_checks_report_declared_register_without_edit_causality",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::literal_frame_start_terminal_and_internal_stop_failures_are_distinct",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::missing_stale_unreviewed_partial_or_exception_annotations_never_become_passes",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::origin_spanning_cds_reuses_existing_biological_join_order",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::pinned_reference_identity_is_separate_from_role_and_provenance_truth",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::selected_and_annotated_genetic_codes_and_context_dependent_stops_are_pinned",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::stored_translation_disagreement_is_a_documentary_finding",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "material::derivation::reaction_conditions::tests::distinct_context_and_serialized_byte_limits_refuse_without_truncation",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "material::derivation::reaction_conditions::tests::renamed_outer_event_does_not_replace_recorded_verifier_product_identity",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "material::derivation::reaction_conditions::tests::repeated_exact_context_deduplicates_but_inconsistent_duplicate_is_rejected",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "material::derivation::reaction_conditions::tests::selected_dependency_path_excludes_disconnected_earlier_digest",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "material::derivation::reaction_conditions::tests::shared_selected_ancestor_is_retained_once_and_unrelated_branch_stays_excluded",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_derivation_protocol::current_install_and_digest_jobs_bind_actual_material",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_derivation_protocol::dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_source",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_derivation_protocol::ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assembly",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_derivation_protocol::reconstruction_operation_and_evidence_are_explicit_and_replayable",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::ambiguous_reference_retains_recognition_without_inventing_exportable_strands",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::derived_origin_and_worker_roundtrip_keep_exact_export_binding",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::export_refuses_wrong_event_limits_and_changed_worker_identity",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::reaction_choices_bind_detached_provenance_without_changing_assumed_cleavage",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::saved_staggered_fragment_export_uses_actual_strands_and_discloses_detachment",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_reaction_conditions::current_nullable_schema_and_bounded_documentary_transport_are_strict",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_reaction_conditions::documentary_constraints_survive_restart_and_do_not_withhold_actual_fragment_geometry",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "derivation::material_reaction_conditions::replayed_ancestry_keeps_fresh_documentary_evidence_through_end_repair",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-core",
+        "target": "materials",
+        "test": "recipes::material_origin_protocol::current_material_origin_encoding_preserves_operation_and_exact_evidence",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::both_reaction_selectors_retain_the_ordinary_32_mib_frame_limit",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::raw_worker_rejects_stale_context_old_schema_and_invalid_native_options",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::reaction_worker_uses_current_selectors_literal_context_and_retains_uncertainty",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::result_decoder_refuses_forged_binding_or_mutated_documentary_evidence",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "inspection::reaction_plan_conditions::checked_digest_preserves_documentary_failure_separately_from_positional_cleavage",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "inspection::reaction_plan_conditions::declared_unknown_and_unmet_conditions_keep_products_and_independent_comparison",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "inspection::reaction_plan_conditions::no_choices_are_unassessed_and_current_plan_requires_explicit_nullable_field",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "inspection::reaction_plan_conditions::pcr_digest_conditions_bind_fresh_amplicon_and_html_escapes_declared_context",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "inspection::reaction_plan_conditions::source_material_options_and_retained_evidence_are_bound_without_promoting_history",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "material_derivation_closure",
+        "test": "missing_owner_wrong_hash_and_exact_event_aliases_cannot_supply_derivation_authority",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "material_derivation_closure",
+        "test": "public_and_private_selected_closures_keep_real_derivation_and_run_replay_without_private_heads",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "material_derivation_closure",
+        "test": "selecting_only_derived_fragment_keeps_typed_ancestors_without_unrelated_downstream_run",
+        "result": "ok",
+        "phase": "profile, protocol and export"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "actual_pcr_digest_fragment_public_and_private_closure_preserve_fresh_material_without_private_current_heads",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "named_digest_setup_closure_retains_exact_run_and_derived_origins_without_private_setups",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "newest_editable_drafts_are_presentation_only_not_publication_dependencies",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "obsolete_named_digest_setup_kind_cannot_enter_document_publication",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "orphan_reserved_producer_corrupt_record_and_wrong_product_binding_refuse_instead_of_opaque_fallback",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "unrelated_selected_document_never_publishes_derived_record_or_its_private_origin_runs",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::collection_search_pages_all_bound_sites_and_keeps_mismatch_thermodynamics_unavailable",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::construct_element_sdk_retains_literal_counts_and_never_promotes_incomplete_search_to_absence",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::construct_qc_routes_declared_roles_without_claiming_annotation_truth_or_global_success",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::standard_discovery_and_fragment_checks_preserve_profile_scope_and_original_coordinates",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "cloning",
+        "test": "reaction_plan_tools::recipe_conditions_require_current_explicit_null_and_reject_mismatched_selection_or_catalog",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "cloning",
+        "test": "reaction_plan_tools::retained_recipe_conditions_change_evidence_without_changing_products_or_independent_target",
+        "result": "ok",
+        "phase": "material, sharing and cloning SDK"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::actual_bottom_seventeen_call_template_has_independent_slot_binding_and_native_frame",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::digest_origin_handoff_keeps_saved_parent_and_reconstructable_row_after_roundtrip",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::digest_origin_handoff_rejects_changed_scope_or_equal_content_alias_atomically",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::original_reference_fragment_handoff_binds_the_common_source_origin_inspection",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::saved_staggered_actual_bottom_intent_reverses_twice_and_ligates_after_archive_restart",
+        "result": "ok",
+        "phase": "final targeted correction recheck"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::celsius_decimal_is_exact_and_refuses_nonfinite_fractional_noise",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::editable_formulation_decoder_refuses_duplicate_keys_and_oversized_maps",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::incomplete_editable_setup_roundtrips_without_becoming_a_valid_request",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::opt_in_requires_valid_values_and_never_guesses_a_formulation",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::saved_none_clears_draft_and_capture_rejects_event_epoch_and_option_changes",
+        "result": "ok",
+        "phase": "independent QC, web state and analysis SDK"
+      }
+    ]
+  },
+  "resolved_findings": [
+    "Diagnostic-string insertion syntax in two PCR inspection paths; stray update syntax in a gel fixture; web option ownership. Direct corrections, no adapters.",
+    "Whole-product SDK comparison incorrectly included changing plan/source/evidence identity metadata. Test now checks explicit sequence/features/topology/strand and parsed fresh duplex/modification summaries while asserting distinct plan revisions.",
+    "Temporal-prefix evidence collection could attach disconnected earlier conditions to selected material. Current collector follows exact typed dependencies and retains shared ancestors once, under cumulative limits.",
+    "A new guard confused renamed finalized document identity with recorded verifier product identity and rejected valid exports. It now checks the original product binding vector; existing native replay retains exact outer-event and reference validation. Positive rename and negative product-tamper fixtures pass.",
+    "Current-format fixture expectations updated to candidate32/workspace30; superseded internal versions remain refused."
+  ],
+  "bounds": {
+    "material_condition_contexts": 32,
+    "aggregate_material_condition_bytes": 4194304,
+    "qc_chains": 64,
+    "qc_requirements": 64,
+    "qc_search_work": 50000000,
+    "qc_retained_matches": 1024,
+    "qc_matches_per_reference": 256
+  },
+  "layout": {
+    "scope": "Whole working tree including pending unregistered source; published file counts can differ.",
+    "rust_files": 1327,
+    "directories": 233,
+    "violations": 0,
+    "size_warnings": 0,
+    "targeted_rustfmt_check": "passed",
+    "git_diff_check": "passed",
+    "macro_expansion_counted": false
+  },
+  "source_sha256": {
+    "Cargo.lock": "eca042b59718a5a5b010cfd4719daa35aaf9df68d704a4e65a77c8cbdc657d89",
+    "Cargo.toml": "4d53927d07b3957191165e5206db50688dc02abfdf3f045ddc3032990c5ee563",
+    "crates/assembly-standards/data/rfc10-2007/profile.json": "0ca3bf101f8a91d30e503565955c2bedf404143685cba8ab5326d14bfccfe2e6",
+    "crates/assembly-standards/data/rfc1000-l0-2026/profile.json": "3727e786302857c78bc9c36c31b4e7a31825c989afa8d8d00710b46fe783e720",
+    "crates/assembly-standards/src/profile.rs": "af1df4977aca5976c130f3738c67c90a33dd25daee6a59ee5dae7b461a8def35",
+    "crates/assembly-standards/tests/rfc1000.rs": "cb6ac68caeb52d8a3f5aead2adb9c1f8d7a1fdc458f0703299bba81b335fb4bb",
+    "crates/core/src/cloning/assembly/junctions.rs": "a48a009d875bac5bec4b537f2caa53e521a8436c24f1d67bfac51a84638f2fa1",
+    "crates/core/src/cloning/assembly/library_history.rs": "978284ae789ae28e9b8c0d477d7525deee124c57a128699388e764752c0ff896",
+    "crates/core/src/cloning/assembly/recipe.rs": "6eb59d730858d8ba4773702f821256ff213a09c05e29b13f6572b175ca45f7bd",
+    "crates/core/src/cloning/assembly/standards.rs": "e8073480f88a32a75f4743953040eb4b6f3a742fbb407c23e1485a5b54ba9fa7",
+    "crates/core/src/cloning/golden_gate/primers.rs": "0061765dd8959a30b62f8c2d6831dd159972124b3e749fd3501b832af62cd8eb",
+    "crates/core/src/cloning/ligation/recipe.rs": "80866a3990e7501b1b5d4e5f32d256d31de9990f74a412da86f0f6fdf3ccbde5",
+    "crates/core/src/cloning/overlap/extension/digest.rs": "41f749ddb1ec9aee065f06e24d2c4bf48f550035089b10d69512ab36ac481a15",
+    "crates/core/src/cloning/pcr/digest.rs": "76887c148a70ff8c5cb98669a2ea9c5050d3e387328b1adf6e8de4308a38f61c",
+    "crates/core/src/cloning/pcr/mismatch_digest.rs": "cc6b5e04802bfa596fb684b2e278663f6b4716b773e094b435f1c599fb3abc6c",
+    "crates/core/src/cloning/restriction/conditions.rs": "0e494435fa0cd7b218d22558d091506112aa6aa0f3f80db1875f60e45afcc71b",
+    "crates/core/src/cloning/restriction/conditions/source.rs": "799f329a09611fede0e854f8e600a8ae96203b81b1ac3a0dab1f44878d7158a5",
+    "crates/core/src/construct_qc/element_chain.rs": "5453891d64b0f031e2bf6c387732ec3673efc35c4cb5f75167d6392c417831ac",
+    "crates/core/src/construct_qc/element_tests.rs": "2551fca070ae60f73f2d00b158b369c7192f8bca0f7c3084d52eae306fe6fe5a",
+    "crates/core/src/construct_qc/geometry.rs": "8234be5401145acb7804cd2935d75762227f28765ec72289551fd4814aeb2a3a",
+    "crates/core/src/construct_qc/mod.rs": "b72cc16f3d3655626da81476aae10ebf60605549f37f2d8f9e3e8a09e0ffcaec",
+    "crates/core/src/construct_qc/required_parts.rs": "e508d9a74d24e6c6cfe026d20fd31e72dc4ac69324f92d8be98b765b4b1ad4f1",
+    "crates/core/src/documents/workspace.rs": "6adb7662fdae3b7c6440742bbecccbb7b57659471c14099f4fa10ae7dc4eb4a2",
+    "crates/core/src/material/capsule.rs": "29a454fc00d74aeabe6f5c48632322ace82fa6ff954127962097125f26cbbbf8",
+    "crates/core/src/material/derivation/digest_export.rs": "89fd801926977fbc127be820396f4fe25cb6ffa622394ea67431a1feb803b1d4",
+    "crates/core/src/material/derivation/mod.rs": "f3334c0fd1a8883731235fd78cb6b4571b279042a65898cdd813b63760f7b31c",
+    "crates/core/src/material/derivation/reaction_conditions.rs": "c2f4777ac49c564b5181b29aac7ce3d83d8fb415c943ad646582853d2c11b862",
+    "crates/core/src/material/run.rs": "e183e9a21ec7d58d4dcfa7e67e858bb155d921e702797d18c3bfb7e4671144d7",
+    "crates/core/src/output/pdf.rs": "80ff2467b2e962b4347e560abbcf41b37c4274ddfd7eb1411101cfc39003584e",
+    "crates/core/src/planning/combinatorial/batch.rs": "9ee68b52f915df96bf1fffc51da6befbae8ecdc85078bccc61408a86e321e08a",
+    "crates/core/src/planning/plan.rs": "1fb0d8941c59e9816abacba5988a2e797b0dabc790321ec63efecb3b585f7fe3",
+    "crates/core/src/protocol/schema.rs": "a039250658241b1e9091c37508e5c5b7bcc5c00cc9a7df0db671b78a8758e9bc",
+    "crates/core/src/protocol/validation.rs": "de613a4cf0bde918b4c99118879e3c082d94a280c71796cebdd8b613fdb8f608",
+    "crates/core/src/verification/engine.rs": "113bf2c3ec68ccedf3834eee4a94f2218524edc13c408400f25cb584a03601ff",
+    "crates/core/src/verification/evidence.rs": "400c2fc8689708504ddfb94d7e30320d7f022e26225ff408c96927ed33c35c99",
+    "crates/core/src/verification/mod.rs": "f779f8620f28868b909a964705663f46ba3d6d703bc254a21b06e1b2c4a86caa",
+    "crates/core/src/verification/output.rs": "b36c8cb804f3260221870b7a4c28ef501f129281ba1b7f2a1a7d1494377c1470",
+    "crates/core/src/verification/sources.rs": "25a04a5e51be078e548897602317d4a279cd6a6203a556c628a71f5d2076cc12",
+    "crates/core/tests/analysis/design_checks.rs": "7c69d81f27f685a9e293f2bae39e284fb038e24f3d6acd55989305bec7e36240",
+    "crates/core/tests/assembly/intent/assembly_material_intent.rs": "d3e87beaec8587a53396e64b6ed11abe079c01e6e3f4c8b73cd50a1187a69fe0",
+    "crates/core/tests/assembly/intent/selective_junction_edit.rs": "c746094368440a4a89059a1cab0a198495846f0becff42b5b739ebeb049726fd",
+    "crates/core/tests/assembly/primer_design/golden_gate_primer_protocol.rs": "4f3f66b9051bb443f0c3251f5ba8f5ca759a27f179a929a4757be479dcfcb892",
+    "crates/core/tests/assembly/recipes/golden_gate_junction_edit.rs": "1f2e5de11fc05eea03f2d5abc463082b4885636d4fd3be184010ae2ddfdb52f1",
+    "crates/core/tests/cloning/homology/homology_recipe.rs": "eab0b2ff15670bddacec23ef544ebf97da584186cd57117fcb02bfc5bb9d04e5",
+    "crates/core/tests/cloning/homology/homology_recipe_protocol.rs": "23a39b7bb54c809da6df2331c9914f72723914e380cba3f583a17c7271cd87d0",
+    "crates/core/tests/cloning/ligation/ligation_outcomes_protocol.rs": "33f2781158adef5ecb6374c4786e0823d8f91024eafaf3567d93f97ac65363a2",
+    "crates/core/tests/cloning/ligation/tailing_recipe.rs": "c4277ddbae7543ec6e092c3003feb2302b04b6e445975134ac2e5eb365ceccde",
+    "crates/core/tests/common/inverse_pcr_origin.rs": "d9342d21d489b8316549e4b9bdcaa3f0b41b33a0a377f8b97e1637ffcca45d4f",
+    "crates/core/tests/common/material_library.rs": "85e6b9a44f97236541845011bb54a8ce8c5e282f7dc4026d2dd0d023edba350b",
+    "crates/core/tests/history/runs/derived_origins.rs": "d3bc0facb4fcbfc012c2308fcebc00283ba290193c8b499ef6d76bb36bd8a0d5",
+    "crates/core/tests/history/runs/mixed_origins.rs": "eb48b4177ade4920f4fedcdcf24d5754b7b00fe61f0d1a8cf8ae7ea2c89153f5",
+    "crates/core/tests/history/runs/run_material.rs": "9458637d79cb11339264140c72eef6c4100e7b76780761520f53c20a3dc9554d",
+    "crates/core/tests/history/runs/run_material_continuation.rs": "278177a565c6b5f14b12bca8258501243a5024f06fa0a554070f1451d30e2e82",
+    "crates/core/tests/history/runs/run_material_recipe.rs": "8868380125e8950ae15f27fe9b93e654248ca8e9aa319ea93e619044e388bed2",
+    "crates/core/tests/history/runs/tracked_plan_protocol.rs": "4fbf5816666e61a376f2b99e89dad51230cbcb7a1f9388baad25eed7b78554d2",
+    "crates/core/tests/materials/derivation/material_annealed_oligos.rs": "0c09b238be8c808f58a56ee4a8399cc60c9b6fc40bfee1cd8654e41c46807837",
+    "crates/core/tests/materials/derivation/material_derivation.rs": "0ed64cef68c4696bcc2471c729478343d23bb382f929cc0fe3d5c07bbc3656a5",
+    "crates/core/tests/materials/derivation/material_derivation_digest_history.rs": "d11e41e6a279b3f5eb3f624afc103d39204552e401cf58431d668b3089ab72cf",
+    "crates/core/tests/materials/derivation/material_derivation_preparation.rs": "02f7e939ab769ba9026c3a68c0598a80f3aed60be36ab92067e7d77045a933b0",
+    "crates/core/tests/materials/derivation/material_derivation_protocol.rs": "a0516217eea7a79b19c0d8820dce7a9341ec3d01af42267bcf71305f4e97cbaf",
+    "crates/core/tests/materials/derivation/material_digest_export.rs": "97a0adeccc9272d917b3838db61a65d36260c18375170135c3b1c44850b70c86",
+    "crates/core/tests/materials/derivation/material_pcr.rs": "4cd2f4f6b0b89a55261314965ca01d39470f8056bb5dde41ba28e2a59263c533",
+    "crates/core/tests/materials/derivation/material_processing_protocol.rs": "4214a61cf3590ad648f5a1cab0fc17cc6fd823b7d4a778643d8951e319f45a48",
+    "crates/core/tests/materials/derivation/material_reaction_conditions.rs": "7d150fc6a016649366cac748f7ed5b90b45c219cdd6feb789e3d10fe00219b17",
+    "crates/core/tests/materials/derivation/mod.rs": "29f326689f3358e107638a22f0c19a3eb90f8d130a635fd5464acf17bcfe0a51",
+    "crates/core/tests/materials/overlap_extension/overlap_extension_catalog_protocol.rs": "1f5259f09250ea846e5d42c9e5e5c76ebb1f8d1f30ac111146a12238e7ea2735",
+    "crates/core/tests/materials/overlap_extension/overlap_extension_catalog_recipe.rs": "648eaf28ebc112e0138febe3362f9cdd32d94c7a0ebac8c7904c5cf4e6ed5e8c",
+    "crates/core/tests/materials/overlap_extension/overlap_extension_digest_inspection.rs": "350955d1cd3beee36a37c956246478fc34e619d3e7b9de6f659bf99a95acf0a8",
+    "crates/core/tests/materials/pcr/inverse_pcr_material.rs": "ba4af1a90a204bc1d2004636359f25f95fc0f7863b3da753c5b00c25711467c2",
+    "crates/core/tests/materials/pcr_digest/mismatch_pcr_catalog_recipe.rs": "2ff605755ee86d66700af48b13fc97962c74cc533abb1fc0e62ec19baef554c2",
+    "crates/core/tests/materials/pcr_digest/mismatch_pcr_digest_inspection.rs": "e1b1a1f68796de35ed51ad587566646c6befdfad0e4f5882cb86f8f57ff9add7",
+    "crates/core/tests/materials/pcr_digest/mismatch_pcr_digest_protocol.rs": "50b9a4c8f8e1200e28f6ffae42091de484396d007baa393970142bd9cdcd31ac",
+    "crates/core/tests/materials/pcr_digest/pcr_digest_derived_inspection.rs": "307edad164fc3a1ad91903714f4c9949af28654dd1ed4a64d3dcfb2b1fbe7431",
+    "crates/core/tests/materials/pcr_digest/pcr_digest_preparation.rs": "b134bfdf998f1b7cead88322e542960e82e414a1a33d23cf6c133d1896e0d990",
+    "crates/core/tests/materials/recipes/annealed_preparation.rs": "41358e878b4cc7f2e7cc5e52e6f352edacecbf9427b47be1a8a4404f98d4fa0e",
+    "crates/core/tests/materials/recipes/checked_preparation_recipe.rs": "6702a293cc57f71debc365d3d255799434953eba61574aa23191af3d5e06e4a2",
+    "crates/core/tests/materials/recipes/material_origin_protocol.rs": "8e7ce74d60aa7db27a5bf967fb0ec9a8db05c99643fa323c1ab11c3f31550a27",
+    "crates/core/tests/restriction/catalog/catalog_cloning_protocol.rs": "e5dbfb8769d5dcff1ca873cf9e85925871a46f6d65ac68f275332d6b61718474",
+    "crates/core/tests/restriction/catalog/reaction_conditions_protocol.rs": "75b458925d9c638d3e07f9a36004c4fc68488d719869d70f59cf760c772b084f",
+    "crates/core/tests/restriction/inspection/catalog_digest_preparation.rs": "c75c0d37325d99c47f6635e8f20873ad8135dcc55b943f71d48121b3e935f2a0",
+    "crates/core/tests/restriction/inspection/digest_setups.rs": "789be55aaf35fa6edbb9c7cc85d483dd85f0434c00a68d73f741214ac59488e9",
+    "crates/core/tests/restriction/inspection/mod.rs": "be77c5250fa046c7f65b7335e761ca04c3000224ba3fe40375fe32ff2f549c88",
+    "crates/core/tests/restriction/inspection/reaction_plan_conditions.rs": "4749870c436a534a2131e6ab3cfa6c5f8ecdbd8b9871a03e5e5510b30b9cb0c2",
+    "crates/core/tests/restriction/inspection/restriction_staggered_conservation.rs": "b113577c7ebe97b1312773fa63753497de5623e0b81fae92a5e4a79e7c7b8a55",
+    "crates/core/tests/restriction/inspection/run_catalog_digest.rs": "dc1770db19b28ccfb9baf71a62c4bb0caca540dc01c3ad7667c4469ab838462d",
+    "crates/core/tests/verification/design/checked_verification_audit.rs": "a5e9aaa4e2bf74201fa6e2cdc1b662e1bdaad80a3723789e51e66087b7a01141",
+    "crates/core/tests/verification/preparation/domestication_saved_material.rs": "ac41bd9bc552e0431d1ab8c9952fb167ca777692a281065f9f516abe855763df",
+    "crates/library-sharing/tests/material_derivation_closure.rs": "93810059d7ce4a521cbb3f310c19275ca90a792d15c1018a56e23eb32253efdc",
+    "crates/library-sharing/tests/saved_material_digest_closure.rs": "86fee58b31d054abfd46a0e02b7a76a63ebfeae2f79d9a5eada0acd9ad3269b6",
+    "crates/mcp/src/tools/assembly/mod.rs": "1d0056c7c4ad3d3675e0193c51cbc18c0fcf47922028124be262599b519f6610",
+    "crates/mcp/src/tools/workspace/mod.rs": "4d4f0de3011a0f3e42ef2270d91e40de85ee048a636bfc7d95b8f8f27eec8de0",
+    "crates/mcp/tests/analysis/design_checks.rs": "5932a61d71e061ed7d60a496c8b979597dd55c031249818bbcc7a4530b5a43be",
+    "crates/mcp/tests/assembly/selective_junction_tools.rs": "b98a5a045bc2438b8959e60800ac43aad30a5eace838bafb64541a3c8b9eeda1",
+    "crates/mcp/tests/cloning/main.rs": "25d4ae3e610f7b7f94f2865000674debb59c0a438907ca332c04a6985ddc4a0e",
+    "crates/mcp/tests/cloning/mismatch_pcr_digest_tools.rs": "f69fa6628fe0ab6dbb89c1cb61aa07135e09304df7c48f8d16d09246c7e0c839",
+    "crates/mcp/tests/cloning/overlap_extension_catalog_tools.rs": "f012e7b735001c762a3278490edb17f11f8d36c432af08ed7d629023edb9b095",
+    "crates/mcp/tests/cloning/overlap_extension_material_tools.rs": "0128f14974386c3cf756714b315f4233da6a5ba8f279dfcfc564f0bc4a1b9e53",
+    "crates/mcp/tests/cloning/reaction_plan_tools.rs": "b7cba2f32eec96f98cab17f9769335870417b7a240fdab2a22d105f89d5b496e",
+    "crates/mcp/tests/methods/annealed_recipe_tools.rs": "2a4b7add46ea009d7ae0c04c60e9eb9b75b9d7d8957d382f662facf742ae1652",
+    "crates/mcp/tests/methods/golden_gate/golden_gate_junction_tools.rs": "f578d5597971d432867ac55658276f404fac61c1787bf8869752f687658d47ab",
+    "crates/mcp/tests/methods/homology_recipe_tools.rs": "8345be5de6d7aa93a3240741cc35d87953182cce99a8a650c5665825b6a3b332",
+    "crates/mcp/tests/workspace/materials/material_derivation_tools.rs": "add2b6c925e4696783002ff1c36067cfda86c6d929f7035cef71532cc4c5bafd",
+    "crates/mcp/tests/workspace/materials/material_origin_tools.rs": "27e90a9ac8ff1b830be74f833452c8cf47a30accc4ae87d711f2e5fbba33501b",
+    "crates/mcp/tests/workspace/run_catalog_digest_tools.rs": "bc83aca2bc2822af7acf06979a7d7cc93c603f116aeae15f9ab0dc7b0bf02d87",
+    "crates/mcp/tests/workspace/run_material_tools.rs": "b0b03672c5a2c88b2597029c752480018700e70be71514abbdb670806f9368fb",
+    "crates/mcp/tests/workspace/tracked_plan_tools.rs": "dc25f5c2bccebbd2b05c927f4f42f4e222bcdfd892c3238eb7d7eeea0f3c5bee",
+    "crates/web/src/assembly/controller.rs": "505b3388167a0c108853181667c85cd1600be37c3bc525902c6b99d01066db81",
+    "crates/web/src/assembly/draft/assembly_workspace.rs": "0f81cb6b9219f6443c228e4ef12be1e3055041cabe068dbdd6dbbadff62e762c",
+    "crates/web/src/assembly/draft/model/mod.rs": "569e24a3151925abe281a2700c381cb89e93d9529860a908e89986b4fa9bcc53",
+    "crates/web/src/assembly/draft/model/tests/run_origin_tests.rs": "04e29567d7e89ab99335af495bf81dfc5d3854e1755e807c73b12e80bcd0bb8b",
+    "crates/web/src/assembly/edit/assembly_fusion_design.rs": "87ab958ea410456aadc2aa10e41ff8ebb8af95f21ac7009d2925ed6fa2923a5b",
+    "crates/web/src/assembly/primer_design/assembly_inverse_pcr_model.rs": "183d55c44ae2a1a02cc1a4d00fd021b58b8ec906dee607c4eec4e939bd8f067c",
+    "crates/web/src/assembly/review/assembly_product_model.rs": "8eb87e8cdbd78bb7954f21868eece954d84e8b5d03ccd8041063cc9539e61aac",
+    "crates/web/src/biology/construct_qc_elements.rs": "49d24bf52190e3c534ae1c8f8c36ee2422f2295d2193aac2f415dbce1bd74cd1",
+    "crates/web/src/biology/construct_qc_model.rs": "6ca5978765563cef3e845bfb6eddae75b7e05306ec8665794ad5b8af073a734d",
+    "crates/web/src/biology/construct_qc_view.rs": "64c20dab7174c318d5d62cb99e0086a476e02bba59959b6c9172cbe0ceeedc93",
+    "crates/web/src/biology/mod.rs": "d47e659276f89de21495456a0756548e5a60816a944cb97153914c683c61a721",
+    "crates/web/src/cloning/preparation/cloning_methods.rs": "8c2085a2e2dda907cd552268e26d141f55b42751be6bae42795a55d03e6f4c0d",
+    "crates/web/src/cloning/preparation/cloning_methods_model.rs": "f147573c061f3eac64ce15b7659b414cc29b69eaad67842a17e30be3a44e0dd2",
+    "crates/web/src/cloning/preparation/cloning_preparations.rs": "1c9fee6ada7d0194a1af09256fcf294c9dbca895ed97368e062c0a3cbbcfa59e",
+    "crates/web/src/cloning/preparation/mod.rs": "33aeb2ea4f814c5fdcd6da268a9117cc682a627899a923a9085ccc2435d19b0b",
+    "crates/web/src/cloning/preparation/pcr_digest_model.rs": "29a0e7048c179e9fa3c6137170441588f357d19b8da5115d281232f85675b75d",
+    "crates/web/src/cloning/preparation/reaction_conditions_view.rs": "262ce44fe0e8de67759a46f75c650108c51e561bdbda51a5fc62894ced8fc707",
+    "crates/web/src/cloning/preparation/review/mod.rs": "1b76f3a9cd24c62b8b73b0a4093ef031839648bdeab178e50b6ac9d65ff98494",
+    "crates/web/src/protocol/step_description.rs": "ad68e5cb4a32eabc6955903794d822ce875806af5d8f5d58c7cb230a4bb3a7a7",
+    "crates/web/src/restriction/digest.rs": "a973e4bb33c30303a6ea356cecf1c756d6843ba8ec8b811f547e32c141879925",
+    "crates/web/src/restriction/digest_fragment_model.rs": "17f9ea3c28458a3cd66efd902a7d137d219f51fb68f1a9e0e4fb826ecb89cf17",
+    "crates/web/src/restriction/digest_product.rs": "4daadc5118d1e1b1a8aabb36a7d23898d3170248a9d058e9399644c78af6acf8",
+    "crates/web/src/restriction/material_derivation_model.rs": "8a21d74419411c62b179fde02ad4a5eb6291286cf3f781fa8a62b4a9aed5f4cf",
+    "crates/web/src/restriction/reaction_conditions.rs": "72a806f8edf5f84f54eb8937690779c16f6adc0c66c6b88f20675dc63a55046f",
+    "crates/web/src/restriction/reaction_conditions_model.rs": "283d30567a2cd7c45b84420bfeea16f34066fbc149e50227f8a9071f51d31509",
+    "scripts/mcp_smoke.py": "7af3f41845e71829f1a022f9c6c59042a04873a1a29020b1c4e0e80781a1ba2e"
+  },
+  "limitations": [
+    "No browser, CDP, screenshot, application HTTP, live-provider, installation or graphical acceptance checks. MCP tests use actual in-memory SDK transport; PDF cases use independent text decoding.",
+    "Broader curated supplier/star facts and source-host presets remain. Known documentary facts never establish actual cleavage, duration adequacy, star absence or laboratory success.",
+    "QC does not infer element function or overall biological success. Initiation-context, unannotated-ORF, causal junction and vector-class work remain.",
+    "RFC1000 profile is documented-body/declared-fusion Level-0 only, not full TU/vector/higher-level compliance. Other toolkit profiles and assembly-wizard/protocol grammar integration remain.",
+    "Unchanged passing cases were retained; reruns were confined to corrected or affected cases. Counts overlap with other batches and must not be added."
+  ]
+}

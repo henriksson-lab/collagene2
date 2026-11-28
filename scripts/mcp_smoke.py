@@ -357,7 +357,7 @@ def main():
         tracked_refs={d["name"]:{"id":d["id"],"revision":d["revision"]} for d in tracked_docs}
         tracked_pin=tool("inspect_restriction",{"document":tracked_refs["tracked_source"],"source_role":"tracked-source-catalog","enzymes":["EcoRI"]})["catalog_pin"]
         tracked_limits={"max_comparisons":100000,"max_sites":32,"max_fragments":32,"max_report_bytes":1048576}
-        tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":tracked_pin,"options":tracked_limits,"fragment_index":0}}]
+        tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":tracked_pin,"conditions":None,"options":tracked_limits,"fragment_index":0}}]
         tracked=tool("propose_plan",{"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
         tracked_report=tool("verify_plan",{"plan_revision":tracked["plan_revision"]})
         assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith(current_engine_suffix),tracked_report

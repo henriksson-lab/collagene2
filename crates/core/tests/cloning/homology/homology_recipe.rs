@@ -218,6 +218,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
                 preparation: Preparation::FromRun {
                     origin: origin.clone(),
                     preparation: RunPreparation::PcrCatalogDigest {
+                        conditions: None,
                         forward: Primer::new("Stock F + EcoRI", "AGTCCGAT", "CCGAATTC").unwrap(),
                         reverse: Primer::new("Stock R + EcoRI", "TGACGATC", "GGGAATTC").unwrap(),
                         selection,

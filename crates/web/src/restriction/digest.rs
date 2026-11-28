@@ -238,6 +238,18 @@ pub fn DigestPanel(
     let conditions = RwSignal::new(None::<ReactionConditions>);
     let conditions_error = RwSignal::new(None::<String>);
     let conditions_loaded = RwSignal::new(0u64);
+    let condition_draft =
+        RwSignal::new(crate::restriction::reaction_conditions_model::Draft::default());
+    Effect::new(move |_| {
+        conditions_loaded.get();
+        condition_draft.set(
+            crate::restriction::reaction_conditions_model::Draft::from_saved(
+                conditions.get_untracked(),
+            ),
+        );
+    });
+    let condition_source = Memo::new(move |_| Some(source.get()));
+    let condition_origin = Memo::new(move |_| origin.get());
     let condition_selection = Memo::new(move |_| -> Result<CatalogSelection, String> {
         let catalog = catalog.get_value()?;
         let names = names.get();
@@ -627,7 +639,20 @@ pub fn DigestPanel(
             });
         }
     });
+    let transfer_conditions = Callback::new(move |(): ()| -> Result<_, String> {
+        if let Some(error) = conditions_error.get_untracked() {
+            return Err(error);
+        }
+        Ok(conditions.get_untracked())
+    });
     let open = Callback::new(move |index: usize| {
+        let selected_conditions = match transfer_conditions.run(()) {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
         let Some(data) = bound.get_untracked() else {
             return;
         };
@@ -640,15 +665,19 @@ pub fn DigestPanel(
                 .set("A fresh current digest must determine this fragment before opening.".into());
             return;
         }
+        let retained_conditions = selected_conditions.clone();
         let request = crate::restriction::digest_product::DigestOpenRequest {
             source: data.source.binding.clone(),
             origin: data.origin.clone(),
             selection: data.inputs.selection.clone(),
+            conditions: selected_conditions,
             options: data.inputs.limits.options(),
             fragment_index: index,
             epoch: data.epoch,
             guard: Callback::new(move |()| {
-                if data.origin != origin.get()
+                if conditions_error.get().is_some()
+                    || conditions.get() != retained_conditions
+                    || data.origin != origin.get()
                     || data.epoch != epoch.get()
                     || source.get() != data.source
                     || inputs.get() != Ok(data.inputs.clone())
@@ -664,6 +693,13 @@ pub fn DigestPanel(
     });
     let assembly_alive = alive.clone();
     let use_in_assembly = Callback::new(move |index: usize| {
+        let selected_conditions = match transfer_conditions.run(()) {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
         if !assembly_alive.load(Ordering::Relaxed) {
             return;
         }
@@ -715,6 +751,7 @@ pub fn DigestPanel(
             return;
         }
         let payload = AssemblyFragment {
+            conditions: selected_conditions,
             material_domain: data.material_domain(),
             origin: data.origin.clone(),
             source: data.source.clone(),
@@ -772,6 +809,13 @@ pub fn DigestPanel(
     });
     let selection_alive = alive.clone();
     let use_boundaries = Callback::new(move |()| {
+        let selected_conditions = match transfer_conditions.run(()) {
+            Ok(value) => value,
+            Err(error) => {
+                status.set(error);
+                return;
+            }
+        };
         if !selection_alive.load(Ordering::Relaxed) {
             return;
         }
@@ -809,6 +853,7 @@ pub fn DigestPanel(
                 }
             };
             let payload = AssemblyFragment {
+                conditions: selected_conditions,
                 material_domain: data.material_domain(),
                 origin: data.origin.clone(),
                 source: data.source.clone(),
@@ -1176,7 +1221,12 @@ pub fn DigestPanel(
             <label>"Find an enzyme"<input aria-label="Find digest enzyme" prop:value=move||filter.get() on:input=move|e|filter.set(event_target_value(&e)) placeholder="Name or recognition sequence"/></label>
             <div class="digest-enzyme-picker">{move||{let needle=filter.get().trim().to_ascii_lowercase();enzyme_choices.get_value().into_iter().filter(|e|e.name.to_ascii_lowercase().contains(&needle)||e.geometry.recognition.to_ascii_lowercase().contains(&needle)).map(|enzyme|{let name=enzyme.name.clone();let change=enzyme.name.clone();view!{<label class="checkbox-label digest-enzyme-choice"><input type="checkbox" data-enzyme=enzyme.name.clone() data-catalog-id=enzyme.id.clone() aria-label=format!("Digest enzyme {}",enzyme.name) prop:checked=move||names.with(|names|names.contains(&name)) on:change=move|e|{let checked=event_target_checked(&e);pinned_selection.set(None);names.update(|names|{names.retain(|n|n!=&change);if checked{names.push(change.clone());}});}/><span><strong>{enzyme.name}</strong><small>{enzyme.geometry.recognition}</small></span></label>}}).collect_view()}}</div>
             <p class="helper">{move||format!("Selected: {}",names.get().join(", "))}</p>
-            <crate::restriction::reaction_conditions::ReactionConditionsPanel catalog selection=condition_selection source epoch origin conditions error=conditions_error loaded=conditions_loaded/>
+            <crate::restriction::reaction_conditions::ReactionConditionsPanel
+                catalog selection=condition_selection source=condition_source epoch
+                origin=condition_origin draft=Signal::from(condition_draft)
+                on_change=Callback::new(move |value| condition_draft.set(value))
+                conditions error=conditions_error
+            />
             <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
             <p class="digest-status helper" role="status">{move||status.get()}</p>
             <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>

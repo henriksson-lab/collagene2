@@ -275,6 +275,7 @@ async fn explicit_physical_recipe_and_attested_saved_product_support_actual_pcr_
         (
             RunPreparation::CatalogDigest {
                 selection: pin,
+                conditions: None,
                 fragment_index: 0,
                 repair: Some(EndRepairMethod::FillFivePrimeOverhangs),
             },

@@ -165,6 +165,7 @@ pub fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
                 preparation: Some(Preparation::FromRun {
                     origin: capsule,
                     preparation: RunPreparation::CatalogDigest {
+                        conditions: None,
                         selection,
                         fragment_index: 1,
                         repair: None,

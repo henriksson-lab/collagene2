@@ -112,6 +112,7 @@ fn modified_circle() -> Commit {
                 },
             },
             Operation::CheckedDigest {
+                conditions: None,
                 selection: checked_selection(vec!["NotI".into()]),
                 options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),
@@ -364,6 +365,7 @@ fn saved_modified_circle_remains_noti_blocked_in_durable_checked_digest() {
         )
         .unwrap(),
         Operation::CheckedDigest {
+            conditions: None,
             selection: checked_selection(vec!["NotI".into()]),
             options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
             template: Source::Step(0),

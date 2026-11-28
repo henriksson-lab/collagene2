@@ -293,7 +293,7 @@ async fn original_oe_material_installs_six_new_primers_reopens_and_redigests_wit
     let digest = call(&c, "material_derivation", json!({"workspace":restarted,"task":{"PreviewDigest":{"source":receipt.product,"origin":origin,"selection":choice,"options":collagene_core::cloning::restriction::inspection::InspectionOptions::default()}}})).await;
     assert_eq!(digest["products_determined"], true);
     assert_eq!(digest["fragment_count"], 3);
-    let cut = install(&c, &restarted, json!({"sources":[{"role":"template","event":receipt.product,"origin":origin}],"derivation":{"CatalogDigest":{"selection":choice,"options":collagene_core::cloning::restriction::inspection::InspectionOptions::default(),"fragment_index":2}},"name":"Literal right EcoRI tail fragment","save_primers":false})).await;
+    let cut = install(&c, &restarted, json!({"sources":[{"role":"template","event":receipt.product,"origin":origin}],"derivation":{"CatalogDigest":{"conditions":null,"selection":choice,"options":collagene_core::cloning::restriction::inspection::InspectionOptions::default(),"fragment_index":2}},"name":"Literal right EcoRI tail fragment","save_primers":false})).await;
     let cut_receipt: native::Receipt = serde_json::from_value(cut["receipt"].clone()).unwrap();
     let cut_w = archive(&c, &cut).await;
     let cut_material = native::reconstruct(&cut_w, &cut_receipt.product).unwrap();

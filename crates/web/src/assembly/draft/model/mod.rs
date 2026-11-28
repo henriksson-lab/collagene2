@@ -373,6 +373,7 @@ pub(crate) fn validate_preparation_input(row: &OverlapInput) -> Result<(), Strin
     if let Some(selection) = &row.catalog_selection {
         selection.validate().map_err(|e| e.to_string())?;
     }
+    row.reaction_conditions.validate_raw()?;
     for text in [
         &row.enzymes,
         &row.fragment,
@@ -1090,6 +1091,11 @@ impl Draft {
         }
         let index = self.active_slot;
         let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
+        if let Some(conditions) = &fragment.conditions {
+            conditions
+                .validate_for(&catalog, &fragment.selection)
+                .map_err(|e| e.to_string())?;
+        }
         let role = restriction_history::source_role(&fragment.source.binding)
             .map_err(|e| e.to_string())?;
         if let Some(origin) = &fragment.origin {
@@ -1200,6 +1206,9 @@ impl Draft {
             preparation: OverlapPreparation::CatalogDigest,
             run_origin: fragment.origin,
             catalog_selection: Some(fragment.selection),
+            reaction_conditions: crate::restriction::reaction_conditions_model::Draft::from_saved(
+                fragment.conditions,
+            ),
             fragment: display_index.to_string(),
             repair: None,
             reverse: next.methods.rows[index].reverse,

@@ -869,6 +869,7 @@ mod preparation_and_receipt_tests {
                         role: "vector".into(),
                         input_id: "vector".into(),
                         preparation: Preparation::CatalogDigest {
+                            conditions: None,
                             selection: selection.clone(),
                             fragment_index: 1,
                             repair: None,
@@ -886,6 +887,7 @@ mod preparation_and_receipt_tests {
                         role: "insert".into(),
                         input_id: "insert".into(),
                         preparation: Preparation::PcrCatalogDigest {
+                            conditions: None,
                             forward: Primer::new("F", "ATATCCC", "").unwrap(),
                             reverse: Primer::new("R", "GCGCCCC", "").unwrap(),
                             selection: selection.clone(),

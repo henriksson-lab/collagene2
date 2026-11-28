@@ -14,3 +14,5 @@ mod material_pcr_staggered;
 mod material_processing_protocol;
 mod material_terminal_processing;
 mod material_terminal_processing_protocol;
+
+mod material_reaction_conditions;

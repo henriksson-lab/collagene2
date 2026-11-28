@@ -169,6 +169,7 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
                 ),
             }],
             derivation: collagene_core::material::derivation::Derivation::CatalogDigest {
+                conditions: None,
                 selection,
                 options: Default::default(),
                 fragment_index: 0,

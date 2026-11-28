@@ -126,6 +126,7 @@ impl GoldenGateSuggestions {
                 return Err("Proposal has an unknown source role; nothing applied.".into());
             };
             let collagene_core::cloning::assembly::recipe::Preparation::PcrCatalogDigest {
+                conditions,
                 template_strand,
                 forward,
                 reverse,
@@ -152,6 +153,12 @@ impl GoldenGateSuggestions {
             row.reverse_primer = reverse.annealing.as_str().into();
             row.reverse_tail = reverse.tail.clone();
             row.catalog_selection = Some(selection.clone());
+            if let Some(conditions) = conditions {
+                row.reaction_conditions =
+                    crate::restriction::reaction_conditions_model::Draft::from_saved(Some(
+                        conditions.clone(),
+                    ));
+            }
             row.fragment = (fragment_index + 1).to_string();
             row.repair = *repair;
         }

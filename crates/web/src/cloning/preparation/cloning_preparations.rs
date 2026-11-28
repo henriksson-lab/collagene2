@@ -25,6 +25,29 @@ pub(crate) fn prepared_rows(
     }
     let mut fragments = Vec::with_capacity(state.rows.len());
     for (i, row) in state.rows.iter().enumerate() {
+        row.reaction_conditions.validate_raw()?;
+        let conditions = if row.reaction_conditions.enabled {
+            if !matches!(
+                row.preparation,
+                OverlapPreparation::CatalogDigest
+                    | OverlapPreparation::PcrCatalogDigest
+                    | OverlapPreparation::MismatchPcrCatalogDigest
+                    | OverlapPreparation::OverlapExtensionPcrCatalogDigest
+            ) {
+                return Err("Reaction conditions require a catalog-pinned digest preparation. Disable the retained setup or choose that preparation.".into());
+            }
+            let selection = row
+                .catalog_selection
+                .as_ref()
+                .ok_or("Pin the exact digest enzymes before enabling reaction conditions.")?;
+            row.reaction_conditions.options(
+                &collagene_core::cloning::restriction::catalog::builtin_catalog()
+                    .map_err(|e| e.to_string())?,
+                selection,
+            )?
+        } else {
+            None
+        };
         if let Some(request) = &row.overlap_extension_pcr {
             request.validate_raw()?;
         }
@@ -58,7 +81,7 @@ pub(crate) fn prepared_rows(
                 let selection = row.catalog_selection.as_ref().ok_or("Pin the outer-PCR product digest enzymes first.")?;
                 selection.validate().map_err(|e| e.to_string())?;
                 let fragment_index = row.fragment.trim().parse::<usize>().ok().and_then(|n| n.checked_sub(1)).ok_or("Digest fragment numbers start at1")?;
-                Preparation::OverlapExtensionPcrCatalogDigest { request, selection: selection.clone(), fragment_index, repair: row.repair }
+                Preparation::OverlapExtensionPcrCatalogDigest { request, selection: selection.clone(), conditions, fragment_index, repair: row.repair }
             }
             OverlapPreparation::DeclaredDuplex => Preparation::DeclaredDuplex {
                 left: row.left_terminus,
@@ -80,7 +103,7 @@ pub(crate) fn prepared_rows(
                     Preparation::MismatchPcrCatalogDigest {
                         forward: Primer::new(&row.forward_name, &row.forward, &row.forward_tail).map_err(|e|e.to_string())?,
                         reverse: Primer::new(&row.reverse_name, &row.reverse_primer, &row.reverse_tail).map_err(|e|e.to_string())?,
-                        options: row.mismatch_options()?, selection: selection.clone(), fragment_index, repair: row.repair,
+                        options: row.mismatch_options()?, selection: selection.clone(), conditions, fragment_index, repair: row.repair,
                     }
                 } else if row.preparation == OverlapPreparation::PcrCatalogDigest {
                     Preparation::PcrCatalogDigest {
@@ -94,12 +117,14 @@ pub(crate) fn prepared_rows(
                         )
                         .map_err(|e| e.to_string())?,
                         selection: selection.clone(),
+                        conditions,
                         fragment_index,
                         repair: row.repair,
                     }
                 } else {
                     Preparation::CatalogDigest {
                         selection: selection.clone(),
+                        conditions,
                         fragment_index,
                         repair: row.repair,
                     }
@@ -148,13 +173,21 @@ pub(crate) fn prepared_rows(
             let preparation = match preparation {
                 Preparation::WholeLinear => RunPreparation::WholeLinear,
                 Preparation::Digest { enzymes, fragment_index, repair } => RunPreparation::Digest { enzymes, fragment_index, repair },
-                Preparation::CatalogDigest { selection, fragment_index, repair } => RunPreparation::CatalogDigest { selection, fragment_index, repair },
+                Preparation::CatalogDigest {
+                    conditions, selection, fragment_index, repair } => RunPreparation::CatalogDigest {
+                    conditions, selection, fragment_index, repair },
                 Preparation::ExactPcr { template_strand,forward, reverse } => RunPreparation::ExactPcr { template_strand,forward, reverse },
                 Preparation::OverlapExtensionPcr { request } => RunPreparation::OverlapExtensionPcr { request },
-                Preparation::OverlapExtensionPcrCatalogDigest { request, selection, fragment_index, repair } => RunPreparation::OverlapExtensionPcrCatalogDigest { request, selection, fragment_index, repair },
+                Preparation::OverlapExtensionPcrCatalogDigest {
+                    conditions, request, selection, fragment_index, repair } => RunPreparation::OverlapExtensionPcrCatalogDigest {
+                    conditions, request, selection, fragment_index, repair },
                 Preparation::MismatchPcr { forward, reverse, options } => RunPreparation::MismatchPcr { forward, reverse, options },
-                Preparation::PcrCatalogDigest { template_strand,forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest { template_strand,forward, reverse, selection, fragment_index, repair },
-                Preparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest { forward, reverse, options, selection, fragment_index, repair },
+                Preparation::PcrCatalogDigest {
+                    conditions, template_strand,forward, reverse, selection, fragment_index, repair } => RunPreparation::PcrCatalogDigest {
+                    conditions, template_strand,forward, reverse, selection, fragment_index, repair },
+                Preparation::MismatchPcrCatalogDigest {
+                    conditions, forward, reverse, options, selection, fragment_index, repair } => RunPreparation::MismatchPcrCatalogDigest {
+                    conditions, forward, reverse, options, selection, fragment_index, repair },
                 Preparation::DeclaredDuplex { .. } | Preparation::AnnealedOligos { .. } | Preparation::FromRun { .. } | Preparation::FromDerived { .. } => return Err("Saved-run material supports whole material, digest or exact PCR preparation; declared duplex and paired-oligo substitution are unsupported.".into()),
             };
             match origin.as_ref() {
@@ -1063,6 +1096,7 @@ mod overlap_extension_tests {
         let before = s.clone();
         let (_, rows) = prepared_rows(&s, 2).unwrap();
         let assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+            conditions: _,
             request,
             selection,
             fragment_index,

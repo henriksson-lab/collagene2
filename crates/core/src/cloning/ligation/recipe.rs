@@ -436,14 +436,9 @@ impl Preview {
             collagene_model::bounds::model_preflight(&[m])?;
         }
         for report in &self.verification.step_reports {
+            report.validate_documentary()?;
             if report.step_index >= steps {
                 return Err(Error::TooLarge);
-            }
-            if let Some(product) = &report.topo {
-                crate::cloning::topo::worker::validate_projection(
-                    product,
-                    &product.batch_revision,
-                )?;
             }
         }
         preparation::validate_prepared_inputs(

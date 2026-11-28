@@ -294,6 +294,7 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         ),
         (
             RunPreparation::CatalogDigest {
+                conditions: None,
                 selection: pin,
                 fragment_index: 0,
                 repair: None,

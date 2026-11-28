@@ -115,6 +115,9 @@ pub enum MaterialDerivationOperation {
         method: collagene_core::chemistry::EndRepairMethod,
     },
     CatalogDigest {
+        #[serde(deserialize_with = "Option::deserialize")]
+        #[schemars(required)]
+        conditions: Option<collagene_core::cloning::restriction::conditions::ReactionConditions>,
         selection: collagene_core::cloning::restriction::catalog::CatalogSelection,
         options: collagene_core::cloning::restriction::inspection::InspectionOptions,
         fragment_index: usize,
@@ -931,7 +934,7 @@ impl CollageneServer {
                         MaterialDerivationOperation::TerminalProcessing{action}=>native::Derivation::TerminalProcessing{action},
                         MaterialDerivationOperation::AnnealedOligos{options,selection}=>native::Derivation::AnnealedOligos{options,selection},
                         MaterialDerivationOperation::EndRepair{method}=>native::Derivation::EndRepair{method},
-                        MaterialDerivationOperation::CatalogDigest{selection,options,fragment_index}=>native::Derivation::CatalogDigest{selection,options,fragment_index},
+                        MaterialDerivationOperation::CatalogDigest{selection,options,conditions,fragment_index}=>native::Derivation::CatalogDigest{selection,options,conditions,fragment_index},
                     };
                     let request=native::Request{sources,derivation,name:request.name,save_primers:request.save_primers};
                     // Selecting the requested retained source in this local copy

@@ -1,6 +1,7 @@
 //! Target-free native PCR, reciprocal extension, catalog-digest and end-repair derivations. Opaque, bounded recipe
 //! packages break typed recursion; only fresh native execution yields material.
 pub mod digest_export;
+pub mod reaction_conditions;
 use crate::{
     chemistry::{
         self,
@@ -28,15 +29,15 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
-pub const ENGINE_VERSION: &str = "material-derivation-2";
-pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v2";
+pub const ENGINE_VERSION: &str = "material-derivation-3";
+pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v3";
 pub const MEDIA_TYPE: &str = "application/vnd.collagene.material-derivation";
-pub const EVENT_OPERATION: &str = "Target-free native material derivation v2";
+pub const EVENT_OPERATION: &str = "Target-free native material derivation v3";
 pub const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_CAPSULE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 pub const MAX_SOURCES: usize = 2;
-const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x02";
+const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x03";
 const HEADER: usize = 44;
 const CONTEXT_KEY: &str = "source:material_derivation:context";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -57,7 +58,40 @@ dto! {pub struct MismatchPcrSelection{pub selected_index:usize,pub expected_prev
 dto! {pub struct OverlapExtensionSelection{pub expected_preview_revision:String,pub expected_product_revision:String}}
 dto! {#[derive(Copy,PartialEq,Eq)]pub enum TerminalAction{TreatEnds{treatment:chemistry::EndTreatment},Tail3Prime{base:crate::cloning::ligation::tailing::TailingBase}}}
 dto! {pub struct AnnealSelection{pub expected_preview_revision:String,pub candidate_id:String,pub expected_product_revision:String}}
-dto! {pub enum Derivation{ExactPcr{forward:Primer,reverse:Primer,template_strand:chemistry::Strand,selection:PcrSelection},CatalogDigest{selection:CatalogSelection,options:InspectionOptions,fragment_index:usize},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:MismatchPcrSelection},EndRepair{method:chemistry::EndRepairMethod},OverlapExtensionPcr{preparation:crate::cloning::overlap::extension::pcr::Request,selection:OverlapExtensionSelection},TerminalProcessing{action:TerminalAction},AnnealedOligos{options:chemistry::AnnealOptions,selection:AnnealSelection}}}
+dto! {
+    pub enum Derivation {
+        ExactPcr {
+            forward: Primer,
+            reverse: Primer,
+            template_strand: chemistry::Strand,
+            selection: PcrSelection,
+        },
+        CatalogDigest {
+            selection: CatalogSelection,
+            options: InspectionOptions,
+            #[serde(deserialize_with = "crate::encoding::required_option")]
+            #[cfg_attr(feature = "json-schema", schemars(required))]
+            conditions: Option<crate::cloning::restriction::conditions::ReactionConditions>,
+            fragment_index: usize,
+        },
+        MismatchPcr {
+            forward: Primer,
+            reverse: Primer,
+            options: crate::cloning::pcr::mutagenesis::PcrOptions,
+            selection: MismatchPcrSelection,
+        },
+        EndRepair { method: chemistry::EndRepairMethod },
+        OverlapExtensionPcr {
+            preparation: crate::cloning::overlap::extension::pcr::Request,
+            selection: OverlapExtensionSelection,
+        },
+        TerminalProcessing { action: TerminalAction },
+        AnnealedOligos {
+            options: chemistry::AnnealOptions,
+            selection: AnnealSelection,
+        },
+    }
+}
 dto! {pub struct Request{pub sources:Vec<BoundSource>,pub derivation:Derivation,pub name:String,pub save_primers:bool}}
 dto! {pub struct Record{pub schema_version:u32,pub engine_version:String,pub scientific_engine:String,pub source_workspace_fingerprint:String,pub context_revision:String,pub request:Request,pub product:EventBinding,pub product_state_revision:String,pub incomplete:bool}}
 mod record_bytes {
@@ -118,7 +152,26 @@ mod record_bytes {
     }
 }
 dto! {pub struct Capsule{pub schema_version:u16,pub product:EventBinding,#[serde(with="record_bytes")]#[cfg_attr(feature="json-schema",schemars(with="String"))]pub record_bytes:Vec<u8>,pub source_snapshots:Vec<SourceSnapshot>}}
-dto! {pub struct Receipt{pub engine_version:String,pub context_revision:String,pub record_hash:String,pub primer_attachment:Option<String>,pub sources:Vec<SourceBinding>,pub product:EventBinding,pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool,pub duplex:chemistry::DuplexSummary,pub modifications:ModificationSummary}}
+dto! {
+    pub struct Receipt {
+        pub engine_version: String,
+        pub context_revision: String,
+        pub record_hash: String,
+        pub primer_attachment: Option<String>,
+        pub sources: Vec<SourceBinding>,
+        pub product: EventBinding,
+        pub incomplete: bool,
+        pub findings: Vec<String>,
+        pub findings_total: usize,
+        pub findings_truncated: bool,
+        pub duplex: chemistry::DuplexSummary,
+        pub modifications: ModificationSummary,
+        /// Bounded originating-report provenance from this fresh execution;
+        /// serialized receipts remain documentary, never reusable authority.
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, crate::cloning::restriction::conditions::source::SourceReport, 32>")]
+        pub reaction_conditions: Vec<crate::cloning::restriction::conditions::source::SourceReport>,
+    }
+}
 pub struct PreparedInstallation {
     pub workspace: Workspace,
     pub receipt: Receipt,
@@ -133,8 +186,14 @@ pub struct FreshMaterial {
     findings: Vec<String>,
     findings_total: usize,
     findings_truncated: bool,
+    reaction_conditions: Vec<crate::cloning::restriction::conditions::source::SourceReport>,
 }
 impl FreshMaterial {
+    pub fn reaction_conditions(
+        &self,
+    ) -> &[crate::cloning::restriction::conditions::source::SourceReport] {
+        &self.reaction_conditions
+    }
     pub fn reference(&self) -> &Molecule {
         &self.reference
     }
@@ -393,6 +452,7 @@ impl Request {
             Derivation::CatalogDigest {
                 selection,
                 options,
+                conditions,
                 fragment_index,
             } => {
                 if self.save_primers {
@@ -402,6 +462,9 @@ impl Request {
                 }
                 selection.validate()?;
                 options.validate()?;
+                if let Some(conditions) = conditions {
+                    conditions.validate_for(&catalog_digest::builtin_catalog()?, selection)?;
+                }
                 if *fragment_index >= options.max_fragments {
                     return Err(bad("fragment index exceeds declared bounds"));
                 }
@@ -418,7 +481,7 @@ impl Record {
         crate::material::capsule::derived_record_preflight(self)
     }
     pub(crate) fn validate_shallow(&self) -> Result<(), Error> {
-        if self.schema_version != 2
+        if self.schema_version != 3
             || self.engine_version != ENGINE_VERSION
             || self.scientific_engine.is_empty()
             || self.scientific_engine.len() > 128
@@ -632,12 +695,18 @@ pub(crate) fn fresh_source(
 ) -> Result<FreshMaterial, Error> {
     collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
-    let (tracked,incomplete,findings,total,truncated)=match origin {
-        SourceOrigin::OriginalReference=>(original_source(source)?,false,vec!["Original source is an explicit intact DNA reference hypothesis with unknown source modifications and terminal groups; no measured stock chemistry or amplification success is inferred.".into()],1,false),
-        SourceOrigin::Saved(origin)=>{let (_,tracked,incomplete,findings,total,truncated)=origin.replay(source)?.into_parts();(tracked,incomplete,findings,total,truncated)},
+    let (tracked,incomplete,findings,total,truncated,reaction_conditions)=match origin {
+        SourceOrigin::OriginalReference=>(original_source(source)?,false,vec!["Original source is an explicit intact DNA reference hypothesis with unknown source modifications and terminal groups; no measured stock chemistry or amplification success is inferred.".into()],1,false,vec![]),
+        SourceOrigin::Saved(origin)=>{
+            let fresh=origin.replay(source)?;
+            let evidence=reaction_conditions::collect(fresh.reaction_conditions())?;
+            let (_,tracked,incomplete,findings,total,truncated)=fresh.into_parts();
+            (tracked,incomplete,findings,total,truncated,evidence)
+        },
     };
     let (findings, findings_total, findings_truncated) = limitations(findings, total, truncated);
     Ok(FreshMaterial {
+        reaction_conditions,
         reference: source.clone(),
         tracked,
         incomplete,
@@ -878,10 +947,28 @@ fn fresh_template(
         Derivation::CatalogDigest {
             selection,
             options,
+            conditions,
             fragment_index,
         } => {
             let catalog = catalog_digest::builtin_catalog()?;
             selection.validate_for(&catalog)?;
+            if let Some(options) = conditions {
+                let evidence =
+                    crate::cloning::restriction::conditions::source::SourceReport::assess(
+                        &catalog,
+                        source,
+                        &inherited.tracked,
+                        selection,
+                        options,
+                    )?;
+                inherited.incomplete |= !evidence.satisfies_request();
+                inherited.reaction_conditions = reaction_conditions::collect(
+                    inherited
+                        .reaction_conditions
+                        .iter()
+                        .chain(std::iter::once(&evidence)),
+                )?;
+            }
             let enzymes = selection.resolved_enzymes(&catalog)?;
             let role = crate::cloning::restriction::history::source_role(&template.event)?;
             let mut selected = None;
@@ -922,6 +1009,15 @@ fn fresh_template(
                 bottom_start: fragment.bottom_start,
             };
             let mut findings = inspection.diagnostics;
+            if conditions.is_some() {
+                if let Some(evidence) = inherited.reaction_conditions.iter().find(|e| {
+                    e.source_revision == source.revision()
+                        && e.report.selection == *selection
+                        && conditions.as_ref() == Some(&e.report.options)
+                }) {
+                    findings.push(format!("Retained source-bound documentary reaction constraint: {:?}. Star activity and incubation-duration compatibility remain unassessed; sequence product geometry is retained independently of this condition status.",evidence.report.documentary_status));
+                }
+            }
             verification::projection::project_digest_annotations(
                 source,
                 &geometry,
@@ -949,6 +1045,7 @@ fn fresh_template(
     let (findings, findings_total, findings_truncated) =
         limitations(findings, total, inherited.findings_truncated);
     Ok(FreshMaterial {
+        reaction_conditions: inherited.reaction_conditions,
         reference,
         tracked,
         incomplete: inherited.incomplete,
@@ -1003,7 +1100,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
     };
     let modifications = fresh.tracked.summary()?;
     let record = Record {
-        schema_version: 2,
+        schema_version: 3,
         engine_version: ENGINE_VERSION.into(),
         scientific_engine: verification::ENGINE_VERSION.into(),
         source_workspace_fingerprint: fingerprint,
@@ -1077,6 +1174,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
         findings_truncated: fresh.findings_truncated,
         duplex: fresh.tracked.duplex.summary()?,
         modifications,
+        reaction_conditions: fresh.reaction_conditions,
     };
     receipt.validate_archive(&next)?;
     Ok(PreparedInstallation {
@@ -1314,6 +1412,7 @@ impl Receipt {
         {
             return Err(bad("receipt context/bounds differ"));
         }
+        reaction_conditions::validate(&self.reaction_conditions)?;
         validate_source_bindings(&self.sources)?;
         run_material::event_shape(&self.product)?;
         summary_shape(&self.modifications)?;
@@ -1331,6 +1430,45 @@ impl Receipt {
             || record.product_state_revision != self.modifications.state_revision
         {
             return Err(bad("receipt differs from exact installed record"));
+        }
+        // Documentary association only: current scientific claims use fresh
+        // prepare/reconstruct, never this imported receipt or its retained hashes.
+        let source_bindings = record.source_bindings()?;
+        if self.reaction_conditions.iter().any(|evidence| {
+            !source_bindings
+                .iter()
+                .any(|binding| binding.revision == evidence.source_revision)
+        }) || (!self.incomplete
+            && self
+                .reaction_conditions
+                .iter()
+                .any(|evidence| !evidence.satisfies_request()))
+        {
+            return Err(bad(
+                "receipt documentary evidence is not associated with retained source ancestry",
+            ));
+        }
+        if let Derivation::CatalogDigest {
+            selection,
+            conditions: Some(options),
+            ..
+        } = &record.request.derivation
+        {
+            let source = &record.request.template()?.event.revision;
+            let evidence = self
+                .reaction_conditions
+                .iter()
+                .find(|evidence| {
+                    &evidence.source_revision == source
+                        && evidence.report.selection == *selection
+                        && evidence.report.options == *options
+                })
+                .ok_or_else(|| bad("receipt drops the declared documentary reaction setup"))?;
+            evidence.report.validate_for(
+                &catalog_digest::builtin_catalog()?,
+                selection,
+                options,
+            )?;
         }
         if self.primer_attachment.is_some() != record.request.save_primers {
             return Err(bad(
@@ -1597,6 +1735,7 @@ fn fresh(
         reference.validate()?;
         tracked.validate()?;
         Ok(FreshMaterial {
+            reaction_conditions: vec![],
             reference,
             tracked,
             incomplete,

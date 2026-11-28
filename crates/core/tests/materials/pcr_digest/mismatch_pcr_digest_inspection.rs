@@ -296,6 +296,7 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
                 origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
             }],
             derivation: d::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: Default::default(),
                 fragment_index: 0,

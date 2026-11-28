@@ -1273,6 +1273,7 @@ mod tests {
                 name: "Derived uncut circle".into(),
                 save_primers: false,
                 derivation: collagene_core::material::derivation::Derivation::CatalogDigest {
+                    conditions: None,
                     selection,
                     options: Default::default(),
                     fragment_index: 0,

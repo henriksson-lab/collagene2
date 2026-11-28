@@ -6,11 +6,14 @@ use collagene_core::{
     },
     material::lineage::EventBinding,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct Draft {
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Draft {
     pub enabled: bool,
+    #[serde(deserialize_with = "formulations")]
     pub formulations: BTreeMap<String, Option<String>>,
     pub buffer: String,
     pub temperature: String,
@@ -18,6 +21,39 @@ pub(super) struct Draft {
     pub minimum: String,
     pub activity_context: String,
     pub temperature_context: String,
+}
+fn formulations<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Option<String>>, D::Error> {
+    struct Choices;
+    impl<'de> serde::de::Visitor<'de> for Choices {
+        type Value = BTreeMap<String, Option<String>>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("at most 64 unique bounded formulation choices")
+        }
+        fn visit_map<A: serde::de::MapAccess<'de>>(
+            self,
+            mut map: A,
+        ) -> Result<Self::Value, A::Error> {
+            use serde::de::Error;
+            if map.size_hint().is_some_and(|n| n > 64) {
+                return Err(A::Error::custom("too many formulation choices"));
+            }
+            let mut choices = BTreeMap::new();
+            while let Some(key) = map.next_key::<String>()? {
+                if choices.len() == 64 || key.len() > 256 || choices.contains_key(&key) {
+                    return Err(A::Error::custom("oversized or repeated formulation choice"));
+                }
+                let value = map.next_value::<Option<String>>()?;
+                if value.as_ref().is_some_and(|v| v.len() > 256) {
+                    return Err(A::Error::custom("oversized formulation identity"));
+                }
+                choices.insert(key, value);
+            }
+            Ok(choices)
+        }
+    }
+    deserializer.deserialize_map(Choices)
 }
 impl Default for Draft {
     fn default() -> Self {
@@ -34,6 +70,28 @@ impl Default for Draft {
     }
 }
 impl Draft {
+    /// Bound editable fields even while they are incomplete or disabled.
+    pub fn validate_raw(&self) -> Result<(), String> {
+        if self.formulations.len() > 64
+            || self
+                .formulations
+                .iter()
+                .any(|(id, value)| id.len() > 256 || value.as_ref().is_some_and(|v| v.len() > 256))
+            || [
+                &self.buffer,
+                &self.activity_context,
+                &self.temperature_context,
+            ]
+            .iter()
+            .any(|v| v.len() > 256)
+            || [&self.temperature, &self.minutes, &self.minimum]
+                .iter()
+                .any(|v| v.len() > 32)
+        {
+            return Err("Reaction-condition draft exceeds its editable field bounds.".into());
+        }
+        Ok(())
+    }
     pub fn from_saved(value: Option<ReactionConditions>) -> Self {
         let Some(value) = value else {
             return Self::default();
@@ -58,6 +116,7 @@ impl Draft {
         c: &catalog::Catalog,
         s: &CatalogSelection,
     ) -> Result<Option<ReactionConditions>, String> {
+        self.validate_raw()?;
         if !self.enabled {
             return Ok(None);
         }
@@ -274,6 +333,37 @@ mod tests {
         d.formulations
             .insert(s.enzymes[0].id.clone(), Some("invented-HF".into()));
         assert!(d.options(&c, &s).is_err());
+    }
+    #[test]
+    fn incomplete_editable_setup_roundtrips_without_becoming_a_valid_request() {
+        let (catalog, selection) = selected();
+        let mut draft = Draft::default();
+        draft.enabled = true;
+        draft.buffer = "rCutSmart".into();
+        draft.temperature = "37.".into();
+        draft
+            .formulations
+            .insert(selection.enzymes[0].id.clone(), Some("neb-r3101".into()));
+        let bytes = serde_json::to_vec(&draft).unwrap();
+        let restored: Draft = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(restored, draft);
+        restored.validate_raw().unwrap();
+        assert!(restored.options(&catalog, &selection).is_err());
+    }
+    #[test]
+    fn editable_formulation_decoder_refuses_duplicate_keys_and_oversized_maps() {
+        let encoded = serde_json::to_string(&Draft::default()).unwrap();
+        let duplicate = encoded.replace(
+            "\"formulations\":{}",
+            "\"formulations\":{\"ecori\":null,\"ecori\":\"neb-r3101\"}",
+        );
+        assert!(serde_json::from_str::<Draft>(&duplicate).is_err());
+        let mut large = Draft::default();
+        for index in 0..65 {
+            large.formulations.insert(format!("enzyme-{index}"), None);
+        }
+        assert!(large.validate_raw().is_err());
+        assert!(serde_json::from_slice::<Draft>(&serde_json::to_vec(&large).unwrap()).is_err());
     }
     #[test]
     fn saved_none_clears_draft_and_capture_rejects_event_epoch_and_option_changes() {

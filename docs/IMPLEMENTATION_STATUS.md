@@ -13,10 +13,12 @@ scientific operations use Rust libraries, without external scientific programs.
 
 | Item | Current version |
 | --- | --- |
-| Worker protocol | 130 |
-| Candidate / workspace plan | 31 / 29 |
-| Assembly draft / batch / release | 20 / 3 / 2 |
-| Scientific / search engine | science-35 / sequence-search-2 |
+| Worker protocol | 131 |
+| Candidate / workspace plan | 32 / 30 |
+| Assembly draft / batch / release | 21 / 4 / 2 |
+| Scientific / search engine | science-36 / sequence-search-2 |
+| Construct QC options / engine | 2 / construct-qc-2 |
+| Material derivation / digest export | 3 / material-digest-export-3 |
 | Documentary image engine | documentary-image-1 |
 | Desktop sync | 5 |
 | Native MCP tools | 219 |
@@ -62,6 +64,13 @@ These are partial implementations: broader QC predicates, other assembly profile
 wizard/protocol integration and an applicable mismatch thermodynamic model remain.
 [Controls and supported scope](DESIGN_CHECKS.md).
 
+The next connected source batch retains explicit reaction choices through cloning
+preparations, current verification, native material ancestry and HTML/PDF protocols.
+It adds declared element-chain geometry and literal reference-copy requirements,
+with shared bounded searches and indeterminate uncertainty. The assembly-standard
+catalogue now includes the scoped RFC1000 Level-0 documented-body profile. Final
+native/WASM compilation and all 86 focused cases pass. [Integration evidence](audits/reaction-elements-current-integration.json) · [Reaction choices](CLONING_REACTION_CONDITIONS.md).
+
 ## Verification and CI
 
 Native and web/worker WASM checks pass. The connected batch executes **302 unique
@@ -79,7 +88,7 @@ stop uncertainty. Exact search/PCR has bounded work; model/plan/archive admissio
 precedes amplified construction; hosted MCP pins member/lab/workspace lifecycles.
 [Security findings](DELIVERY_AUDIT.md#security-findings).
 
-At `095fe39`, desktop CI produced the **Windows portable executable, macOS
+At `2bfcc6e`, desktop CI produced the **Windows portable executable, macOS
 installer/app and Linux Debian package**, including packaged-executable stdio MCP
 smoke checks. These are unsigned development artifacts, not installation or GUI
 acceptance. [Package evidence](audits/desktop-packages-current.json) ·
@@ -91,8 +100,9 @@ checkpoint `476127e`, scientific cases and web/package jobs pass, while the fina
 MCP smoke step still used the removed codon field. Its caller now uses current
 Explicit preferences, and its catalogue assertion uses schema-2 evidence. Full
 local application/HTTP smoke remains deferred. The corrected caller and catalogue
-assertion pass CI at `095fe39`, including all native platforms and web; the current
-uncommitted F36–F38 source is outside that CI evidence.
+assertion pass CI at `095fe39`. The first connected F36–F38 paths also pass all
+native platforms and web at `2bfcc6e`; current reaction-retention/QC-element/RFC1000
+source is outside that CI evidence until publication.
 [Cross-platform evidence](audits/cross-platform-fixture-fix-current.json).
 
 No browser, CDP, screenshot, application HTTP or live-provider acceptance was run
@@ -110,8 +120,9 @@ filesystem API. Do not infer current product acceptance from this older preview.
   supported nuclease/scoring profiles recorded in the delivery queue.
 - Extend antibody analysis from the Benchling/Geneious GUI and feature comparison,
   including independently supported scheme/species/chain coverage and calibration.
-- Complete restriction condition data/presets and cloning protocol-step retention;
-  current documentary digest controls and setup retention are implemented.
+- Complete restriction condition data/presets. Cloning protocol-step and native
+  ancestry retention pass the current verification batch; target-free PCR/digest
+  inspection remains explicitly limited to geometry.
 - Complete the reviewed F36–F41 additions and queue extensions. The first
   assembly-standard, oligo-binding and construct-QC paths are integrated; broader
   predicates/profiles and wizard/protocol coverage remain. Barcode scope is

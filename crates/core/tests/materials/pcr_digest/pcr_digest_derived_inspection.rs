@@ -32,6 +32,7 @@ fn fixture() -> (workspace::Workspace, MaterialOrigin, inspection::Request) {
                 origin: derivation::SourceOrigin::Saved(origin),
             }],
             derivation: derivation::Derivation::CatalogDigest {
+                conditions: None,
                 selection: selection("SmaI"),
                 options: Default::default(),
                 fragment_index: 0,

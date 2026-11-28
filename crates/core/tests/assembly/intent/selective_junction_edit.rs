@@ -78,6 +78,7 @@ fn fixture() -> (Vec<PlanInput>, Request) {
         role: "cut".into(),
         input_id: "c".into(),
         preparation: Preparation::CatalogDigest {
+            conditions: None,
             selection: catalog_digest::select(
                 &catalog_digest::builtin_catalog().unwrap(),
                 &["ecorv".into()],

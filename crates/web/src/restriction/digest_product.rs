@@ -27,6 +27,7 @@ pub struct DigestOpenRequest {
     pub source: SourceBinding,
     pub origin: Option<crate::history::run_origin_model::PinnedOrigin>,
     pub selection: CatalogSelection,
+    pub conditions: Option<collagene_core::cloning::restriction::conditions::ReactionConditions>,
     pub options: InspectionOptions,
     pub fragment_index: usize,
     pub epoch: u64,
@@ -65,6 +66,7 @@ pub fn DigestOpenPanel(
             }],
             derivation: Derivation::CatalogDigest {
                 selection: request.selection,
+                conditions: request.conditions,
                 options: request.options,
                 fragment_index: request.fragment_index,
             },

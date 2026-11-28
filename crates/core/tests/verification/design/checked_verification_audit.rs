@@ -28,6 +28,7 @@ fn declare(cpg: M) -> Operation {
 }
 fn checked(template: Source, name: &str) -> Operation {
     Operation::CheckedDigest {
+        conditions: None,
         selection: checked_selection(vec![name.into()]),
         options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
         template,

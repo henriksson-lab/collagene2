@@ -102,7 +102,7 @@ async fn pinned_backbone_and_two_actual_oligos_ligate_and_export_without_source_
     options.top_chemistry = Terminus::CLEAVED;
     options.bottom_chemistry = Terminus::CLEAVED;
     let recipe = json!({"name":"Pinned EcoRI backbone plus two original oligos","fragments":[
-        {"source":{"generation":null,"role":"backbone","input_id":"backbone","preparation":{"CatalogDigest":{"selection":selection,"fragment_index":0,"repair":null}},"reverse":false},"treatment":null},
+        {"source":{"generation":null,"role":"backbone","input_id":"backbone","preparation":{"CatalogDigest":{"conditions":null,"selection":selection,"fragment_index":0,"repair":null}},"reverse":false},"treatment":null},
         {"source":{"generation":null,"role":"insert","input_id":"top","preparation":{"AnnealedOligos":{"bottom_input_id":"bottom","options":options,"candidate_index":0}},"reverse":false},"treatment":null}
     ],"circular":true,"allow_nicked":false});
     let inputs =

@@ -26,7 +26,7 @@ struct Capture {
     draft: Draft,
     revision: String,
 }
-fn feature_choice(
+pub(super) fn feature_choice(
     rows: Memo<Vec<(usize, String, bool)>>,
     value: RwSignal<String>,
     label: &'static str,
@@ -225,7 +225,11 @@ pub fn ConstructQcPanel(
     let ref_license = RwSignal::new(String::new());
     let add_reference = Callback::new(move |(): ()| {
         let result = (|| {
-            let i = index(ref_feature)?;
+            let feature = if ref_feature.get_untracked().is_empty() {
+                None
+            } else {
+                Some(index(ref_feature)?)
+            };
             let m = get_molecule.run(());
             let literal = ref_sequence.get_untracked();
             if literal.len() > 1_000_000 {
@@ -248,10 +252,12 @@ pub fn ConstructQcPanel(
             };
             let mut d = draft.get_untracked();
             d.options.references.push(reference);
-            d.options.reference_claims.push(native::ReferenceClaim {
-                feature_index: i,
-                reference_id: id,
-            });
+            if let Some(i) = feature {
+                d.options.reference_claims.push(native::ReferenceClaim {
+                    feature_index: i,
+                    reference_id: id,
+                });
+            }
             d.options_for(&m)?;
             draft.set(d);
             Ok::<_, String>(())
@@ -352,7 +358,7 @@ pub fn ConstructQcPanel(
                 {native::STATEMENT}
             </p>
             <p class="helper">
-                "Current checks: CDS integrity, stored translation, literal references and declared fusion/junction register. Element-chain, initiation-context, required-parts, unannotated-ORF and history-derived junction checks are not evaluated."
+                "Current checks: CDS integrity, stored translation, literal references, declared fusion/junction register, structural element chains and literal copy requirements. Initiation-context, unannotated-ORF, vector-class and history-derived junction checks remain unevaluated."
             </p>
             <label>
                 "Genetic code when CDS has no /transl_table"
@@ -415,6 +421,7 @@ pub fn ConstructQcPanel(
                     "Pinned reference elements"
                 </summary>
                 {feature_choice(rows, ref_feature, "Reference feature")}
+                <p class="helper">"Leave the annotation unset to capture a reference for literal copy-count checks. Selecting an annotation also adds a feature identity comparison."</p>
                 <label>
                     "Reference ID"
                     <input
@@ -458,17 +465,22 @@ pub fn ConstructQcPanel(
                         on:input=move |e|ref_license.set(event_target_value(&e))/>
                 </label>
                 <button class="text-tool" on:click=move |_|add_reference.run(())>
-                    "Add reference comparison"
+                    "Add pinned reference"
                 </button>
+                {move || draft.with(|d| d.options.references.iter().map(|reference| {
+                    let id = reference.id.clone();
+                    let label = format!("{} · {} bases · {}", id, reference.sequence.len(), reference.sequence_revision);
+                    view! {<p>{label}<button class="text-tool" on:click=move |_| {
+                        let outcome = draft.try_update(|d| d.remove_reference(&id));
+                        if let Some(Err(error)) = outcome { status.set(error); }
+                    }>"Remove pinned reference"</button></p>}
+                }).collect_view())}
                 {
                     move || draft.with(|d|d.options.reference_claims.iter().map(|r| {
                         let label = format!("Feature {} ↔ {}", r.feature_index + 1, r.reference_id);
                         let needle = r.clone();
                         let remove = Callback::new(move |(): ()|draft.update(|d| {
                             d.options.reference_claims.retain(|r|r != &needle);
-                            if !d.options.reference_claims.iter().any(|r|r.reference_id == needle.reference_id) {
-                                d.options.references.retain(|r|r.id != needle.reference_id);
-                            }
                         }));
                         view! {
                             <p>
@@ -543,6 +555,9 @@ pub fn ConstructQcPanel(
                     }).collect_view())
                 }
             </details>
+            <super::construct_qc_elements::ElementDeclarations
+                draft rows get_molecule source epoch status
+            />
             <button class="button secondary full" disabled=move ||busy.get() on:click=move |_|run.run(())>
                 {
                     move || if busy.get() {"Checking…"}

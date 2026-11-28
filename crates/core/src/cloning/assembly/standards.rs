@@ -4,7 +4,7 @@ use crate::{cloning::restriction::catalog::builtin_catalog, encoding::bounded_js
 use collagene_assembly_standards::{
     assessment::{Assessment, Limits, Part},
     grammar::Successors,
-    profile::{CatalogPin, Definition, Profile, RFC10_ID},
+    profile::{BUILTIN_IDS, CatalogPin, Definition, Profile},
 };
 use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
@@ -98,9 +98,14 @@ fn summary(profile: &Profile) -> ProfileSummary {
 }
 pub fn catalogue() -> Result<Vec<ProfileSummary>, Error> {
     let c = builtin_catalog()?;
-    Ok(vec![summary(
-        &Profile::builtin(RFC10_ID, &c).map_err(lib_error)?,
-    )])
+    BUILTIN_IDS
+        .iter()
+        .map(|id| {
+            Profile::builtin(id, &c)
+                .map(|profile| summary(&profile))
+                .map_err(lib_error)
+        })
+        .collect()
 }
 impl SourceBinding {
     pub fn validate(&self) -> Result<(), Error> {

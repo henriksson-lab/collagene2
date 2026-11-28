@@ -354,6 +354,7 @@ mod tests {
                 options: Default::default(),
             },
             Operation::CatalogDigest {
+                conditions: None,
                 template: Source::Step(0),
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 fragment_index: 1,

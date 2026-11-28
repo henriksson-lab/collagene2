@@ -161,6 +161,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
                 origin: SourceOrigin::Saved(origin),
             }],
             derivation: Derivation::CatalogDigest {
+                conditions: None,
                 selection: selection.clone(),
                 options: options.clone(),
                 fragment_index: 0,
@@ -181,6 +182,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
                 origin: SourceOrigin::Saved(origin),
             }],
             derivation: Derivation::CatalogDigest {
+                conditions: None,
                 selection,
                 options,
                 fragment_index: 0,

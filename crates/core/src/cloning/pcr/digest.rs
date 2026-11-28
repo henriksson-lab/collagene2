@@ -83,6 +83,7 @@ fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Res
         role: request.source_role.clone(),
         input_id: request.source_role.clone(),
         preparation: assembly_recipe::Preparation::PcrCatalogDigest {
+            conditions: None,
             forward: request.forward.clone(),
             reverse: request.reverse.clone(),
             selection: request.selection.clone(),
@@ -153,7 +154,10 @@ fn finish(
             product_length: p.molecule.sequence.len(),
         })
         .collect();
-    let mut findings=vec!["Fresh exact-PCR geometry under ideal synthesis followed by assumed-complete cleavage. PCR efficiency, reagent compatibility, methylation susceptibility and experimental success are not established. Newly synthesized outer termini are 5′OH/3′OH; internal restriction cuts retain their actual cleaved chemistry. Displayed fragments are not transferable physical stock.".into()];
+    let mut findings = vec![
+        "Fresh exact-PCR geometry under ideal synthesis followed by assumed-complete cleavage. PCR efficiency, reagent compatibility, methylation susceptibility and experimental success are not established. Newly synthesized outer termini are 5′OH/3′OH; internal restriction cuts retain their actual cleaved chemistry. Displayed fragments are not transferable physical stock.".into(),
+        "Documentary reaction-condition choices are unsupported by this target-free inspection request; supply explicit conditions on the catalog-digest plan preparation for retention and protocol assessment. Geometry does not establish supplier/buffer/temperature/duration/star compatibility.".into(),
+    ];
     let (amplicon, inspection) = if documents.len() == 1 {
         let document = documents.into_iter().next().unwrap();
         findings.extend(document.findings);

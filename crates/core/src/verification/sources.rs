@@ -258,6 +258,19 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
     };
     let mut count = 0usize;
     for step in &plan.steps {
+        if let Operation::CatalogDigest {
+            selection,
+            conditions: Some(conditions),
+            ..
+        }
+        | Operation::CheckedDigest {
+            selection,
+            conditions: Some(conditions),
+            ..
+        } = step
+        {
+            conditions.validate_for(pinned_catalog.as_ref().ok_or(Error::TooLarge)?, selection)?;
+        }
         if let Operation::CheckedDigest {
             selection,
             options,
@@ -370,6 +383,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             template,
             selection,
             fragment_index,
+            ..
         } = step
         {
             selection

@@ -9,11 +9,15 @@ use std::{
 };
 
 mod cds;
+pub mod element_chain;
+#[cfg(test)]
+mod element_tests;
 mod geometry;
+pub mod required_parts;
 #[cfg(test)]
 mod tests;
 
-pub const ENGINE_VERSION: &str = "construct-qc-1";
+pub const ENGINE_VERSION: &str = "construct-qc-2";
 pub const STATEMENT: &str = "Construct QC checks declared structural requirements against the current sequence and annotations. Passing checks do not establish that a construct will express, package, produce titre or behave as intended; failing or indeterminate checks do not establish that it will not.";
 const MAX_FEATURES: usize = 256;
 const MAX_BASES: usize = 2_000_000;
@@ -43,6 +47,10 @@ pub enum Rule {
     FusionRegister,
     DeclaredJunctionRegister,
     ReferenceIntegrity,
+    ElementChain,
+    UpstreamElement,
+    DownstreamElement,
+    RequiredPart,
     Scope,
 }
 
@@ -134,18 +142,30 @@ pub struct Options {
     pub fusions: Vec<FusionClaim>,
     #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, JunctionClaim, 256>")]
     pub junctions: Vec<JunctionClaim>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, element_chain::ElementChain, 64>"
+    )]
+    pub element_chains: Vec<element_chain::ElementChain>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, required_parts::RequiredPart, 64>"
+    )]
+    pub required_parts: Vec<required_parts::RequiredPart>,
+    pub required_part_limits: required_parts::RequiredPartLimits,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
             genetic_code: 1,
             annotations: vec![],
             references: vec![],
             reference_claims: vec![],
             fusions: vec![],
             junctions: vec![],
+            element_chains: vec![],
+            required_parts: vec![],
+            required_part_limits: Default::default(),
         }
     }
 }
@@ -155,9 +175,10 @@ impl Default for Options {
 pub struct Finding {
     pub rule: Rule,
     pub verdict: Verdict,
-    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 2>")]
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 3>")]
     pub feature_indices: Vec<usize>,
-    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Location, 2>")]
+    /// Coordinates may come from literal reference matches without feature IDs.
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Location, 16>")]
     pub coordinates: Vec<Location>,
     pub reason: String,
     #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Citation, 8>")]
@@ -204,6 +225,20 @@ pub struct Report {
     pub references: Vec<ReferencePin>,
     #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Finding, 4096>")]
     pub findings: Vec<Finding>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, element_chain::ElementChainReport, 64>"
+    )]
+    pub element_chains: Vec<element_chain::ElementChainReport>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, required_parts::RequiredPartReport, 64>"
+    )]
+    pub required_parts: Vec<required_parts::RequiredPartReport>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, required_parts::ReferenceSearch, 64>"
+    )]
+    pub required_part_searches: Vec<required_parts::ReferenceSearch>,
+    pub required_part_search_work: usize,
+    pub required_part_search_engine: String,
     pub statement: String,
     pub report_revision: String,
 }
@@ -287,17 +322,21 @@ impl Options {
         {
             return Err(Error::TooLarge);
         }
+        if self.element_chains.len() > 64 || self.required_parts.len() > 64 {
+            return Err(Error::TooLarge);
+        }
         collagene_model::bounds::model_preflight(&[m])?;
         // Streaming byte admission precedes qualifier copies, hashes and extraction.
         bounded(m, 8 * 1024 * 1024)?;
         bounded(self, 2 * 1024 * 1024)?;
         m.validate()?;
         if !matches!(m.sequence.alphabet(), Alphabet::Dna | Alphabet::Rna)
-            || self.schema_version != 1
+            || self.schema_version != 2
         {
             return Err(bad("current nucleotide source/options required"));
         }
         translation::CodeDescriptor::for_id(self.genetic_code)?;
+        self.required_part_limits.validate()?;
         let mut nodes = 0usize;
         let mut extracted = 0usize;
         for f in &m.features {
@@ -384,6 +423,26 @@ impl Options {
                 return Err(bad("invalid declared junction/history identifiers"));
             }
         }
+        let mut chains = BTreeSet::new();
+        for chain in &self.element_chains {
+            chain.validate(m)?;
+            if !chains.insert(&chain.id) {
+                return Err(bad("duplicate element-chain ID"));
+            }
+            for e in [&chain.upstream, &chain.downstream].into_iter().flatten() {
+                add_bases(
+                    &mut extracted,
+                    location_bases(&m.features[e.feature_index].location)?,
+                )?;
+            }
+        }
+        let mut requirements = BTreeSet::new();
+        for part in &self.required_parts {
+            part.validate()?;
+            if !requirements.insert(&part.id) {
+                return Err(bad("duplicate required-part ID"));
+            }
+        }
         Ok(())
     }
 }
@@ -439,6 +498,7 @@ pub fn revision(m: &Molecule, o: &Options) -> Result<String, Error> {
     hash(&(
         ENGINE_VERSION,
         crate::verification::ENGINE_VERSION,
+        crate::sequence::search::SEARCH_ENGINE_VERSION,
         m,
         o,
         code_pins(m, o)?,
@@ -452,6 +512,11 @@ struct Checks<'a> {
     budget: Budget,
     frames: BTreeMap<usize, cds::CodingFrame>,
     assumptions: BTreeSet<usize>,
+    reference_facts: BTreeMap<String, ReferenceFacts>,
+}
+struct ReferenceFacts {
+    pin_matches: bool,
+    concrete: bool,
 }
 impl Checks<'_> {
     fn assumed(&self, index: usize) -> bool {
@@ -479,7 +544,7 @@ impl Checks<'_> {
                         .into(),
             },
             Citation {
-                source: "collagene:construct-qc-1".into(),
+                source: format!("collagene:{ENGINE_VERSION}"),
                 locator: format!("{rule:?}: exact declared structural predicate"),
             },
         ];
@@ -501,6 +566,33 @@ impl Checks<'_> {
         });
         Ok(())
     }
+    fn push_literal_finding(
+        &mut self,
+        rule: Rule,
+        verdict: Verdict,
+        coordinates: &[Location],
+        reason: &str,
+    ) -> Result<(), Error> {
+        if coordinates.len() > 16 || self.findings.len() >= 4096 {
+            return Err(Error::TooLarge);
+        }
+        let citations=vec![Citation {source:format!("collagene:{ENGINE_VERSION}"),locator:"Bounded canonical literal-reference search; declared role/cardinality only, not functional identity".into()}];
+        serde_json::to_writer(
+            &mut self.budget,
+            &(&rule, &verdict, coordinates, reason, &citations),
+        )
+        .map_err(|_| Error::TooLarge)?;
+        self.findings.push(Finding {
+            rule,
+            verdict,
+            feature_indices: vec![],
+            coordinates: coordinates.to_vec(),
+            reason: reason.into(),
+            citations,
+            under_declared_annotation_assumptions: false,
+        });
+        Ok(())
+    }
 }
 pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
     let context_revision = revision(m, o)?;
@@ -516,6 +608,25 @@ pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
         })
         .map(|a| a.feature_index)
         .collect();
+    // Each captured reference is hashed/classified once per job. Reusing one
+    // long reference across many tiny feature claims must not amplify that work.
+    let reference_facts = o
+        .references
+        .iter()
+        .map(|r| {
+            Ok((
+                r.id.clone(),
+                ReferenceFacts {
+                    pin_matches: r.sequence_revision == reference_revision(&r.sequence)?,
+                    concrete: r
+                        .sequence
+                        .as_str()
+                        .bytes()
+                        .all(|b| crate::sequence::analysis::base_mask(b).is_power_of_two()),
+                },
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, Error>>()?;
     let mut checks = Checks {
         m,
         o,
@@ -524,14 +635,17 @@ pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
         budget: Budget(MAX_REPORT_BYTES / 2),
         frames: BTreeMap::new(),
         assumptions,
+        reference_facts,
     };
     cds::inspect(&mut checks)?;
     geometry::inspect(&mut checks)?;
+    let element_chains = element_chain::inspect(&mut checks)?;
+    let required_parts = required_parts::inspect(&mut checks)?;
     checks.push(
         Rule::Scope,
         Verdict::Informational,
         &[],
-        "This foundation checks declared CDS, reference identity and explicit fusion/junction register only. Element-chain, initiation-context, required-parts, unannotated-ORF and history-derived junction checks are not evaluated. No annotation-role declaration verifies biological identity.",
+        "Checks cover declared CDS, reference identity, explicit fusion/junction register, declared flanking-element geometry and required literal-reference intervals. Initiation-context, unannotated-ORF and history-derived causal junction checks are not evaluated. No declaration or sequence match verifies biological role/function.",
     )?;
     let codes = code_pins(m, o)?;
     let references = o
@@ -556,6 +670,11 @@ pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
         codes,
         references,
         findings: checks.findings,
+        element_chains,
+        required_parts: required_parts.reports,
+        required_part_searches: required_parts.searches,
+        required_part_search_work: required_parts.work,
+        required_part_search_engine: crate::sequence::search::SEARCH_ENGINE_VERSION.into(),
         statement: STATEMENT.into(),
         report_revision: String::new(),
     };
@@ -567,19 +686,29 @@ pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
 impl Report {
     fn content_revision(&self) -> Result<String, Error> {
         hash(&(
-            &self.engine_version,
-            &self.context_revision,
-            &self.source_revision,
-            self.source_length,
-            self.source_feature_count,
-            self.source_topology,
-            &self.annotations_revision,
-            &self.options_revision,
-            &self.references_revision,
-            &self.codes,
-            &self.references,
-            &self.findings,
-            &self.statement,
+            (
+                &self.engine_version,
+                &self.context_revision,
+                &self.source_revision,
+                self.source_length,
+                self.source_feature_count,
+                self.source_topology,
+            ),
+            (
+                &self.annotations_revision,
+                &self.options_revision,
+                &self.references_revision,
+                &self.codes,
+                &self.references,
+            ),
+            (
+                &self.element_chains,
+                &self.required_parts,
+                &self.required_part_searches,
+                self.required_part_search_work,
+                &self.required_part_search_engine,
+            ),
+            (&self.findings, &self.statement),
         ))
     }
     /// Shape/content integrity only; a restored report has no current authority.
@@ -591,6 +720,11 @@ impl Report {
             || self.references.len() > 256
             || self.codes.len() > 32
             || self.codes.is_empty()
+            || self.element_chains.len() > 64
+            || self.required_parts.len() > 64
+            || self.required_part_searches.len() > 64
+            || self.required_part_search_work > 50_000_000
+            || self.required_part_search_engine != crate::sequence::search::SEARCH_ENGINE_VERSION
             || !(1..=MAX_BASES).contains(&self.source_length)
             || self.source_feature_count > MAX_FEATURES
             || [
@@ -607,8 +741,8 @@ impl Report {
             return Err(bad("report version/shape/content differs"));
         }
         for f in &self.findings {
-            if f.feature_indices.len() != f.coordinates.len()
-                || f.feature_indices.len() > 2
+            if f.feature_indices.len() > 3
+                || f.coordinates.len() > 16
                 || !text(&f.reason, 4096)
                 || f.citations.is_empty()
                 || f.citations.len() > 8
@@ -623,6 +757,8 @@ impl Report {
                 location.validate(self.source_length)?;
             }
         }
+        required_parts::validate_reports(self)?;
+        element_chain::validate_reports(self)?;
         let mut ids = BTreeSet::new();
         for c in &self.codes {
             if c.descriptor.id == 0

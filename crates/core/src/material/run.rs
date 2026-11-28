@@ -224,8 +224,14 @@ pub struct FreshMaterial {
     findings: Vec<String>,
     findings_total: usize,
     findings_truncated: bool,
+    reaction_conditions: Vec<crate::cloning::restriction::conditions::source::SourceReport>,
 }
 impl FreshMaterial {
+    pub fn reaction_conditions(
+        &self,
+    ) -> &[crate::cloning::restriction::conditions::source::SourceReport] {
+        &self.reaction_conditions
+    }
     pub fn reference(&self) -> &Molecule {
         &self.reference
     }
@@ -259,31 +265,45 @@ impl MaterialOrigin {
     /// Execute the unchanged closed native recipe; imported state is never
     /// deserialized into material. This does not attest an unrelated workspace.
     pub fn replay(&self, source: &Molecule) -> Result<FreshMaterial, Error> {
-        let (reference, tracked, incomplete, findings, total, prior_truncated) = match self {
-            Self::Run(origin) => {
-                let fresh = crate::material::capsule::replay(origin, source)?;
-                let report = fresh.evidence.decode_report()?;
-                let mut findings = report.findings;
-                findings.extend(
-                    report
-                        .assumptions
-                        .into_iter()
-                        .map(|s| format!("Origin assumption: {s}")),
-                );
-                let total = findings.len();
-                (
-                    fresh.reference,
-                    fresh.tracked,
-                    fresh.incomplete,
-                    findings,
-                    total,
-                    false,
-                )
-            }
-            Self::Derived(origin) => {
-                crate::material::derivation::replay(origin, source)?.into_parts()
-            }
-        };
+        let (reference, tracked, incomplete, findings, total, prior_truncated, reaction_conditions) =
+            match self {
+                Self::Run(origin) => {
+                    let fresh = crate::material::capsule::replay(origin, source)?;
+                    let report = fresh.evidence.decode_report()?;
+                    let reaction_conditions =
+                        crate::material::derivation::reaction_conditions::from_origin_report(
+                            origin, &report,
+                        )?;
+                    let mut findings = report.findings;
+                    findings.extend(
+                        report
+                            .assumptions
+                            .into_iter()
+                            .map(|s| format!("Origin assumption: {s}")),
+                    );
+                    let total = findings.len();
+                    (
+                        fresh.reference,
+                        fresh.tracked,
+                        fresh.incomplete,
+                        findings,
+                        total,
+                        false,
+                        reaction_conditions,
+                    )
+                }
+                Self::Derived(origin) => {
+                    let fresh = crate::material::derivation::replay(origin, source)?;
+                    let conditions = crate::material::derivation::reaction_conditions::collect(
+                        fresh.reaction_conditions(),
+                    )?;
+                    let (reference, tracked, incomplete, findings, total, truncated) =
+                        fresh.into_parts();
+                    (
+                        reference, tracked, incomplete, findings, total, truncated, conditions,
+                    )
+                }
+            };
         let mut truncated = prior_truncated || findings.len() > 128;
         let findings = findings
             .into_iter()
@@ -298,6 +318,7 @@ impl MaterialOrigin {
             })
             .collect();
         Ok(FreshMaterial {
+            reaction_conditions,
             reference,
             tracked,
             incomplete,

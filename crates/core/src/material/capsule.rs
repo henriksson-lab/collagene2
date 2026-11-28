@@ -462,7 +462,7 @@ fn walk<'a>(
                     origin.as_ref(),
                     crate::material::derivation::MAX_CAPSULE_BYTES,
                 )?;
-                if origin.schema_version != 2 {
+                if origin.schema_version != 3 {
                     return Err(bad("unsupported material capsule schema"));
                 }
                 run_material::event_shape(&origin.product)?;
@@ -1027,7 +1027,7 @@ pub fn documentary_origins(
                     return Err(bad("root kind differs"));
                 };
                 run_material::MaterialOrigin::Derived(crate::material::derivation::Capsule {
-                    schema_version: 2,
+                    schema_version: 3,
                     product: product.clone(),
                     record_bytes: workspace.attachments[&hash].bytes.clone(),
                     source_snapshots: record

@@ -274,6 +274,7 @@ fn independent_actual_bottom_target_verifies_only_after_native_reconstruction_di
                 origin: capsule,
             },
             Operation::CatalogDigest {
+                conditions: None,
                 template: Source::Step(0),
                 selection: eco(),
                 fragment_index: 1,
@@ -439,6 +440,7 @@ fn derived_catalog_fragment_uses_actual_new_native_source_domain_after_restart()
             origin: derivation::SourceOrigin::Saved(origin),
         }],
         derivation: derivation::Derivation::CatalogDigest {
+            conditions: None,
             selection: eco(),
             options: Default::default(),
             fragment_index: 1,

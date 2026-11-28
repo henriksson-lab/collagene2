@@ -11,6 +11,8 @@ pub(crate) mod codon_design;
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod codon_preferences;
 #[cfg(target_arch = "wasm32")]
+pub(crate) mod construct_qc_elements;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod construct_qc_model;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod construct_qc_view;

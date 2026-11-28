@@ -5,6 +5,36 @@ use collagene_core::{chemistry::tracked_duplex as modified_duplex, verification}
 
 use leptos::prelude::*;
 
+fn conditions_description(
+    options: Option<&collagene_core::cloning::restriction::conditions::ReactionConditions>,
+) -> String {
+    let Some(options) = options else {
+        return "No supplier reaction setup declared; formulation, buffer, temperature and duration remain unassessed.".into();
+    };
+    let choices = options
+        .formulations
+        .iter()
+        .map(|choice| {
+            format!(
+                "{}: {}",
+                choice.enzyme_id,
+                choice
+                    .formulation_id
+                    .as_deref()
+                    .unwrap_or("no formulation selected")
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "Declared setup: {choices}; {} at {:.3} °C for {} minutes; minimum recorded activity {}%. Fresh verification assesses the exact request. Star activity, duration suitability and actual cleavage are not established.",
+        options.buffer,
+        options.temperature_milli_c as f64 / 1000.0,
+        options.incubation_minutes,
+        options.minimum_activity_percent
+    )
+}
+
 pub(crate) fn describe_step(step: &Operation) -> String {
     let source = |s: &Source| match s {
         Source::Input(id) => format!("input {id}"),
@@ -47,11 +77,12 @@ pub(crate) fn describe_step(step: &Operation) -> String {
             origin.selection.step_index + 1
         ),
         Operation::CatalogDigest {
+            conditions,
             template,
             selection,
             fragment_index,
         } => format!(
-            "Catalog-pinned complete digest of {}\nEnzymes: {}\nCatalog edition: {}\nZero-based fragment: {}\nCleavage assumes compatible conditions and no blocking methylation; no experimental success is asserted.",
+            "Catalog-pinned complete digest of {}\nEnzymes: {}\nCatalog edition: {}\nZero-based fragment: {}\nCleavage assumes compatible conditions and no blocking methylation; no experimental success is asserted.\n{}",
             source(template),
             selection
                 .enzymes
@@ -60,7 +91,8 @@ pub(crate) fn describe_step(step: &Operation) -> String {
                 .collect::<Vec<_>>()
                 .join(", "),
             selection.catalog_edition,
-            fragment_index
+            fragment_index,
+            conditions_description(conditions.as_ref()),
         ),
         Operation::DeclareSourceTermini {
             template,
@@ -157,12 +189,13 @@ pub(crate) fn describe_step(step: &Operation) -> String {
             crate::cloning::methods::checked_cloning::state_label(assumptions.cpg)
         ),
         Operation::CheckedDigest {
+            conditions,
             template,
             selection,
             options,
             fragment_index,
         } => format!(
-            "Checked restriction digest of {}\nEnzymes: {}\nPinned positional supplier profile revision: {}\nSelect fragment {} in ascending reference top-cut order. Unknown or impaired sites withhold undetermined products; blocked sites remain uncut under this model. Reagent conditions and experimental success remain outside the check.",
+            "Checked restriction digest of {}\nEnzymes: {}\nPinned positional supplier profile revision: {}\nSelect fragment {} in ascending reference top-cut order. Unknown or impaired sites withhold undetermined products; blocked sites remain uncut under this model. Supplier conditions are assessed as separate documentary evidence; experimental success remains unestablished.\n{}",
             source(template),
             selection
                 .enzymes
@@ -180,7 +213,8 @@ pub(crate) fn describe_step(step: &Operation) -> String {
             fragment_index
                 .checked_add(1)
                 .map(|n| n.to_string())
-                .unwrap_or_else(|| "out of range".into())
+                .unwrap_or_else(|| "out of range".into()),
+            conditions_description(conditions.as_ref()),
         ),
         Operation::Tail3Prime { template, base } => format!(
             "Substrate: {}\nAdd one non-templated {} to both actual 3′ ends. Source end chemistry and nicks are retained; enzyme activity and completion are assumptions.",

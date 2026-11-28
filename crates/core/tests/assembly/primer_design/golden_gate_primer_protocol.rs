@@ -106,6 +106,7 @@ fn new_preparation_cannot_hide_inside_an_old_recipe_envelope() {
                 input_id: "source".into(),
                 reverse: false,
                 preparation: Preparation::PcrCatalogDigest {
+                    conditions: None,
                     forward: Primer::new("F", "ACGACCCC", "GGTCTCA").unwrap(),
                     reverse: Primer::new("R", "GTTACCCC", "GGTCTCA").unwrap(),
                     selection: catalog_digest::select(

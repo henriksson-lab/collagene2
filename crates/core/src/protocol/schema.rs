@@ -2,8 +2,8 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 130;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
+pub const WORKER_SCHEMA_VERSION: u16 = 131;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisJob {

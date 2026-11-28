@@ -171,6 +171,7 @@ fn cut(incomplete: bool) -> (Molecule, MaterialOrigin) {
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),
                 fragment_index: if incomplete { 0 } else { 1 },

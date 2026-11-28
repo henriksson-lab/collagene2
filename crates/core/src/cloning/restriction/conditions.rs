@@ -1,6 +1,8 @@
 //! Exact formulation/unit-assay documentary assessment. This does not validate
 //! digestion, predict kinetics/products or assess methylation. `source_revision`
 //! binds catalogue source evidence, never a molecule or experimental sample.
+pub mod source;
+
 use super::catalog::{CatalogSelection, catalog};
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};

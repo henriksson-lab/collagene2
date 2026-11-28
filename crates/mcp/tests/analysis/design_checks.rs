@@ -150,7 +150,7 @@ async fn standard_discovery_and_fragment_checks_preserve_profile_scope_and_origi
     let (client, service, document) = setup(&molecule).await;
     let before = call(&client, "list_documents", json!({})).await;
     let catalogue = call(&client, "list_assembly_standards", json!({})).await;
-    assert_eq!(catalogue["profile_count"], 1);
+    assert_eq!(catalogue["profile_count"], 2);
     let profile = &catalogue["profiles"][0];
     assert_eq!(profile["profile_id"], "biobrick-rfc10-part-sequence-2007");
     let parts = json!([{"id":"selected-part","document":document,"start":4,"length":formatted.len(),"reverse":false,"slot":"noncoding","body_start":22,"body_end":34}]);
@@ -316,6 +316,249 @@ async fn collection_search_pages_all_bound_sites_and_keeps_mismatch_thermodynami
     let mut unsupported = arguments;
     unsupported["options"]["gap_open"] = json!(-2);
     reject(&client, "search_oligo_collection", unsupported).await;
+    assert_eq!(call(&client, "list_documents", json!({})).await, before);
+    client.cancel().await.unwrap();
+    service.await.unwrap();
+}
+
+fn declared_chain_options(molecule: &Molecule) -> construct_qc::Options {
+    use construct_qc::{
+        element_chain::{ChainElement, ElementChain, ElementRole},
+        required_parts::{RequiredOrientation, RequiredPart},
+    };
+    let mut options = construct_qc::Options::default();
+    options.annotations = molecule
+        .features
+        .iter()
+        .enumerate()
+        .map(|(i, feature)| construct_qc::AnnotationAssumption {
+            feature_index: i,
+            source_revision: molecule.revision(),
+            annotation_revision: construct_qc::annotation_revision(feature).unwrap(),
+            rationale: "Literal SDK fixture roles are explicit assumptions, not verified function."
+                .into(),
+        })
+        .collect();
+    for (id, dna) in [
+        ("upstream-reference", "CC"),
+        ("downstream-reference", "GG"),
+        ("ambiguous-motif", "ATG"),
+    ] {
+        let sequence = Sequence::dna(dna).unwrap();
+        options.references.push(construct_qc::ReferenceElement {
+            id: id.into(),
+            sequence_revision: construct_qc::reference_revision(&sequence).unwrap(),
+            sequence,
+            provenance: construct_qc::Provenance {
+                source_url: "https://example.test/literal-sdk-fixtures".into(),
+                accession: id.into(),
+                retrieved_on: "2026-11-29".into(),
+                license: "MIT".into(),
+            },
+        });
+    }
+    options.element_chains.push(ElementChain {
+        id: "declared-forward-chain".into(),
+        cds_feature: 0,
+        upstream: Some(ChainElement {
+            feature_index: 1,
+            reference_id: Some("upstream-reference".into()),
+            role: ElementRole::Promoter,
+        }),
+        downstream: Some(ChainElement {
+            feature_index: 2,
+            reference_id: Some("downstream-reference".into()),
+            role: ElementRole::Terminator,
+        }),
+        max_upstream_distance: Some(0),
+        max_downstream_distance: Some(0),
+    });
+    options.required_parts.push(RequiredPart {
+        id: "declared-literal-marker".into(),
+        role: "A literal interval label, not an origin/marker function claim".into(),
+        reference_id: "upstream-reference".into(),
+        minimum_copies: 1,
+        maximum_copies: Some(1),
+        orientation: RequiredOrientation::Forward,
+    });
+    options
+}
+
+#[tokio::test]
+async fn construct_element_sdk_retains_literal_counts_and_never_promotes_incomplete_search_to_absence()
+ {
+    use construct_qc::required_parts::{RequiredOrientation, RequiredPart};
+    let mut molecule = Molecule::dna(
+        "forward chain plus unresolved motif",
+        "CCATGAAATAAGGATN",
+        Topology::Linear,
+    )
+    .unwrap();
+    molecule.features = [
+        ("CDS", 2, 11),
+        ("misc_feature", 0, 2),
+        ("misc_feature", 11, 13),
+    ]
+    .into_iter()
+    .map(|(kind, start, end)| Feature {
+        kind: kind.into(),
+        location: Location::range(start, end),
+        qualifiers: vec![],
+        needs_review: false,
+    })
+    .collect();
+    let options = declared_chain_options(&molecule);
+    assert_eq!(options.schema_version, 2);
+    let (client, service, document) = setup(&molecule).await;
+    let before = call(&client, "list_documents", json!({})).await;
+    let original = call(
+        &client,
+        "check_construct_qc",
+        json!({"document":document,"options":options,"max_findings":100}),
+    )
+    .await;
+    let full = artifact(&client, &original["artifact_id"]).await;
+    for container in [&original, &full] {
+        for forbidden in [
+            "overall_pass",
+            "overall_verdict",
+            "verdict",
+            "success",
+            "pass",
+        ] {
+            assert!(
+                container.get(forbidden).is_none(),
+                "No global biological verdict: {forbidden}"
+            );
+        }
+        assert_eq!(container["statement"], construct_qc::STATEMENT);
+    }
+    let report: construct_qc::Report = serde_json::from_value(full).unwrap();
+    report.validate_for(&molecule, &options).unwrap();
+    report
+        .validate_binding(original["context_revision"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(
+        report.element_chains[0].verdict,
+        construct_qc::Verdict::Pass
+    );
+    assert_eq!(report.element_chains[0].upstream.distance_bases, Some(0));
+    assert_eq!(report.element_chains[0].downstream.distance_bases, Some(0));
+    assert_eq!(
+        report.required_parts[0].verdict,
+        construct_qc::Verdict::Pass
+    );
+    assert_eq!(
+        (
+            report.required_parts[0].certain_copies,
+            report.required_parts[0].possible_copies
+        ),
+        (1, 1)
+    );
+    let search = &report.required_part_searches[report.required_parts[0].search_index];
+    assert!(search.complete);
+    assert!(
+        search
+            .matches
+            .iter()
+            .any(|hit| hit.reverse == Some(false) && hit.coordinates == [Location::range(0, 2)])
+    );
+
+    let mut limited_options = options.clone();
+    limited_options.required_part_limits.max_work = 1;
+    let limited = call(
+        &client,
+        "check_construct_qc",
+        json!({"document":document,"options":limited_options,"max_findings":100}),
+    )
+    .await;
+    let limited_report: construct_qc::Report =
+        serde_json::from_value(artifact(&client, &limited["artifact_id"]).await).unwrap();
+    limited_report
+        .validate_for(&molecule, &limited_options)
+        .unwrap();
+    assert!(!limited_report.required_part_searches[0].complete);
+    assert_eq!(limited_report.required_parts[0].possible_copies, 0);
+    assert_eq!(
+        limited_report.required_parts[0].verdict,
+        construct_qc::Verdict::Indeterminate
+    );
+    assert_eq!(
+        limited_report.element_chains[0].verdict,
+        construct_qc::Verdict::Pass
+    );
+    assert_ne!(limited["context_revision"], original["context_revision"]);
+
+    let mut ambiguous_options = options.clone();
+    ambiguous_options.required_parts.push(RequiredPart {
+        id: "uncertain-forward-motif".into(),
+        role: "Literal uncertainty fixture".into(),
+        reference_id: "ambiguous-motif".into(),
+        minimum_copies: 1,
+        maximum_copies: Some(2),
+        orientation: RequiredOrientation::Forward,
+    });
+    let ambiguous = call(
+        &client,
+        "check_construct_qc",
+        json!({"document":document,"options":ambiguous_options,"max_findings":100}),
+    )
+    .await;
+    let ambiguous_report: construct_qc::Report =
+        serde_json::from_value(artifact(&client, &ambiguous["artifact_id"]).await).unwrap();
+    ambiguous_report
+        .validate_for(&molecule, &ambiguous_options)
+        .unwrap();
+    let uncertain = &ambiguous_report.required_parts[1];
+    assert!(ambiguous_report.required_part_searches[uncertain.search_index].complete);
+    assert_eq!(
+        (uncertain.certain_copies, uncertain.possible_copies),
+        (1, 2)
+    );
+    assert_eq!(uncertain.verdict, construct_qc::Verdict::Indeterminate);
+
+    let mut changed_options = options.clone();
+    changed_options.element_chains[0].upstream = None;
+    let changed = call(
+        &client,
+        "check_construct_qc",
+        json!({"document":document,"options":changed_options,"max_findings":100}),
+    )
+    .await;
+    let changed_report: construct_qc::Report =
+        serde_json::from_value(artifact(&client, &changed["artifact_id"]).await).unwrap();
+    changed_report
+        .validate_for(&molecule, &changed_options)
+        .unwrap();
+    assert_eq!(
+        changed_report.element_chains[0].verdict,
+        construct_qc::Verdict::Indeterminate
+    );
+    assert!(
+        report
+            .validate_binding(changed["context_revision"].as_str().unwrap())
+            .is_err()
+    );
+    assert!(report.validate_for(&molecule, &changed_options).is_err());
+    let mut changed_source = molecule.clone();
+    changed_source.sequence = Sequence::dna("CCATGAAATAAGGATT").unwrap();
+    assert!(report.validate_for(&changed_source, &options).is_err());
+    let mut stale_document = document.clone();
+    stale_document["revision"] = json!(changed_source.revision());
+    reject(
+        &client,
+        "check_construct_qc",
+        json!({"document":stale_document,"options":options}),
+    )
+    .await;
+    let mut old_format = serde_json::to_value(&options).unwrap();
+    old_format["schema_version"] = 1.into();
+    reject(
+        &client,
+        "check_construct_qc",
+        json!({"document":document,"options":old_format}),
+    )
+    .await;
     assert_eq!(call(&client, "list_documents", json!({})).await, before);
     client.cancel().await.unwrap();
     service.await.unwrap();

@@ -69,6 +69,7 @@ fn recipe(request: Extension) -> ligation_recipe::Recipe {
                 input_id: "source".into(),
                 preparation: Preparation::OverlapExtensionPcrCatalogDigest {
                     request,
+                    conditions: None,
                     selection: selection(),
                     fragment_index: 1,
                     repair: Some(EndRepairMethod::FillFivePrimeOverhangs),

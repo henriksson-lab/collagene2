@@ -107,6 +107,7 @@ fn derived_origin_and_worker_roundtrip_keep_exact_export_binding() {
             origin: req.recipe.origin.clone(),
         }],
         derivation: d::Derivation::CatalogDigest {
+            conditions: None,
             selection: req.recipe.selection.clone(),
             options: req.recipe.options.clone(),
             fragment_index: 1,

@@ -35,6 +35,7 @@ fn fixture() -> (Molecule, DesignPlan) {
                 },
             },
             Operation::CheckedDigest {
+                conditions: None,
                 selection: checked_selection(vec!["EcoRI".into()]),
                 options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),

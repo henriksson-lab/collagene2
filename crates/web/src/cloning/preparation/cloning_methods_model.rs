@@ -258,6 +258,7 @@ pub struct OverlapInput {
     pub overlap_extension_pcr: Option<OverlapExtensionPcrInput>,
     #[serde(deserialize_with = "required_option")]
     pub catalog_selection: Option<collagene_core::cloning::restriction::catalog::CatalogSelection>,
+    pub reaction_conditions: crate::restriction::reaction_conditions_model::Draft,
     pub left_terminus: Terminus,
     pub right_terminus: Terminus,
     pub enzymes: String,
@@ -346,6 +347,7 @@ impl Default for OverlapInput {
             preparation: OverlapPreparation::WholeLinear,
             overlap_extension_pcr: None,
             catalog_selection: None,
+            reaction_conditions: crate::restriction::reaction_conditions_model::Draft::default(),
             left_terminus: Terminus::UNKNOWN,
             right_terminus: Terminus::UNKNOWN,
             enzymes: "EcoRV".into(),

@@ -5295,3 +5295,56 @@ thermodynamic reference cases and web input/lifecycle models. Relevant source wa
 formatted once per coherent edit/correction batch; the layout audit has no
 violations or warnings. No browser or application HTTP checks were run.
 [Current integration evidence](audits/design-checks-current-integration.json).
+
+### Connected reaction-retention, QC-element and RFC1000 batch
+
+Current source now carries explicit supplier choices through catalog/checked
+digest operations and all catalog-digest-bearing assembly preparations, including
+PCR, mismatch-PCR and overlap-extension-PCR chains. Fresh verification binds
+documentary evidence to the actual source and physical material entering each
+digest. Unresolved declared conditions remain incomplete while available geometry
+and independent target comparison are retained. Native opened-fragment derivations
+preserve choices and recompute bounded ancestry evidence; HTML/PDF protocols
+distinguish current reaction evidence from originating provenance. No-choice,
+uncatalogued-digest and Golden Gate mixture scopes are explicit. This adds no
+cleavage, kinetics or experimental-success prediction. Broader formulations,
+source-host presets and appropriately supported star facts remain open.
+
+The same batch extends the current QC options/engine to version 2 with declared
+CDS-flanking element chains and literal reference-copy requirements. Structural
+strand/order/distance predicates require current annotation assumptions and pinned
+reference identity. Searches share bounded work and retained matches; incomplete,
+ambiguous and missing-reference cases stay indeterminate. Remaining QC gaps are
+initiation context, unannotated ORFs, causal junction history and sourced vector
+profiles. [QC scope](audits/construct-qc-elements-current.md).
+
+RFC1000 Level-0 documented bodies are the second admitted assembly profile. It
+captures four declared role/fusion pairs, CDS `ATG` overlap and BsaI/SapI absence,
+with empty external additions and local adjacent-role subpaths. It does not invent
+vector clamps, full transcription-unit compliance or higher assembly levels.
+Other toolkit profiles and assembly-wizard/protocol grammar integration remain.
+[Profile admission](audits/rfc1000-level0-profile-current.md).
+
+Current internal versions: worker 131, candidate 32, workspace plan 30, active
+assembly draft 21, batch record 4, scientific engine 36, material derivation and
+digest export 3. Unsupported superseded internal versions reject directly; no
+fallback reader, adapter or migration is added. Source authoring is complete and
+combined native/WASM checks are running. Authored scientific, replay, transport,
+UI-state and actual MCP SDK fixtures remain unexecuted until the shared build is
+available. No browser or application HTTP checks have run.
+
+Connected review corrected ancestry collection to follow the selected operation's
+actual typed dependency graph, excluding disconnected earlier digests and retaining
+shared ancestors once. The native QC19, reaction-editor5, digest-handoff5 and
+analysis-SDK4 cases pass. A new SDK comparison was corrected to compare explicit
+sequence/physical-state evidence while retaining distinct plan/provenance identities.
+Final compiler and remaining scientific/replay/protocol checks are in progress.
+
+
+The connected batch is now verified: final native and WASM checks pass, and all
+86 unique focused cases pass. This includes exact selected-path ancestry,
+legitimate renamed constructs, current binary formats, independent profile/QC
+fixtures, actual in-memory MCP calls, independently decoded PDF output and
+source-bound web state/handoffs. The affected export paths and
+current-version fixtures were corrected and rechecked; unrelated passing cases
+were retained. No browser or application HTTP checks ran. [Integration evidence](audits/reaction-elements-current-integration.json).

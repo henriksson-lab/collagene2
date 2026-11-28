@@ -93,6 +93,7 @@ fn finalize(
                 )),
             }],
             derivation: d::Derivation::CatalogDigest {
+                conditions: None,
                 selection: enzyme(),
                 options: Default::default(),
                 fragment_index: 0,

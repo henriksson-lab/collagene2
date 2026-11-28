@@ -323,6 +323,7 @@ fn documentary_stage_catalog_context_and_source_binding_tampering_is_rejected() 
     }
     // The exact source/pinned request also compiles as a normal native graph.
     let prep = assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+        conditions: None,
         request: request().preparation,
         selection: request().selection,
         fragment_index: 1,

@@ -94,6 +94,7 @@ fn digest_fixture() -> (Workspace, native::Capsule, EventBinding) {
                 origin: native::SourceOrigin::Saved(MaterialOrigin::Run(origin)),
             }],
             derivation: native::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
                 options: Default::default(),
                 fragment_index: 1,
@@ -312,8 +313,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::schema::CANDIDATE_SCHEMA_VERSION, 31);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 29);
+    assert_eq!(protocol::schema::CANDIDATE_SCHEMA_VERSION, 32);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 30);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 26);

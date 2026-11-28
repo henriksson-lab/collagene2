@@ -157,6 +157,7 @@ fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
                 Preparation::FromRun {
                     origin,
                     preparation: RunPreparation::CatalogDigest {
+                        conditions: None,
                         selection: selected("EcoRI"),
                         fragment_index: 0,
                         repair: None,
@@ -413,6 +414,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                     preparation: Preparation::FromRun {
                         origin,
                         preparation: RunPreparation::PcrCatalogDigest {
+                            conditions: None,
                             forward: Primer::new("AddedSiteF", "AAA", "CCCGGG").unwrap(),
                             reverse: Primer::new("AddedSiteR", "GGG", "CCCGGG").unwrap(),
                             selection: selected("SmaI"),

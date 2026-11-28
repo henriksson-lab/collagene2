@@ -131,6 +131,9 @@ pub enum Operation {
         template: Source,
         selection: crate::cloning::restriction::catalog::CatalogSelection,
         options: crate::cloning::restriction::inspection::InspectionOptions,
+        #[serde(deserialize_with = "crate::encoding::required_option")]
+        #[cfg_attr(feature = "json-schema", schemars(required))]
+        conditions: Option<crate::cloning::restriction::conditions::ReactionConditions>,
         fragment_index: usize,
     },
     /// Bounded reference-sequence exchange only. No chemical duplex state is established.
@@ -172,6 +175,9 @@ pub enum Operation {
     CatalogDigest {
         template: Source,
         selection: crate::cloning::restriction::catalog::CatalogSelection,
+        #[serde(deserialize_with = "crate::encoding::required_option")]
+        #[cfg_attr(feature = "json-schema", schemars(required))]
+        conditions: Option<crate::cloning::restriction::conditions::ReactionConditions>,
         fragment_index: usize,
     },
     /// Explicit path identity checked against the same fresh native enumeration.

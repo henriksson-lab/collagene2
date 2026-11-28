@@ -8,6 +8,29 @@ pub(crate) struct Draft {
     pub assumed: Vec<usize>,
 }
 impl Draft {
+    pub fn remove_reference(&mut self, id: &str) -> Result<(), String> {
+        if self
+            .options
+            .reference_claims
+            .iter()
+            .any(|r| r.reference_id == id)
+            || self
+                .options
+                .required_parts
+                .iter()
+                .any(|r| r.reference_id == id)
+            || self.options.element_chains.iter().any(|chain| {
+                [&chain.upstream, &chain.downstream]
+                    .into_iter()
+                    .flatten()
+                    .any(|element| element.reference_id.as_deref() == Some(id))
+            })
+        {
+            return Err("Remove the dependent reference comparisons, chains or copy requirements before deleting this reference.".into());
+        }
+        self.options.references.retain(|r| r.id != id);
+        Ok(())
+    }
     pub fn options_for(&self, m: &Molecule) -> Result<native::Options, String> {
         let mut options = self.options.clone();
         options.annotations.clear();

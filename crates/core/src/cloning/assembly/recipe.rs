@@ -11,7 +11,7 @@ use crate::{
 use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-pub const ENGINE_VERSION: &str = "overlap-recipe-1";
+pub const ENGINE_VERSION: &str = "overlap-recipe-2";
 pub const MAX_ROWS: usize = 128;
 const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
@@ -25,7 +25,7 @@ dto! {pub enum OverlapFinishing {
     HomologyAssembly {policy:crate::cloning::overlap::assembly::Options},
     HomologyAnnealing {policy:crate::cloning::overlap::annealing::Options},
 }}
-dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::material::capsule::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material::derivation::Capsule,preparation:RunPreparation}}}
+dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::material::capsule::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material::derivation::Capsule,preparation:RunPreparation}}}
 impl Preparation {
     /// Literal catalog pin used by a preparation, including a flat saved-origin
     /// child. This is structural lookup only, never replay or cleavage authority.
@@ -47,6 +47,29 @@ impl Preparation {
                 }
                 _ => None,
             },
+            _ => None,
+        }
+    }
+    /// Explicit documentary choices; absence does not imply supplier compatibility.
+    pub fn reaction_conditions(
+        &self,
+    ) -> Option<&crate::cloning::restriction::conditions::ReactionConditions> {
+        match self {
+            Self::CatalogDigest { conditions, .. }
+            | Self::PcrCatalogDigest { conditions, .. }
+            | Self::MismatchPcrCatalogDigest { conditions, .. }
+            | Self::OverlapExtensionPcrCatalogDigest { conditions, .. } => conditions.as_ref(),
+            Self::FromRun { preparation, .. } | Self::FromDerived { preparation, .. } => {
+                match preparation {
+                    RunPreparation::CatalogDigest { conditions, .. }
+                    | RunPreparation::PcrCatalogDigest { conditions, .. }
+                    | RunPreparation::MismatchPcrCatalogDigest { conditions, .. }
+                    | RunPreparation::OverlapExtensionPcrCatalogDigest { conditions, .. } => {
+                        conditions.as_ref()
+                    }
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
@@ -85,7 +108,7 @@ impl Preparation {
         }
     }
 }
-dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
+dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]conditions:Option<crate::cloning::restriction::conditions::ReactionConditions>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 /// Actual cleavage model selected by the compiling workflow, never inferred from metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -98,16 +121,19 @@ fn digest_operation(
     selection: crate::cloning::restriction::catalog::CatalogSelection,
     fragment_index: usize,
     policy: CleavagePolicy,
+    conditions: Option<crate::cloning::restriction::conditions::ReactionConditions>,
 ) -> Operation {
     match policy {
         CleavagePolicy::AssumedComplete => Operation::CatalogDigest {
             template,
             selection,
+            conditions,
             fragment_index,
         },
         CleavagePolicy::PositionalChecked => Operation::CheckedDigest {
             template,
             selection,
+            conditions,
             options: crate::chemistry::tracked_duplex::checked_inspection_options(),
             fragment_index,
         },
@@ -137,9 +163,33 @@ impl RunPreparation {
     /// chemistry restoration, or scientific computation.
     pub(crate) fn preparation(&self) -> Result<Preparation, Error> {
         match self {
+            Self::CatalogDigest {
+                selection,
+                conditions: Some(conditions),
+                ..
+            }
+            | Self::PcrCatalogDigest {
+                selection,
+                conditions: Some(conditions),
+                ..
+            }
+            | Self::MismatchPcrCatalogDigest {
+                selection,
+                conditions: Some(conditions),
+                ..
+            }
+            | Self::OverlapExtensionPcrCatalogDigest {
+                selection,
+                conditions: Some(conditions),
+                ..
+            } => conditions.validate(selection)?,
+            _ => {}
+        }
+        match self {
             Self::OverlapExtensionPcrCatalogDigest {
                 request,
                 selection,
+                conditions,
                 fragment_index,
                 repair,
             } => {
@@ -147,6 +197,7 @@ impl RunPreparation {
                 Ok(Preparation::OverlapExtensionPcrCatalogDigest {
                     request: request.clone(),
                     selection: selection.clone(),
+                    conditions: conditions.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
                 })
@@ -178,6 +229,7 @@ impl RunPreparation {
             }
             Self::CatalogDigest {
                 selection,
+                conditions,
                 fragment_index,
                 repair,
             } => {
@@ -187,6 +239,7 @@ impl RunPreparation {
                 }
                 Ok(Preparation::CatalogDigest {
                     selection: selection.clone(),
+                    conditions: conditions.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
                 })
@@ -196,6 +249,7 @@ impl RunPreparation {
                 reverse,
                 options,
                 selection,
+                conditions,
                 fragment_index,
                 repair,
             } => {
@@ -205,6 +259,7 @@ impl RunPreparation {
                     reverse: reverse.clone(),
                     options: options.clone(),
                     selection: selection.clone(),
+                    conditions: conditions.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
                 })
@@ -239,6 +294,7 @@ impl RunPreparation {
                 reverse,
                 template_strand,
                 selection,
+                conditions,
                 fragment_index,
                 repair,
             } => {
@@ -253,6 +309,7 @@ impl RunPreparation {
                     reverse: reverse.clone(),
                     template_strand: *template_strand,
                     selection: selection.clone(),
+                    conditions: conditions.clone(),
                     fragment_index: *fragment_index,
                     repair: *repair,
                 })
@@ -1082,6 +1139,12 @@ fn preparation_cost(
     pinned_catalog: Option<&crate::cloning::restriction::catalog::catalog::Catalog>,
     frame: Option<crate::cloning::pcr::source::Template<'_>>,
 ) -> Result<(usize, usize), Error> {
+    if let Some(conditions) = preparation.reaction_conditions() {
+        conditions.validate_for(
+            pinned_catalog.ok_or(Error::TooLarge)?,
+            preparation.catalog_selection().ok_or(Error::TooLarge)?,
+        )?;
+    }
     let source_bases = frame.map_or(m.sequence.len(), |v| v.sequence.len());
     let comparison_bases = frame
         .map(|v| v.comparison_bases())
@@ -1094,6 +1157,7 @@ fn preparation_cost(
             selection,
             fragment_index,
             repair,
+            ..
         } => {
             overlap_extension_catalog_shape(request, selection, *fragment_index)?;
             let (pcr_work, extra) = request.work(source_bases)?;
@@ -1428,6 +1492,7 @@ pub(crate) fn preparation_steps(
             let mut repair_step = None;
             if let Preparation::OverlapExtensionPcrCatalogDigest {
                 selection,
+                conditions,
                 fragment_index,
                 repair,
                 ..
@@ -1439,6 +1504,7 @@ pub(crate) fn preparation_steps(
                     selection.clone(),
                     *fragment_index,
                     policy,
+                    conditions.clone(),
                 ));
                 prepared_source = Source::Step(index);
                 if let Some(method) = repair {
@@ -1489,6 +1555,7 @@ pub(crate) fn preparation_steps(
             }),
             Preparation::CatalogDigest {
                 selection,
+                conditions,
                 fragment_index,
                 ..
             } => Some(digest_operation(
@@ -1496,6 +1563,7 @@ pub(crate) fn preparation_steps(
                 selection.clone(),
                 *fragment_index,
                 policy,
+                conditions.clone(),
             )),
             Preparation::Digest {
                 enzymes,
@@ -1512,6 +1580,7 @@ pub(crate) fn preparation_steps(
                     starter_selection(enzymes)?,
                     *fragment_index,
                     policy,
+                    None,
                 ),
             }),
             Preparation::MismatchPcr {
@@ -1557,11 +1626,13 @@ pub(crate) fn preparation_steps(
         };
         if let Preparation::PcrCatalogDigest {
             selection,
+            conditions,
             fragment_index,
             ..
         }
         | Preparation::MismatchPcrCatalogDigest {
             selection,
+            conditions,
             fragment_index,
             ..
         } = preparation
@@ -1572,6 +1643,7 @@ pub(crate) fn preparation_steps(
                 selection.clone(),
                 *fragment_index,
                 policy,
+                conditions.clone(),
             ));
             prepared_source = Source::Step(index);
         }
@@ -1969,14 +2041,9 @@ impl Preview {
             collagene_model::bounds::model_preflight(&[model])?;
         }
         for report in &self.verification.step_reports {
+            report.validate_documentary()?;
             if report.step_index >= self.compiled.plan.steps.len() {
                 return Err(Error::TooLarge);
-            }
-            if let Some(product) = &report.topo {
-                crate::cloning::topo::worker::validate_projection(
-                    product,
-                    &product.batch_revision,
-                )?;
             }
         }
         validate_prepared_inputs(&self.compiled.plan.inputs, &self.compiled.plan.steps)?;

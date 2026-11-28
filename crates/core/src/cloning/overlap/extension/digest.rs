@@ -112,6 +112,7 @@ pub fn source_preflight(
         role: request.source_role.clone(),
         input_id: request.source_role.clone(),
         preparation: assembly_recipe::Preparation::OverlapExtensionPcrCatalogDigest {
+            conditions: None,
             request: request.preparation.clone(),
             selection: request.selection.clone(),
             fragment_index: 0,
@@ -170,6 +171,7 @@ pub fn inspect(
 ) -> Result<Preview, Error> {
     let context_revision = inspection_revision(source, origin, request, workspace)?;
     let mut findings=vec!["Fresh ideal exact-PCR branches, selected reciprocal extension and outer PCR, followed by the pinned assumed-complete digest. There is no intended target input. Geometry uniqueness is conditional on this model and is not experimental isolation or reaction success.".into()];
+    findings.push("Documentary reaction-condition choices are unsupported by this target-free inspection request; supply explicit conditions on the catalog-digest plan preparation for retention and protocol assessment. Geometry does not establish supplier/buffer/temperature/duration/star compatibility.".into());
     let material = origin.map(|origin| origin.replay(source)).transpose()?;
     let origin_evidence = origin
         .zip(material.as_ref())

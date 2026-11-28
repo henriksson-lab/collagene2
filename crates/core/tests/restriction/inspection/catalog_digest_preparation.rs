@@ -34,6 +34,7 @@ fn single(m: Molecule) -> (DesignPlan, Molecule) {
             target_revision: target.revision(),
             inputs: vec![input("original", m)],
             steps: vec![Operation::CatalogDigest {
+                conditions: None,
                 template: Source::Input("original".into()),
                 selection: selection(),
                 fragment_index: 0,
@@ -117,6 +118,7 @@ fn shared_pinned_preparation_feeds_actual_cohesive_ligation_against_independent_
                     role: id.into(),
                     input_id: id.into(),
                     preparation: a::Preparation::CatalogDigest {
+                        conditions: None,
                         selection: selection(),
                         fragment_index: 0,
                         repair: None,
@@ -176,6 +178,7 @@ fn optional_repair_is_explicit_and_uses_existing_tracked_end_transform() {
             role: "arm".into(),
             input_id: "a".into(),
             preparation: a::Preparation::CatalogDigest {
+                conditions: None,
                 selection: selection(),
                 fragment_index: 0,
                 repair: Some(EndRepairMethod::Blunt),
@@ -237,6 +240,7 @@ fn catalog_pin_does_not_upgrade_unknown_tracked_methylation_to_complete_cleavage
         target_revision: target.revision(),
         inputs: vec![input("original", source)],
         steps: vec![Operation::CatalogDigest {
+            conditions: None,
             template: Source::Input("original".into()),
             selection,
             fragment_index: 0,
@@ -283,6 +287,7 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
                 role: "reversed".into(),
                 input_id: "a".into(),
                 preparation: a::Preparation::CatalogDigest {
+                    conditions: None,
                     selection: selection(),
                     fragment_index: 0,
                     repair: None,

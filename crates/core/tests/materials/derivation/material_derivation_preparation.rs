@@ -230,6 +230,7 @@ fn fixture(incomplete: bool) -> Fixture {
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),
                 fragment_index: fragment_index,
@@ -504,6 +505,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&c, &[id]).unwrap(),
                 options: Default::default(),
                 fragment_index: 0,

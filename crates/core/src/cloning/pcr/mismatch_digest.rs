@@ -81,6 +81,7 @@ pub fn source_preflight(
         input_id: request.base.source_role.clone(),
         reverse: false,
         preparation: assembly_recipe::Preparation::MismatchPcrCatalogDigest {
+            conditions: None,
             forward: request.base.forward.clone(),
             reverse: request.base.reverse.clone(),
             options: request.pcr_options.clone(),
@@ -167,7 +168,10 @@ pub fn inspect(
         &request.pcr_options,
         native,
     )?;
-    let mut findings=vec!["Intentional-mismatch PCR under an explicit binding/search policy, followed by assumed-complete cleavage. Primer-encoded substitutions are conditional sequence predictions; amplification, modification susceptibility, reagent compatibility and laboratory success are not established. New PCR outer termini are 5′OH/3′OH and restriction cuts retain cleaved phosphate chemistry.".into()];
+    let mut findings = vec![
+        "Intentional-mismatch PCR under an explicit binding/search policy, followed by assumed-complete cleavage. Primer-encoded substitutions are conditional sequence predictions; amplification, modification susceptibility, reagent compatibility and laboratory success are not established. New PCR outer termini are 5′OH/3′OH and restriction cuts retain cleaved phosphate chemistry.".into(),
+        "Documentary reaction-condition choices are unsupported by this target-free inspection request; supply explicit conditions on the catalog-digest plan preparation for retention and protocol assessment. Geometry does not establish supplier/buffer/temperature/duration/star compatibility.".into(),
+    ];
     if origin.is_some() {
         findings.push(format!("Native origin findings: showing {} of {}; excerpt truncated: {}. Retained source limitations are not resolved by this PCR prediction.",origin_findings.len(),origin_findings_total,origin_findings_truncated));
         findings.extend(origin_findings.iter().cloned());

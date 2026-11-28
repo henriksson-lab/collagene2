@@ -1040,14 +1040,9 @@ impl Report {
             collagene_model::bounds::model_preflight(&[m])?;
         }
         for report in &self.verification.step_reports {
+            report.validate_documentary()?;
             if report.step_index >= 1000 {
                 return Err(Error::TooLarge);
-            }
-            if let Some(product) = &report.topo {
-                crate::cloning::topo::worker::validate_projection(
-                    product,
-                    &product.batch_revision,
-                )?;
             }
         }
         let presence = self.product_revision.is_some();

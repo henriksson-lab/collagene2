@@ -98,6 +98,7 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&catalog, &[enzyme]).unwrap(),
                 options: Default::default(),
                 fragment_index: 1,

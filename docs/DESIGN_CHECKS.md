@@ -22,18 +22,37 @@ stops and disagreement with a stored translation. Optional declarations add:
 - Fusion boundary register against an explicitly selected CDS and component.
 - Current junction register at a declared boundary. This does not prove that an
   earlier assembly or edit caused a frame change.
+- Structural element chains around a CDS. Declare upstream/downstream annotations,
+  their roles and pinned references, and optional distance limits. Current role
+  assumptions and exact reference identities are required before assessing strand,
+  order and spacing. A distance limit is your requirement, not a biological activity
+  threshold. Circular chains must fit within one turn without overlapping flanks.
+- Required literal reference intervals with minimum/optional maximum counts and
+  orientation. Capture references without selecting an annotation to use them for
+  these searches. Counts include overlapping literal occurrences; they do not
+  establish functional copy number. Palindromic intervals count once, with unresolved
+  direction. Ambiguity, unsupported references and incomplete searches stay visible
+  as indeterminate results. Search limits are shared across requirements.
 
 Read each finding's verdict and explanation independently. Missing or unsupported
 evidence yields indeterminate findings. There is no combined biological pass or
-expression prediction. Element-chain, initiation-context, required-parts,
-unannotated-ORF, causal assembly-junction and vector-class profiles remain planned.
+expression prediction. Initiation-context, unannotated-ORF, causal assembly-junction
+and vector-class profiles remain planned. Remove dependent declarations before
+deleting a pinned reference; removing one comparison does not delete its reference.
 
 ## Assembly standard format
 
 Choose **Assembly standards…**, an installed profile and a declared slot.
-The current profile covers **BioBrick RFC10 part-sequence format (2007)**, including
-its distinct coding/noncoding flanks, mandatory forbidden sites and advisory rules.
-It does not certify complete RFC10 vector, strain or registry compliance.
+Two deliberately scoped profiles are available:
+
+| Profile | Checked scope |
+| --- | --- |
+| BioBrick RFC10 part-sequence format (2007) | Distinct coding/noncoding flanks, mandatory forbidden sites and advisory rules; no whole-vector, strain or registry certification |
+| iGEM RFC1000 Level-0 documented body | Four declared role/fusion pairs, CDS `ATG` overlap, BsaI/SapI absence and adjacent role-subpath hints; no full transcription-unit or vector certification |
+
+RFC1000 bodies exclude external flanks. Its CDS `ATG` overlaps the declared fusion
+label; do not prepend an extra fusion label to the body. The profile does not guess
+vector clamps or spacers.
 
 Enter a one-based source start and part length. Circular intervals may cross the
 origin once. Reverse orientation applies to the extracted part. Enter body start

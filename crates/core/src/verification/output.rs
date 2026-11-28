@@ -212,8 +212,8 @@ impl<'a> CheckedProtocol<'a> {
             Operation::Pcr { template, forward, reverse, template_strand } => body.push_str(&format!("<li>PCR of {} in {:?} strand coordinates with {}: <code>{}</code> and {}: <code>{}</code>. Primers shown 5′→3′. The molecular model does not specify reaction conditions or quantities.</li>",source(template),template_strand,e(&forward.name),e(&forward.ordered_sequence()),e(&reverse.name),e(&reverse.ordered_sequence()))),
             Operation::DeclareSourceTermini{template,left,right}=>body.push_str(&format!("<li>Declare original intact linear duplex source termini for {}: left <code>{}</code>, right <code>{}</code>. Explicit operator hypothesis only; not measured chemistry, synthesis, repair, recovered imported physical state or experimental success. Original sequence/features/citations are retained; methylation remains unknown.</li>",source(template),e(&serde_json::to_string(left).unwrap_or_default()),e(&serde_json::to_string(right).unwrap_or_default()))),
             Operation::DeclareSourceModifications{template,assumptions}=>body.push_str(&format!("<li>Declare closed Dam/Dcm/CpG source generation for {} under explicit assumptions <code>{}</code>. Bind the original input revision; these are not measured modifications. Descendant strand states are propagated without resynthesizing methylation.</li>",source(template),e(&serde_json::to_string(assumptions).unwrap_or_default()))),
-            Operation::CheckedDigest{template,selection,options,fragment_index}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Analysis limits: {} comparisons, {} sites, {} fragments, {} report bytes. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(", ")),e(&modified_duplex::profile_revision()),fragment_index,options.max_comparisons,options.max_sites,options.max_fragments,options.max_report_bytes)),
-            Operation::CatalogDigest{template,selection,fragment_index}=>body.push_str(&format!("<li>Catalog-pinned complete digest of {} under exact selection <code>{}</code>; select zero-based fragment {} in top-reference cut ordering. Identity/name/geometry are checked against the embedded catalog. Complete cleavage and compatible conditions remain assumptions; supplier observations do not establish kinetics, methylation compatibility or experimental completion.</li>",source(template),e(&serde_json::to_string(selection).unwrap_or_default()),fragment_index)),
+            Operation::CheckedDigest{template,selection,options,fragment_index,..}=>body.push_str(&format!("<li>Checked positional-modification digest of {} with {}. Profile <code>{}</code>; zero-based fragment {}. Analysis limits: {} comparisons, {} sites, {} fragments, {} report bytes. Blocked sites remain intact; unknown/impaired or incomplete evidence withholds fully determined products. Reaction conditions and experimental success remain unspecified.</li>",source(template),e(&selection.enzymes.iter().map(|e|e.enzyme.name.clone()).collect::<Vec<_>>().join(", ")),e(&modified_duplex::profile_revision()),fragment_index,options.max_comparisons,options.max_sites,options.max_fragments,options.max_report_bytes)),
+            Operation::CatalogDigest{template,selection,fragment_index,..}=>body.push_str(&format!("<li>Catalog-pinned complete digest of {} under exact selection <code>{}</code>; select zero-based fragment {} in top-reference cut ordering. Identity/name/geometry are checked against the embedded catalog. Complete cleavage and compatible conditions remain assumptions; supplier observations do not establish kinetics, methylation compatibility or experimental completion.</li>",source(template),e(&serde_json::to_string(selection).unwrap_or_default()),fragment_index)),
             Operation::Digest{template,enzymes,fragment_index}=>body.push_str(&format!("<li>Complete restriction digest of {} with {}. Select zero-based fragment index {} in ascending top-reference cut order. Cleavage assumes compatible conditions and no blocking methylation.</li>",source(template),e(&enzymes.join(", ")),fragment_index)),
             Operation::TreatEnds{template,treatment}=>body.push_str(&format!("<li>Terminal {:?} treatment of {}. Internal nick repair is not assumed; the molecular model does not specify reaction conditions or quantities.</li>",treatment,source(template))),
             Operation::Tail3Prime{template,base}=>body.push_str(&format!("<li>Append one {} nucleotide to both strand 3′ ends of {}. Requires reconstructed blunt linear DNA with accessible 3′-OH. Five-prime chemistry and internal nicks remain unchanged; no template ancestry or polymerase/kit activity is inferred.</li>",base.as_str(),source(template))),
@@ -223,6 +223,33 @@ impl<'a> CheckedProtocol<'a> {
             Operation::Ligate{fragments,circular,allow_nicked,options}=>body.push_str(&format!("<li>Intended ordered ligation: {}. Product {}; retained nicks {}. Enumerate one-copy alternatives under explicit bounds <code>{}</code>; retain the intended path independently. No probabilities or experimental isolation are inferred. Full extractable outcome paths/sequences are retained below.</li>",fragments.iter().map(|f|format!("{} ({})",source(&f.source),if f.reverse{"reverse"}else{"forward"})).collect::<Vec<_>>().join(", "),if *circular{"circular"}else{"linear"},if *allow_nicked{"allowed"}else{"not allowed"},e(&serde_json::to_string(options).unwrap_or_default()))),
             Operation::Overlap { fragments, overlaps, circular } => body.push_str(&format!("<li>Ordered overlap assembly, in this order: {}. Junction overlaps {:?} bp; {} product. The molecular model does not specify reagent conditions or quantities.</li>",fragments.iter().map(source).collect::<Vec<_>>().join(", "),overlaps,if *circular {"circular"} else {"linear"})),
         }
+            if matches!(
+                step,
+                Operation::CatalogDigest { .. } | Operation::CheckedDigest { .. }
+            ) {
+                if let Some(evidence) = report
+                    .step_reports
+                    .iter()
+                    .find(|entry| entry.step_index == step_index)
+                    .and_then(|entry| entry.reaction_conditions.as_ref())
+                {
+                    match evidence.protocol_lines() {
+                        Ok(lines) => { body.push_str("<li><ul>"); for line in lines { body.push_str(&format!("<li>{}</li>", e(&line))); } body.push_str("</ul></li>"); }
+                        Err(_) => body.push_str("<li>Documentary reaction-condition evidence failed its retained integrity check.</li>"),
+                    }
+                } else {
+                    body.push_str("<li>Documentary reaction conditions unassessed: no explicit formulation/buffer/temperature/time choices were declared. Complete cleavage remains an explicit molecular assumption.</li>");
+                }
+            }
+            if matches!(step, Operation::Digest { .. }) {
+                body.push_str("<li>Documentary reaction conditions unsupported for uncatalogued Digest: use an exact catalog selection to retain formulation-specific choices.</li>");
+            }
+            if matches!(
+                step,
+                Operation::GoldenGate { .. } | Operation::SelectedGoldenGate { .. }
+            ) {
+                body.push_str("<li>Golden Gate mixture documentary conditions unassessed: supplier formulations, buffer, temperature schedule, ligase, duration and star-activity compatibility are not assessed.</li>");
+            }
         }
         body.push_str("</ol><h2>Reconstructed products</h2><ul>");
         for (index, product) in report.products.iter().enumerate() {
@@ -257,7 +284,7 @@ impl<'a> CheckedProtocol<'a> {
             body.push_str(&format!("<li>{}</li>", e(finding)));
         }
         body.push_str("</ul>");
-        if !report.step_reports.is_empty() {
+        if report.step_reports.iter().any(|step| step.topo.is_some()) {
             body.push_str("<h2>TOPO physical step evidence</h2><ul>");
             for step in &report.step_reports {
                 if let Some(topo) = &step.topo {
@@ -376,6 +403,14 @@ impl<'a> CheckedProtocol<'a> {
                         body.push_str(&format!("<li>Step {} reciprocal extension: selected homology {} bp; retained terminal pairings {:?}; complete search {}; unique within terminal model {}; {} comparisons. Original source geometry revisions: {} / {}. Exact copied/synthesized strand mappings remain in the reconstruction report.</li>", step.step_index+1, geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, e(&geometry.source_geometry_revisions[0]), e(&geometry.source_geometry_revisions[1])));
                     }
                     PhysicalProcessingEvidence::DerivedOrigin(evidence) => {
+                        body.push_str("<li>Origin report documentary reaction-condition provenance: these retained choices do not declare current reaction conditions or establish compatibility.<ul>");
+                        for conditions in &evidence.reaction_conditions {
+                            match conditions.protocol_lines() {
+                                Ok(lines) => for line in lines { body.push_str(&format!("<li>{}</li>", e(&line))); },
+                                Err(_) => body.push_str("<li>Retained documentary conditions failed integrity validation.</li>"),
+                            }
+                        }
+                        body.push_str("</ul></li>");
                         let material = &evidence.material;
                         body.push_str(&format!("<li>Step {}: replayed derivation event <code>{}</code>; material <code>{}</code>. {} Origin incomplete: {}; showing {} of {} findings{}.<ul>",step.step_index+1,e(&evidence.origin.product.event_id),e(&material.material_revision),e(&material.duplex.describe()),material.origin_incomplete,material.origin_findings.len(),material.origin_findings_total,if material.origin_findings_truncated {" (truncated)"} else {""}));
                         for finding in &material.origin_findings {
@@ -386,6 +421,17 @@ impl<'a> CheckedProtocol<'a> {
                     PhysicalProcessingEvidence::RunProduct(evidence) => {
                         body.push_str(&format!("<li>Step {}: saved run <code>{}</code>, product {}, actual material summary <code>{}</code>. Full originating report is retained with the reconstruction recipe.<ul>", step.step_index+1, e(&evidence.origin.selection.run_id), evidence.origin.selection.step_index+1, e(&evidence.material_revision)));
                         if let Ok(origin_report) = evidence.decode_report() {
+                            body.push_str("<li>Origin report documentary reaction-condition provenance: these retained choices do not declare current reaction conditions or establish compatibility.<ul>");
+                            match crate::material::derivation::reaction_conditions::from_origin_report(&evidence.origin, &origin_report) {
+                                Ok(records) => for conditions in records {
+                                    match conditions.protocol_lines() {
+                                        Ok(lines) => for line in lines { body.push_str(&format!("<li>{}</li>", e(&line))); },
+                                        Err(_) => body.push_str("<li>Retained documentary conditions failed integrity validation.</li>"),
+                                    }
+                                },
+                                Err(_) => body.push_str("<li>Origin documentary reaction conditions could not be retained within current bounds.</li>"),
+                            }
+                            body.push_str("</ul></li>");
                             body.push_str(&format!("<li>Origin assessment: {:?}; engine {}. Reuse does not upgrade incomplete findings.</li>", origin_report.status,e(&origin_report.engine_version)));
                             for finding in origin_report
                                 .findings

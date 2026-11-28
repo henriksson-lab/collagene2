@@ -556,7 +556,7 @@ pub fn AssemblyWorkspace(
                     Some(false) => {}
                     None => return Err("Proposed row preservation choices are incomplete.".into()),
                 }
-                let (forward, reverse, selection, fragment_index, template_strand) = match &fragment
+                let (forward, reverse, selection, fragment_index, template_strand, conditions) = match &fragment
                     .preparation
                 {
                     collagene_core::cloning::assembly::recipe::Preparation::ExactPcr {
@@ -564,9 +564,10 @@ pub fn AssemblyWorkspace(
                         forward,
                         reverse,
                     } if matches!(&proposal.report, JunctionReport::Overlap(_)) => {
-                        (forward, reverse, None, None, *template_strand)
+                        (forward, reverse, None, None, *template_strand, None)
                     }
                     collagene_core::cloning::assembly::recipe::Preparation::PcrCatalogDigest {
+                        conditions,
                         template_strand,
                         forward,
                         reverse,
@@ -584,6 +585,7 @@ pub fn AssemblyWorkspace(
                             Some(selection.clone()),
                             Some(*fragment_index),
                             *template_strand,
+                            conditions.clone(),
                         )
                     }
                     _ => {
@@ -600,6 +602,12 @@ pub fn AssemblyWorkspace(
                 };
                 row.template_strand = template_strand;
                 row.catalog_selection = selection;
+                if let Some(conditions) = conditions {
+                    row.reaction_conditions =
+                        crate::restriction::reaction_conditions_model::Draft::from_saved(Some(
+                            conditions,
+                        ));
+                }
                 if let Some(index) = fragment_index {
                     row.fragment = (index + 1).to_string();
                 }

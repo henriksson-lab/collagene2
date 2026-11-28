@@ -4,12 +4,13 @@ Independent MIT Rust grammar and part-format checker. Dependencies are limited
 to the shared molecule model, enzyme catalog, serde and BLAKE3; there is no core,
 browser, network, filesystem or external scientific-tool dependency.
 
-This crate is registered with source-bound core, worker, web and MCP paths. Its
-seven integration cases and connected native/WASM checks pass. Public DTOs
+This crate is registered with source-bound core, worker, web and MCP paths.
+Existing RFC10 integration and connected native/WASM checks have passed; the
+new RFC1000 profile also passes six fixtures and the combined native/WASM batch. Public DTOs
 have an optional `json-schema` feature and externally represented enums suitable
 for Postcard; the authored tests include binary roundtrips.
 
-The first supported built-in is **BioBrick RFC10 part-sequence format (2007)**,
+One supported built-in is **BioBrick RFC10 part-sequence format (2007)**,
 sections 1–3 of Tom Knight's 3 May 2007 draft. It checks the exact non-coding and
 coding prefixes, suffix, mandatory coding-start pattern, five required internal
 site absences including NotI, and separately marked recommendations. It does
@@ -56,6 +57,14 @@ are 128 parts, two million bases, 64 million comparisons, 4,096 findings and
 one MiB report. Profile JSON is limited to 128 KiB before decoding. Typed native
 definitions receive the same bounded preflight before hashing/installation.
 
-MoClo, YTK, EMMA, PhytoBricks, SEVA and RFC1000 profiles are not installed by this
-crate. They require their own exact source, data-license and complete grammar
-curation; lookup refuses unsupported built-in IDs rather than guessing tables.
+A second built-in is **iGEM RFC1000 Level-0 documented bodies and declared fusion
+sites**, reviewed 2026-11-28. It checks BsaI/SapI absence, the documented CDS ATG
+start/overlap fact, and contiguous subpaths of four role/fusion pairs. Additions
+are intentionally empty: input is the documented body, not a formatted vector.
+It does not certify a complete transcription unit or higher assembly levels.
+[Exact source, orientation, scope and rights notice](data/rfc1000-l0-2026/NOTICE.md).
+`profile::BUILTIN_IDS` lists installed IDs; `RFC1000_L0_ID` selects this profile.
+
+MoClo, YTK, EMMA, PhytoBricks, SEVA and higher RFC1000 levels remain unsupported.
+They require separate exact source/data-rights and scoped grammar curation;
+lookup refuses unsupported built-in IDs rather than guessing tables.

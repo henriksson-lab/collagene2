@@ -68,8 +68,9 @@ copies. The final report is bounded to 2 MiB and 4,096 findings.
   `assembly::junctions::inspect_plan` owner. A supplied boundary/history identifier
   cannot prove that an edit caused a frameshift. Compound-path fusion geometry
   currently remains indeterminate.
-- Add declared element-chain, initiation-context, required-parts and unannotated-ORF
-  checks using existing search/ORF owners and pinned reference data.
+- Structural element chains and literal reference-copy requirements are now
+  implemented and verified in the [extension batch](construct-qc-elements-current.md).
+  Initiation-context and unannotated-ORF checks remain.
 - Add evidence-bearing generic structural profiles after reviewing their sources.
   No vector-class thresholds, empirical predictions or specialized biological
   capabilities are included in this foundation.

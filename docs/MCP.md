@@ -698,12 +698,27 @@ The source-authored SDK fixture constructs a literal 40-base intended reference 
 
 Existing `propose_overlap_assembly`, `propose_ligation_assembly` and `propose_plan`
 accept the catalog-pinned digest preparation/operation. The shared preparation is
-`CatalogDigest { selection, fragment_index, repair }`, retaining the exact
+`CatalogDigest { selection, conditions, fragment_index, repair }`, retaining the exact
 `CatalogSelection` from embedded-catalog inspection and a zero-based fragment.
 The compiler emits `Operation::CatalogDigest` and optional explicit `RepairEnds`.
 The original immutable document is the input; a downloaded fragment's producer
 metadata does not restore a physical substrate. Validate the actual plan against
 its independent intended target and export HTML/PDF from that same plan.
+
+`conditions` is a required nullable field on catalog/checked plan digests and all
+catalog-digest-bearing preparation variants, including PCR, mismatch PCR and
+overlap-extension PCR. `null` explicitly leaves supplier setup unassessed. A present
+value is `ReactionConditions`, as described above. Fresh verification binds its
+documentary result to the actual digest input and physical state; a PCR chain uses
+the newly reconstructed amplicon. Unresolved declared thresholds/contexts leave
+that constraint incomplete while retaining available products and target comparison.
+
+Material derivations also require the nullable setup and preserve bounded fresh
+documentary evidence through native replay. Evidence follows only the selected
+product's typed dependencies, excludes disconnected earlier operations and retains
+shared ancestors once. HTML/PDF output distinguishes those originating choices from
+new reaction choices. No source/report hash establishes experimental cleavage,
+duration suitability, star absence or reaction success. [Workflow and limits](CLONING_REACTION_CONDITIONS.md).
 
 Fresh evaluation checks the catalog edition/content/IDs and exact geometry before
 using the existing tracked digest engine. The catalog pin does not predict

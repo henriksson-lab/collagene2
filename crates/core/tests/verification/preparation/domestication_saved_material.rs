@@ -144,6 +144,7 @@ fn derived(w: &Workspace, origin: &MaterialOrigin) -> (Workspace, MaterialOrigin
                 origin: derivation::SourceOrigin::Saved(origin.clone()),
             }],
             derivation: derivation::Derivation::CatalogDigest {
+                conditions: None,
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
                 options: Default::default(),
                 fragment_index: 0,

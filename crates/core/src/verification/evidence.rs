@@ -40,6 +40,25 @@ pub struct StepReport {
     #[serde(deserialize_with = "crate::encoding::required_option")]
     #[cfg_attr(feature = "json-schema", schemars(required))]
     pub topo: Option<crate::cloning::topo::Product>,
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    #[cfg_attr(feature = "json-schema", schemars(required))]
+    pub reaction_conditions: Option<crate::cloning::restriction::conditions::source::SourceReport>,
+}
+
+impl StepReport {
+    /// Retained evidence integrity only. Fresh plan reconstruction remains required.
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        if self.step_index >= 1000 || self.topo.is_some() == self.reaction_conditions.is_some() {
+            return Err(Error::Format("invalid or ambiguous step evidence".into()));
+        }
+        if let Some(product) = &self.topo {
+            crate::cloning::topo::worker::validate_projection(product, &product.batch_revision)?;
+        }
+        if let Some(conditions) = &self.reaction_conditions {
+            conditions.validate_historical()?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,11 +224,16 @@ impl MaterialStateEvidence {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DerivedOriginEvidence {
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, crate::cloning::restriction::conditions::source::SourceReport, 32>"
+    )]
+    pub reaction_conditions: Vec<crate::cloning::restriction::conditions::source::SourceReport>,
     pub origin: crate::material::derivation::Capsule,
     pub material: MaterialStateEvidence,
 }
 impl DerivedOriginEvidence {
     pub fn validate_documentary(&self) -> Result<(), Error> {
+        crate::material::derivation::reaction_conditions::validate(&self.reaction_conditions)?;
         self.origin.validate_documentary()?;
         let record = crate::material::derivation::load_record_shallow(&self.origin.record_bytes)?;
         self.material

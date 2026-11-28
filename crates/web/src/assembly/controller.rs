@@ -421,6 +421,7 @@ impl AssemblyController {
                         Err(error) => { message.set(error); return; }
                     };
                     Operation::CheckedDigest {
+                        conditions: None,
                         template: source,
                         selection,
                         options:collagene_core::chemistry::tracked_duplex::checked_inspection_options(),

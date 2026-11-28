@@ -5,6 +5,7 @@ mod catalog_digest_preparation;
 mod catalog_digest_protocol;
 mod digest_cut_selection;
 mod digest_setups;
+mod reaction_plan_conditions;
 mod restriction_history;
 mod restriction_inspection;
 mod restriction_inspection_protocol;

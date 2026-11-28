@@ -12,9 +12,9 @@ These tables summarize implemented capabilities; see the linked profiles for lim
 
 - Sequence editing, annotations, translations and synchronized circular/linear maps.
 - Restriction-site filtering, virtual digests, primer design and cloning workflows.
-- [Structural CDS checks, RFC10 part-format checks and oligo collection binding](docs/DESIGN_CHECKS.md).
+- [Structural construct checks, assembly-standard checks and oligo collection binding](docs/DESIGN_CHECKS.md).
 - Independent target verification, retained intermediate products and alternative cloning products.
-- Saved history, primer orders and HTML/PDF protocols.
+- Saved history, [reaction choices](docs/CLONING_REACTION_CONDITIONS.md), primer orders and HTML/PDF protocols.
 - Protein properties, [conditional antibody numbering and North CDR regions](docs/ANTIBODY_NUMBERING.md), [sequence-liability screening](docs/PROTEIN_LIABILITIES.md), declared [RNA chemistry](docs/RNA_MODIFICATIONS.md) and imported structure viewing.
 - MCP-assisted design, optional WebMCP, shared plasmid folders and offline desktop storage/sync.
 

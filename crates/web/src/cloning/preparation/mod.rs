@@ -30,6 +30,8 @@ pub(crate) mod pcr_digest_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod pool;
 #[cfg(target_arch = "wasm32")]
+pub(crate) mod reaction_conditions_view;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod restriction_fields;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod review;

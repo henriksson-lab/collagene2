@@ -38,7 +38,7 @@ fn roundtrip(revision: String, job: AnalysisJob) -> Response {
         job,
     };
     let bytes = request.encode().unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 130);
+    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 131);
     let output = process_request(&bytes).unwrap();
     assert_eq!(
         Response::admitted_frame_limit(&output, output.len()).unwrap(),

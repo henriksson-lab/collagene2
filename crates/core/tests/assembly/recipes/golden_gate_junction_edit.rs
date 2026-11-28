@@ -39,6 +39,7 @@ fn fixture(enzyme: GoldenGateEnzyme) -> (Vec<PlanInput>, Request) {
             input_id: "b".into(),
             reverse: false,
             preparation: Preparation::PcrCatalogDigest {
+                conditions: None,
                 forward: Primer::new("manual B forward", "ATCCGTTA", &t).unwrap(),
                 reverse: Primer::new("manual B reverse", "TTCCAAGG", &format!("{t}{closing}"))
                     .unwrap(),

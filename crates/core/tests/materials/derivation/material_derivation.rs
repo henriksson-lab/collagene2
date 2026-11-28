@@ -158,6 +158,7 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
             origin: origin.clone(),
         }],
         derivation: d::Derivation::CatalogDigest {
+            conditions: None,
             selection: enzyme(),
             options: Default::default(),
             fragment_index: index,
@@ -374,6 +375,7 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
                 )),
             }],
             derivation: d::Derivation::CatalogDigest {
+                conditions: None,
                 selection: enzyme(),
                 options: Default::default(),
                 fragment_index: 1,
@@ -490,6 +492,7 @@ fn saved_primer_table_is_atomic_presentation_and_omission_does_not_break_materia
             origin: d::SourceOrigin::Saved(MaterialOrigin::Derived(cap)),
         }],
         derivation: d::Derivation::CatalogDigest {
+            conditions: None,
             selection: enzyme(),
             options: Default::default(),
             fragment_index: 1,

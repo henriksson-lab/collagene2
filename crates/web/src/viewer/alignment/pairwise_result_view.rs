@@ -180,6 +180,10 @@ pub fn PairwiseResultView(
         <section class="compare-result">
             <h3>{bound.with_value(|review|format!("{} → {}",review.reference_name,review.query_name))}</h3>
             <p class="helper">{bound.with_value(|review|if review.fresh{"Fresh native computation on the pinned input versions"}else{"Historical saved comparison · not recomputed on opening"})}</p>
+            <Show when=move || bound.with_value(|review| review.record.design_consensus.is_some())>
+                <super::design_consensus::rendering::DesignConsensusEvidenceView
+                    review=bound.get_value() guard on_navigate/>
+            </Show>
             <p class="helper">"Differences describe sequence models, not sample identity, read confidence or experimental success. Navigation uses original document coordinates; alignment text uses the declared comparison orientation/origin."</p>
             {bound.with_value(|review|{
                 let report=&review.record.report;let comparison=&report.comparison;let a=&comparison.alignment;let stats=&a.stats;

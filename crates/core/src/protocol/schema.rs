@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 138;
+pub const WORKER_SCHEMA_VERSION: u16 = 139;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 35;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1027,6 +1027,10 @@ pub enum AnalysisJob {
     AssessScreeningStrategy {
         request: crate::cloning::screening::Request,
     },
+    AssessDesignConsensus {
+        workspace: crate::documents::workspace::Workspace,
+        request: crate::alignment::design_consensus::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1253,6 +1257,7 @@ pub enum AnalysisResult {
     IvtLinearization(crate::cloning::restriction::ivt_linearization::Report),
     ConstructCausalQc(crate::construct_qc::causal::Report),
     ScreeningStrategy(crate::cloning::screening::Report),
+    DesignConsensus(crate::alignment::design_consensus::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

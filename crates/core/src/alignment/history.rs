@@ -1,7 +1,7 @@
 //! Immutable event-bound pairwise comparison evidence. Saving retains a privately
 //! computed report; loading never replays it or establishes a current assessment.
 use crate::{
-    alignment::review::Report,
+    alignment::{design_consensus, review::Report},
     documents::workspace::{self, Workspace, WorkspaceAttachment},
     material::lineage::EventBinding,
 };
@@ -9,17 +9,61 @@ use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
-pub const KIND: &str = "pairwise-review-v2";
+pub const KIND: &str = "pairwise-review-v3";
 pub const MAX_SAVED_BYTES: usize = workspace::MAX_ENTRY_BYTES;
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Record {
     pub schema_version: u16,
     pub reference: EventBinding,
     pub query: EventBinding,
     pub report: Report,
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    #[cfg_attr(feature = "json-schema", schemars(required))]
+    pub design_consensus: Option<design_consensus::Evidence>,
+}
+impl Record {
+    /// Move the one computed path and its semantic evidence into the current
+    /// archive shape. This does not establish source ownership or freshness.
+    pub fn from_design_consensus(report: design_consensus::Report) -> Result<Self, Error> {
+        let record = Self {
+            schema_version: VERSION,
+            reference: report.evidence.request.design.clone(),
+            query: report.evidence.request.consensus.clone(),
+            report: report.pairwise,
+            design_consensus: Some(report.evidence),
+        };
+        record.validate_documentary()?;
+        Ok(record)
+    }
+    pub fn validate_documentary(&self) -> Result<(), Error> {
+        if self.schema_version != VERSION {
+            return Err(Error::Unsupported(
+                "unknown pairwise review archive version".into(),
+            ));
+        }
+        crate::encoding::bounded_json::preflight(self, MAX_SAVED_BYTES)?;
+        binding_guard(&self.reference)?;
+        binding_guard(&self.query)?;
+        self.report
+            .validate_binding(&self.report.context_revision)?;
+        if self.reference.revision != self.report.reference_revision
+            || self.query.revision != self.report.query_revision
+        {
+            return Err(bad("archive roles disagree with actual pairwise sources"));
+        }
+        if let Some(evidence) = &self.design_consensus {
+            if evidence.request.design != self.reference || evidence.request.consensus != self.query
+            {
+                return Err(bad("semantic roles disagree with archive events"));
+            }
+            evidence.validate_for_pairwise(&self.report)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -116,14 +160,15 @@ fn resolve<'a>(frame: &'a Workspace, binding: &EventBinding) -> Result<&'a Molec
         .ok_or_else(|| bad("the source revision is not retained"))
 }
 fn validate_record(frame: &Workspace, record: &Record) -> Result<(), Error> {
-    if record.schema_version != VERSION {
-        return Err(Error::Unsupported(
-            "unknown pairwise review archive version".into(),
-        ));
+    record.validate_documentary()?;
+    if let Some(evidence) = &record.design_consensus {
+        evidence.validate_sources(frame, &record.report)?;
+    } else {
+        let reference = resolve(frame, &record.reference)?;
+        let query = resolve(frame, &record.query)?;
+        record.report.validate_sources(reference, query)?;
     }
-    let reference = resolve(frame, &record.reference)?;
-    let query = resolve(frame, &record.query)?;
-    record.report.validate_sources(reference, query)
+    Ok(())
 }
 
 struct Limited(Vec<u8>);
@@ -143,36 +188,12 @@ impl Write for Limited {
 /// Retain an already privately computed, event-bound comparison without running
 /// alignment again. The host must check its live draft/epoch before installation.
 /// This function changes only the attachment map in its returned workspace.
-pub fn capture(
-    frame: &Workspace,
-    reference: &EventBinding,
-    query: &EventBinding,
-    report: &Report,
-) -> Result<(Workspace, String), Error> {
+pub fn capture(frame: &Workspace, record: &Record) -> Result<(Workspace, String), Error> {
     workspace_guard(frame)?;
-    let source_reference = resolve(frame, reference)?;
-    let source_query = resolve(frame, query)?;
-    report.validate_sources(source_reference, source_query)?;
-    // Borrow while serializing; malformed large reports are never cloned before
-    // validation or the existing attachment-size boundary.
-    #[derive(Serialize)]
-    struct Borrowed<'a> {
-        schema_version: u16,
-        reference: &'a EventBinding,
-        query: &'a EventBinding,
-        report: &'a Report,
-    }
+    validate_record(frame, record)?;
+    // Preserve the complete current record, including optional semantic evidence.
     let mut encoded = Limited(Vec::new());
-    serde_json::to_writer(
-        &mut encoded,
-        &Borrowed {
-            schema_version: VERSION,
-            reference,
-            query,
-            report,
-        },
-    )
-    .map_err(|_| Error::TooLarge)?;
+    serde_json::to_writer(&mut encoded, record).map_err(|_| Error::TooLarge)?;
     let hash = blake3::hash(&encoded.0).to_hex().to_string();
     if let Some(existing) = frame.attachments.get(&hash) {
         if existing.kind != KIND
@@ -208,6 +229,11 @@ fn load_guarded(frame: &Workspace, hash: &str) -> Result<Record, Error> {
         .attachments
         .get(hash)
         .ok_or_else(|| bad("saved comparison is unavailable"))?;
+    if asset.kind.starts_with("pairwise-review-v") && asset.kind != KIND {
+        return Err(Error::Unsupported(
+            "unknown pairwise review attachment version".into(),
+        ));
+    }
     if asset.kind != KIND
         || asset.media_type != "application/json"
         || asset.bytes.len() > MAX_SAVED_BYTES
@@ -238,6 +264,11 @@ pub fn list(frame: &Workspace) -> Result<Vec<Summary>, Error> {
     let mut summaries = Vec::new();
     for (hash, asset) in &frame.attachments {
         if asset.kind != KIND {
+            if asset.kind.starts_with("pairwise-review-v") {
+                return Err(Error::Unsupported(
+                    "unknown pairwise review attachment version".into(),
+                ));
+            }
             continue;
         }
         let record = load_guarded(frame, hash)?;

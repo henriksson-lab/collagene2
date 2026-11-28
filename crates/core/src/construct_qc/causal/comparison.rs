@@ -174,7 +174,7 @@ pub(super) fn assess(workspace: &Workspace, request: &Request) -> Result<Report,
         let mut row = PairReport {
             id: pair.id.clone(), source: pair.source.clone(), product: pair.product.clone(),
             source_cds: pair.source_cds.clone(), product_cds: pair.product_cds.clone(),
-            code: crate::construct_qc::code_pin(pair.genetic_code)?,
+            code: crate::construct_qc::CodePin::for_id(pair.genetic_code)?,
             annotation_correspondence: AnnotationCorrespondence { verdict: Verdict::Indeterminate, reason: "Native annotation identity has not been established; pairing is explicitly declared.".into() },
             mapping_complete: false, findings: vec![], register_segments: vec![], new_stops: vec![],
         };

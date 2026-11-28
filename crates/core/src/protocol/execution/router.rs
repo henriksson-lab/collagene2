@@ -11,6 +11,9 @@ pub(super) fn dispatch(
     context: &RequestContext,
 ) -> Result<AnalysisResult, Error> {
     match job {
+        AnalysisJob::AssessDesignConsensus { workspace, request } => {
+            super::design_checks::design_consensus(context, workspace, request)
+        }
         AnalysisJob::AssessScreeningStrategy { request } => {
             super::design_checks::screening(context, request)
         }

@@ -45,6 +45,15 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::AssessDesignConsensus { workspace, request } => {
+                if crate::alignment::design_consensus::revision(workspace, request)?
+                    != self.revision
+                {
+                    return Err(Error::Format(
+                        "Design/consensus source or settings context changed".into(),
+                    ));
+                }
+            }
             AnalysisJob::Align {
                 molecule,
                 query,

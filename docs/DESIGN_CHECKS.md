@@ -66,6 +66,56 @@ available through MCP; grammar hints are not chemical compatibility or successfu
 assembly predictions. Other toolkit profiles and assembly-wizard integration
 remain planned.
 
+## Design versus supplied consensus
+
+In the comparison panel, select **Design versus supplied consensus** under
+**Workflow**. Use **Use active document as reference** to pin the intended design,
+then choose the supplied consensus explicitly. Source navigation keeps the design
+pinned; names or equal DNA do not merge the two roles.
+
+Choose **Whole construct** and **Global** explicitly in the shared comparison
+settings. Strand/origin search and compute limits are the same controls used for
+ordinary pairwise review. Stored topology is the default consensus-axis basis.
+Declare a single circular turn only when that is your explicit interpretation of
+the supplied sequence, and provide its rationale. It does not establish physical
+circularity or permit an arbitrary repeated consensus to count as one turn.
+
+For a conditional coding summary, enable design-CDS projection, load the exact
+design annotations and select the intended CDS. The menu offers the first 100
+CDS annotations; the annotation-number field can select another exact annotation.
+Declare the genetic-code number and explain the role assumption. Results retain
+the resolved code descriptor, ordinary codon assignments and exact code pin.
+Unsupported or stale annotations, ambiguous calls and incomplete projection stay
+explicit. No consensus annotation is manufactured or accepted as biological truth.
+
+Choose **Compare design and supplied consensus**. The worker computes one
+pairwise path, then reports coding register and codon consequences conditional
+on that path. Review origin/strand completeness, paired input fractions and
+selected-path proof separately: even a proven best score need not identify a
+unique correspondence. Coordinate buttons use native original-source spans;
+split codons can open a multi-interval source view. They do not infer locations
+from matching text.
+
+**Save event-bound comparison** retains the path, semantic roles, source events,
+axis/CDS/code declarations, provenance and coding evidence in the existing
+comparison record. Saved comparisons reopen as historical evidence, with the
+same semantic details; opening does not recompute them. A historical semantic
+record is not silently recomputed as an ordinary pairwise comparison. Choose
+the design/consensus workflow and explicitly declare the intended inputs and
+assumptions for a new computation.
+
+Complete JSON retains all bounded evidence. HTML/PDF use the same retained report
+and include its semantic assumptions, provenance, coding results and limitations.
+Aligned FASTA/Clustal omit that semantic evidence and disclose the omission.
+Changed sources, workspace or settings refuse stale responses, downloads and
+navigation; run again. No source sequence, history or material is edited by the
+comparison itself. Saving the comparison adds its evidence attachment.
+
+A supplied consensus is a source observation, not experimental verification,
+read-depth/quality evidence or proof of sample identity, expression or function.
+The current source implementation is awaiting the shared compiler/execution
+checks; no graphical acceptance is claimed.
+
 ## Oligo collection binding
 
 Choose **Oligo collection…** and paste FASTA or tab-separated rows. FASTA

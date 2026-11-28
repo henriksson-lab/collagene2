@@ -213,6 +213,39 @@ pub struct CodePin {
     pub ordinary_amino_acids: String,
     pub revision: String,
 }
+impl CodePin {
+    /// Capture the current canonical descriptor and all 64 ordinary codons.
+    /// This is table reproducibility evidence, not an independent biology model.
+    pub fn for_id(id: u8) -> Result<Self, Error> {
+        let descriptor = translation::CodeDescriptor::for_id(id)?;
+        let mut codons = String::with_capacity(192);
+        for a in b"TCAG" {
+            for b in b"TCAG" {
+                for c in b"TCAG" {
+                    codons.extend([*a as char, *b as char, *c as char]);
+                }
+            }
+        }
+        let sequence = Sequence::dna(&codons)?;
+        let translated = translation::translate(
+            &sequence,
+            &translation::TranslationOptions {
+                genetic_code: id,
+                ..Default::default()
+            },
+        )?;
+        let revision = hash(&(
+            crate::verification::ENGINE_VERSION,
+            &descriptor,
+            &translated,
+        ))?;
+        Ok(Self {
+            descriptor,
+            ordinary_amino_acids: translated.protein,
+            revision,
+        })
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -501,35 +534,7 @@ impl Options {
         Ok(())
     }
 }
-fn code_pin(id: u8) -> Result<CodePin, Error> {
-    let descriptor = translation::CodeDescriptor::for_id(id)?;
-    let mut codons = String::with_capacity(192);
-    for a in b"TCAG" {
-        for b in b"TCAG" {
-            for c in b"TCAG" {
-                codons.extend([*a as char, *b as char, *c as char]);
-            }
-        }
-    }
-    let sequence = Sequence::dna(&codons)?;
-    let translated = translation::translate(
-        &sequence,
-        &translation::TranslationOptions {
-            genetic_code: id,
-            ..Default::default()
-        },
-    )?;
-    let revision = hash(&(
-        crate::verification::ENGINE_VERSION,
-        &descriptor,
-        &translated,
-    ))?;
-    Ok(CodePin {
-        descriptor,
-        ordinary_amino_acids: translated.protein,
-        revision,
-    })
-}
+
 fn code_pins(m: &Molecule, o: &Options) -> Result<Vec<CodePin>, Error> {
     let mut codes = BTreeSet::from([o.genetic_code]);
     for f in &m.features {
@@ -545,7 +550,7 @@ fn code_pins(m: &Molecule, o: &Options) -> Result<Vec<CodePin>, Error> {
     }
     codes
         .into_iter()
-        .map(code_pin)
+        .map(CodePin::for_id)
         .collect::<Result<Vec<_>, _>>()
 }
 pub fn revision(m: &Molecule, o: &Options) -> Result<String, Error> {

@@ -1,0 +1,377 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "6a79798b48cdf8bbf1a37a3278cafc6efa10afa4",
+  "status": "verified",
+  "scope": "Registered design-versus-supplied-consensus semantic assessment, conditional coding observations, current history v3, comparison controls, worker/MCP and existing printable exports.",
+  "compiler_runs": [
+    {
+      "stage": 1,
+      "target": "native",
+      "success": true,
+      "diagnostics": []
+    },
+    {
+      "stage": 1,
+      "target": "wasm",
+      "success": false,
+      "diagnostics": [
+        {
+          "message": "expected `,`",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 262
+            }
+          ]
+        },
+        {
+          "message": "invalid tag name or attribute key",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 347
+            }
+          ]
+        },
+        {
+          "message": "tokens was ignored during parsing",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 347
+            }
+          ]
+        },
+        {
+          "message": "wrong close tag found",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 355
+            }
+          ]
+        },
+        {
+          "message": "\u001b[1;34m[\u001b[0m\u001b[1;36mhelp\u001b[0m\u001b[1;34m] \u001b[0m\u001b[1;39mopen tag that should be closed; it's started here\u001b[0m",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 346
+            }
+          ]
+        },
+        {
+          "message": "wrong close tag found",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 372
+            }
+          ]
+        },
+        {
+          "message": "\u001b[1;34m[\u001b[0m\u001b[1;36mhelp\u001b[0m\u001b[1;34m] \u001b[0m\u001b[1;39mopen tag that should be closed; it's started here\u001b[0m",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 344
+            }
+          ]
+        },
+        {
+          "message": "wrong close tag found",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 373
+            }
+          ]
+        },
+        {
+          "message": "\u001b[1;34m[\u001b[0m\u001b[1;36mhelp\u001b[0m\u001b[1;34m] \u001b[0m\u001b[1;39mopen tag that should be closed; it's started here\u001b[0m",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 323
+            }
+          ]
+        },
+        {
+          "message": "open tag has no corresponding close tag",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 263
+            }
+          ]
+        },
+        {
+          "message": "\u001b[1;34m[\u001b[0m\u001b[1;32mnote\u001b[0m\u001b[1;34m] \u001b[0m\u001b[1;39mtreating all inputs after open tag as it content\u001b[0m",
+          "primary_locations": [
+            {
+              "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+              "line": 264
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "stage": 2,
+      "target": "wasm",
+      "success": true,
+      "diagnostics": []
+    }
+  ],
+  "passing_cases": 675,
+  "failing_cases": 0,
+  "executed_harnesses": [
+    {
+      "package": "collagene-core",
+      "target": "collagene_core",
+      "discovered": 233,
+      "selected": 81,
+      "observed": 81,
+      "binary_sha256": "19483fdaeb51731fa46c4ec50734edb6b22dee842cde15a3d250688f5f037d76"
+    },
+    {
+      "package": "collagene-mcp",
+      "target": "analysis",
+      "discovered": 59,
+      "selected": 9,
+      "observed": 9,
+      "binary_sha256": "ece402658b82bd1f003de68585cf37c6b2f042623582baf2aee5a9acce7cb53d"
+    },
+    {
+      "package": "collagene-core",
+      "target": "analysis",
+      "discovered": 289,
+      "selected": 119,
+      "observed": 119,
+      "binary_sha256": "497b1843f32997da4a6b9b4f58bb4802a7d4d3de9683e9a36fc9ea5bedf8c7d0"
+    },
+    {
+      "package": "collagene-mcp",
+      "target": "collagene_mcp",
+      "discovered": 12,
+      "selected": 12,
+      "observed": 12,
+      "binary_sha256": "d74303e1afa49fb44b60dff8c0b804df26a094e0509a5df6078000db09f2df50"
+    },
+    {
+      "package": "collagene-web",
+      "target": "collagene-web",
+      "discovered": 454,
+      "selected": 454,
+      "observed": 454,
+      "binary_sha256": "e5a46d4f98ad7761820ebcfe7b8872b05578ffb03364123c8a1b75ea3c0d6c9e"
+    }
+  ],
+  "case_index": "docs/audits/semantic-consensus-cases.tsv",
+  "case_index_sha256": "a6217fd4d6978d1239be872b109ab12160cf16804aac0f1be467743de4f8e8d4",
+  "current_input_files": {
+    "crates/core/src/alignment/design_consensus/assessment.rs": {
+      "sha256": "4df9ce7b8e13fd3ee02e5b67d694658c6594da835777f195519b268ffa675c74",
+      "bytes": 2480
+    },
+    "crates/core/src/alignment/design_consensus/coding.rs": {
+      "sha256": "d409c583550eeacf038c6892ce80a3d5e1770c9c2296089312b99be884b6adb9",
+      "bytes": 21358
+    },
+    "crates/core/src/alignment/design_consensus/contract.rs": {
+      "sha256": "b613c340114a1606e42e96ce0b964e5de1280192ddc9fe338392520c2a3ce24c",
+      "bytes": 15667
+    },
+    "crates/core/src/alignment/design_consensus/mod.rs": {
+      "sha256": "29f6e45930bc9569aee074e37e20f5cc4c792be6c6f421aeb6979f498fa9f237",
+      "bytes": 2664
+    },
+    "crates/core/src/alignment/design_consensus/model.rs": {
+      "sha256": "5c0477cdac612d4231e0df22892892435cf966aec067cd81184b97998160d693",
+      "bytes": 7709
+    },
+    "crates/core/src/alignment/design_consensus/projection.rs": {
+      "sha256": "e61695fe48d4f0b141e5bfe27a12929b299aa81d2e456fab1ef8a9d61261633f",
+      "bytes": 3505
+    },
+    "crates/core/src/alignment/design_consensus/provenance.rs": {
+      "sha256": "a12567081ad959c495555fd4491f0f577dbbd15f373a8c17a5218cbf9c3c10a5",
+      "bytes": 4871
+    },
+    "crates/core/src/alignment/export.rs": {
+      "sha256": "ad766ca56bfa0823aef2484a8c419ab49a9e574778d8f3ebce814197068e5f26",
+      "bytes": 25332
+    },
+    "crates/core/src/alignment/history.rs": {
+      "sha256": "3f5f0ba7e8d9a26c3f23c3de9f0c4d06e325294e6fba377d725b27757fda29ed",
+      "bytes": 10598
+    },
+    "crates/core/src/alignment/mod.rs": {
+      "sha256": "b520ac3f50ca69ec8f5905cb27b81d4e3f1be8a12758f177eff04aa5fe00099d",
+      "bytes": 43117
+    },
+    "crates/core/src/construct_qc/causal/comparison.rs": {
+      "sha256": "3741c1690f95841498aa992b70d35fd1a3d760a611dc67e8ec33f7fe45be6270",
+      "bytes": 15196
+    },
+    "crates/core/src/construct_qc/causal/contract.rs": {
+      "sha256": "26e245f035f1820adde2d9854e6dd0ef5598e13f50fead596b296fd9b8d3b4f2",
+      "bytes": 14705
+    },
+    "crates/core/src/construct_qc/mod.rs": {
+      "sha256": "9e47e7c766ca1e154ce3bcff1d401e2eb876f434ed89ff67856c6c252eb85bbd",
+      "bytes": 31973
+    },
+    "crates/core/src/protocol/envelope.rs": {
+      "sha256": "db1ab9f5150d40691a1dd52f6a3564f69ef43c9bbe1a6296c3fb4876f3c8fd1b",
+      "bytes": 6704
+    },
+    "crates/core/src/protocol/execution/design_checks.rs": {
+      "sha256": "8d7d4f46b64883cac2699d79104e5abee5bee36f0425dfa571f58ec758744052",
+      "bytes": 4200
+    },
+    "crates/core/src/protocol/execution/router.rs": {
+      "sha256": "a0d71d9576cb7e56c6d758940b598bbb1eaf1dd8bae145c1db8d6119bd5c6482",
+      "bytes": 39027
+    },
+    "crates/core/src/protocol/request.rs": {
+      "sha256": "aadbb98954abdd60dd9469890a42eb893ea1454db91099c8fc461c557d438263",
+      "bytes": 33461
+    },
+    "crates/core/src/protocol/response.rs": {
+      "sha256": "0395628b82901babf9084ec21d94b00439bb16615208c9cbc6cce9fe54b32b09",
+      "bytes": 44355
+    },
+    "crates/core/src/protocol/schema.rs": {
+      "sha256": "479518650206d02bec7e24a06ef4ae88e52dff89dfa04cd8bf962fba369161b7",
+      "bytes": 51291
+    },
+    "crates/core/tests/analysis/alignment/pairwise_export.rs": {
+      "sha256": "21d06e34a43de8e5a4988aceca0979ce2cfa423ff7e6cb421b8f6257665fd9ef",
+      "bytes": 14504
+    },
+    "crates/core/tests/analysis/alignment/pairwise_export_protocol.rs": {
+      "sha256": "5041627e5b1dd6d58777b4f56c668ee5192c2842cdabda8f3a96585c42973067",
+      "bytes": 14354
+    },
+    "crates/core/tests/analysis/alignment/pairwise_history.rs": {
+      "sha256": "2d637c98db327a0aa90fe6d59e901b049f425929477df0cfdf2fa8703e950fc4",
+      "bytes": 10463
+    },
+    "crates/core/tests/analysis/design_consensus/assessment.rs": {
+      "sha256": "873ff820692b7e3e44ef4f2c49b5ce30995ac9828305270abce2131cffebc9a6",
+      "bytes": 26201
+    },
+    "crates/core/tests/analysis/design_consensus/literals.rs": {
+      "sha256": "93e66204175cdb4fa6cf89fdc87b52fe43d5509a651e0adabe5e71e296fe211e",
+      "bytes": 7469
+    },
+    "crates/core/tests/analysis/design_consensus/mod.rs": {
+      "sha256": "c83317cced6a0cf405c3cbba8b6ae9dac9e6c22028e64f738435721b248c53f2",
+      "bytes": 126
+    },
+    "crates/core/tests/analysis/design_consensus/protocol.rs": {
+      "sha256": "de3748e93180d93ab92acc67167d3b2d52cb7c4f317b9da10eac508b4ddf76d8",
+      "bytes": 6896
+    },
+    "crates/core/tests/analysis/main.rs": {
+      "sha256": "e157009eb0e03ac85f0fbb1001335825778ace79d1f121f58f64dd14fe49eed0",
+      "bytes": 140
+    },
+    "crates/mcp/src/lib.rs": {
+      "sha256": "2ec221effa3d44fc51391d69010161f3c37aa35fe5c69c7237097251d1011567",
+      "bytes": 223
+    },
+    "crates/mcp/src/server/mod.rs": {
+      "sha256": "bd10815c2210a576f3f9562b14746fc2d27baf219ba74f7417644eaab4f18fdc",
+      "bytes": 6544
+    },
+    "crates/mcp/src/tools/analysis/design_consensus.rs": {
+      "sha256": "688502789f790edc5250d15a883363fe6b958373e216bd84e5bbe27ec1613a6c",
+      "bytes": 7118
+    },
+    "crates/mcp/src/tools/analysis/mod.rs": {
+      "sha256": "b0071580a85dc0eb7196eb73213963d8e83b21563a1d7bd8321e4bcf27318a7c",
+      "bytes": 117958
+    },
+    "crates/mcp/tests/analysis/design_consensus/mod.rs": {
+      "sha256": "40f0311fdfecdcfa40f75f7a363b66fe8a97f1dd3bd51b91166a383657843147",
+      "bytes": 8726
+    },
+    "crates/mcp/tests/analysis/main.rs": {
+      "sha256": "832d6cc08b615d65f2d88a192707d884f1713ee2643edce4194ab8932e2a7866",
+      "bytes": 712
+    },
+    "crates/web/src/app/mod.rs": {
+      "sha256": "7b8d96d734b334c8a6b785484408eea101a1df4a28ed272bf43b6e5bdf298f74",
+      "bytes": 237991
+    },
+    "crates/web/src/viewer/alignment/compare.rs": {
+      "sha256": "0b18472b90a89ca56d688f4d644f86488b513f9bbc13c1e26860725a39e70a01",
+      "bytes": 29183
+    },
+    "crates/web/src/viewer/alignment/controller.rs": {
+      "sha256": "0e8fcb1464c9b05f1a9fc2c176de8bb7edef05b515e6551bb60105ccd97e6d9d",
+      "bytes": 13998
+    },
+    "crates/web/src/viewer/alignment/design_consensus/mod.rs": {
+      "sha256": "bbc94945e0c6f6bba0f57d13c1f0ea483fff4b95feb2f1f2748d8303ec1a8e0c",
+      "bytes": 303
+    },
+    "crates/web/src/viewer/alignment/design_consensus/model.rs": {
+      "sha256": "5914ce008a6117c2b64ae10a801f17c7b29838765669eee2d3fa32994e92e2ca",
+      "bytes": 7743
+    },
+    "crates/web/src/viewer/alignment/design_consensus/rendering.rs": {
+      "sha256": "5ef0544b5a511223f89b134add726cd4128059f32552eeebf8348cd9192c26b0",
+      "bytes": 14960
+    },
+    "crates/web/src/viewer/alignment/design_consensus/view.rs": {
+      "sha256": "549d3afb277f7a288a32b0e645f7a8bee31a2a3837ed330ca0942583848b2401",
+      "bytes": 18165
+    },
+    "crates/web/src/viewer/alignment/mod.rs": {
+      "sha256": "9aa669b851a42709488a317d5faeea721095d050295766eb8783c2bb125bf0a9",
+      "bytes": 919
+    },
+    "crates/web/src/viewer/alignment/pairwise_result_view.rs": {
+      "sha256": "8c9db2b3d4773fe9d125e8420264337ae05bd95b836852440b2a0ddb894ceee9",
+      "bytes": 16051
+    }
+  },
+  "native_source_stage": 1,
+  "wasm_source_stage": 2,
+  "wasm_only_correction": {
+    "path": "crates/web/src/viewer/alignment/design_consensus/view.rs",
+    "initial_sha256": "382574fbe061bad912b26178a42d2262c85159ced4e8da9e9db05741d3b8c629",
+    "final_sha256": "549d3afb277f7a288a32b0e645f7a8bee31a2a3837ed330ca0942583848b2401",
+    "detail": "Braced generic attribute closure fixes view-macro parsing. This target-gated view is not compiled by native tests; all native scientific/model inputs are unchanged. No native cases were rerun after this WASM-only correction."
+  },
+  "stdio_smoke": {
+    "exit_code": 0,
+    "tool_count": 229,
+    "script_sha256": "980dad837cd56755204c392d5aac647375c421abdaeb42e3c1248b2ba275168c",
+    "binary_sha256": "8437e999e1185750af7f571c9db90e330f878834e4e66031b4d13a80ac480f6d",
+    "scope": "Default memory-only real executable stdio; optional storage-root/native-workspace/browser-workspace branches not selected."
+  },
+  "independent_coverage": [
+    "Literal synonymous/missense/stop/one-versus-three-base indel, register compensation, reverse/joined/intron/origin coding paths and ambiguous codons.",
+    "Exact genetic-code6 ordinary assignments and independently resealed altered code-data rejection; unsupported/review-dependent coding bases remain conditional.",
+    "Exact event roles/staleness, actual path and source binding, declared circular-coordinate axis, native budgets and current binary framing.",
+    "One semantic/path record round-trips through native workspace and HTML/PDF export, with explicit aligned-text omissions.",
+    "Real SDK whole assessment, source/admission/pagination/full artifact and workspace immutability; native web capture/settings/lifetime guards.",
+    "UTF8 byte-bounded documentary previews with explicit incomplete flag and unchanged original source values."
+  ],
+  "limitations": [
+    "No browser, CDP, screenshot, application HTTP, live-provider, installation or graphical acceptance checks ran.",
+    "A selected affine optimum is not proof of unique correspondence, read confidence, causal edits, physical material, function or experimental confirmation. Coding findings are conditional on the actual selected path and declared annotation/code/coordinate assumptions.",
+    "Generic local FASTA import does not yet retain raw record bytes; unavailable provenance remains explicit.",
+    "Cross-platform and desktop packaging for this source require exact-head CI after publication. The full project goal remains active."
+  ],
+  "format_check": {
+    "mode": "rustfmt --check --config skip_children=true",
+    "files": 42,
+    "exit_code": 0,
+    "source_changed": false
+  }
+}

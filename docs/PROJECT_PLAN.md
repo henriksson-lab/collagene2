@@ -5646,3 +5646,27 @@ required nullable semantic evidence; retain no second path or archive. This
 next-feature source is excluded from the verified batch above. Local FASTA raw
 source retention, unsupported feature semantics, unproven correspondence and
 missing provider evidence must remain explicit rather than inferred.
+
+
+### Design versus supplied consensus — connected checkpoint
+
+The semantic owner now uses one actual whole-sequence comparison, exact source
+events and explicitly declared coding/coordinate assumptions. Its history v3
+record retains one pairwise path plus nullable semantic evidence; current HTML/PDF
+exports retain that evidence, and aligned text warns about omissions. Genetic
+codes use the existing canonical descriptor, ordinary table and revision pin.
+Provider previews are byte bounded and mark incomplete/sanitized display values.
+
+Native compilation, **675 focused cases**, final WASM compilation and real MCP
+stdio smoke (229 tools) pass. One WASM-only attribute needed a parser correction;
+no native cases reran because no native-compiled source changed.
+[Cases, source hashes and limitations](audits/semantic-consensus-current-integration.json).
+Worker 139, history 3 and export 3 reject superseded internal encodings directly;
+candidate 35, workspace plan 33 and verifier science-39 are unchanged. No browser,
+application HTTP or live provider check ran. This checkpoint does not finish the
+full goal.
+
+The preceding published `6a79798` checkpoint now passes cross-platform Check run
+46183534013 and desktop run 46183534122. The current
+[package inventory](audits/desktop-packages-current.json) records its Windows,
+macOS and Debian artifacts. These packages exclude the new semantic batch.

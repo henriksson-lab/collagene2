@@ -266,7 +266,7 @@ impl Report {
             run::event_shape(&pair.product)?;
             assumption_shape(&pair.source_cds)?;
             assumption_shape(&pair.product_cds)?;
-            if pair.code != crate::construct_qc::code_pin(pair.code.descriptor.id)? {
+            if pair.code != crate::construct_qc::CodePin::for_id(pair.code.descriptor.id)? {
                 return Err(invalid("genetic code pin changed"));
             }
             segments = segments

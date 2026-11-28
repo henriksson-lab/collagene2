@@ -23,3 +23,6 @@ pub(crate) mod pairwise_source_view;
 pub(crate) mod sequence_similarity_model;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod sequence_similarity_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod design_consensus;

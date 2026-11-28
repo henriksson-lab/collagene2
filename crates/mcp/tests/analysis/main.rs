@@ -27,3 +27,6 @@ mod causal_qc_tools;
 
 #[path = "screening/mod.rs"]
 mod screening_tools;
+
+#[path = "design_consensus/mod.rs"]
+mod design_consensus_tools;

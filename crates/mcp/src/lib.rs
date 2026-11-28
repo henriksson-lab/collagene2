@@ -5,4 +5,4 @@ pub mod session;
 pub mod tools;
 
 /// Number of tools registered by the current native server.
-pub const CURRENT_TOOL_COUNT: usize = 228;
+pub const CURRENT_TOOL_COUNT: usize = 229;

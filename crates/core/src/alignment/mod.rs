@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 pub const DEFAULT_MAX_CELLS: usize = 16_000_000;
 pub const HARD_MAX_CELLS: usize = 64_000_000;
 pub const MAX_ALIGNMENT_COLUMNS: usize = 1_000_000;
+pub mod design_consensus;
 pub mod grid;
 mod kernel;
 use kernel::{Path, State};

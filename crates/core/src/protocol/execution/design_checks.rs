@@ -90,3 +90,20 @@ pub(super) fn screening(
         .map(AnalysisResult::ScreeningStrategy)
         .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
+
+/// One native comparison plus source-bound coding observations; no second alignment.
+pub(super) fn design_consensus(
+    context: &RequestContext,
+    workspace: crate::documents::workspace::Workspace,
+    request: crate::alignment::design_consensus::Request,
+) -> Result<AnalysisResult, Error> {
+    use crate::alignment::design_consensus;
+    bound(context, design_consensus::revision(&workspace, &request)?)?;
+    let assessed = design_consensus::assess(&workspace, &request).and_then(|report| {
+        report.validate_request(&workspace, &request)?;
+        Ok(report)
+    });
+    Ok(assessed
+        .map(AnalysisResult::DesignConsensus)
+        .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+}

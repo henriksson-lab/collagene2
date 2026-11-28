@@ -70,13 +70,8 @@ impl ComparisonController {
                     return Err("Wait for the workspace update to finish.".into());
                 }
                 let frame = contig_snapshot.run(())?;
-                let (staged, _) = collagene_core::alignment::history::capture(
-                    &frame,
-                    &record.reference,
-                    &record.query,
-                    &record.report,
-                )
-                .map_err(|e| e.to_string())?;
+                let (staged, _) = collagene_core::alignment::history::capture(&frame, &record)
+                    .map_err(|e| e.to_string())?;
                 staged.validate().map_err(|e| e.to_string())?;
                 attachments.set(staged.attachments);
                 message.set("Comparison retained with its exact source versions. Reopening shows historical evidence until explicitly recomputed.".into());
@@ -249,7 +244,7 @@ impl ComparisonController {
                             .map_err(|e| e.to_string())?;
                         if molecule.revision() != request.event.revision
                             || request.spans.is_empty()
-                            || request.spans.len() > 2
+                            || request.spans.len() > 3
                             || request
                                 .spans
                                 .iter()

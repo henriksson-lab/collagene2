@@ -2,6 +2,7 @@ mod base_editing;
 mod causal_qc;
 mod codon;
 mod design_checks;
+mod design_consensus;
 mod ivt;
 mod ivt_linearization;
 mod screening;

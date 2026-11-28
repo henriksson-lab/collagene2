@@ -96,6 +96,7 @@ impl Default for CollageneServer {
                 + Self::vector_class_router()
                 + Self::causal_qc_router()
                 + Self::screening_router()
+                + Self::design_consensus_router()
                 + Self::base_editing_router()
                 + Self::assembly_intents_router()
                 + Self::assembly_router()

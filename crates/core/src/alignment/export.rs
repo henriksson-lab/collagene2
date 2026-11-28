@@ -13,7 +13,7 @@ use std::io::{self, Write};
 
 pub const MAX_EXPORT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_NAME_BYTES: usize = 4096;
-const CONTRACT: &str = "pairwise-export-2";
+const CONTRACT: &str = "pairwise-export-3";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -128,7 +128,7 @@ pub fn preflight(record: &Record, reference_name: &str, query_name: &str) -> Res
         return Err(Error::TooLarge);
     }
     serde_json::to_writer(&mut Counter(0), record).map_err(|_| Error::TooLarge)?;
-    r.validate_binding(&r.context_revision)
+    record.validate_documentary()
 }
 pub fn revision(
     record: &Record,
@@ -173,6 +173,82 @@ impl Blocks {
     fn heading(&mut self, text: &str) -> Result<(), Error> {
         self.push(ReviewBlock::Heading(text.into()))
     }
+}
+fn semantic_blocks(
+    out: &mut Blocks,
+    evidence: &crate::alignment::design_consensus::Evidence,
+) -> Result<(), Error> {
+    crate::encoding::bounded_json::preflight(evidence, out.limit.saturating_sub(out.bytes))?;
+    out.heading("Design versus supplied consensus: conditional evidence")?;
+    out.paragraph(evidence.statement.clone())?;
+    out.paragraph(format!(
+        "Design event: {} / {} / {}. Supplied consensus event: {} / {} / {}.",
+        evidence.request.design.document_id,
+        evidence.request.design.event_id,
+        evidence.request.design.revision,
+        evidence.request.consensus.document_id,
+        evidence.request.consensus.event_id,
+        evidence.request.consensus.revision
+    ))?;
+    out.paragraph(format!("Axis assumption: {:?}. Semantic context: {}. Evidence: {}. Original workspace fingerprint: {}. Coding complete: {}. Selected path conditional: {}.",
+        evidence.request.consensus_axis, evidence.context_revision, evidence.evidence_revision,
+        evidence.workspace_fingerprint, evidence.coding_complete, evidence.selected_path_conditional))?;
+    for source in &evidence.provenance {
+        out.paragraph(format!("Source {:?}: topology {:?}. Original evidence {:?}, format {:?}, bytes {}, hash {:?}. {}",
+            source.role, source.topology, source.original.state, source.original.format,
+            source.original.byte_count, source.original.blake3, source.original.message))?;
+        for field in &source.fields {
+            out.paragraph(format!(
+                "Recorded source field {} (value complete: {}): {}",
+                field.key, field.value_complete, field.value
+            ))?;
+        }
+    }
+    out.paragraph(format!("Coding/mapping work: mapping {}, coding calls {}, register segments {}, consequences {}. Limits: {:?}.",
+        evidence.work.mapping_work, evidence.work.coding_calls, evidence.work.segments,
+        evidence.work.consequences, evidence.request.limits))?;
+    for row in &evidence.cds {
+        out.heading("Declared design CDS")?;
+        out.paragraph(format!("ID: {}. Annotation {} / {} / {}. Rationale: {}. Genetic code: {}. Mapping complete: {}; register complete: {}; consequences complete: {}.",
+            row.id, row.design_cds.feature_index, row.design_cds.source_revision,
+            row.design_cds.annotation_revision, row.design_cds.rationale, row.code.descriptor.id,
+            row.mapping_complete, row.register_complete, row.consequences_complete))?;
+        out.paragraph(format!("Genetic-code pin: {}. Descriptor: {:?}. Ordinary amino acids in TCAG codon enumeration order: {}.",
+            row.code.revision, row.code.descriptor, row.code.ordinary_amino_acids))?;
+        for (role, translation) in [
+            ("Design", &row.design_translation),
+            ("Projected consensus", &row.projected_translation),
+        ] {
+            if let Some(translation) = translation {
+                out.paragraph(format!("{role} translation: {}. Protein: {}. Codons {}, trailing {}, ambiguous {}, unresolved {}, possible stops {}.",
+                    translation.code_name, translation.protein, translation.translated_codons,
+                    translation.trailing_bases, translation.ambiguous_codons,
+                    translation.unresolved_codons, translation.possible_stop_codons))?;
+                for warning in &translation.warnings {
+                    out.paragraph(format!("{role} translation warning: {warning}"))?;
+                }
+            } else {
+                out.paragraph(format!("{role} translation unavailable."))?;
+            }
+        }
+        for finding in &row.findings {
+            out.paragraph(format!(
+                "{:?} / {:?}: {}",
+                finding.rule, finding.verdict, finding.message
+            ))?;
+        }
+        for segment in &row.register_segments {
+            out.paragraph(format!("Coding ordinals after codon-start prefix: design [{}, {}) / projected [{}, {}); offset modulo3 {}.",
+                segment.design_start, segment.design_end, segment.projected_start, segment.projected_end, segment.offset_mod3))?;
+        }
+        for change in &row.consequences {
+            out.paragraph(format!("Conditional codon consequence {:?}: projected {} {} ({}); design {:?} {:?} ({:?}). Original design spans {:?}; original consensus spans {:?}. {}",
+                change.kind, change.projected_codon_index, change.projected_codon, change.projected_amino_acid,
+                change.design_codon_index, change.design_codon, change.design_amino_acid,
+                change.design_coordinates, change.consensus_coordinates, change.message))?;
+        }
+    }
+    Ok(())
 }
 fn label(fresh: bool) -> &'static str {
     if fresh {
@@ -250,6 +326,9 @@ fn blocks(
     b.paragraph(format!("Score {}. Reported aligned intervals (zero-based half-open, oriented): reference [{}, {}), query [{}, {}). Paired coverage: reference {:.6}%, query {:.6}%. Certain matches {}; compatible ambiguous {}; disjoint mismatches {}; inserted query bases {}; deleted reference bases {}. Unaligned flanks: reference {} left / {} right; query {} left / {} right.",a.score,a.reference_start,a.reference_end,a.query_start,a.query_end,a.stats.reference_coverage*100.,a.stats.query_coverage*100.,a.stats.certain_matches,a.stats.ambiguous_compatible,a.stats.mismatches,a.stats.inserted_query_bases,a.stats.deleted_reference_bases,a.reference_start,report.reference_length-a.reference_end,a.query_start,report.query_length-a.query_end))?;
     for warning in c.warnings.iter().chain(&a.warnings) {
         b.paragraph(format!("Warning: {warning}"))?;
+    }
+    if let Some(evidence) = &record.design_consensus {
+        semantic_blocks(&mut b, evidence)?;
     }
     b.heading("Complete aligned columns")?;
     b.paragraph("Rows are shown exactly as returned, including gaps. R/Q numbers are zero-based oriented boundaries. Marks: | certain match; ? compatible ambiguity; X disjoint mismatch; blank at gaps.".into())?;
@@ -408,6 +487,9 @@ pub fn export(
                 },
             )?;
             warnings.extend(result.losses);
+            if record.design_consensus.is_some() {
+                warnings.push("This aligned text format omits design/consensus semantic roles, provenance, axis assumptions, conditional CDS/register/consequence evidence and semantic pins. Retain the complete comparison JSON or HTML/PDF.".into());
+            }
             warnings.push("Standard aligned rows retain gaps and the displayed orientation/origin, but omit native coordinate maps, source display names, complete options, statuses, warnings and other receipt evidence. Keep the HTML/PDF or full JSON with this file. Identifiers reference/query designate roles; they are not renamed native documents.".into());
             (
                 result.text.into_bytes(),

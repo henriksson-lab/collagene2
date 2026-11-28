@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current source registry has 228 tools, including immutable reference editing, named-product screening and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current source registry has 229 tools, including immutable reference editing, named-product screening and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -285,6 +285,45 @@ For the synthetic `fixtures/overlap-demo.fasta`, replace the ID/revision placeho
 `align_sequences` takes `reference` and `query` document references plus `AlignmentOptions` for global, local or query-in-reference affine alignment. `compare_molecules` uses `ComparisonOptions` to explore bounded reference-origin and reverse-query candidates. Inspect its evaluated candidate counts, exhaustive-search and optimality flags before interpreting the best result. The model never labels a budget-limited origin search exhaustive.
 
 All five tools return bounded previews/summaries and an `artifact_id` for the full JSON report. Use `read_artifact` to retrieve it in chunks. Reports bind source revisions, options and scientific engine version; these tools do not mutate documents or confer verification status on AI-proposed cloning steps. Current parameter schemas are available through `tools/list`.
+
+## Design versus supplied consensus
+
+`assess_design_consensus` takes an immutable `workspace: {id, revision}` and a
+native `request`. The request names distinct exact `design` and `consensus`
+events (`document_id`, `event_id`, `revision`), whole-construct `comparison`
+options, `consensus_axis`, explicit `cds` selections and work/output `limits`.
+It uses retained workspace events, rather than inventing history for standalone
+document references. Both sources must be DNA. Identical calls in different
+events remain distinct observations.
+
+Use `StoredTopology`, or explicitly declare
+`DeclaredSingleCircularTurn {rationale}` for the supplied consensus axis. A CDS
+selection names an exact design annotation/source pin, rationale and genetic-code
+number. Outputs retain the resolved code descriptor, all 64 ordinary assignments
+and their revision. Unsupported or stale coding assumptions stay unavailable;
+they do not silently acquire another annotation or code.
+
+One native computation supplies the actual pairwise path and conditional coding
+evidence. The compact response distinguishes selected-path proof from exhaustive
+origin/strand search and reports paired input fractions, not read coverage.
+`cds_start` defaults to 0; `max_cds` defaults to 4 and must be 1–4. Paging and the
+bounded finding preview do not establish absence of omitted evidence. The
+`artifact_id` always points to the complete bounded JSON report (up to 32 MiB);
+use `read_artifact` for chunks. Context, workspace, request, pairwise and semantic
+pins remain explicit. Source provenance reports whether displayed values were
+shortened or cleaned and whether original-byte evidence was available.
+
+The tool does not mutate documents, workspace history or material state. A
+supplied consensus is a source observation, not read-quality evidence,
+experimental verification, sample identity or proof of biological function.
+Coding consequences are conditional on one selected alignment path; an optimal
+score does not establish a unique correspondence.
+
+Selected native/WASM checks, 675 focused cases and real stdio smoke pass;
+[exact execution scope](audits/semantic-consensus-current-integration.json) records
+the WASM-only parser correction. No graphical acceptance is claimed. The related
+[user workflow](DESIGN_CHECKS.md#design-versus-supplied-consensus) uses the same
+native report and existing comparison history/export owners.
 
 ## Primer and PDF tools
 

@@ -23,6 +23,7 @@ fn record(r: &Molecule, q: &Molecule, options: Options) -> Record {
         }
     };
     Record {
+        design_consensus: None,
         schema_version: collagene_core::alignment::history::VERSION,
         reference: binding(0),
         query: binding(1),

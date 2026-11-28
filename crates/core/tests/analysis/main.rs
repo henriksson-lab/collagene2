@@ -4,3 +4,5 @@ mod reads;
 mod search;
 
 mod design_checks;
+
+mod design_consensus;

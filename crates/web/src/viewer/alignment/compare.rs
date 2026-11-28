@@ -54,6 +54,8 @@ pub fn ComparePanel(
     source_info: Callback<usize, Option<SourceInfo>>,
     resolve: Callback<EventBinding, Result<Molecule, String>>,
     epoch: RwSignal<u64>,
+    get_workspace: Callback<(), Result<collagene_core::documents::workspace::Workspace, String>>,
+    workspace_busy: Memo<bool>,
     prepare_similarity: Callback<
         (
             EventBinding,
@@ -76,6 +78,7 @@ pub fn ComparePanel(
         molecule: Arc::new(molecule.get_untracked()),
     });
     let saved_query = RwSignal::new(None::<Pinned>);
+    let semantic = RwSignal::new(false);
     let selected = RwSignal::new(
         query_options
             .get_untracked()
@@ -83,6 +86,7 @@ pub fn ComparePanel(
             .map(|(index, _)| *index)
             .unwrap_or(0),
     );
+    let query_page = RwSignal::new(0usize);
     let policy = RwSignal::new("stored".to_string());
     let mode = RwSignal::new("global".to_string());
     let match_score = RwSignal::new("2".to_string());
@@ -252,6 +256,9 @@ pub fn ComparePanel(
     };
     let guard = Callback::new(move |shown: Arc<Review>| -> Result<(), String> {
         let key = context.get_untracked()?;
+        if semantic.get_untracked() {
+            return Err("The comparison workflow changed.".into());
+        }
         if !report.with_untracked(|current| {
             current
                 .as_ref()
@@ -286,8 +293,16 @@ pub fn ComparePanel(
     });
     let compute = {
         let alive = alive.clone();
-        move |_| {
-            if busy.get_untracked() {
+        Callback::new(move |()| {
+            if busy.get_untracked() || semantic.get_untracked() {
+                return;
+            }
+            if report.with_untracked(|shown| {
+                shown
+                    .as_ref()
+                    .is_some_and(|shown| shown.record.design_consensus.is_some() && !shown.fresh)
+            }) {
+                status.set("This historical record includes design/consensus declarations. Select that workflow and explicitly choose the roles and CDS assumptions to recompute.".into());
                 return;
             }
             let prepared = (|| -> Result<_, String> {
@@ -370,6 +385,7 @@ pub fn ComparePanel(
                             reference: key.reference,
                             query: key.query,
                             report: result,
+                            design_consensus: None,
                         },
                         reference_name: r.name.clone(),
                         query_name: q.name.clone(),
@@ -387,7 +403,7 @@ pub fn ComparePanel(
                     Err(error) => status.set(error),
                 }
             });
-        }
+        })
     };
     let reopen = Callback::new(move |hash: String| {
         let result = (|| -> Result<_, String> {
@@ -408,6 +424,7 @@ pub fn ComparePanel(
             Options::Whole(c) => c.alignment,
         };
         batch(|| {
+            semantic.set(false);
             reference.set(Pinned {
                 binding: record.reference.clone(),
                 molecule: Arc::new(r.clone()),
@@ -467,17 +484,45 @@ pub fn ComparePanel(
             status.set("Historical saved comparison opened. Compute explicitly to replay these pinned versions with the current engine.".into());
         });
     });
+    let design_binding = Memo::new(move |_| reference.get().binding);
+    let semantic_comparison = Memo::new(move |_| {
+        match options.get()? {
+        Options::Whole(options) => Ok(options),
+        Options::Stored(_) => Err("Design/consensus interpretation requires explicitly selecting Whole construct and Global mode above.".into()),
+    }
+    });
     view!{
         <style>".compare-panel .compare-scores{display:grid;grid-template-columns:1fr 1fr;gap:8px}.compare-panel pre{font:11px/1.6 monospace;white-space:pre;overflow:auto;max-height:420px}.compare-panel .compare-result{font-size:13px;line-height:1.6;overflow-wrap:anywhere}.compare-panel .compare-difference{padding:8px 0;border-bottom:1px solid #edf1ed}.compare-panel .compare-difference code{display:block;white-space:pre-wrap;overflow-wrap:anywhere}.compare-panel .compare-warning{color:#796a3e}.compare-panel details{margin:10px 0}"</style>
         <div class="inspector-content compare-panel">
             <crate::viewer::alignment::sequence_similarity_view::SimilaritySearchPanel active_source=active_source subjects=query_options source_info=source_info epoch=epoch prepare=prepare_similarity guard=guard_similarity on_navigate=on_navigate/>
-            <h2>"Pairwise comparison"</h2>
+            <h2>"Sequence comparison"</h2>
+            <label>
+                "Workflow"
+                <select prop:value=move || if semantic.get() {"consensus"} else {"pairwise"}
+                    on:change=move |event| {
+                        cancel.run(());
+                        report.set(None);
+                        semantic.set(event_target_value(&event) == "consensus");
+                    }>
+                    <option value="pairwise">"Pairwise sequence comparison"</option>
+                    <option value="consensus">"Design versus supplied consensus"</option>
+                </select>
+            </label>
             <p class="helper">{move||reference.with(|r|format!("Pinned reference: {}. Source navigation keeps this reference fixed.",r.molecule.name))}</p>
             <button class="button secondary full" on:click=pin_active>"Use active document as reference"</button>
+            <Show when=move || !semantic.get()>
             <label>"Query document"<select prop:value=move||selected.get().to_string() on:change=move|event|{selected.set(event_target_value(&event).parse().unwrap_or(0));saved_query.set(None);}>
-                {move||query_options.get().into_iter().map(|(index,name)|view!{<option value=index.to_string()>{name}</option>}).collect_view()}
+                {move||query_options.get().into_iter().skip(query_page.get()*100).take(100).map(|(index,name)|view!{<option value=index.to_string()>{name}</option>}).collect_view()}
             </select></label>
+            <div class="method-row-actions">
+                <button class="text-tool" disabled=move || query_page.get()==0
+                    on:click=move |_| query_page.update(|page| *page=page.saturating_sub(1))>"Previous query documents"</button>
+                <span>{move || format!("Document page {}",query_page.get()+1)}</span>
+                <button class="text-tool" disabled=move || query_page.get()+1>=query_options.get().len().div_ceil(100)
+                    on:click=move |_| query_page.update(|page| *page+=1)>"Next query documents"</button>
+            </div>
             {move||saved_query.get().map(|query|view!{<p class="helper">{format!("Pinned saved query: {}. Choosing a query document switches to its current version.",query.molecule.name)}</p>})}
+            </Show>
             <label>"Comparison policy"<select prop:value=move||policy.get() on:change=move|event|policy.set(event_target_value(&event))><option value="stored">"Stored origin and orientation"</option><option value="whole">"Whole construct · explicit origin/strand search"</option></select></label>
             <label>"Alignment mode"<select prop:value=move||mode.get() on:change=move|event|mode.set(event_target_value(&event))><option value="global">"Global · end-to-end"</option><option value="local">"Local · matching regions"</option><option value="query">"Query end-to-end in reference"</option></select></label>
             <Show when=move||policy.get()=="whole"><p class="helper">"Whole-construct search requires Global mode. Circular-origin candidates can be seed-limited; best score does not establish a unique alignment or physical topology."</p><label><input type="checkbox" prop:checked=move||both_strands.get() on:change=move|event|both_strands.set(event_target_checked(&event))/>"Compare both query strands"</label><label><input type="checkbox" prop:checked=move||rotations.get() on:change=move|event|rotations.set(event_target_checked(&event))/>"Search circular reference origins"</label><label>"Maximum origin candidates"<input type="number" min="1" max="64" prop:value=move||origins.get() on:input=move|event|origins.set(event_target_value(&event))/></label><label>"Total cumulative cells"<input type="number" min="1" prop:value=move||total_cells.get() on:input=move|event|total_cells.set(event_target_value(&event))/></label></Show>
@@ -493,9 +538,17 @@ pub fn ComparePanel(
                 </Show>
             </details>
             <details><summary>"Scoring and compute budget"</summary><p class="helper">"Gap length k costs opening + (k−1) × extension. Compatible ambiguity is separate from a certain match."</p><div class="compare-scores">{[("Certain match",match_score),("Compatible ambiguity",ambiguity),("Mismatch",mismatch),("Gap opening",gap_open),("Gap extension",gap_extend)].into_iter().map(|(label,field)|view!{<label>{label}<input type="number" prop:value=move||field.get() on:input=move|event|field.set(event_target_value(&event))/></label>}).collect_view()}</div><label>"Cumulative cells per alignment"<input type="number" min="1" prop:value=move||max_cells.get() on:input=move|event|max_cells.set(event_target_value(&event))/></label></details>
-            <button class="button primary full" disabled=move||busy.get() on:click=compute>"Compare pinned versions"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|cancel.run(())>"Cancel comparison"</button>
-            <p class="helper" role="status">{move||status.get()}</p>
-            {move||report.get().map(|review|view!{<PairwiseResultView review guard on_save on_navigate/>})}
+            <Show when=move || !semantic.get()>
+                <button class="button primary full" disabled=move||busy.get() on:click=move |_| compute.run(())>"Compare pinned versions"</button>
+                <button class="text-tool" disabled=move||!busy.get() on:click=move|_|cancel.run(())>"Cancel comparison"</button>
+                <p class="helper" role="status">{move||status.get()}</p>
+                {move||report.get().map(|review|view!{<PairwiseResultView review guard on_save on_navigate/>})}
+            </Show>
+            <Show when=move || semantic.get()>
+                <super::design_consensus::DesignConsensusPanel
+                    design=design_binding consensus_options=query_options source_info
+                    get_workspace workspace_busy epoch comparison=semantic_comparison on_save on_navigate/>
+            </Show>
             <details><summary>"Saved comparisons"</summary><p class="helper">"Saved results reopen as historical evidence. They never restore a current verification result."</p>{move||{
                 let all=saved.get();let pages=all.len().div_ceil(10).max(1);let current=saved_page.get().min(pages-1);
                 let rows=all.into_iter().skip(current*10).take(10).map(|summary|{let hash=summary.attachment_hash;view!{<article><p>{format!("{} → {}",summary.reference_name,summary.query_name)}</p><button class="text-tool" on:click=move|_|reopen.run(hash.clone())>"Open historical comparison"</button></article>}}).collect_view();

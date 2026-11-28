@@ -161,14 +161,29 @@ fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() 
         preview.verification.findings
     );
     assert_eq!(preview.compiled.plan.steps.len(), 7);
-    assert_eq!(preview.verification.products[3].sequence.as_str(), AMPLICON);
-    assert_eq!(preview.verification.products[4].sequence.len(), 44);
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .product(3)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        AMPLICON
+    );
+    assert_eq!(
+        preview
+            .verification
+            .product(4)
+            .expect("selected step must reconstruct")
+            .sequence
+            .len(),
+        44
+    );
+    assert_eq!(
+        preview
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         FILLED

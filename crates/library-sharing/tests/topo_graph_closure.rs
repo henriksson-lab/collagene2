@@ -111,11 +111,17 @@ fn graph_consuming_run_closes_both_records_and_exact_sources_then_replays() {
     let replayed = verification::engine::verify(&plan, target);
     assert!(verification::engine::plan_target_matches(
         &plan,
-        replayed.products.last().unwrap(),
+        replayed
+            .final_product()
+            .expect("final declared step must reconstruct"),
         target
     ));
     assert_eq!(
-        replayed.products.last().unwrap().sequence.as_str(),
+        replayed
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         literal::FINAL
     );
     let mut missing = captured.workspace.clone();

@@ -154,10 +154,13 @@ fn explicit_nick_policy_accepts_graph_without_creating_repaired_duplex_authority
             .is_some()
     );
     assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
-        &accepted.products[0]
+        accepted.product(0).expect("selected step must reconstruct")
     ));
     assert_eq!(
-        accepted.products[0].metadata[collagene_core::cloning::recombination::REFERENCE_ONLY_KEY],
+        accepted
+            .product(0)
+            .expect("selected step must reconstruct")
+            .metadata[collagene_core::cloning::recombination::REFERENCE_ONLY_KEY],
         "true"
     );
     if let Operation::CheckedTopo { policy, .. } = &mut plan.steps[0] {
@@ -165,7 +168,7 @@ fn explicit_nick_policy_accepts_graph_without_creating_repaired_duplex_authority
     }
     let rejected = verify(&plan, &target);
     assert_eq!(rejected.status, Status::Invalid, "{:?}", rejected.findings);
-    assert!(rejected.products.is_empty());
+    assert!((rejected.reconstructed_count() == 0));
     assert_eq!(rejected.step_reports.len(), 1);
     assert!(
         rejected.step_reports[0]
@@ -179,7 +182,7 @@ fn explicit_nick_policy_accepts_graph_without_creating_repaired_duplex_authority
         rejected
             .findings
             .iter()
-            .any(|f| f.contains("retains nicks"))
+            .any(|f| f.message.contains("retains nicks"))
     );
 }
 
@@ -239,7 +242,7 @@ fn unresolved_contour_and_intermediate_checked_topo_are_incomplete() {
         withheld.findings
     );
     assert_eq!(withheld.step_reports.len(), 1);
-    assert!(withheld.products.is_empty());
+    assert!((withheld.reconstructed_count() == 0));
     candidate.steps.push(Operation::TreatEnds {
         template: Source::Step(0),
         treatment: collagene_core::chemistry::EndTreatment::Phosphorylate,
@@ -255,7 +258,7 @@ fn unresolved_contour_and_intermediate_checked_topo_are_incomplete() {
         intermediate
             .findings
             .iter()
-            .any(|f| f.contains("only as the final"))
+            .any(|f| f.message.contains("only as the final"))
     );
     assert!(intermediate.step_reports.is_empty());
 }

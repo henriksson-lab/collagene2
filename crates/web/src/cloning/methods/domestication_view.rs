@@ -748,16 +748,17 @@ pub fn DomesticationView(
         })}
         {move||prepared.get().map(|saved|{
             let open=saved.clone();let physical=&saved.report;let actual=&physical.plan;
-            let complete=physical.verification.products.len()==actual.steps.len();
-            let note_count=physical.verification.findings.len()+physical.verification.assumptions.len()+physical.warnings.len();
-            view!{<section><h3>"Actual physical preparation review"</h3><p>{format!("Native plan assessment: {:?}. Completed {} of {} operations.",physical.verification.status,physical.verification.products.len(),actual.steps.len())}</p>
+            let complete=physical.verification.final_product().is_some();
+            let note_count=physical.verification.assumptions.len()+physical.warnings.len();
+            view!{<section><h3>"Actual physical preparation review"</h3><p>{format!("Native plan assessment: {:?}. Completed {} of {} operations.",physical.verification.status,physical.verification.reconstructed_count(),actual.steps.len())}</p>
                 <h4>"Primer proposal"</h4><p>{if physical.proposal_ready{"Ready under the declared construction and primer constraints. This is separate from sequence verification and experimental success."}else{"Not ready under the declared primer constraints. The actual sequence verification remains unchanged; open this as a diagnostic candidate for review or manual editing."}}</p><ul>{physical.proposal_findings.iter().map(|finding|view!{<li>{finding.clone()}</li>}).collect_view()}</ul>
                 <PreparationEvidence method=Arc::new(physical.method.clone())/>
                 <crate::assembly::review::assembly_outputs::AssemblyOutputs capture=capture_preparation identity=preparation_identity epoch/>
 
-                {physical.verification.findings.iter().chain(&physical.verification.assumptions).chain(&physical.warnings).skip(preparation_note_page.get().min(pages(note_count,LIST_PAGE)-1)*LIST_PAGE).take(LIST_PAGE).map(|message|view!{<p>{message.clone()}</p>}).collect_view()}
+                {crate::protocol::verification_view::findings(&physical.verification.findings)}
+                {physical.verification.assumptions.iter().chain(&physical.warnings).skip(preparation_note_page.get().min(pages(note_count,LIST_PAGE)-1)*LIST_PAGE).take(LIST_PAGE).map(|message|view!{<p>{message.clone()}</p>}).collect_view()}
                 <Pager page=preparation_note_page total=note_count limit=LIST_PAGE label="preparation findings"/>
-                {if complete {physical.verification.products.last().map(|product|view!{<h4>"Reconstructed final product"</h4><crate::assembly::review::assembly_product_view::ReferenceCanvas product=product.clone() identity=product.revision() current=preparation_current on_message=Callback::new(move|message|status.set(message))/>}).into_any()}else{view!{<p>"A full physical product was not reconstructed. A completed preparation prefix is not the final product."</p>}.into_any()}}
+                {if complete {physical.verification.final_product().map(|product|view!{<h4>"Reconstructed final product"</h4><crate::assembly::review::assembly_product_view::ReferenceCanvas product=product.clone() identity=product.revision() current=preparation_current on_message=Callback::new(move|message|status.set(message))/>}).into_any()}else{view!{<p>"A full physical product was not reconstructed. An available intermediate is not the designated final product."</p>}.into_any()}}
                 <button class="button primary" disabled=move||pending.get() on:click=move|_|open_plan.run(open.clone())>{if physical.proposal_ready{"Open plan for verification and outputs"}else{"Open diagnostic plan for review or editing"}}</button>
             </section>}
         })}

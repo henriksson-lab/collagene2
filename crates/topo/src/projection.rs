@@ -212,21 +212,24 @@ impl From<crate::Error> for Error {
         Self::Engine(e)
     }
 }
-pub(crate) fn limits(l: &ProjectionLimits) -> Result<(), Error> {
-    if l.max_pairs == 0
-        || l.max_pairs > 500_000
-        || l.max_work_cells == 0
-        || l.max_work_cells > 128_000_000
-        || l.max_work_bytes == 0
-        || l.max_work_bytes > 128 * 1024 * 1024
-        || l.max_mapping_segments == 0
-        || l.max_mapping_segments > 16384
-        || l.max_report_bytes == 0
-        || l.max_report_bytes > 32 * 1024 * 1024
-    {
-        Err(Error::InvalidLimits)
-    } else {
-        Ok(())
+impl ProjectionLimits {
+    pub fn validate(&self) -> Result<(), Error> {
+        let l = self;
+        if l.max_pairs == 0
+            || l.max_pairs > 500_000
+            || l.max_work_cells == 0
+            || l.max_work_cells > 128_000_000
+            || l.max_work_bytes == 0
+            || l.max_work_bytes > 128 * 1024 * 1024
+            || l.max_mapping_segments == 0
+            || l.max_mapping_segments > 16384
+            || l.max_report_bytes == 0
+            || l.max_report_bytes > 32 * 1024 * 1024
+        {
+            Err(Error::InvalidLimits)
+        } else {
+            Ok(())
+        }
     }
 }
 fn selection(
@@ -236,7 +239,7 @@ fn selection(
     select: &Selection,
     o: &Options,
 ) -> Result<String, Error> {
-    limits(&o.limits)?;
+    o.limits.validate()?;
     if select.source_batch_revision.len() != 64
         || !select
             .source_batch_revision
@@ -779,7 +782,7 @@ pub fn replay(
 impl ProjectionReport {
     /// Readonly envelope/contour correspondence; does not reconstruct chemistry.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
-        limits(&self.options.limits)?;
+        self.options.limits.validate()?;
         let physical = &self.physical;
         physical.validate_binding(&self.selection.source_batch_revision)?;
         if self.engine != ENGINE

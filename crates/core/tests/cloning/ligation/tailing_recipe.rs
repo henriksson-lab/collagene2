@@ -193,13 +193,29 @@ fn keep_saved_t_vector_and_add_a_insert_preserves_actual_material_and_only_new_o
             .count(),
         1
     );
-    assert_eq!(p.prepared[0].sequence.as_str(), "AAACCCT");
     assert_eq!(
-        p.prepared[0].metadata.get("tracked_modifications").cloned(),
+        p.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        "AAACCCT"
+    );
+    assert_eq!(
+        p.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .metadata
+            .get("tracked_modifications")
+            .cloned(),
         saved_modifications
     );
     assert!(same_circle(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AAACCCTGGGTTTA"
     ));
     assert!(
@@ -249,9 +265,8 @@ fn keep_saved_t_vector_and_add_a_insert_preserves_actual_material_and_only_new_o
     assert!(same_circle(
         wrong
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "AAACCCTGGGTTTA"
@@ -285,9 +300,8 @@ fn keep_saved_t_vector_and_add_a_insert_preserves_actual_material_and_only_new_o
     assert!(same_circle(
         reverse
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "AAACCCTAAACCCA"
@@ -362,7 +376,11 @@ fn both_existing_saved_tails_do_not_repeat_tailing_or_order_upstream_primers() {
             .is_empty()
     );
     assert!(same_circle(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AAACCCTGGGTTTA"
     ));
 }
@@ -417,7 +435,11 @@ fn all_four_explicit_bases_match_independent_ta_gc_scar_sequences() {
         assert_eq!(p.profile_status, ProfileStatus::Matched);
         assert_eq!(p.verification.status, Status::ConsistentUnderAssumptions);
         assert!(same_circle(
-            p.verification.products.last().unwrap().sequence.as_str(),
+            p.verification
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence
+                .as_str(),
             letters
         ));
         p.validate_for(&inputs, &target, &recipe, &p.context_revision)
@@ -547,9 +569,13 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
     };
     let report = verification::engine::verify(&plan, &stock_target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 5);
+    assert_eq!(report.reconstructed_count(), 5);
     assert_eq!(
-        report.products[4].sequence.as_str(),
+        report
+            .product(4)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         "AGTCCGATGCTATTCGAACCT"
     );
     let commit = run_lineage::record_run(
@@ -634,7 +660,11 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
             .covalently_closed_in_model
     );
     assert!(same_circle(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AGTCCGATGCTATTCGAACCTGGGTTTA"
     ));
     let origin_report = p
@@ -746,7 +776,10 @@ mod preparation_and_receipt_tests {
                     .unwrap()
                     .covalently_closed_in_model
             );
-            let actual = p.verification.products.last().unwrap();
+            let actual = p
+                .verification
+                .final_product()
+                .expect("final declared step must reconstruct");
             assert!(same_circle(actual.sequence.as_str(), letters));
             assert_eq!(actual.sequence.len(), 14);
             for (i, base) in [a, b].iter().enumerate() {
@@ -775,7 +808,7 @@ mod preparation_and_receipt_tests {
         let wrong = t::preview(&inputs, &target, &recipe).unwrap();
         assert_eq!(wrong.verification.status, Status::Invalid);
         assert!(wrong.preparation_complete);
-        assert!(wrong.verification.products.last().is_some());
+        assert!(wrong.verification.final_product().is_some());
         recipe.fragments[1].action =
             collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                 base: TailingBase::T,
@@ -825,9 +858,8 @@ mod preparation_and_receipt_tests {
         assert!(same_circle(
             nicked
                 .verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .sequence
                 .as_str(),
             "AAACCCTGGGTTTA"
@@ -914,7 +946,11 @@ mod preparation_and_receipt_tests {
             p.verification.findings
         );
         assert!(same_circle(
-            p.verification.products.last().unwrap().sequence.as_str(),
+            p.verification
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence
+                .as_str(),
             "GGGAAACCCTGGGTTTCCCA"
         ));
         assert!(
@@ -978,7 +1014,10 @@ mod preparation_and_receipt_tests {
         stale[0].molecule.name = "Different exact source".into();
         assert!(t::preview_revision(&stale, &target, &recipe).is_err());
         let mut bad = good.clone();
-        bad.prepared[0].name = "Foreign prepared document".into();
+        bad.prepared[0]
+            .as_mut()
+            .expect("prepared row must reconstruct")
+            .name = "Foreign prepared document".into();
         assert!(bad.validate_binding(&expected).is_err());
         let mut bad = good;
         bad.junctions[0].upstream_end = None;

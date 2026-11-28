@@ -117,8 +117,8 @@ impl CatalogSelection {
         if self.catalog_edition != c.edition().edition
             || self.catalog_content_hash != c.content_hash()
         {
-            return Err(bad(
-                "catalog edition/content changed; select again explicitly",
+            return Err(Error::Format(
+                "catalog digest: catalog edition/content changed; select again explicitly".into(),
             ));
         }
         for selected in &self.enzymes {
@@ -127,10 +127,12 @@ impl CatalogSelection {
                 .enzymes
                 .iter()
                 .find(|e| e.id == selected.id)
-                .ok_or_else(|| bad("selected exact enzyme ID is absent"))?;
+                .ok_or_else(|| {
+                    Error::Format("catalog digest: selected exact enzyme ID is absent".into())
+                })?;
             if selected.enzyme != spec(record) {
-                return Err(bad(
-                    "selected identity/name/geometry differs from the pinned catalog",
+                return Err(Error::Format(
+                    "catalog digest: selected identity/name/geometry differs from the pinned catalog".into(),
                 ));
             }
         }

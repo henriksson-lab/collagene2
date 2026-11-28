@@ -233,7 +233,8 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
     assert_eq!(artifact["inputs"], inputs);
     let pool = &artifact["report"]["pool"];
     let declared_a: Molecule =
-        serde_json::from_value(artifact["report"]["verification"]["products"][0].clone()).unwrap();
+        serde_json::from_value(artifact["report"]["verification"]["steps"][0]["product"].clone())
+            .unwrap();
     assert_eq!(declared_a.sequence, a.sequence);
     assert_eq!(pool["sources"][0]["revision"], declared_a.revision());
     let fragments = pool["fragments"].as_array().unwrap();
@@ -437,7 +438,7 @@ async fn inverse_pcr_creates_an_explicit_reviewable_phosphorylation_and_ligation
         )
         .await;
     assert_eq!(report["status"], "ConsistentUnderAssumptions");
-    assert_eq!(report["products"].as_array().unwrap().len(), 3);
+    assert_eq!(report["steps"].as_array().unwrap().len(), 3);
     s.pdf(&response, "ConsistentUnderAssumptions", &target)
         .await;
     for (document, target_ref) in [

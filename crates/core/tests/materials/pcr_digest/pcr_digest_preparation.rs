@@ -64,12 +64,24 @@ fn pcr_added_bsai_sites_have_independent_top_bottom_geometry_and_original_source
         "{:?}",
         report.verification.findings
     );
-    assert_eq!(report.verification.products.len(), 3);
+    assert_eq!(report.verification.reconstructed_count(), 3);
     assert_eq!(
-        report.verification.products[0].sequence.as_str(),
+        report
+            .verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         "GGTCTCAACGACCCCGGGGTAACTGAGACC"
     );
-    assert_eq!(report.prepared[0].sequence.as_str(), "ACGACCCCGGGG");
+    assert_eq!(
+        report.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        "ACGACCCCGGGG"
+    );
     let summary = report.physical[0].as_ref().unwrap();
     assert_eq!(
         (
@@ -149,7 +161,14 @@ fn optional_repair_is_a_separate_chain_step_and_overlap_receipt_accepts_chain_ma
     };
     let report = a::preview(&inputs, &target("ACGACCCCGGGG"), &ar).unwrap();
     assert!(report.preparation_complete);
-    assert_eq!(report.prepared[0].sequence.as_str(), "ACGACCCCGGGG");
+    assert_eq!(
+        report.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        "ACGACCCCGGGG"
+    );
     report.validate().unwrap();
 }
 #[test]
@@ -163,7 +182,14 @@ fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_referen
     )
     .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
-    assert_eq!(wrong.prepared[0].sequence.as_str(), "ACGACCCCGGGG");
+    assert_eq!(
+        wrong.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        "ACGACCCCGGGG"
+    );
     let mut r = recipe();
     if let Preparation::PcrCatalogDigest { fragment_index, .. } =
         &mut r.fragments[0].source.preparation
@@ -178,7 +204,7 @@ fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_referen
     )
     .unwrap();
     assert!(!absent.preparation_complete);
-    assert_eq!(absent.verification.products.len(), 1);
+    assert_eq!(absent.verification.reconstructed_count(), 1);
     let inside = l::preview(
         &[input("ACGACCCCGGTCTCGGGGTAAC")],
         &target("ACGACCCCGGTCTCGGGG"),

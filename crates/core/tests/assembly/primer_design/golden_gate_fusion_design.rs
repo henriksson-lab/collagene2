@@ -129,7 +129,10 @@ fn physical(inputs: &[PlanInput], m: &fusion::Materialized) {
         "{:?}",
         report.verification.findings
     );
-    let actual = report.verification.products.last().unwrap();
+    let actual = report
+        .verification
+        .final_product()
+        .expect("final declared step must reconstruct");
     let declared = m
         .placements
         .iter()

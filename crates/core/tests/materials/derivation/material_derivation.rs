@@ -235,7 +235,14 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.last().unwrap().sequence.as_str(), STOCK);
+    assert_eq!(
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        STOCK
+    );
     let committed = cloning_outputs::finalize(
         &w,
         &plan,

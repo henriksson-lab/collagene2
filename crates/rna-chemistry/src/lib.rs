@@ -1,5 +1,6 @@
 //! Declared covalent RNA chemistry; no measured-state, cloning or activity authority.
 mod formula;
+pub mod ivt;
 use collagene_model::{Alphabet, Molecule, Topology};
 pub use formula::{Formula, MASS_MODEL, Mass};
 use serde::{Deserialize, Serialize};

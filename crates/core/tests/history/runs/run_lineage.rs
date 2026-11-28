@@ -244,7 +244,11 @@ fn explicit_tail_operation_is_preserved_and_replayed() {
     let r = replay_run(&c.workspace, &c.receipt.run_id).unwrap();
     assert!(r.products_match);
     assert_eq!(
-        r.current_report.products.last().unwrap().sequence.as_str(),
+        r.current_report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "ATCAAAAGATA"
     );
 }
@@ -502,8 +506,21 @@ fn historical_engines_are_retained_but_current_replay_reports_the_difference() {
     // Current native evidence carries its actual current scientific stamp. Equal
     // reference DNA cannot substitute for the historical evidence-bearing revision.
     assert!(!replay.products_match);
-    assert_eq!(replay.current_report.products.len(), r.products.len());
-    for (current, historical) in replay.current_report.products.iter().zip(&r.products) {
+    assert_eq!(
+        replay.current_report.reconstructed_count(),
+        r.products.len()
+    );
+    for (current, historical) in replay
+        .current_report
+        .steps
+        .iter()
+        .map(|step| {
+            step.product
+                .as_ref()
+                .expect("each declared step must reconstruct")
+        })
+        .zip(&r.products)
+    {
         assert_eq!(
             current.sequence,
             restarted.revisions[&historical.revision].sequence
@@ -589,7 +606,7 @@ fn matched_profile_limit_requires_explicit_incomplete_capture_and_keeps_both_rol
     ];
     let report = verify(&p, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     assert!(record_run(&w, &p, binding(&w, 2), inputs.clone(), false).is_err());
     let c = record_run(&w, &p, binding(&w, 2), inputs, true).unwrap();
     let e = c

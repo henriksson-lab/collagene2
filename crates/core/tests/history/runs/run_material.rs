@@ -216,12 +216,16 @@ fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
         workspace.head(&workspace.active_document).unwrap(),
     );
     assert!(
-        report.status != Status::Invalid && report.products.len() == 4,
+        report.status != Status::Invalid && report.reconstructed_count() == 4,
         "{:?}",
         report
     );
     assert_eq!(
-        report.products.last().unwrap().sequence.as_str(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "TTGCAATCGTCGATGCTAGCATCGTCGATGCTAGCGGTAC"
     );
     let committed = cloning_outputs::finalize(
@@ -519,7 +523,7 @@ fn documentary_origin_and_forged_preview_summary_do_not_promote_reference_only_o
         }],
     };
     let report = collagene_core::verification::engine::verify(&plan, &target);
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     let workspace =
         Workspace::from_documents("Reference-only saved run", vec![source, target], 1).unwrap();
     let committed = cloning_outputs::finalize(

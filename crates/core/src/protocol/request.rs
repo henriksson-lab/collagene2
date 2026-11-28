@@ -45,6 +45,35 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::AnalyzeBaseEditing { molecule, request } => {
+                if crate::sequence::crispr::base_editing::revision(molecule, request)?
+                    != self.revision
+                {
+                    return Err(Error::Format(
+                        "Base-editing source/declaration context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::ListIvtProfiles => {
+                if crate::rna_chemistry::ivt::catalogue_revision()
+                    .map_err(|error| Error::Format(error.to_string()))?
+                    != self.revision
+                {
+                    return Err(Error::Format(
+                        "IVT profile catalogue context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::AssessIvtTemplate { molecule, request } => {
+                if crate::rna_chemistry::ivt::revision(molecule, request)
+                    .map_err(|error| Error::Format(error.to_string()))?
+                    != self.revision
+                {
+                    return Err(Error::Format(
+                        "IVT source/declaration context changed".into(),
+                    ));
+                }
+            }
             AnalysisJob::AnalyzeConstructQc { molecule, options } => {
                 if crate::construct_qc::revision(molecule, options)? != self.revision {
                     return Err(Error::Format("Construct QC source/options differ".into()));

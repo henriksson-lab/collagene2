@@ -234,9 +234,17 @@ fn original_contribution_intent_is_frozen_before_whole_parent_discovery_and_expl
     let evaluated = design::evaluate(&d, &row, &w).unwrap();
     assert_eq!(evaluated.verification().status, Status::Incomplete);
     assert!(evaluated.preparation_complete());
-    assert_eq!(evaluated.verification().products.len(), 1);
+    assert_eq!(evaluated.verification().reconstructed_count(), 1);
     assert_eq!(evaluated.verification().reference_step_reports.len(), 1);
-    assert!(chemistry::Duplex::from_molecule(&evaluated.verification().products[0]).is_err());
+    assert!(
+        chemistry::Duplex::from_molecule(
+            evaluated
+                .verification()
+                .product(0)
+                .expect("selected step must reconstruct")
+        )
+        .is_err()
+    );
     let oligos = collagene_core::planning::oligos::build(
         evaluated.plan(),
         &evaluated.resolved.target,
@@ -280,7 +288,7 @@ fn exact_event_or_target_changes_invalidate_pins_even_when_literal_dna_matches()
     assert_eq!(wrong.batch.batch_revision, inspected.batch.batch_revision);
     let evaluated = design::evaluate(&d, &row, &w).unwrap();
     assert_eq!(evaluated.verification().status, Status::Invalid);
-    assert_eq!(evaluated.verification().products.len(), 1);
+    assert_eq!(evaluated.verification().reconstructed_count(), 1);
     assert_eq!(evaluated.verification().reference_step_reports.len(), 1);
 }
 #[test]

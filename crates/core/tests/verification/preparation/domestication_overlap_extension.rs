@@ -117,8 +117,11 @@ fn whole_linear_and_circular_sources_use_four_or_six_actual_steps_and_all_oligos
             "{:?}",
             report.verification.findings
         );
-        assert_eq!(report.verification.products.len(), count);
-        let product = report.verification.products.last().unwrap();
+        assert_eq!(report.verification.reconstructed_count(), count);
+        let product = report
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct");
         assert_eq!(product.sequence.as_str(), EDITED);
         assert_eq!(product.topology, topology);
         assert!(verification::engine::plan_target_matches(
@@ -369,7 +372,21 @@ fn competing_native_geometries_remain_an_explicit_nonready_diagnostic_proposal()
         report.verification.status,
         Status::ConsistentUnderAssumptions
     );
-    assert!(report.verification.products.is_empty());
+    report.verification.validate_documentary().unwrap();
+    assert_eq!(report.verification.planned_steps, report.plan.steps.len());
+    assert_eq!(report.verification.steps.len(), report.plan.steps.len());
+    assert!(
+        report.verification.steps.iter().any(|step| {
+            step.state == verification::evidence::StepState::Reconstructed && step.product.is_some()
+        }),
+        "an independent reconstructed branch remains a documentary result, never proposal readiness"
+    );
+    let fresh = verification::engine::verify(&report.plan, &report.target);
+    assert_eq!(
+        serde_json::to_value(&report.verification).unwrap(),
+        serde_json::to_value(&fresh).unwrap(),
+        "nonready proposals preserve the entire current indexed report without redaction"
+    );
     assert_eq!(&report.target.sequence.as_str()[24..30], "GACTTC");
     report.validate_binding(&report.context_revision).unwrap();
     let mut forged = report.clone();

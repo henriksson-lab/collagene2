@@ -33,7 +33,7 @@ pub struct ProductBinding { pub step_index:usize, pub document_id:String, pub ev
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct RecordedAssessment { pub engine_version:String, pub status:Status, pub findings:Vec<String>, pub assumptions:Vec<String>, pub exhaustive_alternative_search:bool }
+pub struct RecordedAssessment { pub engine_version:String, pub status:Status, pub findings:Vec<crate::verification::checks::CheckFinding>, pub assumptions:Vec<String>, pub exhaustive_alternative_search:bool }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -208,7 +208,12 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
     {
         return Err(bad("invalid schema or assessment"));
     }
-    validate_texts(&r.assessment.findings, 10_000)?;
+    if r.assessment.findings.len() > 10_000 {
+        return Err(Error::TooLarge);
+    }
+    for finding in &r.assessment.findings {
+        finding.validate()?;
+    }
     validate_texts(&r.assessment.assumptions, 1_000)?;
     if !r
         .assessment
@@ -413,12 +418,16 @@ pub fn record_run(
         inputs.push(b.clone());
     }
     let mut report = verification::engine::verify(plan, target);
+    report.validate_documentary()?;
     let physical_graphs = std::mem::take(&mut report.physical_processing_reports);
     let reference_graphs = std::mem::take(&mut report.reference_step_reports);
-    if report.products.len() != plan.steps.len()
+    if report.steps.len() != plan.steps.len()
+        || report.steps.iter().any(|step| {
+            step.state != crate::verification::evidence::StepState::Reconstructed
+                || step.product.is_none()
+        })
         || !report
-            .products
-            .last()
+            .final_product()
             .is_some_and(|p| verification::engine::plan_target_matches(plan, p, target))
         || report.status == Status::Invalid
         || (report.status == Status::Incomplete && !allow_incomplete)
@@ -436,16 +445,20 @@ pub fn record_run(
         target: target_binding,
         inputs,
         products: report
-            .products
+            .steps
             .iter()
-            .enumerate()
-            .map(|(i, m)| ProductBinding {
-                step_index: i,
-                document_id: String::new(),
-                event_id: String::new(),
-                revision: m.revision(),
+            .map(|step| {
+                let molecule = report
+                    .product(step.step_index)
+                    .ok_or_else(|| bad("complete run lost a reconstructed step product"))?;
+                Ok(ProductBinding {
+                    step_index: step.step_index,
+                    document_id: String::new(),
+                    event_id: String::new(),
+                    revision: molecule.revision(),
+                })
             })
-            .collect(),
+            .collect::<Result<Vec<_>, Error>>()?,
         assessment: RecordedAssessment {
             engine_version: report.engine_version,
             status: report.status,
@@ -467,7 +480,11 @@ pub fn record_run(
         }
     }
     let mut next = w.clone();
-    for (i, m) in report.products.into_iter().enumerate() {
+    for step in report.steps {
+        let i = step.step_index;
+        let m = step
+            .product
+            .ok_or_else(|| bad("complete run lost a reconstructed step product"))?;
         let base = format!("run-{}-{}", r.run_id, i + 1);
         let mut id = base.clone();
         let mut n = 0;
@@ -526,12 +543,15 @@ pub fn replay_run(w: &Workspace, id: &str) -> Result<ReplayReport, Error> {
     let fingerprint = workspace_fingerprint(w)?;
     let r = load_run(w, id)?;
     let report = verification::engine::verify(&r.plan, resolve(w, &r.target)?);
-    let products_match = report.products.len() == r.products.len()
-        && report
-            .products
-            .iter()
-            .zip(&r.products)
-            .all(|(m, b)| m.revision() == b.revision);
+    report.validate_documentary()?;
+    let products_match = report.steps.len() == r.products.len()
+        && report.steps.iter().zip(&r.products).all(|(step, binding)| {
+            step.state == crate::verification::evidence::StepState::Reconstructed
+                && step
+                    .product
+                    .as_ref()
+                    .is_some_and(|product| product.revision() == binding.revision)
+        });
     Ok(ReplayReport {
         run_id: r.run_id,
         source_workspace_fingerprint: fingerprint,
@@ -582,13 +602,19 @@ impl ReplayReport {
             return Err(bad("replay workspace changed"));
         }
         let record = load_run(workspace, &self.run_id)?;
-        let products_match = self.current_report.products.len() == record.products.len()
+        let products_match = self.current_report.steps.len() == record.products.len()
             && self
                 .current_report
-                .products
+                .steps
                 .iter()
                 .zip(&record.products)
-                .all(|(m, p)| m.revision() == p.revision);
+                .all(|(step, binding)| {
+                    step.state == crate::verification::evidence::StepState::Reconstructed
+                        && step
+                            .product
+                            .as_ref()
+                            .is_some_and(|product| product.revision() == binding.revision)
+                });
         if self.recorded_status != record.assessment.status
             || self.recorded_engine != record.assessment.engine_version
             || self.products_match != products_match
@@ -610,19 +636,20 @@ impl ReplayReport {
             return Err(bad("invalid replay report"));
         }
         let report = &self.current_report;
+        report.validate_documentary()?;
         if !digest(&report.plan_revision)
             || !digest(&report.target_revision)
             || report.engine_version.is_empty()
             || report.engine_version.len() > 128
-            || report.products.len() > 1000
+            || report.steps.len() > 1000
             || self.recorded_engine.len() > 128
-            || (self.products_match && report.products.is_empty())
+            || (self.products_match && report.steps.is_empty())
         {
             return Err(bad("invalid current replay assessment"));
         }
-        validate_texts(&report.findings, 10_000)?;
+
         validate_texts(&report.assumptions, 1_000)?;
-        for product in &report.products {
+        for product in report.steps.iter().filter_map(|step| step.product.as_ref()) {
             product.validate()?;
         }
         hash(self)?;

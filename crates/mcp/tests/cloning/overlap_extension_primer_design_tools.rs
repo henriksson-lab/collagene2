@@ -156,8 +156,12 @@ async fn six_auto_oligos_keep_original_stock_independent_intent_and_full_recipe_
     assert_eq!(
         report
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 38]

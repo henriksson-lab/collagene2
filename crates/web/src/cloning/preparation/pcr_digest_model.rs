@@ -1246,7 +1246,7 @@ mod overlap_extension_digest_tests {
         let checked = collagene_core::verification::engine::verify(&plan, &target);
         assert_eq!(checked.status, Status::Incomplete, "{:?}", checked.findings);
         assert_eq!(
-            checked.products.last().unwrap().sequence.as_str(),
+            checked.final_product().unwrap().sequence.as_str(),
             target.sequence.as_str()
         );
     }

@@ -295,9 +295,8 @@ fn five_prime_saved_source_library_releases_native_material_and_exports_actual_p
     assert_eq!(
         physical
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE
@@ -365,7 +364,7 @@ fn five_prime_saved_source_library_releases_native_material_and_exports_actual_p
         &committed.workspace,
         &run_material::Selection {
             run_id: output.run.run_id.clone(),
-            step_index: replay.current_report.products.len() - 1,
+            step_index: replay.current_report.planned_steps - 1,
             event: product.clone(),
         },
     )
@@ -430,7 +429,7 @@ fn three_prime_library_keeps_real_segments_and_nicks_and_planned_rescue_never_cr
             &committed.workspace,
             &run_material::Selection {
                 run_id: output.run.run_id.clone(),
-                step_index: replay.current_report.products.len() - 1,
+                step_index: replay.current_report.planned_steps - 1,
                 event: output.construct.clone()
             }
         )
@@ -477,9 +476,8 @@ fn mismatched_policy_is_row_local_and_wrong_independent_target_is_never_replaced
     assert_eq!(
         evaluated
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE

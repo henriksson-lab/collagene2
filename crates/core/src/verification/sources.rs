@@ -1,10 +1,12 @@
 //! Source-bound plan preflight and role binding.
+use super::checks::RuleId;
 use super::evidence::evidence_bytes;
 use crate::{
     chemistry,
     planning::plan::{DesignPlan, Operation, Source, TopoSource},
 };
 use collagene_model::{Alphabet, Error, Molecule, Topology};
+use std::cell::Cell;
 use std::collections::BTreeSet;
 /// Cheap borrowed snapshot/resource guard before plan hashing or source clones.
 /// Actual sequence intervals, strand pairing and scalar engine policies are
@@ -241,23 +243,46 @@ pub fn declared_source_termini_preflight(source: &Molecule) -> Result<(), Error>
     Ok(())
 }
 
-pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
-    crate::material::capsule::plan_preflight(plan)?;
-    if plan.steps.len() > 1000 || plan.inputs.len() > 1000 {
-        return Err(Error::TooLarge);
+/// Current per-operation semantic validation. Global resource admission is
+/// separate so one rejected profile does not suppress independent branches.
+pub(super) struct ReferenceChecks {
+    pinned_catalog: Option<crate::cloning::restriction::catalog::catalog::Catalog>,
+}
+impl ReferenceChecks {
+    pub(super) fn new(plan: &DesignPlan) -> Result<Self, Error> {
+        let count = plan
+            .steps
+            .iter()
+            .filter(|step| {
+                matches!(
+                    step,
+                    Operation::ResectThreePrime { .. }
+                        | Operation::HomologyAnnealing { .. }
+                        | Operation::HomologyAssembly { .. }
+                        | Operation::Topo { .. }
+                        | Operation::CheckedTopo { .. }
+                        | Operation::MultiSiteRecombineReference { .. }
+                        | Operation::TopoActions { .. }
+                        | Operation::RecombineReference { .. }
+                )
+            })
+            .count();
+        if count > 64 {
+            return Err(Error::TooLarge);
+        }
+        let pinned_catalog = if plan.steps.iter().any(|step| {
+            matches!(
+                step,
+                Operation::CatalogDigest { .. } | Operation::CheckedDigest { .. }
+            )
+        }) {
+            Some(crate::cloning::restriction::catalog::builtin_catalog()?)
+        } else {
+            None
+        };
+        Ok(Self { pinned_catalog })
     }
-    let pinned_catalog = if plan.steps.iter().any(|s| {
-        matches!(
-            s,
-            Operation::CatalogDigest { .. } | Operation::CheckedDigest { .. }
-        )
-    }) {
-        Some(crate::cloning::restriction::catalog::builtin_catalog()?)
-    } else {
-        None
-    };
-    let mut count = 0usize;
-    for step in &plan.steps {
+    pub(super) fn validate_step(&self, step: &Operation, rule: &Cell<RuleId>) -> Result<(), Error> {
         if let Operation::CatalogDigest {
             selection,
             conditions: Some(conditions),
@@ -269,7 +294,11 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             ..
         } = step
         {
-            conditions.validate_for(pinned_catalog.as_ref().ok_or(Error::TooLarge)?, selection)?;
+            rule.set(RuleId::ReactionConditions);
+            conditions.validate_for(
+                self.pinned_catalog.as_ref().ok_or(Error::TooLarge)?,
+                selection,
+            )?;
         }
         if let Operation::CheckedDigest {
             selection,
@@ -278,8 +307,9 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             ..
         } = step
         {
+            rule.set(RuleId::RestrictionProfile);
             selection.validate_for(
-                pinned_catalog
+                self.pinned_catalog
                     .as_ref()
                     .ok_or_else(|| Error::Format("missing checked catalog".into()))?,
             )?;
@@ -289,9 +319,8 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             }
         }
         if let Operation::ResectThreePrime { cuts, .. } = step {
-            count += 1;
-            if count > 64
-                || cuts.left > crate::cloning::overlap::resection::MAX_SOURCE_BASES / 2
+            rule.set(RuleId::EndRepair);
+            if cuts.left > crate::cloning::overlap::resection::MAX_SOURCE_BASES / 2
                 || cuts.right > crate::cloning::overlap::resection::MAX_SOURCE_BASES / 2
             {
                 return Err(Error::TooLarge);
@@ -303,10 +332,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             policy,
         } = step
         {
-            count += 1;
-            if count > 64 {
-                return Err(Error::TooLarge);
-            }
+            rule.set(RuleId::HomologyPolicy);
             policy.validate_shape(fragments.len())?;
             policy.validate_profile(options.method)?;
             options.validate()?;
@@ -326,10 +352,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             policy,
         } = step
         {
-            count += 1;
-            if count > 64 {
-                return Err(Error::TooLarge);
-            }
+            rule.set(RuleId::HomologyPolicy);
             policy.validate_shape(fragments.len())?;
 
             options.validate()?;
@@ -352,6 +375,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             physical_sequence_key,
         } = step
         {
+            rule.set(RuleId::GoldenGatePolicy);
             if templates.is_empty()
                 || templates.len() > 32
                 || options.min_fragments == 0
@@ -386,8 +410,9 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             ..
         } = step
         {
+            rule.set(RuleId::RestrictionProfile);
             selection
-                .validate_for(pinned_catalog.as_ref().ok_or(Error::TooLarge)?)
+                .validate_for(self.pinned_catalog.as_ref().ok_or(Error::TooLarge)?)
                 .map_err(|error| Error::Format(format!("Catalog digest pin rejected: {error}")))?;
             if *fragment_index > 100_000
                 || matches!(template,Source::Input(id) if id.is_empty()||id.len()>128)
@@ -400,6 +425,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             ..
         } = step
         {
+            rule.set(RuleId::SourceChemistry);
             if id.is_empty() || id.len() > 128 {
                 return Err(Error::TooLarge);
             }
@@ -416,10 +442,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             ..
         } = step
         {
-            count += 1;
-            if count > 64 {
-                return Err(Error::TooLarge);
-            }
+            rule.set(RuleId::TopoDeclaration);
             validate_topo_shape(sources, request)?;
             if selection.batch_revision.len() != 64
                 || !selection
@@ -437,8 +460,8 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             selection,
         } = step
         {
-            count += 1;
-            if count > 64 || !(2..=5).contains(&sources.len()) {
+            rule.set(RuleId::RecombinationReference);
+            if !(2..=5).contains(&sources.len()) {
                 return Err(Error::TooLarge);
             }
             let mut roles = BTreeSet::new();
@@ -465,10 +488,7 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             }
         }
         if let Operation::TopoActions { sources, request } = step {
-            count += 1;
-            if count > 64 {
-                return Err(Error::TooLarge);
-            }
+            rule.set(RuleId::TopoDeclaration);
             validate_topo_shape(sources, &request.preparation)?;
             crate::cloning::topo::actions::request_preflight(request)?;
         }
@@ -479,9 +499,8 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
             selection,
         } = step
         {
-            count += 1;
-            if count > 64
-                || selection.batch_revision.len() != 64
+            rule.set(RuleId::RecombinationReference);
+            if selection.batch_revision.len() != 64
                 || !selection
                     .batch_revision
                     .bytes()
@@ -501,37 +520,30 @@ pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
                 ));
             }
         }
+        Ok(())
     }
-    if count > 0
-        || plan.steps.iter().any(|s| {
-            matches!(
-                s,
-                Operation::DeclareSourceTermini { .. }
-                    | Operation::CatalogDigest { .. }
-                    | Operation::SelectedGoldenGate { .. }
-                    | Operation::HomologyAssembly { .. }
-                    | Operation::ResectThreePrime { .. }
-                    | Operation::HomologyAnnealing { .. }
-            )
-        })
+}
+
+pub(crate) fn validate_reference_steps(plan: &DesignPlan) -> Result<(), Error> {
+    crate::material::capsule::plan_preflight(plan)?;
+    if plan.steps.len() > 1000
+        || plan.inputs.len() > 1000
+        || plan.name.len() > 1024
+        || plan.target_revision.len() != 64
     {
-        if plan.name.len() > 1024 || plan.target_revision.len() != 64 {
-            return Err(Error::TooLarge);
-        }
-        let mut bases = 0usize;
-        for input in &plan.inputs {
-            if input.id.len() > 128 || input.revision.len() != 64 {
-                return Err(Error::TooLarge);
-            }
-            bases = bases
-                .checked_add(input.molecule.sequence.len())
-                .filter(|n| *n <= 32_000_000)
-                .ok_or(Error::TooLarge)?;
-        }
-        crate::cloning::recombination::reference::model_preflight(
-            &plan.inputs.iter().map(|i| &i.molecule).collect::<Vec<_>>(),
-        )?;
+        return Err(Error::TooLarge);
     }
+    let checks = ReferenceChecks::new(plan)?;
+    let rule = Cell::new(RuleId::Admission);
+    for step in &plan.steps {
+        checks.validate_step(step, &rule)?;
+    }
+    // Portable candidates preserve import-scale annotations and original records.
+    // Scientific replay applies its tighter shared computation budget in admit().
+    collagene_model::bounds::native_frame_preflight(
+        plan.inputs.iter().map(|input| &input.molecule),
+        crate::formats::sequence::MAX_IMPORT_BYTES,
+    )?;
     Ok(())
 }
 

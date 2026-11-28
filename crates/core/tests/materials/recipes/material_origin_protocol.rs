@@ -313,8 +313,6 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::schema::CANDIDATE_SCHEMA_VERSION, 33);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 31);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 26);
@@ -393,10 +391,22 @@ fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
     assert!(collagene_core::material::capsule::plan_preflight(&plan).is_err());
     let report = verification::engine::verify(&plan, &w.revisions[&target.revision]);
     assert_eq!(report.status, Status::Invalid);
-    assert!(report.products.is_empty());
+    assert_eq!(report.reconstructed_count(), 2);
+    assert!(report.product(0).is_some());
+    assert!(report.product(1).is_none());
+    assert!(report.product(2).is_some());
+    assert_eq!(
+        report.steps[1].state,
+        verification::evidence::StepState::Rejected
+    );
+    assert!(report.findings.iter().any(|finding| finding.rule
+        == verification::checks::RuleId::MaterialOrigin
+        && finding.verdict == verification::checks::CheckVerdict::Fail
+        && finding.scope == verification::checks::CheckScope::Step { step_index: 1 }));
+    report.validate_documentary().unwrap();
 }
 #[test]
-fn current_encoding_retains_documentary_producer_stamps_without_granting_authority() {
+fn current_encoding_refuses_superseded_verifier_reports_without_granting_authority() {
     let (_, cap, _) = digest_fixture();
     let record = native::load_record(&cap.record_bytes).unwrap();
     let native::SourceOrigin::Saved(MaterialOrigin::Run(origin)) =
@@ -434,11 +444,13 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
     report.engine_version = report
         .engine_version
         .replace(collagene_core::verification::ENGINE_VERSION, "/science-24");
-    protocol::response::Response::decode(&wire(
-        b"CGR\0",
-        protocol::schema::WORKER_SCHEMA_VERSION,
-        &historical,
-    ))
-    .unwrap();
+    assert!(
+        protocol::response::Response::decode(&wire(
+            b"CGR\0",
+            protocol::schema::WORKER_SCHEMA_VERSION,
+            &historical,
+        ))
+        .is_err()
+    );
     assert!(protocol::response::Response::decode(&wire(b"CGR\0", 89, &historical)).is_err());
 }

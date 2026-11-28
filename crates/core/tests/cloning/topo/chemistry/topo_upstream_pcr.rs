@@ -228,10 +228,20 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 2);
-    assert_eq!(r.products[1].sequence.as_str(), TARGET);
-    let before: ModificationSummary =
-        serde_json::from_str(&r.products[0].metadata["tracked_modifications"]).unwrap();
+    assert_eq!(r.reconstructed_count(), 2);
+    assert_eq!(
+        r.product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
+    let before: ModificationSummary = serde_json::from_str(
+        &r.product(0)
+            .expect("selected step must reconstruct")
+            .metadata["tracked_modifications"],
+    )
+    .unwrap();
     assert!(before.known_modified > 0);
     let e = evidence(&r);
     assert_eq!(e.projection.physical.source_bases, 52);
@@ -264,7 +274,9 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
             .find(|s| s.role == "template")
             .unwrap()
             .revision,
-        r.products[0].revision()
+        r.product(0)
+            .expect("selected step must reconstruct")
+            .revision()
     );
     assert!(
         e.preparation
@@ -274,11 +286,20 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
     );
     // Same marked product supplied as an ordinary input remains rejected by the
     // public adapter and by the plan verifier; no metadata is stripped to pass it.
-    inputs[2].molecule = r.products[0].clone();
+    inputs[2].molecule = r
+        .product(0)
+        .expect("selected step must reconstruct")
+        .clone();
     assert!(actions::inspect(&inputs, &e.request).is_err());
     let mut imported = plan.clone();
-    imported.inputs[2].molecule = r.products[0].clone();
-    imported.inputs[2].revision = r.products[0].revision();
+    imported.inputs[2].molecule = r
+        .product(0)
+        .expect("selected step must reconstruct")
+        .clone();
+    imported.inputs[2].revision = r
+        .product(0)
+        .expect("selected step must reconstruct")
+        .revision();
     if let Operation::TopoActions { sources, .. } = &mut imported.steps[1] {
         sources[2].source = Source::Input("template".into());
     }
@@ -349,10 +370,14 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
         sources[2].source = Source::Step(1);
     }
     let r = v::engine::verify(&staggered, &target);
-    assert_eq!(r.products.len(), 2, "{:?}", r.findings);
+    assert_eq!(r.reconstructed_count(), 2, "{:?}", r.findings);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
     assert!(r.physical_processing_reports.is_empty());
-    assert!(r.findings.iter().any(|f| f.contains("nicked or staggered")));
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.message.contains("nicked or staggered"))
+    );
     let mut nicked = plan.clone();
     nicked.steps[0] = Operation::DeclareSourceTermini {
         template: Source::Input("template".into()),
@@ -375,7 +400,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
         sources[2].source = Source::Step(1);
     }
     let r = v::engine::verify(&nicked, &target);
-    assert_eq!(r.products.len(), 2, "{:?}", r.findings);
+    assert_eq!(r.reconstructed_count(), 2, "{:?}", r.findings);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
     // The successful upstream ligation retains its actual nick/alternative
     // evidence even though TOPO refuses that template. No TOPO PCR product or
@@ -392,7 +417,11 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
         &step.evidence,
         v::evidence::PhysicalProcessingEvidence::TopoActions(_)
     )));
-    assert!(r.findings.iter().any(|f| f.contains("nicked or staggered")));
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.message.contains("nicked or staggered"))
+    );
 }
 fn event(w: &Workspace, i: usize) -> EventBinding {
     let d = &w.documents[i];

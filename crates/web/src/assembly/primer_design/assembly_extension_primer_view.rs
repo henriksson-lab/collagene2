@@ -331,7 +331,7 @@ pub fn ExtensionPrimerProposalView(
                     {saved.with_value(|p|[(&p.preparation.left,"Left source PCR"),(&p.preparation.right,"Right source PCR"),(&p.preparation.outer,"Outer PCR")].into_iter().flat_map(|(pair,label)|[(&pair.forward,"Forward"),(&pair.reverse,"Reverse")].into_iter().map(move|(primer,direction)|view!{<tr><td>{label}</td><td>{format!("{direction} · {}",primer.name)}</td><td><pre>{primer.ordered_sequence()}</pre></td></tr>})).collect_view())}
                 </tbody></table>
                 {saved.with_value(|p|p.warnings.iter().take(20).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
-                <details><summary>"Native diagnostic findings"</summary>{saved.with_value(|p|p.verification.findings.iter().take(40).map(|finding|view!{<p>{finding.clone()}</p>}).collect_view())}</details>
+                <details><summary>"Native diagnostic findings"</summary>{saved.with_value(|p| crate::protocol::verification_view::findings(&p.verification.findings))}</details>
                 <button class="button primary" disabled=move||invalid||!current.get() on:click=move|_|{match use_proposal.run(saved.get_value()){Ok(())=>status.set("Oligos entered for the selected preparation. Reconstruct and verify the complete cloning plan.".into()),Err(error)=>status.set(error)}}>"Use oligos in this preparation"</button>
             </section>}
         })}

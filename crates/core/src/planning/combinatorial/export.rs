@@ -428,19 +428,22 @@ pub fn export(
             .then(|| verification::output::CheckedProtocol::new(&run.plan, target));
         if let Some(checked) = &checked {
             let report = checked.report();
+            report.validate_documentary()?;
             if report.engine_version != verification::ENGINE_VERSION
                 || report.plan_revision != run.plan_revision
                 || report.target_revision != row.target.revision
                 || report.status == Status::Invalid
                 || (report.status == Status::Incomplete && !row.options.allow_incomplete)
-                || report.products.len() != run.products.len()
-                || report.products.is_empty()
-                || report
-                    .products
-                    .iter()
-                    .zip(&run.products)
-                    .any(|(m, b)| m.revision() != b.revision)
-                || !report.products.last().is_some_and(|m| {
+                || report.steps.len() != run.products.len()
+                || report.steps.is_empty()
+                || report.steps.iter().zip(&run.products).any(|(step, b)| {
+                    step.state != crate::verification::evidence::StepState::Reconstructed
+                        || step
+                            .product
+                            .as_ref()
+                            .is_none_or(|m| m.revision() != b.revision)
+                })
+                || !report.final_product().is_some_and(|m| {
                     verification::engine::plan_target_matches(&run.plan, m, target)
                 })
             {

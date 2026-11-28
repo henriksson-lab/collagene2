@@ -127,7 +127,14 @@ fn canonical_product_projects_annotations_and_retains_unmapped_source_evidence()
     };
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert_eq!(report.products[0].features.len(), 1);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .features
+            .len(),
+        1
+    );
     assert_eq!(
         report.step_reports[0]
             .topo

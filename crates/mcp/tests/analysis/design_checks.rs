@@ -150,7 +150,15 @@ async fn standard_discovery_and_fragment_checks_preserve_profile_scope_and_origi
     let (client, service, document) = setup(&molecule).await;
     let before = call(&client, "list_documents", json!({})).await;
     let catalogue = call(&client, "list_assembly_standards", json!({})).await;
-    assert_eq!(catalogue["profile_count"], 2);
+    let installed = collagene_assembly_standards::profile::BUILTIN_IDS;
+    assert_eq!(catalogue["profile_count"], installed.len());
+    let advertised = catalogue["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|profile| profile["profile_id"].as_str().unwrap())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(advertised, installed.iter().copied().collect());
     let profile = &catalogue["profiles"][0];
     assert_eq!(profile["profile_id"], "biobrick-rfc10-part-sequence-2007");
     let parts = json!([{"id":"selected-part","document":document,"start":4,"length":formatted.len(),"reverse":false,"slot":"noncoding","body_start":22,"body_end":34}]);

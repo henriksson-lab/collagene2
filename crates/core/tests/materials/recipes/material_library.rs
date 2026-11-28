@@ -43,9 +43,8 @@ fn actual_bottom_library_freezes_independent_target_and_releases_replayable_circ
     assert_eq!(
         evaluated
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         EXPECTED

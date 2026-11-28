@@ -104,7 +104,10 @@ fn scattered_changes_form_one_original_source_graph_with_actual_intermediate_con
     );
     assert!(verification::engine::plan_target_matches(
         &report.plan,
-        report.verification.products.last().unwrap(),
+        report
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &report.target
     ));
     let physical::MethodEvidence::InversePcrRounds { rounds } = &report.method else {
@@ -233,7 +236,10 @@ fn partial_reverse_tail_and_original_origin_crossing_keep_actual_round_frames() 
         (52, 108)
     );
     assert!(
-        report.verification.products[2]
+        report
+            .verification
+            .product(2)
+            .expect("selected step must reconstruct")
             .sequence
             .as_str()
             .starts_with("CTCATGCTACGTAGGAC")
@@ -241,12 +247,18 @@ fn partial_reverse_tail_and_original_origin_crossing_keep_actual_round_frames() 
     let intermediate = Molecule::dna("Independent first round", "ACGTTGCACTGATCGAGTCCGGCCTCATGCTACGTAGGACGATCCAGTACGCTTATTCAGACCTGTAGATCGTCAGGTCTCTGCAGATCCGTAACGCTTGAAGTCCGATGCTACGTAGGAC", Topology::Circular).unwrap();
     assert!(verification::engine::plan_target_matches(
         &report.plan,
-        &report.verification.products[2],
+        report
+            .verification
+            .product(2)
+            .expect("selected step must reconstruct"),
         &intermediate
     ));
     assert!(verification::engine::plan_target_matches(
         &report.plan,
-        report.verification.products.last().unwrap(),
+        report
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &report.target
     ));
     let mut tampered = report.clone();

@@ -253,11 +253,22 @@ fn limits(l: &Limits) -> Result<(), Error> {
     }
     Ok(())
 }
+/// Capacity-only transcript admission. Call identities and prior-action/role
+/// semantics remain in steps_preflight against the relevant branch's sources.
+pub fn steps_resource_preflight(steps: &[Step], l: &Limits) -> Result<(), Error> {
+    limits(l)?;
+    bounded(steps.len(), l.max_steps, Budget::Steps)?;
+    for step in steps {
+        if let Step::Process(action) = step {
+            action.resource_preflight()?;
+        }
+    }
+    Ok(())
+}
 /// Cheap transcript grammar bounds before source hashing, nested expansion or copies.
 /// Full prior-step/call ownership is checked against fresh expanded substrates.
 pub fn steps_preflight(steps: &[Step], l: &Limits) -> Result<(), Error> {
-    limits(l)?;
-    bounded(steps.len(), l.max_steps, Budget::Steps)?;
+    steps_resource_preflight(steps, l)?;
     for step in steps {
         match step {
             Step::Transfer(t) => {

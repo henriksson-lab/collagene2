@@ -131,7 +131,11 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
     };
     assert_eq!(p.verification.status, Status::ConsistentUnderAssumptions);
     assert_eq!(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         MUTATED
     );
     assert!(protocol::response::Response::decode(&wire(b"CGR\0", 75, &response)).is_err());

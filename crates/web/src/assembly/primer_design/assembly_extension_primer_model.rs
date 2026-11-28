@@ -517,7 +517,7 @@ pub fn from_design(
         report.expected.clone(),
         report.verification.clone(),
     );
-    if let Some(error) = checked.prefix_error {
+    if let Some(error) = checked.receipt_error {
         return Err(format!("The diagnostic worker receipt is unbound: {error}"));
     }
     let preparation = report.preparation.clone();

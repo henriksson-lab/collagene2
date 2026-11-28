@@ -102,9 +102,8 @@ async fn explicit_mismatch_recipe_keeps_policy_oligos_independent_target_and_imm
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         MUTANT

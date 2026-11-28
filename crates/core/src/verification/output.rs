@@ -39,7 +39,7 @@ pub(crate) fn protocol_oligo_sequence<'a>(
             }
             &input.molecule
         }
-        Source::Step(index) if *index < step_index => report.products.get(*index)?,
+        Source::Step(index) if *index < step_index => report.product(*index)?,
         Source::Step(_) => return None,
     };
     if molecule.sequence.alphabet() != Alphabet::Dna
@@ -252,7 +252,17 @@ impl<'a> CheckedProtocol<'a> {
             }
         }
         body.push_str("</ol><h2>Reconstructed products</h2><ul>");
-        for (index, product) in report.products.iter().enumerate() {
+        for outcome in &report.steps {
+            let index = outcome.step_index;
+            let Some(product) = &outcome.product else {
+                body.push_str(&format!(
+                    "<li>Step {}: {:?}; direct blockers <code>{}</code></li>",
+                    index + 1,
+                    outcome.state,
+                    e(&serde_json::to_string(&outcome.blocked_by).unwrap_or_default())
+                ));
+                continue;
+            };
             body.push_str(&format!(
                 "<li>Step {}: {} · {} bases · {:?}</li>",
                 index + 1,
@@ -281,7 +291,15 @@ impl<'a> CheckedProtocol<'a> {
         }
         body.push_str("<h2>Verification findings</h2><ul>");
         for finding in &report.findings {
-            body.push_str(&format!("<li>{}</li>", e(finding)));
+            body.push_str(&format!("<li>{}<ul>", e(&finding.summary())));
+            for citation in &finding.citations {
+                body.push_str(&format!(
+                    "<li>{} · {}</li>",
+                    e(&citation.source),
+                    e(&citation.locator)
+                ));
+            }
+            body.push_str("</ul></li>");
         }
         body.push_str("</ul>");
         if report.step_reports.iter().any(|step| step.topo.is_some()) {
@@ -433,12 +451,14 @@ impl<'a> CheckedProtocol<'a> {
                             }
                             body.push_str("</ul></li>");
                             body.push_str(&format!("<li>Origin assessment: {:?}; engine {}. Reuse does not upgrade incomplete findings.</li>", origin_report.status,e(&origin_report.engine_version)));
-                            for finding in origin_report
-                                .findings
-                                .iter()
-                                .chain(&origin_report.assumptions)
-                            {
-                                body.push_str(&format!("<li>{}</li>", e(finding)));
+                            for finding in &origin_report.findings {
+                                body.push_str(&format!("<li>{}</li>", e(&finding.summary())));
+                            }
+                            for assumption in &origin_report.assumptions {
+                                body.push_str(&format!(
+                                    "<li>Origin assumption: {}</li>",
+                                    e(assumption)
+                                ));
                             }
                         }
                         body.push_str("</ul></li>");

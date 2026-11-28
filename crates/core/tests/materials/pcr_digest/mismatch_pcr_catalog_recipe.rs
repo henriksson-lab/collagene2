@@ -112,10 +112,21 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
     );
     // F tail CCGAATTC + mutant domain AGA + original CCC + RC(GGCTCGAG).
     assert_eq!(
-        p.verification.products[0].sequence.as_str(),
+        p.verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         "CCGAATTCAGACCCCTCGAGCC"
     );
-    assert_eq!(p.verification.products[1].sequence.as_str(), "AATTCAGACCCC");
+    assert_eq!(
+        p.verification
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AATTCAGACCCC"
+    );
     assert!(matches!(
         p.compiled.plan.steps[0],
         Operation::PcrWithMismatches { .. }
@@ -135,7 +146,10 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
     assert_eq!(left.chemistry.five_prime, FivePrime::Phosphate);
     assert_eq!(right.chemistry.five_prime, FivePrime::Phosphate);
     let amplicon = serde_json::from_str::<collagene_core::chemistry::DuplexSummary>(
-        &p.verification.products[0].metadata["duplex_model"],
+        &p.verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
     )
     .unwrap();
     let (left, right) = amplicon.ends.unwrap();
@@ -322,7 +336,7 @@ fn incomplete_singleton_stays_conditionally_usable_and_never_becomes_verified_un
         p.verification
             .findings
             .iter()
-            .any(|f| f.contains("incomplete"))
+            .any(|f| f.message.contains("incomplete"))
     );
     collagene_core::cloning::assembly::diagnostics::ligation(&p).unwrap();
     let wrong = lig::preview(
@@ -503,11 +517,21 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
         evaluated.verification().findings
     );
     assert_eq!(
-        evaluated.verification().products[0].sequence.as_str(),
+        evaluated
+            .verification()
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         AMPLICON
     );
     assert_eq!(
-        evaluated.verification().products[1].sequence.as_str(),
+        evaluated
+            .verification()
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         MUTANT
     );
     let design::Preview::Ligation(preview) = &evaluated.preview else {
@@ -598,9 +622,8 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
     assert_eq!(
         replayed
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         MUTANT

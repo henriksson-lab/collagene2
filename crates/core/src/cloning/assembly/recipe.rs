@@ -339,9 +339,9 @@ dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub ove
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
 dto! {pub struct Compiled {pub plan:DesignPlan,pub rows:Vec<PreparedRow>,pub assembly_step:usize}}
 dto! {pub struct Preview {pub context_revision:String,pub compiled:Compiled,pub verification:VerificationReport,
-/// Fresh prepared documents in recipe order, before optional orientation.
-/// On a failed preparation only the available leading row prefix is returned.
-pub prepared:Vec<Molecule>,pub profile:Option<ProfileReport>,pub preparation_complete:bool}}
+/// Original-row-indexed prepared documents, before optional orientation.
+/// Failed or blocked preparations retain explicit empty slots.
+pub prepared:Vec<Option<Molecule>>,pub profile:Option<ProfileReport>,pub preparation_complete:bool}}
 fn bad(s: &str) -> Error {
     Error::Format(format!("overlap recipe: {s}"))
 }
@@ -1745,54 +1745,77 @@ fn finish_preview(
     // Exactly the existing verifier prepares PCR/digest products and projects
     // annotations. Neither the target nor a preview chooses a fragment or geometry.
     let mut verification = verification::engine::verify(&compiled.plan, target);
-    let mut available = Vec::with_capacity(compiled.rows.len());
-    for row in &compiled.rows {
-        let m = match &row.prepared_source {
+    let available = compiled
+        .rows
+        .iter()
+        .map(|row| match &row.prepared_source {
             Source::Input(id) => compiled
                 .plan
                 .inputs
                 .iter()
-                .find(|i| &i.id == id)
-                .map(|i| &i.molecule),
-            Source::Step(i) => verification.products.get(*i),
-        };
-        if let Some(m) = m {
-            available.push(m)
-        } else {
-            break;
-        }
-    }
-    let preparation_complete = available.len() == compiled.rows.len();
-    collagene_model::bounds::model_preflight(&available)?;
+                .find(|input| &input.id == id)
+                .map(|input| &input.molecule),
+            Source::Step(index) => verification.product(*index),
+        })
+        .collect::<Vec<_>>();
+    let preparation_complete = available.iter().all(Option::is_some);
+    let models = available
+        .iter()
+        .filter_map(|model| *model)
+        .collect::<Vec<_>>();
+    collagene_model::bounds::model_preflight(&models)?;
     let mut bases = 0usize;
-    for m in &available {
+    for model in &models {
         bases = bases
-            .checked_add(m.sequence.len())
+            .checked_add(model.sequence.len())
             .filter(|n| *n <= MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
     }
-    hash(&available)?;
-    let prepared = available.into_iter().cloned().collect::<Vec<_>>();
-    // An advisory junction report remains useful after a target mismatch. Physical
-    // validity/blocked/staggered substrates remain the verifier's separate result.
-    let profile = if preparation_complete {
-        match overlap_profiles::check_oriented_fragments(
-            &prepared,
-            &compiled.rows.iter().map(|r| r.reverse).collect::<Vec<_>>(),
+    hash(&models)?;
+    let prepared = available
+        .into_iter()
+        .map(|model| model.cloned())
+        .collect::<Vec<_>>();
+    // Complete-only collection preserves original row order and moves, rather
+    // than clones, the already admitted documents. Sparse rows stay sparse.
+    let (prepared, profile) = if preparation_complete {
+        let complete = prepared
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| bad("complete preparation lost its original-row product"))?;
+        let profile = match overlap_profiles::check_oriented_fragments(
+            &complete,
+            &compiled
+                .rows
+                .iter()
+                .map(|row| row.reverse)
+                .collect::<Vec<_>>(),
             &recipe.overlaps,
             recipe.circular,
             &recipe.options,
         ) {
             Ok(report) => Some(report),
             Err(error) => {
-                verification.findings.push(format!(
-                    "Recipe advisory junction profile withheld: {error}"
+                use crate::verification::checks::{CheckFinding, CheckScope, CheckVerdict, RuleId};
+                verification.findings.push(CheckFinding::new(
+                    RuleId::HomologyPolicy,
+                    CheckVerdict::Indeterminate,
+                    CheckScope::Step {
+                        step_index: compiled.assembly_step,
+                    },
+                    format!("Recipe advisory junction profile withheld: {error}"),
                 ));
+                if verification.status
+                    == crate::verification::evidence::Status::ConsistentUnderAssumptions
+                {
+                    verification.status = crate::verification::evidence::Status::Incomplete;
+                }
                 None
             }
-        }
+        };
+        (complete.into_iter().map(Some).collect(), profile)
     } else {
-        None
+        (prepared, None)
     };
     let result = Preview {
         context_revision,
@@ -2010,19 +2033,21 @@ pub fn preview_annealing(
 impl Preview {
     /// Readonly shape/binding checks only. No reconstruction or authority restoration.
     pub fn validate(&self) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         if !hex(&self.context_revision)
             || self.compiled.rows.is_empty()
             || self.compiled.rows.len() > MAX_ROWS
-            || self.prepared.len() > self.compiled.rows.len()
+            || self.prepared.len() != self.compiled.rows.len()
             || self.compiled.plan.inputs.len() > MAX_ROWS
-            || self.verification.products.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
+            || self.verification.steps.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
+            || self.verification.planned_steps != self.compiled.plan.steps.len()
             || self.verification.step_reports.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
             || self.compiled.plan.steps.len() > MAX_STEPS_PER_ROW * MAX_ROWS + 1
             || self.compiled.assembly_step.checked_add(1) != Some(self.compiled.plan.steps.len())
         {
             return Err(bad("invalid preview shape"));
         }
-        if self.preparation_complete != (self.prepared.len() == self.compiled.rows.len())
+        if self.preparation_complete != self.prepared.iter().all(Option::is_some)
             || self.profile.is_some() && !self.preparation_complete
             || self.verification.target_revision != self.compiled.plan.target_revision
         {
@@ -2034,8 +2059,13 @@ impl Preview {
             .inputs
             .iter()
             .map(|i| &i.molecule)
-            .chain(self.prepared.iter())
-            .chain(self.verification.products.iter())
+            .chain(self.prepared.iter().filter_map(Option::as_ref))
+            .chain(
+                self.verification
+                    .steps
+                    .iter()
+                    .filter_map(|step| step.product.as_ref()),
+            )
             .collect::<Vec<_>>();
         for model in models {
             collagene_model::bounds::model_preflight(&[model])?;
@@ -2102,11 +2132,10 @@ impl Preview {
                 if fragments.len() == 1 && policy.topology != Topology::Circular {
                     return Err(bad("single-linear processing is not an annealing assembly"));
                 }
-                if self.verification.products.len() == self.compiled.plan.steps.len() {
+                if self.verification.final_product().is_some() {
                     let actual = self
                         .verification
-                        .products
-                        .last()
+                        .final_product()
                         .ok_or_else(|| bad("missing annealing diagnostic reference"))?;
                     let evidence=self.verification.physical_processing_reports.iter().find_map(|step|if step.step_index==self.compiled.assembly_step{match &step.evidence{crate::verification::evidence::PhysicalProcessingEvidence::HomologyAnnealing(report)=>Some(report),_=>None}}else{None}).ok_or_else(||bad("missing exact annealing strand evidence"))?;
                     evidence.validate_documentary()?;
@@ -2176,7 +2205,12 @@ impl Preview {
                 != self
                     .prepared
                     .iter()
-                    .map(hash)
+                    .map(|model| {
+                        model
+                            .as_ref()
+                            .ok_or_else(|| bad("profile requires every original-row product"))
+                            .and_then(hash)
+                    })
                     .collect::<Result<Vec<_>, _>>()?
                 || profile.orientations
                     != self

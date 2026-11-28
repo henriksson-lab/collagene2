@@ -165,10 +165,7 @@ async fn site_bearing_proposals_preserve_originals_and_need_fresh_independent_li
         }
     ));
     assert!(matches!(&plan.steps[4], Operation::Ligate { .. }));
-    assert_eq!(
-        full["verification"]["products"].as_array().unwrap().len(),
-        5
-    );
+    assert_eq!(full["verification"]["steps"].as_array().unwrap().len(), 5);
     let mut wrong = args.clone();
     wrong["target"] = named(&imported, "wrong_target");
     let wrong_design = call(&client, "design_golden_gate_primers", wrong).await;

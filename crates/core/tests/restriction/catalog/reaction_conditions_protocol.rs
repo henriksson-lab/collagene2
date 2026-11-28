@@ -77,10 +77,13 @@ fn reaction_worker_uses_current_selectors_literal_context_and_retains_uncertaint
     .to_hex()
     .to_string();
     assert_eq!(req.revision, expected);
-    assert_eq!(protocol::schema::WORKER_SCHEMA_VERSION, 133);
+
     let input = req.encode().unwrap();
     assert_eq!(tag(&input), 202);
-    assert_eq!(u16::from_le_bytes([input[4], input[5]]), 133);
+    assert_eq!(
+        u16::from_le_bytes([input[4], input[5]]),
+        protocol::schema::WORKER_SCHEMA_VERSION
+    );
     let output = protocol::execution::process_request(&input).unwrap();
     assert_eq!(tag(&output), 192);
     let response = Response::decode(&output).unwrap();

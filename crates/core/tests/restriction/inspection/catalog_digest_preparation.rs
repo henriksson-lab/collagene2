@@ -89,11 +89,26 @@ fn nonstarter_circle_digest_has_literal_both_strands_and_cross_origin_annotation
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products[0].sequence.as_str(), "CTAGCCCCAAAAG");
     assert_eq!(
-        report.products[0].features[0]
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "CTAGCCCCAAAAG"
+    );
+    assert_eq!(
+        &report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .features[0]
             .location
-            .extract(&report.products[0].sequence)
+            .extract(
+                &report
+                    .product(0)
+                    .expect("selected step must reconstruct")
+                    .sequence
+            )
             .unwrap(),
         "CCAA"
     );
@@ -153,7 +168,11 @@ fn shared_pinned_preparation_feeds_actual_cohesive_ligation_against_independent_
     );
     assert_eq!(preview.junctions.len(), 2);
     assert_eq!(
-        preview.verification.products.last().unwrap().sequence,
+        preview
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence,
         target.sequence
     );
     assert_eq!(serde_json::to_value(inputs).unwrap(), original);
@@ -205,7 +224,13 @@ fn optional_repair_is_explicit_and_uses_existing_tracked_end_transform() {
         "{:?}",
         preview.verification.findings
     );
-    assert_eq!(preview.prepared[0].sequence, target.sequence);
+    assert_eq!(
+        preview.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence,
+        target.sequence
+    );
 }
 #[test]
 fn tampered_catalog_pin_stale_original_and_detached_physical_evidence_are_rejected() {
@@ -215,7 +240,7 @@ fn tampered_catalog_pin_stale_original_and_detached_physical_evidence_are_reject
     }
     let bad = v::engine::verify(&plan, &target);
     assert_eq!(bad.status, Status::Invalid);
-    assert!(bad.products.is_empty());
+    assert!((bad.reconstructed_count() == 0));
     let (mut plan, target) = single(circle("source", "AAAAGCTAGCCCC"));
     plan.inputs[0].revision = "0".repeat(64);
     assert_eq!(v::engine::verify(&plan, &target).status, Status::Invalid);
@@ -226,7 +251,7 @@ fn tampered_catalog_pin_stale_original_and_detached_physical_evidence_are_reject
     let (plan, target) = single(source);
     let r = v::engine::verify(&plan, &target);
     assert_eq!(r.status, Status::Incomplete);
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
 }
 #[test]
 fn catalog_pin_does_not_upgrade_unknown_tracked_methylation_to_complete_cleavage() {
@@ -258,13 +283,13 @@ fn catalog_pin_does_not_upgrade_unknown_tracked_methylation_to_complete_cleavage
     }
     let r = v::engine::verify(&plan, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert_eq!(r.products.len(), 2);
+    assert_eq!(r.reconstructed_count(), 2);
     assert!(
         r.findings
             .iter()
-            .any(|s| s.contains("assumed-complete cleavage"))
+            .any(|s| s.message.contains("assumed-complete cleavage"))
     );
-    let p = &r.products[1];
+    let p = r.product(1).expect("selected step must reconstruct");
     let summary: chemistry::DuplexSummary =
         serde_json::from_str(&p.metadata["duplex_model"]).unwrap();
     assert_eq!(summary.ends.unwrap().0.overhang, "GATC");
@@ -314,8 +339,22 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products[0].sequence.as_str(), "CTAGCCCCAAAAG");
-    assert_eq!(report.products[1].sequence.as_str(), "CTAGCTTTTGGGG");
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "CTAGCCCCAAAAG"
+    );
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "CTAGCTTTTGGGG"
+    );
     let inspected = c::inspect(
         &c::builtin_catalog().unwrap(),
         &selection(),

@@ -187,7 +187,14 @@ fn staggered_physical_pcr_templates_need_a_two_strand_model_not_a_top_projection
     // The longer bottom strand can seed F extension to make a 14-nt top template.
     // This is not equivalent to PCR on the 10-nt top-only projection. Until modeled,
     // the verdict must be incomplete instead of incorrectly proving no product.
-    assert_eq!(report.products[0].sequence.as_str(), "AAAGGTCTCT");
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AAAGGTCTCT"
+    );
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
 }
 

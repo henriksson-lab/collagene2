@@ -91,7 +91,7 @@ fn known_blocked_top_or_bottom_three_prime_end_never_disappears_in_homology_asse
                 report.findings
             );
             assert_eq!(
-                report.products.len(),
+                report.reconstructed_count(),
                 2,
                 "the unsupported assembly must not be emitted as a reconstructed final product"
             );
@@ -99,7 +99,7 @@ fn known_blocked_top_or_bottom_three_prime_end_never_disappears_in_homology_asse
                 report
                     .findings
                     .iter()
-                    .any(|f| f.contains("blocked") || f.contains("Blocked"))
+                    .any(|f| f.message.contains("blocked") || f.message.contains("Blocked"))
             );
         }
     }
@@ -116,7 +116,11 @@ fn accessible_hydroxyls_still_allow_the_literal_exact_candidate() {
             report.findings
         );
         assert_eq!(
-            report.products.last().unwrap().sequence.as_str(),
+            report
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence
+                .as_str(),
             "AAAACCGGTT"
         );
     }

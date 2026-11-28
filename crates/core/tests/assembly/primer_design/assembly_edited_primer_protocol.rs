@@ -206,8 +206,12 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
         report
             .preview
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 50, 32, 74]
@@ -216,9 +220,8 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
         report
             .preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         TARGET

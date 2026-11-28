@@ -141,7 +141,11 @@ fn pcr_hydroxyl_fragments_anneal_to_independent_circle_but_every_bond_stays_unse
         Operation::HomologyAnnealing { .. }
     ));
     assert_eq!(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         CIRCLE
     );
     let r = annealed(&p);
@@ -158,7 +162,10 @@ fn pcr_hydroxyl_fragments_anneal_to_independent_circle_but_every_bond_stays_unse
     assert_eq!(r.junctions[0].bottom.start, 28);
     assert_eq!(r.junctions[1].top.start, 40);
     assert_eq!(r.junctions[1].bottom.start, 48);
-    let product = p.verification.products.last().unwrap();
+    let product = p
+        .verification
+        .final_product()
+        .expect("final declared step must reconstruct");
     assert!(chemistry::has_unmapped_physical_evidence(product));
     assert!(chemistry::Duplex::from_molecule(product).is_err());
     let junctions = collagene_core::cloning::assembly::junctions::inspect_plan(
@@ -187,8 +194,14 @@ fn independent_wrong_target_does_not_select_or_repair_a_different_physical_path(
     assert_eq!(b.verification.status, Status::Invalid);
     assert_eq!(annealed(&a), annealed(&b));
     assert_eq!(
-        a.verification.products.last().unwrap().sequence,
-        b.verification.products.last().unwrap().sequence
+        a.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence,
+        b.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
     );
     assert_ne!(a.context_revision, b.context_revision);
 }
@@ -208,7 +221,11 @@ fn excess_resection_reports_actual_gaps_and_comparison_limits_remain_incomplete(
         (28, 31)
     );
     assert_eq!(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         CIRCLE
     );
     let (_, _, mut policy) = fixture(true);
@@ -252,7 +269,7 @@ fn saved_annealed_reference_cannot_supply_pcr_resection_or_saved_material_recove
         plan.steps.push(operation);
         let result = verification::engine::verify(&plan, &target);
         assert_ne!(result.status, Status::ConsistentUnderAssumptions);
-        assert_eq!(result.products.len(), 3);
+        assert_eq!(result.reconstructed_count(), 3);
     }
     let w = Workspace::from_documents(
         "Exact original events",
@@ -351,7 +368,7 @@ fn actual_resected_operand_retains_extruded_bottom_and_clips_top_annotation_then
         "{:?}",
         report.findings
     );
-    let actual = &report.products[1];
+    let actual = report.product(1).expect("selected step must reconstruct");
     assert_eq!(actual.sequence.as_str(), &CIRCLE[..37]);
     assert!(actual.features.iter().any(|f| {
         f.needs_review
@@ -443,7 +460,14 @@ fn actual_resected_operand_retains_extruded_bottom_and_clips_top_annotation_then
         "{:?}",
         result.findings
     );
-    assert_eq!(result.products.last().unwrap().sequence.as_str(), CIRCLE);
+    assert_eq!(
+        result
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        CIRCLE
+    );
 }
 #[test]
 fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implicitly_changed() {
@@ -455,7 +479,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
     }];
     let report = verification::engine::verify(&unknown, &target);
     assert_ne!(report.status, Status::ConsistentUnderAssumptions);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     let mut blocked = plan;
     let Operation::DeclareSourceTermini { left, .. } = &mut blocked.steps[0] else {
         panic!()
@@ -486,10 +510,17 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
             },
         }],
     };
+    let refused = verification::engine::verify(&single, &target);
+    assert_eq!(refused.status, Status::Incomplete);
+    assert!(refused.product(0).is_none());
     assert_eq!(
-        verification::engine::verify(&single, &target).status,
-        Status::Invalid
+        refused.steps[0].state,
+        verification::evidence::StepState::Withheld
     );
+    assert!(refused.findings.iter().any(|finding| finding.rule
+        == verification::checks::RuleId::HomologyPolicy
+        && finding.verdict == verification::checks::CheckVerdict::Indeterminate));
+    refused.validate_documentary().unwrap();
     let literal = format!("{}{}", CIRCLE, &CIRCLE[..8]);
     let source =
         Molecule::dna("Original self-circle precursor", &literal, Topology::Linear).unwrap();
@@ -727,7 +758,10 @@ fn infusion_native_ecori_vector_reverse_insert_and_linker_keep_bottom_extension_
         "{:?}",
         preview.verification
     );
-    let product = preview.verification.products.last().unwrap();
+    let product = preview
+        .verification
+        .final_product()
+        .expect("final declared step must reconstruct");
     let reversed_feature = product
         .features
         .iter()

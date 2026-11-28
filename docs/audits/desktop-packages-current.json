@@ -1,59 +1,68 @@
 {
   "date": "2026-11-28",
-  "source_commit": "27703c8eb3d5489b787e96f4d65022b54a345a1d",
-  "workflow_run": 46152040723,
-  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46152040723",
+  "source_commit": "c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
+  "workflow_run": 46157048843,
+  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46157048843",
   "conclusion": "success",
   "profile": "development",
   "developer_signed": false,
   "jobs": [
     {
-      "id": 141002082878,
+      "id": 141018816622,
       "platform": "windows-latest",
       "payloads": [
         "portable executable"
       ],
-      "artifact": "desktop-packages-unsigned-windows-latest-development-27703c8eb3d5489b787e96f4d65022b54a345a1d",
-      "artifact_bytes": 52140338,
-      "artifact_id": 15266830616
+      "artifact": "desktop-packages-unsigned-windows-latest-development-c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
+      "artifact_bytes": 52805008,
+      "artifact_id": 15268272472,
+      "conclusion": "success",
+      "artifact_digest": "sha256:df75d731ab6c72747c9b0861fc08ce2442549123072a017ac3aee46c136df899"
     },
     {
-      "id": 141002082896,
+      "id": 141018816647,
       "platform": "macos-latest",
       "payloads": [
         "DMG installer",
         "permission-preserving app tar.gz"
       ],
-      "artifact": "desktop-packages-unsigned-macos-latest-development-27703c8eb3d5489b787e96f4d65022b54a345a1d",
-      "artifact_bytes": 127476798,
-      "artifact_id": 15266203695
+      "artifact": "desktop-packages-unsigned-macos-latest-development-c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
+      "artifact_bytes": 129272557,
+      "artifact_id": 15268488208,
+      "conclusion": "success",
+      "artifact_digest": "sha256:5cbbf4f666b059e9633543ab4dab978eee2f2916ad3d74d2a1739618fa0963b1"
     },
     {
-      "id": 141002082928,
+      "id": 141018816661,
       "platform": "ubuntu-22.04",
       "payloads": [
         "Debian package"
       ],
-      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-27703c8eb3d5489b787e96f4d65022b54a345a1d",
-      "artifact_bytes": 62536126,
-      "artifact_id": 15265209905
+      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
+      "artifact_bytes": 63349003,
+      "artifact_id": 15268881025,
+      "conclusion": "success",
+      "artifact_digest": "sha256:155ba7e9b0fdd6fb539afc7307724837b2e60772b7701f8774fc8b258cf27e25"
     }
   ],
   "evidence": "Exact-head GitHub job conclusions and live artifact inventory; source staging requires exact platform payload kinds, bounded counts/sizes/checksums and actual packaged executable stdio MCP smoke. Windows also inspects imported system DLLs. One same-run fresh frontend artifact is reused.",
   "limitations": [
     "No installer GUI, installation, offline GUI or chosen-remote acceptance is claimed.",
     "Windows requires the OS WebView2 runtime; macOS output is the hosted runner architecture.",
-    "The current uncommitted CRISPR/mouse-reference batch is outside this package evidence. Successful packaging does not establish scientific CI acceptance."
+    "The current uncommitted F39 verification-contract batch is outside this package evidence. Successful packaging does not establish scientific or full CI acceptance."
   ],
   "frontend": {
-    "job_id": 141000564182,
-    "artifact_id": 15266232949,
-    "bytes": 30831807
+    "job_id": 141015898912,
+    "artifact_id": 15268148437,
+    "bytes": 31208675,
+    "artifact_digest": "sha256:d740656eb5f1e0fdf08198ac9657ab4642d056e08dc22d02a413a3fdd11111fa",
+    "conclusion": "success"
   },
   "check_workflow": {
-    "run_id": 46152040598,
+    "run_id": 46157048740,
+    "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46157048740",
     "conclusion": "failure",
-    "source_commit": "27703c8eb3d5489b787e96f4d65022b54a345a1d",
-    "scope": "Scientific test failures in core assembly, core verification and MCP publication; diagnosis and correction in the current source batch."
+    "source_commit": "c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
+    "scope": "Two stale schema assertions fail in the scientific jobs on Windows, macOS and Linux; the web job fails cargo fmt --all -- --check. This is not a scientific or full-CI green claim; current uncommitted corrections are excluded."
   }
 }

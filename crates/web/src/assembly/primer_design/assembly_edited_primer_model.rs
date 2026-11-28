@@ -394,7 +394,7 @@ pub fn from_design(
         report.intent.target.clone(),
         report.preview.verification.clone(),
     );
-    if let Some(error) = checked.prefix_error {
+    if let Some(error) = checked.receipt_error {
         return Err(format!(
             "The whole-assembly diagnostic receipt is unbound: {error}"
         ));

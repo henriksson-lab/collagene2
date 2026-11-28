@@ -103,8 +103,14 @@ fn literal_adaptor_annealing_and_actual_backbone_digest_form_the_frozen_circle()
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 3);
-    assert_eq!(r.products[2].sequence.as_str(), TARGET);
+    assert_eq!(r.reconstructed_count(), 3);
+    assert_eq!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
     let annealed = chemistry::anneal_oligos(
         &plan.inputs[0].molecule.sequence,
         &plan.inputs[1].molecule.sequence,
@@ -142,8 +148,12 @@ fn literal_adaptor_annealing_and_actual_backbone_digest_form_the_frozen_circle()
         TARGET.len() * 2,
         BACKBONE.len() * 2 + TOP.len() + BOTTOM.len()
     );
-    let summary: chemistry::DuplexSummary =
-        serde_json::from_str(&r.products[2].metadata["duplex_model"]).unwrap();
+    let summary: chemistry::DuplexSummary = serde_json::from_str(
+        &r.product(2)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     assert_eq!(summary.topology, Topology::Circular);
     assert!(summary.nicks.is_empty());
     let html = v::output::export_protocol_html(&plan, &target);
@@ -170,7 +180,13 @@ fn dependency_preserving_edits_reverify_while_invalid_order_or_target_never_inhe
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products[2].sequence.as_str(), TARGET);
+    assert_eq!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
     let wrong = Molecule::dna(
         "Wrong independent target",
         "AATTCTTACGGGAATTGCTACC",

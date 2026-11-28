@@ -1,7 +1,7 @@
 //! Current ligation outcomes retain their intended path, alternatives and geometry.
 use collagene_core::{
     chemistry::Terminus,
-    documents::{transfer, workspace},
+    documents::transfer,
     planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
     protocol::{
         self,
@@ -76,7 +76,14 @@ fn ligation_and_evidence_keep_intended_and_extractable_alternatives() {
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products[2].sequence.as_str(), "AAAACCCC");
+    assert_eq!(
+        report
+            .product(2)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AAAACCCC"
+    );
     let evidence = &report.physical_processing_reports[0].evidence;
     assert_eq!(tag(evidence), 7);
     let PhysicalProcessingEvidence::LigationOutcomes(evidence) = evidence else {
@@ -115,7 +122,7 @@ fn current_worker_and_candidate_roundtrips_validate_full_outcome_geometry() {
         transfer::load_candidate(&bytes).unwrap().plan_revision,
         candidate.plan_revision
     );
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 30);
+
     let request = protocol::request::Request {
         id: 4,
         revision: target.revision(),

@@ -134,7 +134,7 @@ mod tests {
             "{:?}",
             report.findings
         );
-        assert_eq!(report.products.last().unwrap().sequence.as_str(), TRIMMED);
+        assert_eq!(report.final_product().unwrap().sequence.as_str(), TRIMMED);
         let PhysicalProcessingEvidence::ThreePrimeResection(geometry) =
             &report.physical_processing_reports.last().unwrap().evidence
         else {
@@ -157,7 +157,7 @@ mod tests {
         let unknown = verification::engine::verify(&plan, &target);
         assert_eq!(unknown.status, Status::Incomplete);
         assert!(unknown.physical_processing_reports.is_empty());
-        assert!(unknown.products.is_empty());
+        assert!(unknown.reconstructed_count() == 0);
     }
     #[test]
     fn raw_cut_fields_preserve_zero_and_refuse_unfinished_or_unbounded_values() {

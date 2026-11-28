@@ -55,7 +55,11 @@ fn original_whole_sources_with_explicit_reverse_are_verified_and_annotations_ret
     let preview = a::preview(&inputs, &target(), &recipe).unwrap();
     assert!(preview.preparation_complete);
     assert_eq!(
-        preview.prepared[1].sequence.as_str(),
+        preview.prepared[1]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
         "GTACCGCTAGCATCGACGAT"
     );
     assert_eq!(
@@ -64,7 +68,10 @@ fn original_whole_sources_with_explicit_reverse_are_verified_and_annotations_ret
         "{:?}",
         preview.verification.findings
     );
-    let final_product = preview.verification.products.last().unwrap();
+    let final_product = preview
+        .verification
+        .final_product()
+        .expect("final declared step must reconstruct");
     assert_eq!(final_product.sequence, target().sequence);
     assert!(
         final_product
@@ -124,11 +131,19 @@ fn actual_pcr_and_literal_ecorv_fragment_compile_without_source_extraction() {
     ]);
     let preview = a::preview(&inputs, &target(), &recipe).unwrap();
     assert_eq!(
-        preview.prepared[0].sequence.as_str(),
+        preview.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
         "TTGCAATCGTCGATGCTAGC"
     );
     assert_eq!(
-        preview.prepared[1].sequence.as_str(),
+        preview.prepared[1]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
         "ATCGTCGATGCTAGCGGTAC"
     );
     assert_eq!(
@@ -211,7 +226,12 @@ fn circles_stale_bindings_and_failed_preparation_never_become_manufactured_linea
     ]);
     let preview = a::preview(&inputs, &target(), &r).unwrap();
     assert!(!preview.preparation_complete);
-    assert!(preview.prepared.is_empty());
+    assert_eq!(preview.prepared.len(), 2);
+    assert!(preview.prepared[0].is_none());
+    assert!(
+        preview.prepared[1].is_some(),
+        "independent later row must still prepare"
+    );
     assert!(preview.profile.is_none());
     assert_eq!(preview.verification.status, Status::Invalid);
     inputs[0].revision = "0".repeat(64);

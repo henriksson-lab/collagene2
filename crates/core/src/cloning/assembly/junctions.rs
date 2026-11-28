@@ -97,17 +97,8 @@ pub fn source_preflight(plan: &DesignPlan, target: &Molecule) -> Result<(), Erro
             .checked_add(m.sequence.len())
             .filter(|n| *n <= 8 << 20)
             .ok_or(Error::TooLarge)?;
-        m.validate()?;
     }
-    if plan
-        .inputs
-        .iter()
-        .any(|i| i.id.is_empty() || i.id.len() > 128 || !hex(&i.revision))
-        || !hex(&plan.target_revision)
-    {
-        return Err(bad("invalid original/target revision shape"));
-    }
-    verification::sources::validate_reference_steps(plan)?;
+    crate::material::capsule::plan_resource_preflight(plan)?;
     crate::encoding::bounded_json::hash(&(plan, target))?;
     Ok(())
 }
@@ -122,7 +113,7 @@ pub fn inspection_revision(
 }
 fn resolve<'a>(
     plan: &'a DesignPlan,
-    products: &'a [Molecule],
+    report: &'a VerificationReport,
     s: &Source,
 ) -> Result<&'a Molecule, Error> {
     match s {
@@ -131,13 +122,13 @@ fn resolve<'a>(
             .iter()
             .find(|i| &i.id == id)
             .map(|i| &i.molecule),
-        Source::Step(i) => products.get(*i),
+        Source::Step(i) => report.product(*i),
     }
-    .ok_or_else(|| bad("prepared source is outside the actually reconstructed prefix"))
+    .ok_or_else(|| bad("prepared source is outside the original indexed reconstruction outcomes"))
 }
 fn actual_physical(
     plan: &DesignPlan,
-    products: &[Molecule],
+    report: &VerificationReport,
     trace: &[Option<Duplex>],
     fragment: &OrientedSource,
 ) -> Result<DuplexSummary, Error> {
@@ -154,7 +145,7 @@ fn actual_physical(
             }
         }
         Source::Input(_) => {
-            let d = Duplex::from_molecule(resolve(plan, products, &fragment.source)?)?;
+            let d = Duplex::from_molecule(resolve(plan, report, &fragment.source)?)?;
             if fragment.reverse {
                 d.reverse()?.summary()
             } else {
@@ -233,7 +224,7 @@ fn geometry(
                 let source = templates
                     .get(fragment.source_index)
                     .ok_or_else(|| bad("selected path template unavailable"))?;
-                let original = resolve(plan, &verification.products, source)?;
+                let original = resolve(plan, verification, source)?;
                 if original.revision() != fragment.source_revision {
                     return Err(bad("actual digest template revision changed"));
                 }
@@ -339,7 +330,7 @@ fn geometry(
             }
             let summaries = fragments
                 .iter()
-                .map(|f| actual_physical(plan, &verification.products, trace, f))
+                .map(|f| actual_physical(plan, verification, trace, f))
                 .collect::<Result<Vec<_>, _>>()?;
             let total = summaries.iter().try_fold(0usize, |sum, d| {
                 sum.checked_add(d.top_length).ok_or(Error::TooLarge)
@@ -548,7 +539,7 @@ fn overlap_geometry(
     }
     let lengths = fragments
         .iter()
-        .map(|f| resolve(plan, &verification.products, &f.source).map(|m| m.sequence.len()))
+        .map(|f| resolve(plan, verification, &f.source).map(|m| m.sequence.len()))
         .collect::<Result<Vec<_>, _>>()?;
     let n = product.sequence.len();
     if overlaps.iter().any(|k| *k == 0 || *k > n) {
@@ -870,15 +861,14 @@ pub fn inspect_plan(
     let (verification, trace, golden_gate) =
         verification::engine::verify_with_golden_gate_trace(plan, target);
     let mut report=Report{engine_version:ENGINE_VERSION.into(),context_revision,plan_revision:crate::encoding::bounded_json::hash(plan)?,target_revision:crate::encoding::bounded_json::hash(target)?,options:options.clone(),verification,product_revision:None,product_length:None,product_topology:None,method:None,junctions:vec![],complete:false,omitted_junctions:0,warnings:vec!["Junction DNA is the expected reconstructed product, not measured material. Window-relative translations do not establish a CDS reading frame, fusion function or experimental success.".into(),"Frames0/1/2 skip calls at the beginning of each explicitly oriented WINDOW; they are not product-origin frames. CDS windows, when available, instead use explicit feature-directed coding geometry and the existing genetic-code engine.".into()]};
-    if report.verification.products.len() != plan.steps.len() {
+    if report.verification.final_product().is_none() {
         report.warnings.push("Final operation did not reconstruct a product. Earlier preparation products are retained in verification evidence but are never presented as final junction DNA.".into());
         report.validate()?;
         return Ok(report);
     }
     let product = report
         .verification
-        .products
-        .last()
+        .final_product()
         .ok_or_else(|| bad("missing final reconstructed product"))?;
     collagene_model::bounds::model_preflight(&[product])?;
     let product_revision = crate::encoding::bounded_json::hash(product)?;
@@ -1018,13 +1008,14 @@ pub fn inspect_plan(
 impl Report {
     /// Readonly shape/binding validation; no scientific reconstruction.
     pub fn validate(&self) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         self.options.validate()?;
         if self.engine_version != ENGINE_VERSION
             || !hex(&self.context_revision)
             || !hex(&self.plan_revision)
             || !hex(&self.target_revision)
             || self.junctions.len() > self.options.max_junctions
-            || self.verification.products.len() > 1000
+            || self.verification.steps.len() > 1000
             || self.verification.step_reports.len() > 1000
             || self.warnings.len() > 64
             || self.warnings.iter().any(|s| s.len() > 8192)
@@ -1036,7 +1027,12 @@ impl Report {
         {
             return Err(bad("verification context binding changed"));
         }
-        for m in &self.verification.products {
+        for m in self
+            .verification
+            .steps
+            .iter()
+            .filter_map(|step| step.product.as_ref())
+        {
             collagene_model::bounds::model_preflight(&[m])?;
         }
         for report in &self.verification.step_reports {
@@ -1057,8 +1053,7 @@ impl Report {
         if let Some(revision) = &self.product_revision {
             let product = self
                 .verification
-                .products
-                .last()
+                .final_product()
                 .ok_or_else(|| bad("product receipt has no actual reconstructed DNA"))?;
             if crate::encoding::bounded_json::hash(product)? != *revision
                 || Some(product.sequence.len()) != self.product_length
@@ -1085,8 +1080,7 @@ impl Report {
             }
             let product = self
                 .verification
-                .products
-                .last()
+                .final_product()
                 .ok_or_else(|| bad("missing actual Golden Gate product"))?;
             let mut end = 0usize;
             let mut used = BTreeSet::new();
@@ -1117,7 +1111,8 @@ impl Report {
                             && id.len() <= 128
                             && !id.chars().any(char::is_control) => {}
                     Source::Step(step)
-                        if *step < self.verification.products.len().saturating_sub(1) => {}
+                        if *step < self.verification.planned_steps.saturating_sub(1)
+                            && self.verification.product(*step).is_some() => {}
                     _ => {
                         return Err(bad(
                             "Golden Gate path refers beyond actual preparation prefix",
@@ -1125,7 +1120,9 @@ impl Report {
                     }
                 }
                 if let Source::Step(step) = &part.template {
-                    let source = &self.verification.products[*step];
+                    let source = self.verification.product(*step).ok_or_else(|| {
+                        bad("Golden Gate source step has no reconstructed product")
+                    })?;
                     if source.revision() != part.template_revision
                         || source.sequence.len() != part.template_length
                     {
@@ -1188,8 +1185,7 @@ impl Report {
             }
             let product = self
                 .verification
-                .products
-                .last()
+                .final_product()
                 .ok_or_else(|| bad("missing window source"))?;
             let mut length = 0usize;
             let mut actual = String::new();

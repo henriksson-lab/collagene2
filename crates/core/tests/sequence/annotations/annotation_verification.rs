@@ -62,7 +62,8 @@ fn consistent(r: &VerificationReport) -> &Molecule {
         "{:?}",
         r.findings
     );
-    r.products.last().unwrap()
+    r.final_product()
+        .expect("final declared step must reconstruct")
 }
 fn pcr(template: Source, f: (&str, &str), r: (&str, &str)) -> Operation {
     Operation::Pcr {
@@ -162,7 +163,7 @@ fn equal_pcr_sequences_with_distinct_template_origins_remain_ambiguous() {
         Topology::Linear,
     );
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
 }
 
 #[test]
@@ -358,17 +359,23 @@ fn unresolved_features_stay_evidence_and_large_source_blobs_are_not_copied_per_s
     );
     consistent(&r);
     assert!(
-        r.products
+        r.steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .all(|p| p.features.is_empty() && !p.metadata.contains_key("immutable_source_blob"))
     );
-    let evidence =
-        &r.products[0].metadata[&format!("annotation_mapping:unmapped:{source_revision}")];
+    let evidence = &r
+        .product(0)
+        .expect("selected step must reconstruct")
+        .metadata[&format!("annotation_mapping:unmapped:{source_revision}")];
     let mut expected = unknown;
     expected.needs_review = true;
     assert_eq!(
         serde_json::from_str::<Vec<Feature>>(evidence).unwrap(),
         vec![expected]
     );
-    assert!(serde_json::to_vec(&r.products).unwrap().len() < 20_000);
+    assert!(serde_json::to_vec(&r.steps).unwrap().len() < 20_000);
 }

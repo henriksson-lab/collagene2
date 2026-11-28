@@ -25,7 +25,7 @@ pub enum Action {
     KeepExisting,
     AddTail { base: TailingBase },
 }
-/// Geometry-family assessment from the fresh native prefix; independent of ligation chemistry/status.
+/// Geometry-family assessment from original-row-indexed fresh native outcomes; independent of ligation chemistry/status.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum ProfileStatus {
@@ -39,7 +39,7 @@ dto! {pub struct Row{pub preparation:PreparedRow,pub action:Action,pub tail_step
 dto! {pub struct Compiled{pub plan:DesignPlan,pub rows:Vec<Row>,pub ligation_step:usize}}
 use crate::cloning::ligation::recipe::Junction;
 dto! {pub struct Preview{pub context_revision:String,pub recipe:Recipe,pub compiled:Compiled,pub verification:VerificationReport,
-pub prepared:Vec<Molecule>,pub physical:Vec<Option<DuplexSummary>>,pub product_physical:Option<DuplexSummary>,
+pub prepared:Vec<Option<Molecule>>,pub physical:Vec<Option<DuplexSummary>>,pub product_physical:Option<DuplexSummary>,
 pub junctions:Vec<Junction>,pub preparation_complete:bool,pub profile_status:ProfileStatus,pub profile_findings:Vec<String>,pub warnings:Vec<String>}}
 fn bad(s: &str) -> Error {
     Error::Format(format!("tailing recipe: {s}"))
@@ -236,7 +236,7 @@ fn source_document<'a>(
             .iter()
             .find(|i| &i.id == id)
             .map(|i| &i.molecule),
-        Source::Step(i) => report.products.get(*i),
+        Source::Step(i) => report.product(*i),
     }
 }
 fn junctions(physical: &[Option<DuplexSummary>], rows: usize, circular: bool) -> Vec<Junction> {
@@ -332,7 +332,9 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
     for row in &compiled.rows {
         let Some(molecule) = source_document(&compiled.plan, &verification, &row.prepared_source)
         else {
-            break;
+            prepared.push(None);
+            physical.push(None);
+            continue;
         };
         bases = bases
             .checked_add(molecule.sequence.len())
@@ -352,10 +354,10 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
                 }
             })
             .transpose()?;
-        prepared.push(molecule.clone());
+        prepared.push(Some(molecule.clone()));
         physical.push(summary);
     }
-    let preparation_complete = prepared.len() == compiled.rows.len();
+    let preparation_complete = prepared.iter().all(Option::is_some);
     let product_physical = trace
         .get(compiled.ligation_step)
         .and_then(Option::as_ref)
@@ -377,9 +379,11 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
 impl Preview {
     /// Readonly declaration/source correspondence, never chemical replay or authority.
     pub fn validate(&self) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         self.validate_binding(&self.context_revision)
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         let recipe = &self.recipe;
         let inputs = &self.compiled.plan.inputs;
         let target_revision = &self.compiled.plan.target_revision;
@@ -402,42 +406,31 @@ impl Preview {
             || self.verification.plan_revision
                 != crate::planning::plan::DesignPlan::revision(&self.compiled.plan)
             || self.verification.target_revision != *target_revision
-            || self.verification.products.len() > self.compiled.plan.steps.len()
-            || self.prepared.len() > self.compiled.rows.len()
+            || self.verification.planned_steps != self.compiled.plan.steps.len()
+            || self.prepared.len() != self.compiled.rows.len()
             || self.physical.len() != self.prepared.len()
-            || self.preparation_complete != (self.prepared.len() == self.compiled.rows.len())
+            || self.preparation_complete != self.prepared.iter().all(Option::is_some)
         {
             return Err(bad(
                 "preview source, recipe, compiler or verifier binding differs",
             ));
-        }
-        let prefix = self
-            .compiled
-            .rows
-            .iter()
-            .take_while(|row| {
-                source_document(
-                    &self.compiled.plan,
-                    &self.verification,
-                    &row.prepared_source,
-                )
-                .is_some()
-            })
-            .count();
-        if self.prepared.len() != prefix {
-            return Err(bad("prepared prefix was truncated or extended"));
         }
         for (row, molecule) in self.compiled.rows.iter().zip(&self.prepared) {
             let expected = source_document(
                 &self.compiled.plan,
                 &self.verification,
                 &row.prepared_source,
-            )
-            .ok_or_else(|| bad("prepared source missing"))?;
-            if crate::encoding::bounded_json::hash(molecule)?
-                != crate::encoding::bounded_json::hash(expected)?
-            {
-                return Err(bad("prepared source snapshot differs"));
+            );
+            match (molecule, expected) {
+                (Some(actual), Some(expected))
+                    if crate::encoding::bounded_json::hash(actual)?
+                        == crate::encoding::bounded_json::hash(expected)? => {}
+                (None, None) => {}
+                _ => {
+                    return Err(bad(
+                        "prepared original-row snapshot differs from its native outcome",
+                    ));
+                }
             }
         }
         for s in self

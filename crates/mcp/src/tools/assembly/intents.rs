@@ -555,21 +555,20 @@ impl CollageneServer {
                 .filter(|step| step.topo.is_some())
                 .count();
         let reference_step_count = report.reference_step_reports.len();
-        let artifact = if scientific_step_count > 0
-            || reference_step_count > 0
-            || !report.step_reports.is_empty()
-        {
-            Some(self.session.text_artifact(
-                bounded_json_limit(&report, 32 * 1024 * 1024)?,
-                "application/json",
-                "verified-plan-scientific-evidence.json",
-            )?)
-        } else {
-            None
-        };
-        let products:Vec<_>=report.products.iter().enumerate().map(|(i,m)|json!({"step":i,"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology,"duplex":m.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<Value>(s).ok()),"tracked_modifications":m.metadata.get("tracked_modifications").and_then(|s|serde_json::from_str::<Value>(s).ok())})).collect();
+        report.validate_documentary().map_err(bad)?;
+        let artifact = self.session.text_artifact(
+            bounded_json_limit(&report, 64 * 1024 * 1024)?,
+            "application/json",
+            "verified-plan-evidence.json",
+        )?;
+        let steps:Vec<_> = report.steps.iter().map(|outcome| {
+            let product = outcome.product.as_ref().map(|m| json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology,
+                "duplex":m.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<Value>(s).ok()),
+                "tracked_modifications":m.metadata.get("tracked_modifications").and_then(|s|serde_json::from_str::<Value>(s).ok())}));
+            json!({"step_index":outcome.step_index,"state":outcome.state,"blocked_by":outcome.blocked_by,"product":product})
+        }).collect();
         output(
-            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"products":products,"exhaustive_alternative_search":report.exhaustive_alternative_search,"scientific_step_count":scientific_step_count,"reference_step_count":reference_step_count,"artifact_id":artifact}),
+            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"planned_steps":report.planned_steps,"steps":steps,"exhaustive_alternative_search":report.exhaustive_alternative_search,"scientific_step_count":scientific_step_count,"reference_step_count":reference_step_count,"artifact_id":artifact}),
         )
     }
 }

@@ -1,4 +1,4 @@
-//! The physical-template semantic fix is versioned; old reports stay documentary.
+//! The physical-template semantic fix admits only the current report contract.
 use collagene_core::{
     planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
@@ -92,8 +92,7 @@ fn current_encoding_roundtrips_scientific_and_documentary_receipts() {
     assert!(protocol::response::Response::decode(&wire(79, &response)).is_err());
     assert!(protocol::response::Response::decode(&wire(73, &response)).is_err());
 
-    // Synthetic documentary fixture of the preceding unchanged original-input
-    // PCR model. Lowering its stamp never makes it a current-engine receipt.
+    // A superseded engine stamp is refused even inside a current frame.
     let mut historical = response;
     let AnalysisResult::Verification(report) = &mut historical.result else {
         unreachable!()
@@ -101,22 +100,23 @@ fn current_encoding_roundtrips_scientific_and_documentary_receipts() {
     let current = verification::ENGINE_VERSION;
     let old = current.replace(collagene_core::verification::ENGINE_VERSION, "/science-20");
     report.engine_version = old.clone();
-    for product in &mut report.products {
+    for step in &mut report.steps {
+        let product = step
+            .product
+            .as_mut()
+            .expect("each declared step must reconstruct");
         for value in product.metadata.values_mut() {
             if value == current {
                 *value = old.clone();
             }
         }
     }
-    let decoded = protocol::response::Response::decode(&wire(
-        protocol::schema::WORKER_SCHEMA_VERSION,
-        &historical,
-    ))
-    .unwrap();
-    let AnalysisResult::Verification(report) = decoded.result else {
-        unreachable!()
-    };
-    assert!(report.engine_version.ends_with("/science-20"));
-    assert_ne!(report.engine_version, verification::ENGINE_VERSION);
+    assert!(
+        protocol::response::Response::decode(&wire(
+            protocol::schema::WORKER_SCHEMA_VERSION,
+            &historical,
+        ))
+        .is_err()
+    );
     assert!(protocol::response::Response::decode(&wire(72, &historical)).is_err());
 }

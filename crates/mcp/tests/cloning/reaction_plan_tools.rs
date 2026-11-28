@@ -201,9 +201,8 @@ async fn retained_recipe_conditions_change_evidence_without_changing_products_or
         assert_eq!(
             retained
                 .verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .sequence
                 .as_str(),
             TARGET
@@ -213,8 +212,13 @@ async fn retained_recipe_conditions_change_evidence_without_changing_products_or
         // summaries; absence of either summary must fail this fixture.
         let reconstructed = retained
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| {
+                step.product
+                    .as_ref()
+                    .expect("each declared step must reconstruct")
+            })
             .map(|product| {
                 let duplex: collagene_core::chemistry::DuplexSummary = serde_json::from_str(
                     product
@@ -311,8 +315,8 @@ async fn retained_recipe_conditions_change_evidence_without_changing_products_or
         let fresh = call(&client, "verify_plan", reference.clone()).await;
         assert_eq!(fresh["status"], expected_status);
         assert_eq!(
-            fresh["products"].as_array().unwrap().len(),
-            retained.verification.products.len()
+            fresh["steps"].as_array().unwrap().len(),
+            retained.verification.reconstructed_count()
         );
         assert_eq!(fresh["target_revision"], target["revision"]);
         if expected_documentary_status.is_some() {

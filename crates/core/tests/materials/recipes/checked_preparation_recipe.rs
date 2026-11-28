@@ -85,9 +85,12 @@ fn blocked_original_site_cannot_be_cut_by_a_checked_preparation() {
         matches!(&checked.plan.steps[1],Operation::CheckedDigest{selection,..} if selection.enzymes[0].enzyme.name=="SmaI")
     );
     let result = verification::engine::verify(&checked.plan, &target);
-    assert_eq!(result.products.len(), 1, "{:?}", result.findings);
+    assert_eq!(result.reconstructed_count(), 1, "{:?}", result.findings);
     assert!(
-        result.findings.iter().any(|s| s.contains("Blocked")),
+        result
+            .findings
+            .iter()
+            .any(|s| s.message.contains("Blocked")),
         "{:?}",
         result.findings
     );
@@ -132,7 +135,7 @@ fn original_modified_template_then_new_pcr_is_unmodified_before_checked_cutting(
     ));
     let result = verification::engine::verify(&compiled.plan, &target);
     assert_eq!(
-        result.products.get(2).map(|m| m.sequence.as_str()),
+        result.product(2).map(|m| m.sequence.as_str()),
         Some("GGGGCTACGTA"),
         "{:?}",
         result.findings

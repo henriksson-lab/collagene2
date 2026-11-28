@@ -265,8 +265,15 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.len(), 2);
-    assert_eq!(report.products[1].sequence.as_str(), "ACGACCCCGGGGTAAC");
+    assert_eq!(report.reconstructed_count(), 2);
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "ACGACCCCGGGGTAAC"
+    );
     let html = verification::output::export_protocol_html(
         &decoded.plan,
         w.head(&target.document_id).unwrap(),
@@ -294,7 +301,7 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
     let replay = evidence(&report);
     replay.validate_documentary().unwrap();
     assert_eq!(replay.origin.selection, selection(&original, 0));
-    assert_eq!(replay.decode_report().unwrap().products.len(), 1);
+    assert_eq!(replay.decode_report().unwrap().reconstructed_count(), 1);
     assert_eq!(replay.material_revision.len(), 64);
     let committed = cloning_outputs::finalize(
         &w,
@@ -328,7 +335,11 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
         .unwrap();
     saved_evidence.validate_documentary().unwrap();
     assert_eq!(
-        saved_evidence.decode_report().unwrap().products[0]
+        saved_evidence
+            .decode_report()
+            .unwrap()
+            .product(0)
+            .expect("selected step must reconstruct")
             .sequence
             .as_str(),
         "ACGACCCCGGGGTAAC"
@@ -349,7 +360,13 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
     let restored_evidence = evidence(restored.report());
     restored_evidence.validate_documentary().unwrap();
     assert_eq!(restored_evidence.origin.selection, selection(&original, 0));
-    assert_eq!(restored_evidence.decode_report().unwrap().products.len(), 1);
+    assert_eq!(
+        restored_evidence
+            .decode_report()
+            .unwrap()
+            .reconstructed_count(),
+        1
+    );
     assert_eq!(run_lineage::workspace_fingerprint(&w).unwrap(), before);
 }
 
@@ -380,9 +397,28 @@ fn saved_modified_circle_remains_noti_blocked_in_durable_checked_digest() {
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products[1].sequence.as_str(), "AAGCGGCCGCAA");
-    assert_eq!(report.products[1].topology, Topology::Circular);
-    assert_eq!(evidence(&report).decode_report().unwrap().products.len(), 2);
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AAGCGGCCGCAA"
+    );
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .topology,
+        Topology::Circular
+    );
+    assert_eq!(
+        evidence(&report)
+            .decode_report()
+            .unwrap()
+            .reconstructed_count(),
+        2
+    );
     let committed = cloning_outputs::finalize(
         &w,
         &plan,
@@ -442,7 +478,7 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
     let before = run_lineage::workspace_fingerprint(&w).unwrap();
     let digest = plan.steps.pop().unwrap();
     let report = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
     let committed = cloning_outputs::finalize(
         &w,
@@ -481,13 +517,12 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
     plan.steps.push(digest);
     let withheld_digest = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert_eq!(withheld_digest.status, Status::Incomplete);
-    assert_eq!(withheld_digest.products.len(), 1);
-    assert!(
-        withheld_digest
-            .findings
-            .iter()
-            .any(|finding| finding.contains("digest propagation of existing nicks"))
-    );
+    assert_eq!(withheld_digest.reconstructed_count(), 1);
+    assert!(withheld_digest.findings.iter().any(|finding| {
+        finding
+            .message
+            .contains("digest propagation of existing nicks")
+    }));
     plan.steps[1] = Operation::Pcr {
         template: Source::Step(0),
         forward: Primer::new("Forward", "TTGCAATC", "").unwrap(),
@@ -499,12 +534,12 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
         rejected.status,
         Status::Invalid | Status::Incomplete
     ));
-    assert_eq!(rejected.products.len(), 1);
+    assert_eq!(rejected.reconstructed_count(), 1);
     assert!(
         rejected
             .findings
             .iter()
-            .any(|finding| finding.to_ascii_lowercase().contains("nick"))
+            .any(|finding| finding.message.to_ascii_lowercase().contains("nick"))
     );
     assert_eq!(run_lineage::workspace_fingerprint(&w).unwrap(), before);
 }
@@ -544,10 +579,79 @@ fn capsule_target_source_product_checksum_and_schema_tampering_are_rejected() {
             result.findings
         );
         assert!(
-            result.products.is_empty(),
+            (result.reconstructed_count() == 0),
             "A rejected origin cannot fabricate any reconstructed product"
         );
     }
+    assert_eq!(run_lineage::workspace_fingerprint(&w).unwrap(), before);
+}
+
+#[test]
+fn bounded_wrong_saved_origin_fails_locally_and_preserves_independent_indexed_sibling() {
+    use verification::{
+        checks::{CheckScope, CheckVerdict, RuleId},
+        evidence::StepState,
+    };
+    let original = pcr();
+    let (w, mut plan, target_event) = continuation(
+        &original,
+        0,
+        Molecule::dna(
+            "Independent sibling target",
+            "ACGACCCCGGGGTAAC",
+            Topology::Linear,
+        )
+        .unwrap(),
+        pcr_step(Source::Step(0)),
+    );
+    // This sibling uses a separate original reference, never saved-product
+    // metadata or a projection of the refused material reconstruction.
+    let independent = original
+        .workspace
+        .head(&original.workspace.documents[0].id)
+        .unwrap()
+        .clone();
+    plan.inputs.push(PlanInput {
+        id: "independent".into(),
+        revision: independent.revision(),
+        molecule: independent,
+    });
+    plan.steps
+        .push(pcr_step(Source::Input("independent".into())));
+    let origin = origin_mut(&mut plan);
+    origin.selection.event.event_id = format!("event-{}", "0".repeat(64));
+    origin.selection.event.revision = "0".repeat(64);
+    origin
+        .validate_documentary()
+        .expect("outer event authentication is not fabricated from a documentary origin package");
+    collagene_core::material::capsule::plan_resource_preflight(&plan)
+        .expect("bounded current origin data must reach branch-local semantic checks");
+    let before = run_lineage::workspace_fingerprint(&w).unwrap();
+    let report = verification::engine::verify(&plan, w.head(&target_event.document_id).unwrap());
+    assert_eq!(report.status, Status::Invalid, "{:?}", report.findings);
+    assert_eq!(report.planned_steps, 3);
+    assert_eq!(report.steps.len(), 3);
+    assert_eq!(report.reconstructed_count(), 1);
+    assert_eq!(report.steps[0].state, StepState::Rejected);
+    assert!(report.product(0).is_none());
+    assert_eq!(report.steps[1].state, StepState::Blocked);
+    assert_eq!(report.steps[1].blocked_by, vec![Source::Step(0)]);
+    assert!(report.product(1).is_none());
+    assert_eq!(report.steps[2].state, StepState::Reconstructed);
+    let actual = report.product(2).expect("independent sibling keeps step 2");
+    assert_eq!(actual.sequence.as_str(), "ACGACCCCGGGGTAAC");
+    assert_eq!(actual.topology, Topology::Linear);
+    assert!(report.findings.iter().any(|finding| {
+        finding.rule == RuleId::SavedMaterial
+            && finding.verdict == CheckVerdict::Fail
+            && finding.scope == CheckScope::Step { step_index: 0 }
+    }));
+    assert!(report.findings.iter().any(|finding| {
+        finding.rule == RuleId::TargetAgreement
+            && finding.verdict == CheckVerdict::Pass
+            && finding.scope == CheckScope::Target { step_index: 2 }
+    }));
+    report.validate_documentary().unwrap();
     assert_eq!(run_lineage::workspace_fingerprint(&w).unwrap(), before);
 }
 
@@ -845,8 +949,15 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
     let before = run_lineage::workspace_fingerprint(&w).unwrap();
     let report = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 2);
-    assert_eq!(report.products[1].sequence.as_str(), "AGGGGCATCCCTTCGAATGA");
+    assert_eq!(report.reconstructed_count(), 2);
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AGGGGCATCCCTTCGAATGA"
+    );
     let original_report = evidence(&report).decode_report().unwrap();
     assert_eq!(original_report.physical_processing_reports.len(), 1);
     let verification::evidence::PhysicalProcessingEvidence::TopoActions(original_evidence) =
@@ -870,7 +981,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
         detached_report.status,
         Status::Invalid | Status::Incomplete
     ));
-    assert!(detached_report.products.is_empty());
+    assert!((detached_report.reconstructed_count() == 0));
     let mut changed = plan.clone();
     let mut originating = transfer::load_candidate(&origin_mut(&mut changed).candidate).unwrap();
     let Operation::TopoActions { request, .. } = &mut originating.plan.steps[0] else {
@@ -885,7 +996,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
             changed_report.status,
             Status::Invalid | Status::Incomplete
         ));
-        assert!(changed_report.products.is_empty());
+        assert!((changed_report.reconstructed_count() == 0));
     }
     assert_eq!(run_lineage::workspace_fingerprint(&w).unwrap(), before);
 }

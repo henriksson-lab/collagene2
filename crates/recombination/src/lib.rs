@@ -63,29 +63,57 @@ pub struct Profile {
     pub variants: Vec<SiteVariant>,
     pub limitations: Vec<String>,
 }
+// Shared borrowed capacities for two-parent and multi-parent profile owners.
+// Provenance relationships, bases, specificity and snapshot pins remain semantic
+// checks; this guard performs no hashing, cloning or sequence expansion.
+fn profile_resource_preflight(
+    id: &str,
+    edition: &str,
+    sources: &[SourceRecord],
+    variants: &[SiteVariant],
+    limitations: &[String],
+) -> Result<(), Error> {
+    if id.len() > 256
+        || edition.len() > 256
+        || variants.len() > 64
+        || sources.len() > 64
+        || limitations.len() > 64
+        || limitations.iter().any(|text| text.len() > 4096)
+        || sources.iter().any(|source| {
+            source.id.len() > 256
+                || source.vector_name.len() > 1024
+                || source.url.len() > 4096
+                || source.map_url.len() > 4096
+                || source.map_sha256.len() > 64
+                || source.raw_sha256.len() > 64
+        })
+        || variants.iter().any(|variant| {
+            variant.id.len() > 256 || variant.source_id.len() > 256 || variant.sequence.len() > 4096
+        })
+    {
+        return Err(Error::TooLarge);
+    }
+    Ok(())
+}
 impl Profile {
+    pub fn resource_preflight(&self) -> Result<(), Error> {
+        profile_resource_preflight(
+            &self.id,
+            &self.edition,
+            &self.sources,
+            &self.variants,
+            &self.limitations,
+        )
+    }
     pub fn validate(&self) -> Result<(), Error> {
-        if self.id.len() > 256
-            || self.id.trim().is_empty()
-            || self.edition.len() > 256
-            || self.edition.trim().is_empty()
-            || self.variants.is_empty()
-            || self.variants.len() > 64
-            || self.sources.len() > 64
-        {
-            return Err(Error::TooLarge);
-        }
-        if self.limitations.len() > 64 || self.limitations.iter().any(|s| s.len() > 4096) {
+        self.resource_preflight()?;
+        if self.id.trim().is_empty() || self.edition.trim().is_empty() || self.variants.is_empty() {
             return Err(Error::TooLarge);
         }
         let mut ids = BTreeSet::new();
         let mut source_ids = BTreeSet::new();
         for s in &self.sources {
-            if s.id.len() > 256
-                || s.id.trim().is_empty()
-                || s.vector_name.len() > 1024
-                || s.url.len() > 4096
-                || s.map_url.len() > 4096
+            if s.id.trim().is_empty()
                 || !s.map_url.starts_with("https://")
                 || s.map_sha256.len() != 64
                 || !s.map_sha256.bytes().all(|b| b.is_ascii_hexdigit())
@@ -101,14 +129,11 @@ impl Profile {
             }
         }
         for v in &self.variants {
-            if v.id.len() > 256
-                || v.id.trim().is_empty()
-                || v.source_id.len() > 256
+            if v.id.trim().is_empty()
                 || !ids.insert(v.id.as_str())
                 || !source_ids.contains(v.source_id.as_str())
                 || !(1..=2).contains(&v.subtype)
                 || v.sequence.len() < 7
-                || v.sequence.len() > 4096
                 || !v.sequence.bytes().all(|b| b"ACGT".contains(&b))
                 || v.overlap_start
                     .checked_add(7)
@@ -309,7 +334,7 @@ fn mask(b: u8) -> u8 {
         _ => 0,
     }
 }
-fn hard_limits(l: &Limits) -> Result<(), Error> {
+pub fn limits_preflight(l: &Limits) -> Result<(), Error> {
     if l.max_input_bases == 0
         || l.max_input_bases > 2_000_000
         || l.max_comparisons == 0
@@ -342,7 +367,7 @@ pub fn source_preflight(
     l: &Limits,
     target: Option<&Molecule>,
 ) -> Result<(), Error> {
-    hard_limits(l)?;
+    limits_preflight(l)?;
     profile.validate()?;
     let mut total = 0usize;
     for molecule in molecules {
@@ -383,7 +408,7 @@ fn preflight_models(
     l: &Limits,
     target: Option<&Molecule>,
 ) -> Result<(), Error> {
-    hard_limits(l)?;
+    limits_preflight(l)?;
     profile.validate()?;
     if inputs.len() != 2 {
         return Err(Error::Unsupported(
@@ -1191,7 +1216,7 @@ impl Report {
     }
     /// Bounded structural check only. Imported reports do not grant current authority.
     pub fn validate(&self) -> Result<(), Error> {
-        hard_limits(&self.limits)?;
+        limits_preflight(&self.limits)?;
         if self.engine != ENGINE
             || self.batch_revision.len() != 64
             || self.profile_revision.len() != 64

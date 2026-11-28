@@ -263,7 +263,14 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.last().unwrap().sequence.as_str(), DNA);
+    assert_eq!(
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        DNA
+    );
     let derived = sharing::inspect_document_closure(&loaded, &selection).unwrap();
     assert_eq!(derived.documents, export.inventory.documents);
     assert_eq!(derived.revisions, export.inventory.revisions);

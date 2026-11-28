@@ -172,7 +172,7 @@ fn empty_capped_or_failed_probe_keeps_its_real_enumeration_without_selecting_a_w
     assert!(pool.candidates.is_empty());
     assert!(!pool.truncation_reasons.is_empty());
     assert_eq!(
-        capped.verification.products.len(),
+        capped.verification.reconstructed_count(),
         4,
         "three declared-generation products and PCR remain; no capped candidate was fabricated"
     );
@@ -313,12 +313,19 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
     );
     let fresh = verification::engine::verify(&plan, &target);
     assert_eq!(fresh.status, Status::ConsistentUnderAssumptions);
-    assert_eq!(fresh.products.last().unwrap().sequence.as_str(), AB);
+    assert_eq!(
+        fresh
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        AB
+    );
     assert!(
         fresh
             .findings
             .iter()
-            .any(|finding| finding.contains("1 uncut carryover"))
+            .any(|finding| finding.message.contains("1 uncut carryover"))
     );
     assert_eq!(
         fresh.engine_version,
@@ -346,7 +353,7 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         let rejected = verification::engine::verify(&forged, &target);
         assert_eq!(rejected.status, Status::Invalid);
         assert_eq!(
-            rejected.products.len(),
+            rejected.reconstructed_count(),
             4,
             "only three declared-generation products and PCR survive a rejected final candidate"
         );
@@ -354,7 +361,7 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
             rejected
                 .findings
                 .iter()
-                .any(|finding| finding.contains("candidate keys disagree"))
+                .any(|finding| finding.message.contains("candidate keys disagree"))
         );
     }
 
@@ -367,7 +374,14 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         reaction::compile_selected(&inputs, &wrong_target, &request, &wrong_selection).unwrap();
     let wrong = verification::engine::verify(&wrong_plan, &wrong_target);
     assert_eq!(wrong.status, Status::Invalid);
-    assert_eq!(wrong.products.last().unwrap().sequence.as_str(), AB);
+    assert_eq!(
+        wrong
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        AB
+    );
 }
 
 #[test]
@@ -391,7 +405,11 @@ fn key_bound_compilation_preserves_explicit_choice_and_refuses_stale_context() {
     let native = verification::engine::verify(&plan, &target);
     assert_eq!(native.status, Status::Invalid);
     assert_eq!(
-        native.products.last().unwrap().sequence.as_str(),
+        native
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         A,
         "target does not choose the AB alternative"
     );

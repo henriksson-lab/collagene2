@@ -477,10 +477,10 @@ pub fn AssemblyPoolView(
         {move||evidence.get().map(|saved|{
             let notes=&saved.report.warnings;let pages=notes.len().div_ceil(40).max(1);let current_page=note_page.get().min(pages-1);
             let warnings=notes.iter().skip(current_page*40).take(40).map(|note|view!{<li>{note.clone()}</li>}).collect_view();
-            let probe_count=saved.report.verification.findings.len()+saved.report.verification.assumptions.len();
+            let probe_count=saved.report.verification.assumptions.len();
             let probe_pages=probe_count.div_ceil(40).max(1);let probe_current=probe_page.get().min(probe_pages-1);
-            let probe_notes=saved.report.verification.findings.iter().map(|finding|format!("Finding: {finding}"))
-                .chain(saved.report.verification.assumptions.iter().map(|assumption|format!("Assumption: {assumption}")))
+            let probe_findings=crate::protocol::verification_view::findings(&saved.report.verification.findings);
+            let probe_notes=saved.report.verification.assumptions.iter().map(|assumption|format!("Assumption: {assumption}"))
                 .skip(probe_current*40).take(40).map(|note|view!{<li>{note}</li>}).collect_view();
             let pool=saved.pool.as_ref().map(|pool|{
                 let pages=pool.candidates.len().div_ceil(20).max(1);let current_page=page.get().min(pages-1);
@@ -500,7 +500,7 @@ pub fn AssemblyPoolView(
             view!{<section><ul>{warnings}</ul><p>{format!("Reaction note page {} of {pages}",current_page+1)}</p><button class="text-tool" disabled=current_page==0 on:click=move|_|note_page.set(current_page.saturating_sub(1))>"Previous reaction notes"</button><button class="text-tool" disabled={current_page+1>=pages} on:click=move|_|note_page.set(current_page+1)>"Next reaction notes"</button>
                 <p>{format!("Diagnostic probe assessment: {:?}. This is not the selected construct's verification result.",saved.report.verification.status)}</p>
                 {saved.pool.is_none().then(||view!{<p role="alert">"Finite pool withheld. Review failed or incomplete preparation steps; no winner or exhaustive absence is inferred."</p>})}
-                <details><summary>"Fresh preparation and probe findings / assumptions"</summary><ul>{probe_notes}</ul><p>{format!("Probe evidence page {} of {probe_pages}",probe_current+1)}</p><button class="text-tool" disabled=probe_current==0 on:click=move|_|probe_page.set(probe_current.saturating_sub(1))>"Previous probe notes"</button><button class="text-tool" disabled={probe_current+1>=probe_pages} on:click=move|_|probe_page.set(probe_current+1)>"Next probe notes"</button></details>{pool}
+                <details><summary>"Fresh preparation and probe checks / assumptions"</summary>{probe_findings}<ul>{probe_notes}</ul><p>{format!("Assumptions page {} of {probe_pages}",probe_current+1)}</p><button class="text-tool" disabled=probe_current==0 on:click=move|_|probe_page.set(probe_current.saturating_sub(1))>"Previous probe notes"</button><button class="text-tool" disabled={probe_current+1>=probe_pages} on:click=move|_|probe_page.set(probe_current+1)>"Next probe notes"</button></details>{pool}
             </section>}
         })}
         {move||inspected.get().and_then(|index|evidence.get().and_then(|saved|saved.report.pool.as_ref().and_then(|pool|pool.candidates.get(index)).map(|candidate|(saved.clone(),index,candidate.duplex.top.as_str().to_string(),candidate.duplex.topology)))).map(|(saved,index,dna,topology)|{

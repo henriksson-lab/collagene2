@@ -16,8 +16,8 @@ dto! {pub struct Row {pub preparation:PreparedRow,pub treatment_step:Option<usiz
 dto! {pub struct Compiled {pub plan:DesignPlan,pub rows:Vec<Row>,pub ligation_step:usize}}
 dto! {pub struct Junction {pub index:usize,pub upstream:usize,pub downstream:usize,pub closing:bool,pub upstream_end:Option<End>,pub downstream_end:Option<End>}}
 dto! {pub struct Preview {pub context_revision:String,pub compiled:Compiled,pub verification:VerificationReport,
-/// Leading prepared reference-document prefix, before assembly orientation.
-pub prepared:Vec<Molecule>,
+/// Original-row-indexed prepared references, before assembly orientation.
+pub prepared:Vec<Option<Molecule>>,
 /// Fresh physical summaries in assembly orientation; absent state is explicit.
 pub physical:Vec<Option<DuplexSummary>>,pub product_physical:Option<DuplexSummary>,pub junctions:Vec<Junction>,pub preparation_complete:bool}}
 fn bad(s: &str) -> Error {
@@ -313,37 +313,41 @@ pub(crate) fn preview_with_tracked(
     let compiled = compile(inputs, target, recipe, policy)?;
     let (verification, mut trace) =
         verification::engine::verify_with_tracked_budget(&compiled.plan, target, budget);
-    let mut available = Vec::with_capacity(compiled.rows.len());
-    for row in &compiled.rows {
-        let m = match &row.prepared_source {
+    let available = compiled
+        .rows
+        .iter()
+        .map(|row| match &row.prepared_source {
             Source::Input(id) => compiled
                 .plan
                 .inputs
                 .iter()
-                .find(|i| &i.id == id)
-                .map(|i| &i.molecule),
-            Source::Step(i) => verification.products.get(*i),
-        };
-        if let Some(m) = m {
-            available.push(m)
-        } else {
-            break;
-        }
-    }
-    collagene_model::bounds::model_preflight(&available)?;
+                .find(|input| &input.id == id)
+                .map(|input| &input.molecule),
+            Source::Step(index) => verification.product(*index),
+        })
+        .collect::<Vec<_>>();
+    let models = available
+        .iter()
+        .filter_map(|model| *model)
+        .collect::<Vec<_>>();
+    collagene_model::bounds::model_preflight(&models)?;
     let mut bases = 0usize;
-    for m in &available {
+    for model in &models {
         bases = bases
-            .checked_add(m.sequence.len())
+            .checked_add(model.sequence.len())
             .filter(|n| *n <= preparation::MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
     }
-    crate::encoding::bounded_json::hash(&available)?;
-    let preparation_complete = available.len() == compiled.rows.len();
+    crate::encoding::bounded_json::hash(&models)?;
+    let preparation_complete = available.iter().all(Option::is_some);
     let mut physical = Vec::with_capacity(available.len());
     let mut fresh: Vec<Option<crate::chemistry::tracked_duplex::TrackedDuplex>> =
         vec![None; compiled.rows.len()];
     for (index, (row, m)) in compiled.rows.iter().zip(&available).enumerate() {
+        let Some(m) = m else {
+            physical.push(None);
+            continue;
+        };
         let raw = match &row.prepared_source {
             Source::Step(i) => trace.get_mut(*i).and_then(Option::take),
             // Existing original intact-reference assumption only. Markers may
@@ -367,7 +371,7 @@ pub(crate) fn preview_with_tracked(
         .map(|d| d.duplex.summary())
         .transpose()?;
     let junctions = junctions(&physical, compiled.rows.len(), recipe.circular);
-    let prepared = available.into_iter().cloned().collect();
+    let prepared = available.into_iter().map(|model| model.cloned()).collect();
     let result = Preview {
         context_revision,
         compiled,
@@ -408,6 +412,7 @@ fn summary_bounds(s: &DuplexSummary) -> Result<(), Error> {
 impl Preview {
     /// Readonly bounds/correspondence checks, never chemical replay or authority.
     pub fn validate(&self) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         let rows = self.compiled.rows.len();
         let steps = self.compiled.plan.steps.len();
         if !hex(&self.context_revision)
@@ -416,10 +421,10 @@ impl Preview {
             || steps > (preparation::MAX_STEPS_PER_ROW + 1) * preparation::MAX_ROWS + 1
             || self.compiled.ligation_step.checked_add(1) != Some(steps)
             || self.compiled.plan.inputs.len() > preparation::MAX_ROWS
-            || self.verification.products.len() > steps
-            || self.prepared.len() > rows
+            || self.verification.planned_steps != steps
+            || self.prepared.len() != rows
             || self.physical.len() != self.prepared.len()
-            || self.preparation_complete != (self.prepared.len() == rows)
+            || self.preparation_complete != self.prepared.iter().all(Option::is_some)
             || self.verification.step_reports.len() > steps
         {
             return Err(bad("invalid preview shape"));
@@ -430,8 +435,13 @@ impl Preview {
             .inputs
             .iter()
             .map(|i| &i.molecule)
-            .chain(self.prepared.iter())
-            .chain(self.verification.products.iter())
+            .chain(self.prepared.iter().filter_map(Option::as_ref))
+            .chain(
+                self.verification
+                    .steps
+                    .iter()
+                    .filter_map(|step| step.product.as_ref()),
+            )
         {
             collagene_model::bounds::model_preflight(&[m])?;
         }
@@ -565,7 +575,10 @@ impl Preview {
             ));
         }
         if self.product_physical.is_some()
-            && self.verification.products.len() <= self.compiled.ligation_step
+            && self
+                .verification
+                .product(self.compiled.ligation_step)
+                .is_none()
         {
             return Err(bad(
                 "product physical evidence has no reconstructed product",

@@ -130,14 +130,16 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
     };
     let report = verification::engine::verify(&plan, &target);
     assert_eq!(
-        report.products.len(),
+        report.reconstructed_count(),
         plan.steps.len(),
         "{:?}",
         report.findings
     );
     assert!(verification::engine::plan_target_matches(
         &plan,
-        report.products.last().unwrap(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &target
     ));
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
@@ -228,14 +230,16 @@ fn actual_saved_circle_supports_literal_insertion_deletion_and_replacement() {
         ));
         assert!(verification::engine::plan_target_matches(
             &design.plan,
-            design.verification.products.last().unwrap(),
+            design
+                .verification
+                .final_product()
+                .expect("final declared step must reconstruct"),
             &target
         ));
         let feature = design
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .features
             .iter()
             .find(|f| f.label() == "Retained literal CGTA")
@@ -243,12 +247,22 @@ fn actual_saved_circle_supports_literal_insertion_deletion_and_replacement() {
         assert_eq!(
             feature
                 .location
-                .extract(&design.verification.products.last().unwrap().sequence)
+                .extract(
+                    &design
+                        .verification
+                        .final_product()
+                        .expect("final declared step must reconstruct")
+                        .sequence
+                )
                 .unwrap(),
             "CGTA"
         );
         let mods: ModificationSummary = serde_json::from_str(
-            &design.verification.products[1].metadata["tracked_modifications"],
+            &design
+                .verification
+                .product(1)
+                .expect("selected step must reconstruct")
+                .metadata["tracked_modifications"],
         )
         .unwrap();
         assert_eq!(mods.known_modified, 0);
@@ -318,9 +332,8 @@ fn cut_free_derived_circle_survives_archive_and_is_replayed_before_new_pcr() {
     assert_eq!(
         design
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "GAGATGCTACGTAGGACTTCAGACCTGTAAGTG"
@@ -394,8 +407,14 @@ fn new_run_exports_new_oligos_protocol_and_replays_without_changing_original_hea
     assert_eq!(fresh.tracked().summary().unwrap().known_modified, 0);
     assert_eq!(fresh.tracked().summary().unwrap().unknown_eligible, 0);
     // The explicit phosphorylated linear intermediate is real, not inferred from final DNA.
-    let linear: collagene_core::chemistry::DuplexSummary =
-        serde_json::from_str(&replay.current_report.products[2].metadata["duplex_model"]).unwrap();
+    let linear: collagene_core::chemistry::DuplexSummary = serde_json::from_str(
+        &replay
+            .current_report
+            .product(2)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     let (left, right) = linear.ends.unwrap();
     assert_eq!(left.chemistry.five_prime, FivePrime::Phosphate);
     assert_eq!(right.chemistry.five_prime, FivePrime::Phosphate);
@@ -419,7 +438,7 @@ fn wrong_target_and_tampered_documentary_receipts_cannot_inherit_success() {
     );
     let report = prepare(&w, &origin, &wrong, &options());
     assert_eq!(report.verification.status, Status::Invalid);
-    assert_eq!(report.verification.products.len(), 4);
+    assert_eq!(report.verification.reconstructed_count(), 4);
     let target = dna("Correct independent target", REPLACED, Topology::Circular);
     let design = prepare(&w, &origin, &target, &options());
     let context = design.context_revision.clone();
@@ -468,7 +487,7 @@ fn actual_nicked_circle_is_not_silently_repaired_or_amplified() {
     let design = prepare(&w, &origin, &target, &options());
     assert_eq!(design.verification.status, Status::Incomplete);
     assert_eq!(
-        design.verification.products.len(),
+        design.verification.reconstructed_count(),
         1,
         "only actual reconstructed source, no PCR product"
     );
@@ -477,7 +496,7 @@ fn actual_nicked_circle_is_not_silently_repaired_or_amplified() {
             .verification
             .findings
             .iter()
-            .any(|s| s.contains("nick propagation"))
+            .any(|s| s.message.contains("nick propagation"))
     );
     assert_eq!(source(&w, &origin), before);
 }
@@ -541,10 +560,12 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
     };
     let checked = verification::engine::verify(&plan, &original_target);
     assert_eq!(checked.status, Status::Incomplete, "{:?}", checked.findings);
-    assert_eq!(checked.products.len(), 3);
+    assert_eq!(checked.reconstructed_count(), 3);
     assert!(verification::engine::plan_target_matches(
         &plan,
-        checked.products.last().unwrap(),
+        checked
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &original_target
     ));
     let evidence = checked
@@ -599,7 +620,7 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
     );
     let design = prepare(&w, &origin, &target, &options());
     assert_eq!(
-        design.verification.products.len(),
+        design.verification.reconstructed_count(),
         4,
         "{:?}",
         design.verification.findings
@@ -607,7 +628,10 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
     assert_eq!(design.verification.status, Status::Incomplete);
     assert!(verification::engine::plan_target_matches(
         &design.plan,
-        design.verification.products.last().unwrap(),
+        design
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &target
     ));
     assert!(
@@ -615,7 +639,7 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
             .verification
             .findings
             .iter()
-            .any(|s| s.contains("incomplete") || s.contains("Incomplete"))
+            .any(|s| s.message.contains("incomplete") || s.message.contains("Incomplete"))
     );
 }
 #[test]

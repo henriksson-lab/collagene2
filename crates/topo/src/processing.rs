@@ -36,9 +36,24 @@ impl ActionEvidence {
     }
 }
 
+impl Action {
+    pub fn resource_preflight(&self) -> Result<(), Error> {
+        let hypothesis = match self {
+            Self::CleaveThreePrimeFlap { assumption, .. } => assumption,
+            Self::SealNick {
+                ligase_assumption, ..
+            } => ligase_assumption,
+        };
+        if hypothesis.len() > 4096 {
+            return Err(crate::bad("action hypothesis exceeds resource bound"));
+        }
+        Ok(())
+    }
+}
 pub fn action_preflight(action: &Action, l: &Limits) -> Result<(), Error> {
+    action.resource_preflight()?;
     let call = |c: Call| c.strand < l.max_strands && c.index < l.max_source_bases;
-    let hypothesis = |text: &str| crate::text(text, 4096) && !text.chars().any(char::is_control);
+    let hypothesis = |text: &str| !text.trim().is_empty() && !text.chars().any(char::is_control);
     let valid = match action {
         Action::CleaveThreePrimeFlap {
             bond,

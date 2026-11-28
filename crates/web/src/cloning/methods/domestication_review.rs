@@ -750,7 +750,13 @@ mod tests {
         assert!(!historical.proposal_ready);
         assert_eq!(historical.proposal_findings, original.proposal_findings);
         assert_eq!(historical.verification.status, original.verification.status);
-        assert!(historical.verification.products.is_empty());
+        // Full typed documentary outcomes retain their actual indices. Reopening
+        // this serializable DTO grants no private material or proposal readiness.
+        historical.verification.validate_documentary().unwrap();
+        assert_eq!(
+            serde_json::to_value(&historical.verification).unwrap(),
+            serde_json::to_value(&original.verification).unwrap()
+        );
         assert_eq!(
             reopened.documents[0].head_event,
             frame.documents[0].head_event

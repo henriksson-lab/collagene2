@@ -14,7 +14,7 @@ pub struct PlanInput {
     pub revision: String,
     pub molecule: Molecule,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Source {
     Input(String),

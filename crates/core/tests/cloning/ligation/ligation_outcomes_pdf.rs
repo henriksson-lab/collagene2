@@ -101,7 +101,7 @@ fn pdf_prints_both_actual_sequences_and_embeds_full_bound_evidence_and_fasta() {
         "{:?}",
         fresh.findings
     );
-    assert_eq!(fresh.products.len(), 5);
+    assert_eq!(fresh.reconstructed_count(), 5);
     let evidence = fresh
         .physical_processing_reports
         .iter()
@@ -177,7 +177,7 @@ fn bounded_enumeration_and_real_nicks_remain_explicit_in_pdf() {
         "{:?}",
         fresh.findings
     );
-    assert_eq!(fresh.products.len(), 5);
+    assert_eq!(fresh.reconstructed_count(), 5);
     let evidence = fresh
         .physical_processing_reports
         .iter()

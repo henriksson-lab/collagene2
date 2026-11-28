@@ -65,6 +65,14 @@ It does not certify a complete transcription unit or higher assembly levels.
 [Exact source, orientation, scope and rights notice](data/rfc1000-l0-2026/NOTICE.md).
 `profile::BUILTIN_IDS` lists installed IDs; `RFC1000_L0_ID` selects this profile.
 
-MoClo, YTK, EMMA, PhytoBricks, SEVA and higher RFC1000 levels remain unsupported.
-They require separate exact source/data-rights and scoped grammar curation;
-lookup refuses unsupported built-in IDs rather than guessing tables.
+A third built-in, `profile::MOCLO_2011_L0_ID`, covers **original MoClo 2011 Level-0
+module paths**: promoter/UTR/cytosolic-CDS/terminator, or the separate
+signal-peptide/coding-module branch. It checks complete declared four/five-role
+paths with BsaI/BpiI body-site absence and advisory Esp3I screening for later
+hierarchy. It inserts no fusion-overlap bases and makes no frame, vector or
+functional claim. [Primary-source and rights notice](data/moclo-l0-2011/NOTICE.md).
+Six new source fixtures are authored; parent integration checks are pending.
+
+Other MoClo module/level variants, YTK, EMMA, PhytoBricks, SEVA and higher RFC1000
+levels remain unsupported. They require separate exact source/data-rights and
+scoped grammar curation; lookup refuses unreviewed built-in IDs.

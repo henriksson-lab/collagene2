@@ -125,8 +125,8 @@ fn typed_mismatch_reconstruction_changes_both_gene_strands_and_preserves_unchang
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.len(), 1);
-    let product = &report.products[0];
+    assert_eq!(report.reconstructed_count(), 1);
+    let product = report.product(0).expect("selected step must reconstruct");
     assert_eq!(product.sequence, target.sequence);
     assert_eq!(
         named(product, "changed forward").location,
@@ -186,8 +186,10 @@ fn wrong_independent_target_and_strict_three_prime_policy_do_not_inherit_success
     );
     let r = verification::engine::verify(&p, &wrong);
     assert_eq!(r.status, Status::Invalid);
-    assert_eq!(r.products.len(), 1);
-    assert!(r.findings.iter().any(|s| s.contains("does not match")));
+    assert_eq!(r.reconstructed_count(), 1);
+    assert!(r.findings.iter().any(|s| (s.rule
+        == collagene_core::verification::checks::RuleId::TargetAgreement
+        && s.verdict == collagene_core::verification::checks::CheckVerdict::Fail)));
     let target = mutant_target();
     let strict = PcrOptions {
         binding: BindingOptions {
@@ -203,7 +205,7 @@ fn wrong_independent_target_and_strict_three_prime_policy_do_not_inherit_success
     );
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid, "{:?}", r.findings);
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
 }
 #[test]
 fn truncated_or_overlapping_mismatch_models_cannot_become_verified_duplexes() {
@@ -244,7 +246,7 @@ fn truncated_or_overlapping_mismatch_models_cannot_become_verified_duplexes() {
     );
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
 }
 #[test]
 fn imported_physical_metadata_never_grants_mismatch_pcr_substrate_authority() {
@@ -261,7 +263,11 @@ fn imported_physical_metadata_never_grants_mismatch_pcr_substrate_authority() {
     );
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete);
-    assert!(r.findings.iter().any(|f| f.contains("physical evidence")));
+    assert!(
+        r.findings
+            .iter()
+            .any(|f| f.message.contains("physical evidence"))
+    );
 }
 #[test]
 fn mismatch_pcr_accepts_an_actual_intact_preceding_pcr_intermediate() {
@@ -287,7 +293,7 @@ fn mismatch_pcr_accepts_an_actual_intact_preceding_pcr_intermediate() {
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 2);
+    assert_eq!(r.reconstructed_count(), 2);
 }
 fn donor(left: &str, payload: &str, right: &str) -> Molecule {
     dna(
@@ -363,8 +369,8 @@ fn golden_gate_selected_candidate_is_reconstructed_with_annotations_and_external
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 3);
-    let product = &r.products[2];
+    assert_eq!(r.reconstructed_count(), 3);
+    let product = r.product(2).expect("selected step must reconstruct");
     assert_eq!(product.sequence, target.sequence);
     assert_eq!(product.topology, Topology::Circular);
     assert_eq!(named(product, "payload").location, Location::range(4, 8));
@@ -380,13 +386,13 @@ fn golden_gate_selected_candidate_is_reconstructed_with_annotations_and_external
     assert!(
         r.findings
             .iter()
-            .any(|s| s.contains("one-copy") && s.contains("uniqueness"))
+            .any(|s| s.message.contains("one-copy") && s.message.contains("uniqueness"))
     );
     let wrong = dna("wrong gate target", "AATGCCCTGCTTTTTT", Topology::Circular);
     let p = gate_plan(&wrong, inputs, gate_options(), 0);
     let r = verification::engine::verify(&p, &wrong);
     assert_eq!(r.status, Status::Invalid);
-    assert_eq!(r.products.len(), 3);
+    assert_eq!(r.reconstructed_count(), 3);
 }
 #[test]
 fn golden_gate_recutting_and_unavailable_candidate_are_conclusive_failures() {
@@ -402,13 +408,17 @@ fn golden_gate_recutting_and_unavailable_candidate_are_conclusive_failures() {
     let p = gate_plan(&target, inputs, gate_options(), 0);
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid, "{:?}", r.findings);
-    assert!(r.findings.iter().any(|s| s.contains("retains recognition")));
+    assert!(
+        r.findings
+            .iter()
+            .any(|s| s.message.contains("retains recognition"))
+    );
     let target = gate_target();
     let p = gate_plan(&target, gate_inputs(), gate_options(), usize::MAX);
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid);
     assert_eq!(
-        r.products.len(),
+        r.reconstructed_count(),
         2,
         "only the declared original sources remain"
     );
@@ -423,12 +433,17 @@ fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness()
     let p = gate_plan(&target, gate_inputs(), options, 0);
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert_eq!(r.products.len(), 3);
-    assert_eq!(r.products[2].sequence, target.sequence);
+    assert_eq!(r.reconstructed_count(), 3);
+    assert_eq!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .sequence,
+        target.sequence
+    );
     assert!(
         r.findings
             .iter()
-            .any(|s| s.contains("enumeration incomplete"))
+            .any(|s| s.message.contains("enumeration incomplete"))
     );
     let p = gate_plan(
         &target,
@@ -442,7 +457,7 @@ fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness()
     let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete);
     assert_eq!(
-        r.products.len(),
+        r.reconstructed_count(),
         2,
         "only the declared original sources remain"
     );
@@ -479,8 +494,13 @@ fn golden_gate_accepts_reconstructed_staggered_digest_steps_without_imported_met
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 3);
-    assert_eq!(r.products[2].sequence, target.sequence);
+    assert_eq!(r.reconstructed_count(), 3);
+    assert_eq!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .sequence,
+        target.sequence
+    );
     let mut imported = gate_inputs();
     imported[0]
         .metadata
@@ -660,16 +680,29 @@ fn a_known_selected_product_mismatching_target_is_invalid_even_when_other_paths_
         0,
     );
     let r = verification::engine::verify(&p, &wrong);
-    assert_eq!(r.products.len(), 3);
-    assert_eq!(r.products[2].sequence.as_str(), "AATGCCCCGCTTTTTT");
-    assert_ne!(r.products[2].sequence, wrong.sequence);
+    assert_eq!(r.reconstructed_count(), 3);
+    assert_eq!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AATGCCCCGCTTTTTT"
+    );
+    assert_ne!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .sequence,
+        wrong.sequence
+    );
     assert_eq!(
         r.status,
         Status::Invalid,
         "A capped search cannot make this explicitly selected, fully reconstructed wrong candidate unknown: {:?}",
         r.findings
     );
-    assert!(r.findings.iter().any(|s| s.contains("does not match")));
+    assert!(r.findings.iter().any(|s| (s.rule
+        == collagene_core::verification::checks::RuleId::TargetAgreement
+        && s.verdict == collagene_core::verification::checks::CheckVerdict::Fail)));
 }
 
 #[test]
@@ -719,16 +752,25 @@ fn physical_template_mismatch_and_partial_step_failure_remain_explicit_not_flatt
     );
     let report = verification::engine::verify(&p, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 1);
-    assert_eq!(report.products[0].sequence.as_str(), "AATGCCCC");
+    assert_eq!(report.reconstructed_count(), 1);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AATGCCCC"
+    );
     assert!(
         report
             .findings
             .iter()
-            .any(|f| f.contains("staggered/nicked"))
+            .any(|f| f.message.contains("staggered/nicked"))
     );
     assert!(
-        !report.findings.iter().any(|f| f.contains("does not match")),
+        !report.findings.iter().any(|f| (f.rule
+            == collagene_core::verification::checks::RuleId::TargetAgreement
+            && f.verdict == collagene_core::verification::checks::CheckVerdict::Fail)),
         "A partial intermediate is not the final product"
     );
 }

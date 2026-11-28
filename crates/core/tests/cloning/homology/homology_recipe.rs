@@ -125,9 +125,8 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE
@@ -246,7 +245,11 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         p.verification.findings
     );
     assert_eq!(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         REPAIRED
     );
     assert!(matches!(
@@ -303,7 +306,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
     let unavailable = verification::engine::verify(&plan, &linear);
     assert_eq!(unavailable.status, Status::Incomplete);
     assert_eq!(
-        unavailable.products.len(),
+        unavailable.reconstructed_count(),
         3,
         "no downstream PCR product may be invented"
     );
@@ -311,10 +314,14 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
         unavailable
             .findings
             .iter()
-            .any(|f| f.contains("actual physical source state"))
+            .any(|f| f.message.contains("actual physical source state"))
     );
     let physical = recipe::preview_homology(&inputs, &target, &request, &policy).unwrap();
-    let imported = physical.verification.products.last().unwrap().clone();
+    let imported = physical
+        .verification
+        .final_product()
+        .expect("final declared step must reconstruct")
+        .clone();
     let forged = collagene_core::planning::plan::DesignPlan {
         name: "Metadata is not originating material".into(),
         target_revision: linear.revision(),
@@ -329,14 +336,14 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
     let imported = verification::engine::verify(&forged, &linear);
     assert_eq!(imported.status, Status::Incomplete);
     assert!(
-        imported.products.is_empty(),
+        (imported.reconstructed_count() == 0),
         "producer metadata must not supply a PCR template"
     );
     assert!(
         imported
             .findings
             .iter()
-            .any(|f| f.contains("fresh native origin"))
+            .any(|f| f.message.contains("fresh native origin"))
     );
     let mut mismatched = policy;
     mismatched.overlaps = vec![7, 7];
@@ -352,10 +359,19 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
     } else {
         panic!("physical assembly");
     }
+    let refused = verification::engine::verify(&direct, &target);
+    assert_eq!(refused.status, Status::Incomplete);
+    let last = direct.steps.len() - 1;
+    assert!(refused.product(last).is_none());
     assert_eq!(
-        verification::engine::verify(&direct, &target).status,
-        Status::Invalid
+        refused.steps[last].state,
+        verification::evidence::StepState::Withheld
     );
+    assert!(refused.findings.iter().any(|finding| finding.rule
+        == verification::checks::RuleId::HomologyPolicy
+        && finding.verdict == verification::checks::CheckVerdict::Indeterminate
+        && finding.scope == verification::checks::CheckScope::Step { step_index: last }));
+    refused.validate_documentary().unwrap();
 }
 #[test]
 fn linear_outer_resection_projects_only_actual_top_calls_and_preserves_real_overhangs() {
@@ -374,7 +390,10 @@ fn linear_outer_resection_projects_only_actual_top_calls_and_preserves_real_over
         "{:?}",
         p.verification.findings
     );
-    let product = p.verification.products.last().unwrap();
+    let product = p
+        .verification
+        .final_product()
+        .expect("final declared step must reconstruct");
     assert_eq!(product.sequence.as_str(), target.sequence.as_str());
     let clipped = product
         .features
@@ -469,14 +488,17 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
             p.verification.findings
         );
         assert_eq!(
-            p.verification.products.last().unwrap().sequence.as_str(),
+            p.verification
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence
+                .as_str(),
             CIRCLE
         );
         assert!(
             p.verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .metadata
                 .contains_key(collagene_core::cloning::recombination::REFERENCE_ONLY_KEY)
         );
@@ -551,7 +573,7 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
         let unavailable = verification::engine::verify(&downstream, &expected);
         assert_eq!(unavailable.status, Status::Incomplete);
         assert_eq!(
-            unavailable.products.len(),
+            unavailable.reconstructed_count(),
             3,
             "diagnostic strands may not create downstream PCR material"
         );
@@ -559,7 +581,7 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
             unavailable
                 .findings
                 .iter()
-                .any(|f| f.contains("Reference-only ancestry"))
+                .any(|f| f.message.contains("Reference-only ancestry"))
         );
     }
 }

@@ -193,7 +193,9 @@ impl ModelBudget {
         }
         Ok(())
     }
-    fn location(&mut self, root: &Location) -> Result<(), Error> {
+    /// Borrowed nonrecursive location admission for standalone evidence trees.
+    /// Shares this budget's node/text limits and the canonical depth limit.
+    pub fn location(&mut self, root: &Location) -> Result<(), Error> {
         struct Frame<'a> {
             node: &'a Location,
             next: usize,

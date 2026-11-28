@@ -442,7 +442,7 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
     };
     let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     assert_eq!(report.reference_step_reports.len(), 1);
     assert!(report.physical_processing_reports.is_empty());
     let verification::evidence::ReferenceStepEvidence::MultiSiteRecombination { batch, .. } =
@@ -464,7 +464,7 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
     plan.target_revision = wrong.revision();
     let mismatch = verification::engine::verify(&plan, &wrong);
     assert_eq!(mismatch.status, Status::Invalid);
-    assert_eq!(mismatch.products.len(), 1);
+    assert_eq!(mismatch.reconstructed_count(), 1);
     assert_eq!(mismatch.reference_step_reports.len(), 1);
     plan.target_revision = target.revision();
     plan.steps.push(Operation::TreatEnds {
@@ -474,7 +474,7 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
     let downstream = verification::engine::verify(&plan, &target);
     assert_eq!(downstream.status, Status::Incomplete);
     assert_eq!(
-        downstream.products.len(),
+        downstream.reconstructed_count(),
         1,
         "reference letters must not manufacture a physical duplex"
     );

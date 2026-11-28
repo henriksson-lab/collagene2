@@ -94,7 +94,10 @@ fn actual_pcr_phosphorylation_and_junctions_come_from_fresh_physical_trace() {
         }
     ));
     assert_eq!(
-        p.verification.products.last().unwrap().sequence,
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence,
         target.sequence
     );
     p.validate_binding(
@@ -167,7 +170,7 @@ fn orientation_and_unphosphorylated_products_cannot_be_auto_repaired() {
             .verification
             .findings
             .iter()
-            .any(|f| f.contains("neither strand"))
+            .any(|f| f.message.contains("neither strand"))
     );
 }
 #[test]
@@ -280,6 +283,6 @@ fn three_fresh_cohesive_digest_arms_close_but_opposite_polarities_do_not() {
             .verification
             .findings
             .iter()
-            .any(|f| f.contains("polarity"))
+            .any(|f| f.message.contains("polarity"))
     );
 }

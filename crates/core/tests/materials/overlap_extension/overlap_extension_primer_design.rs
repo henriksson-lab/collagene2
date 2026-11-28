@@ -64,8 +64,16 @@ fn consistent(report: &Report, letters: &str) {
         report.verification.findings
     );
     assert_eq!(report.expected.sequence.as_str(), letters);
-    assert_eq!(report.verification.products.len(), 4);
-    assert_eq!(report.verification.products[3].sequence.as_str(), letters);
+    assert_eq!(report.verification.reconstructed_count(), 4);
+    assert_eq!(
+        report
+            .verification
+            .product(3)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        letters
+    );
     assert!(report.search.iter().all(|s| s.unique_geometry));
     assert_eq!(report.designs.len(), 3);
 }
@@ -84,8 +92,12 @@ fn literal_replacement_selects_three_native_calls_and_verifies_actual_four_step_
     assert_eq!(
         report
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 38]
@@ -127,7 +139,11 @@ fn literal_replacement_selects_three_native_calls_and_verifies_actual_four_step_
     let wrong_report = verification::engine::verify(&wrong_plan, &wrong);
     assert_eq!(wrong_report.status, Status::Invalid);
     assert_eq!(
-        wrong_report.products.last().unwrap().sequence.as_str(),
+        wrong_report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         EDITED
     );
 }
@@ -249,7 +265,7 @@ fn competing_or_unavailable_material_stays_diagnostic_and_terminal_scan_caps_are
         report.verification.status,
         Status::ConsistentUnderAssumptions
     );
-    assert!(report.verification.products.is_empty());
+    assert!((report.verification.reconstructed_count() == 0));
     assert!(!report.search[0].unique_geometry);
     assert!(!report.search[2].unique_geometry);
     assert_eq!(report.expected.sequence.as_str(), EDITED);
@@ -270,7 +286,7 @@ fn competing_or_unavailable_material_stays_diagnostic_and_terminal_scan_caps_are
     req.options.max_comparisons = 18;
     let report = design::design(&self::source(), &req, None).unwrap();
     assert_eq!(report.verification.status, Status::Incomplete);
-    assert_eq!(report.verification.products.len(), 4);
+    assert_eq!(report.verification.reconstructed_count(), 4);
     assert_eq!(report.expected.sequence.as_str(), EDITED);
 }
 #[test]

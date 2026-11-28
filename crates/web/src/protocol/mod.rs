@@ -19,3 +19,6 @@ pub(crate) mod protocol_quantities_model;
 pub(crate) mod protocol_quantities_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod step_description;
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod verification_view;

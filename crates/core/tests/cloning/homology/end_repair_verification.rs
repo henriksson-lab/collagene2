@@ -57,7 +57,9 @@ fn independent_five_prime_fill_and_three_prime_trim_targets_reconstruct_both_str
             "{:?}",
             report.findings
         );
-        let product = report.products.last().unwrap();
+        let product = report
+            .final_product()
+            .expect("final declared step must reconstruct");
         assert_eq!(product.sequence.as_str(), expected);
         assert_eq!(product.sequence.len(), length);
         let summary: chemistry::DuplexSummary =
@@ -204,12 +206,12 @@ fn declared_oligos_need_explicit_phosphorylation_before_they_can_be_covalently_c
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.len(), 3);
+    assert_eq!(report.reconstructed_count(), 3);
     assert!(
         report
             .findings
             .iter()
-            .any(|f| f.contains("no covalent") || f.contains("no covalent bonds"))
+            .any(|f| f.message.contains("no covalent") || f.message.contains("no covalent bonds"))
     );
     let (no_phosphate, target) = anneal_plan(options, false);
     assert_eq!(

@@ -651,7 +651,11 @@ impl Resolved {
             Recipe::MultiSiteReference { .. } => {
                 let plan = self.compile()?;
                 let verification = crate::verification::engine::verify(&plan, &self.target);
-                let preparation_complete = verification.products.len() == plan.steps.len();
+                let preparation_complete = verification.planned_steps == plan.steps.len()
+                    && verification.steps.iter().all(|step| {
+                        step.state == crate::verification::evidence::StepState::Reconstructed
+                            && step.product.is_some()
+                    });
                 Preview::MultiSiteReference(PoolPreview {
                     plan,
                     verification,
@@ -661,8 +665,15 @@ impl Resolved {
             Recipe::GoldenGatePool { .. } => {
                 let plan = self.compile()?;
                 let verification = crate::verification::engine::verify(&plan, &self.target);
-                let preparation_complete =
-                    verification.products.len() >= plan.steps.len().saturating_sub(1);
+                let preparation_complete = verification.planned_steps == plan.steps.len()
+                    && verification
+                        .steps
+                        .iter()
+                        .take(plan.steps.len().saturating_sub(1))
+                        .all(|step| {
+                            step.state == crate::verification::evidence::StepState::Reconstructed
+                                && step.product.is_some()
+                        });
                 Preview::GoldenGatePool(PoolPreview {
                     plan,
                     verification,

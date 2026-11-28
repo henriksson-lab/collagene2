@@ -191,9 +191,8 @@ fn internal_edit_changes_only_declared_row_and_never_repairs_physical_preparatio
     assert_eq!(
         changed
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "AACCTTAA"
@@ -342,9 +341,8 @@ fn fresh_existing_verifier_preserves_a_wrong_target_and_changed_contribution() {
     assert_eq!(
         mismatch
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "AACCTTAA"

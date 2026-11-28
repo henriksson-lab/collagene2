@@ -405,9 +405,8 @@ fn framed_step_pcr_orders_and_saved_collection_retain_bottom_declarations_after_
     assert_eq!(
         actual
             .current_report
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         BOTTOM

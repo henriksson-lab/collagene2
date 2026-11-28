@@ -361,7 +361,7 @@ def main():
         tracked=tool("propose_plan",{"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
         tracked_report=tool("verify_plan",{"plan_revision":tracked["plan_revision"]})
         assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith(current_engine_suffix),tracked_report
-        assert tracked_report["products"][1]["length"]==5 and tracked_report["products"][1]["tracked_modifications"]["generation"]
+        assert tracked_report["steps"][1]["product"]["length"]==5 and tracked_report["steps"][1]["product"]["tracked_modifications"]["generation"]
         saved_primer_text="LOCUS       saved_primer                4 bp    DNA     linear   SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\n     primer_bind     1..4\n                     /label=\"saved oligo\"\n                     /annealing_sequence=\"ACGA\"\n                     /5prime_tail=\"GG\"\n                     /oligo_sequence=\"GGACGA\"\nORIGIN\n        1 acga\n//\n"
         saved_primer_doc=tool("import_document",{"text":saved_primer_text})["documents"][0]
         resolved_primer=tool("resolve_primer",{"document":immutable_ref(saved_primer_doc),"feature_index":0})
@@ -452,7 +452,7 @@ def main():
         plan = {"plan_revision": candidate["plan_revision"]}
         report = tool("verify_plan", plan)
         assert report["status"] == "ConsistentUnderAssumptions", report
-        assert report["products"][0]["length"] == 12
+        assert report["steps"][0]["product"]["length"] == 12
         resource = send("resources/read", {"uri": "collagene://report/" + plan["plan_revision"]})
         assert json.loads(resource["contents"][0]["text"])["plan_revision"] == plan["plan_revision"]
         artifact = tool("export_protocol", plan)

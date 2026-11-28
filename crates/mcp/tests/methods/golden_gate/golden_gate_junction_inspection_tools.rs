@@ -122,13 +122,11 @@ async fn actual_golden_gate_windows_reverse_bottom_coordinates_and_wrong_targets
         let evidence = full(&c, &inspected["artifact_id"]).await;
         assert_eq!(evidence["method"], inspected["method"]);
         let declared: Molecule =
-            serde_json::from_value(evidence["verification"]["products"][0].clone()).unwrap();
+            serde_json::from_value(evidence["verification"]["steps"][0]["product"].clone())
+                .unwrap();
         assert_eq!(method["path"][0]["template_revision"], declared.revision());
         assert_eq!(
-            evidence["verification"]["products"]
-                .as_array()
-                .unwrap()
-                .len(),
+            evidence["verification"]["steps"].as_array().unwrap().len(),
             2
         );
         assert_eq!(evidence["context_revision"], inspected["context_revision"]);

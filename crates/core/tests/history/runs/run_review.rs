@@ -251,8 +251,15 @@ fn edited_saved_pcr_reverifies_original_target_and_records_new_run_without_rewin
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.len(), 2);
-    assert_eq!(report.products[1].sequence.as_str(), "AGTCCGATGCTACGTA");
+    assert_eq!(report.reconstructed_count(), 2);
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AGTCCGATGCTACGTA"
+    );
     let html = verification::output::export_protocol_html(&candidate.plan, &prepared.target);
     assert!(html.contains("Phosphorylate") && html.contains("Original physical stock"));
     assert!(!html.contains("Later edited stock") && !html.contains("Later target draft"));

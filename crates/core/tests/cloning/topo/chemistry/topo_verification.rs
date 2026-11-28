@@ -125,14 +125,23 @@ fn matching_contour_retains_full_graph_and_nicks_without_implicit_target_accepta
     let (plan, target) = plan(false);
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 1);
-    assert_eq!(report.products[0].sequence, target.sequence);
+    assert_eq!(report.reconstructed_count(), 1);
     assert_eq!(
-        report.products[0].metadata[collagene_core::cloning::recombination::REFERENCE_ONLY_KEY],
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence,
+        target.sequence
+    );
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .metadata[collagene_core::cloning::recombination::REFERENCE_ONLY_KEY],
         "true"
     );
     assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
-        &report.products[0]
+        report.product(0).expect("selected step must reconstruct")
     ));
     let evidence = report.step_reports[0].topo.as_ref().unwrap();
     assert_eq!(report.step_reports[0].step_index, 0);
@@ -184,7 +193,7 @@ fn directional_flap_withholds_dna_but_retains_complete_physical_step_report() {
     let (plan, target) = plan(true);
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     let evidence = report.step_reports[0].topo.as_ref().unwrap();
     assert!(evidence.reference.is_none());
     assert!(matches!(
@@ -229,7 +238,7 @@ fn exact_roles_selection_and_source_dependencies_cannot_be_reinterpreted_or_prom
     });
     let report = verify(&downstream, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     assert_eq!(report.step_reports.len(), 1);
 }
 
@@ -283,7 +292,13 @@ fn html_pcr_preparation_includes_actual_ordered_oligos_and_explicit_physical_ass
     };
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products[0].sequence, target.sequence);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence,
+        target.sequence
+    );
     let html = export_protocol_html(&plan, &target);
     assert!(html.contains("<code>GGGACTAGTC</code>"));
     assert!(html.contains("<code>CCTGCATCGG</code>"));

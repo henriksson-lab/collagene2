@@ -124,7 +124,9 @@ async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plai
     )
     .await;
     assert_eq!(result["status"], "Incomplete");
-    assert_eq!(result["products"], json!([]));
+    assert_eq!(result["steps"].as_array().unwrap().len(), 1);
+    assert_eq!(result["steps"][0]["state"], "Withheld");
+    assert!(result["steps"][0]["product"].is_null());
     assert_eq!(result["scientific_step_count"], 1);
     assert_eq!(result["reference_step_count"], 0);
     assert!(result["artifact_id"].is_string());
@@ -137,7 +139,7 @@ async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plai
     assert_eq!(report.target_revision, target["revision"].as_str().unwrap());
     assert_eq!(report.engine_version, verification::ENGINE_VERSION);
     assert_eq!(report.status, Status::Incomplete);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     assert_eq!(report.step_reports.len(), 1);
     assert_eq!(report.step_reports[0].step_index, 0);
     let graph = report.step_reports[0].topo.as_ref().unwrap();
@@ -168,8 +170,8 @@ async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plai
         json!({"plan_revision":plain["plan_revision"]}),
     )
     .await;
-    assert!(plain["artifact_id"].is_null());
-    assert_eq!(plain["products"].as_array().unwrap().len(), 1);
+    assert!(plain["artifact_id"].is_string());
+    assert_eq!(plain["steps"].as_array().unwrap().len(), 1);
     assert_eq!(call(&c, "list_documents", json!({})).await["total"], 5);
     drop(c);
     server.abort();

@@ -58,6 +58,43 @@ pub const MAX_EXACT_SEARCH_WORK: usize = 200_000_000;
 const EXACT_WORK_ERROR: &str =
     "exact search/PCR binding exceeded its 200-million work budget; shorten or refine the inputs";
 
+/// One actual-work ledger for exact binding searches and PCR materialization.
+/// The same ledger can span independent operations; failed searches keep charges.
+/// It is native execution state and is never accepted from serialized evidence.
+pub struct ExactSearchBudget {
+    work: super::matching::Work,
+}
+impl Default for ExactSearchBudget {
+    fn default() -> Self {
+        Self {
+            work: super::matching::Work::new(MAX_EXACT_SEARCH_WORK),
+        }
+    }
+}
+impl ExactSearchBudget {
+    pub fn new(limit: usize) -> Result<Self, Error> {
+        if limit == 0 || limit > MAX_EXACT_SEARCH_WORK {
+            return Err(Error::TooLarge);
+        }
+        Ok(Self {
+            work: super::matching::Work::new(limit),
+        })
+    }
+    pub fn used(&self) -> usize {
+        self.work.used()
+    }
+    pub fn remaining(&self) -> usize {
+        self.work.remaining()
+    }
+    pub(crate) fn charge(&mut self, amount: usize) -> Result<(), Error> {
+        if self.work.take(amount) {
+            Ok(())
+        } else {
+            Err(Error::Unsupported(EXACT_WORK_ERROR.into()))
+        }
+    }
+}
+
 pub fn find_matches_view(
     mol: TemplateView<'_>,
     query: &str,
@@ -342,6 +379,16 @@ pub fn simulate_pcr_geometry_view(
     forward: &Primer,
     reverse: &Primer,
 ) -> Result<Vec<PcrGeometryProduct>, Error> {
+    simulate_pcr_geometry_view_with_budget(mol, forward, reverse, &mut ExactSearchBudget::default())
+}
+/// Canonical exact-PCR path with one caller-owned work budget. Charge preprocessing,
+/// all four binding scans, pair visits and emitted source/product copies together.
+pub fn simulate_pcr_geometry_view_with_budget(
+    mol: TemplateView<'_>,
+    forward: &Primer,
+    reverse: &Primer,
+    budget: &mut ExactSearchBudget,
+) -> Result<Vec<PcrGeometryProduct>, Error> {
     if mol.sequence.alphabet() != Alphabet::Dna
         || forward.annealing.alphabet() != Alphabet::Dna
         || reverse.annealing.alphabet() != Alphabet::Dna
@@ -349,6 +396,11 @@ pub fn simulate_pcr_geometry_view(
         return Err(Error::Unsupported(
             "PCR requires DNA template and primers".into(),
         ));
+    }
+    for primer in [forward, reverse] {
+        budget.charge(primer.name.len())?;
+        budget.charge(primer.annealing.len())?;
+        budget.charge(primer.tail.len())?;
     }
     // Public serialized primer fields are revalidated at the scientific boundary.
     let forward = Primer::new(&forward.name, forward.annealing.as_str(), &forward.tail)?;
@@ -365,16 +417,15 @@ pub fn simulate_pcr_geometry_view(
         ));
     }
     let primers = [forward, reverse];
-    let mut work = super::matching::Work::new(MAX_EXACT_SEARCH_WORK);
     let bindings = primers
         .iter()
         .map(|primer| {
-            let forward = find_with_work(mol, primer.annealing.as_str(), false, &mut work)?;
-            if !work.take(primer.annealing.len()) {
+            let forward = find_with_work(mol, primer.annealing.as_str(), false, &mut budget.work)?;
+            if !budget.work.take(primer.annealing.len()) {
                 return Err(Error::Unsupported(EXACT_WORK_ERROR.into()));
             }
             let reverse_sequence = primer.annealing.reverse_complement()?;
-            let reverse = find_with_work(mol, reverse_sequence.as_str(), false, &mut work)?;
+            let reverse = find_with_work(mol, reverse_sequence.as_str(), false, &mut budget.work)?;
             if forward.iter().chain(&reverse).any(|h| !h.certain) {
                 return Err(Error::Unsupported(
                     "ambiguous template binding prevents complete PCR enumeration".into(),
@@ -397,6 +448,7 @@ pub fn simulate_pcr_geometry_view(
     let mut product_bases = 0usize;
     for (fi, forward) in primers.iter().enumerate() {
         for (ri, reverse) in primers.iter().enumerate() {
+            budget.charge(reverse.tail.len())?;
             let reverse_tail = if reverse.tail.is_empty() {
                 String::new()
             } else {
@@ -407,6 +459,7 @@ pub fn simulate_pcr_geometry_view(
             };
             for f in &bindings[fi].0 {
                 for r in &bindings[ri].1 {
+                    budget.charge(1)?;
                     let end = r.start + r.length;
                     let length = if mol.topology == Topology::Circular {
                         let distance = (end + n - f.start) % n;
@@ -429,6 +482,7 @@ pub fn simulate_pcr_geometry_view(
                                 .into(),
                         ));
                     }
+                    budget.charge(product_length)?;
                     let template: String = (0..length)
                         .map(|j| mol.sequence.as_str().as_bytes()[(f.start + j) % n] as char)
                         .collect();

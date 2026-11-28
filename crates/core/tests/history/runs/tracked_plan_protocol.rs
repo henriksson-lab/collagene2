@@ -270,13 +270,14 @@ fn retained_run_replay_binds_current_plan_and_scientific_assessment() {
     assert!(load_run_record(&serde_json::to_vec(&mislabeled).unwrap()).is_err());
     let replay = replay_run(&commit.workspace, &commit.receipt.run_id).unwrap();
     assert!(replay.products_match);
-    let mut historical_reply = replay.clone();
-    historical_reply.current_report.engine_version = "0.1.0/science-7".into();
-    historical_reply.engine_matches =
-        historical_reply.recorded_engine == historical_reply.current_report.engine_version;
-    historical_reply.validate().unwrap();
+    replay.validate().unwrap();
+    let mut unrecognized_reply = replay.clone();
+    unrecognized_reply.current_report.engine_version = "unrecognized-verifier-engine".into();
+    unrecognized_reply.engine_matches =
+        unrecognized_reply.recorded_engine == unrecognized_reply.current_report.engine_version;
+    assert!(unrecognized_reply.validate().is_err());
     assert!(
-        historical_reply
+        unrecognized_reply
             .validate_for_workspace(&commit.workspace)
             .is_err()
     );

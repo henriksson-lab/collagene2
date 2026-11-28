@@ -175,9 +175,8 @@ fn worker86_job167_operation24_evidence3_and_portable_schemas_keep_explicit_poli
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE
@@ -367,9 +366,8 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         assert_eq!(
             preview
                 .verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .sequence
                 .as_str(),
             expected
@@ -390,5 +388,5 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
     });
     let report = verification::engine::verify(&plan, &linear);
     assert_ne!(report.status, Status::ConsistentUnderAssumptions);
-    assert_eq!(report.products.len(), 3);
+    assert_eq!(report.reconstructed_count(), 3);
 }

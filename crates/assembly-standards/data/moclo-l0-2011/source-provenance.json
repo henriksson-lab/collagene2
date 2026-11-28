@@ -1,0 +1,17 @@
+{
+  "reviewed_on": "2026-11-28",
+  "article": {
+    "url": "https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0016765&type=manuscript",
+    "bytes": 75479,
+    "sha256": "cbc7be2584380029a96188834bff83a13eec15c0d35e83dc830101ad25ade0ad"
+  },
+  "figure1": {
+    "url": "https://journals.plos.org/plosone/article/figure/image?size=large&id=10.1371/journal.pone.0016765.g001",
+    "bytes": 104623,
+    "sha256": "1b6b0313fe229271d33b0484fdcf19cec8ee3562bb93e4bc5f86df5e707240c4",
+    "visually_inspected": true
+  },
+  "upstream_license": "Creative Commons Attribution; no version specified in captured publisher XML",
+  "redistributed_assets": false,
+  "curation": "Independent literal transcription of six role/fusion pairs; both documented complete paths; BsaI/BpiI entry/release restrictions; advisory Esp3I for later hierarchy; no cloning-application code or data copied."
+}

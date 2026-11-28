@@ -167,8 +167,8 @@ fn actual_declared_termini_product_and_all_restrictive_documentary_shapes_cannot
     };
     let report = verification::engine::verify(&plan, &target);
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 1);
-    let product = &report.products[0];
+    assert_eq!(report.reconstructed_count(), 1);
+    let product = report.product(0).expect("selected step must reconstruct");
     assert!(product.metadata.contains_key("source:declared_termini"));
     let options = ExportOptions {
         record_id: Some("Declared".into()),

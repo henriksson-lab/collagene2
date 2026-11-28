@@ -1,5 +1,7 @@
+mod base_editing;
 mod codon;
 mod design_checks;
+mod ivt;
 
 use crate::tools::default_inspection_page;
 

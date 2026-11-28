@@ -312,7 +312,10 @@ fn verify(inputs: &[PlanInput], r: &Report) {
         report.findings
     );
     assert_eq!(
-        report.products.last().unwrap().sequence,
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence,
         r.intent.target.sequence
     );
 }

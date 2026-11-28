@@ -78,17 +78,23 @@ def main():
     # One checked, fully Dam-modified XbaI circle stays uncut and cannot become
     # a circular ligation substrate with invented free ends.
     configure(b,'dam_target','dam_source','XbaI',dam='fully',final='fragment')
-    unchanged=reconstruct(b);assert unchanged['status']=='ConsistentUnderAssumptions' and len(unchanged['products'])==2
-    assert unchanged['products'][-1]['topology']=='Circular' and unchanged['products'][-1]['sequence']['bases']=='TCTAGATCAAA'
-    assert 'blocked' in ' '.join(unchanged['findings']).lower()
+    unchanged=reconstruct(b)
+    assert unchanged['status']=='ConsistentUnderAssumptions'
+    assert [step['state'] for step in unchanged['steps']] == ['Reconstructed', 'Reconstructed']
+    assert unchanged['steps'][-1]['product']['topology']=='Circular' and unchanged['steps'][-1]['product']['sequence']['bases']=='TCTAGATCAAA'
+    assert 'blocked' in ' '.join(finding['message'] for finding in unchanged['findings']).lower()
     fill(b,'Restriction final product','ligate','change');check(b,'Use second restriction substrate',False)
     blocked=reconstruct(b);assert blocked['status']!='ConsistentUnderAssumptions'
-    text=' '.join(blocked['findings']).lower();assert 'blocked'in text
-    assert len(blocked['products'])<3,'Blocked circle must not gain a final ligated product'
+    text=' '.join(finding['message'] for finding in blocked['findings']).lower();assert 'blocked'in text
+    assert len(blocked['steps']) == 3
+    assert blocked['steps'][2]['product'] is None, 'Refused circular substrate must not gain a final ligated product'
+    assert blocked['steps'][2]['state'] in ('Rejected', 'Withheld')
     # Unknown eligibility withholds the digest rather than selecting an arbitrary
     # subset of possible products. Incomplete-run acknowledgement cannot invent it.
     states(b,dam='unknown');uncertain=reconstruct(b);assert uncertain['status']=='Incomplete'
-    assert len(uncertain['products'])==1
+    assert [step['state'] for step in uncertain['steps']] == ['Reconstructed', 'Withheld', 'Blocked']
+    assert uncertain['steps'][1]['product'] is None and uncertain['steps'][2]['product'] is None
+    assert uncertain['steps'][2]['blocked_by'] == [{'Step': 1}]
     b.click('Keep reconstructed products');b.wait('!!document.querySelector(".run-capture-panel")')
     check(b,'Allow incomplete run recording',True);b.click('Record cloning run')
     b.wait('document.querySelector(".run-capture-panel")?.textContent.includes("Run was not recorded")',timeout=60)
@@ -98,10 +104,12 @@ def main():
     # A literal unmodified circle can be cut and self-ligated; comparison remains
     # against the separately selected independent target document.
     states(b);permitted=reconstruct(b);assert permitted['status']=='ConsistentUnderAssumptions'
-    assert len(permitted['products'])==3
-    sequence=permitted['products'][-1]['sequence']['bases'];assert sequence in ('TCTAGATCAAA'*2),'Circular gauge must be an observed rotation'
+    assert [step['state'] for step in permitted['steps']] == ['Reconstructed'] * 3
+    sequence=permitted['steps'][-1]['product']['sequence']['bases'];assert sequence in ('TCTAGATCAAA'*2),'Circular gauge must be an observed rotation'
     assert len(sequence)==11
-    for product in permitted['products']:
+    for step in permitted['steps']:
+        assert step['state'] == 'Reconstructed' and step['product'] is not None
+        product = step['product']
         summary=json.loads(product['metadata']['tracked_modifications'])
         assert summary['known_modified']==0 and summary['unknown_eligible']==0
     # Equal-content source and target documents retain distinct event identities.
@@ -127,7 +135,7 @@ def main():
     assert events[run['products'][1]['event_id']]['parents']==[run['products'][0]['event_id']]
     assert events[run['products'][2]['event_id']]['parents']==[run['products'][1]['event_id']]
     for d in before['documents']:assert next(n for n in saved['documents']if n['id']==d['id'])==d
-    assert saved['plan_schema']==5
+    assert saved['plan_schema'] == before['plan_schema']
     # Native reopening retains historical evidence and the exact operation DAG,
     # then reconstructs positional state on explicit replay.
     portable=DIRECTORY/'checked-native.cg2workspace';portable.write_bytes(saved_data)
@@ -145,8 +153,8 @@ def main():
     # merely because an original-generation assumption existed.
     configure(b,'fill_target','fill_source','EcoRI',repair='blunt')
     repaired=reconstruct(b);assert repaired['status']=='ConsistentUnderAssumptions'
-    assert len(repaired['products'])==4
-    product=repaired['products'][-1];seq=product['sequence']['bases'];assert len(seq)==14 and seq in 'AATTCAAAAGAATT'*2
+    assert [step['state'] for step in repaired['steps']] == ['Reconstructed'] * 4
+    product=repaired['steps'][-1]['product'];seq=product['sequence']['bases'];assert len(seq)==14 and seq in 'AATTCAAAAGAATT'*2
     mod=json.loads(product['metadata']['tracked_modifications']);assert mod['known_modified']==0 and mod['unknown_eligible']==0
     assert b.evaluate('document.querySelectorAll(".checked-modification-summary").length')==4
     b.click('Export HTML protocol');html=wait_file(DIRECTORY/'cloning-protocol.html').decode()
@@ -160,24 +168,25 @@ def main():
     # bases remain unmodified rather than inheriting a source-wide methylase flag.
     configure(b,'tracked_fill_target','tracked_fill_source','EcoRI',dam='fully',repair='blunt')
     tracked=reconstruct(b);assert tracked['status']=='ConsistentUnderAssumptions'
-    summaries=[json.loads(p['metadata']['tracked_modifications'])for p in tracked['products']]
+    assert [step['state'] for step in tracked['steps']] == ['Reconstructed'] * 4
+    summaries=[json.loads(step['product']['metadata']['tracked_modifications']) for step in tracked['steps']]
     assert all(s['known_modified']==2 and s['unknown_eligible']==0 for s in summaries)
     assert summaries[-1]['top_length']==18 and summaries[-1]['bottom_length']==18
     assert summaries[-1]['known_unmodified']-summaries[0]['known_unmodified']==4
-    assert len(tracked['products'][-1]['sequence']['bases'])==18 and tracked['products'][-1]['sequence']['bases'] in 'AATTCAAAAGATCGAATT'*2
-    b.click('Save candidate');candidate=wait_file(DIRECTORY/'candidate.cg2plan');assert candidate[4:6]==bytes([7,0])
+    assert len(tracked['steps'][-1]['product']['sequence']['bases'])==18 and tracked['steps'][-1]['product']['sequence']['bases'] in 'AATTCAAAAGATCGAATT'*2
+    b.click('Save candidate');candidate=wait_file(DIRECTORY/'candidate.cg2plan')
     # Readable new operation descriptions survive candidate transfer; the target
     # is never silently replaced with the reconstructed output.
     open_file(b,DIRECTORY/'candidate.cg2plan');b.wait('!!document.querySelector(".candidate-review")')
     assert 'Declare original source modifications'in b.evaluate('document.querySelector(".candidate-review").textContent')
     active(b,'wrong_target');b.click('Verify candidate');b.wait('document.querySelector(".notice")?.textContent.includes("active target differs")')
-    configure(b,'cpg_target','cpg_source','SmaI',cpg='fully');cp=reconstruct(b);assert cp['status']!='ConsistentUnderAssumptions' and 'blocked' in ' '.join(cp['findings']).lower()
+    configure(b,'cpg_target','cpg_source','SmaI',cpg='fully');cp=reconstruct(b);assert cp['status']!='ConsistentUnderAssumptions' and 'blocked' in ' '.join(finding['message'] for finding in cp['findings']).lower()
     # An imported producer summary cannot authorize fresh checked state. Fixture
     # is created by root's independent native audit, not by a scientific runtime.
     forged=Path('/tmp/collagene2-checked-forged.cg2');assert forged.exists()
     open_file(b,forged);b.wait('document.querySelector("h1")?.textContent==="forged_checked_source"')
     configure(b,'dam_target','forged_checked_source','XbaI',dam='fully');fr=reconstruct(b)
-    assert fr['status']!='ConsistentUnderAssumptions' and 'blocked'in' '.join(fr['findings']).lower()
+    assert fr['status']!='ConsistentUnderAssumptions' and 'blocked'in' '.join(finding['message'] for finding in fr['findings']).lower()
     # Legacy choice remains explicit and retains its original untracked-cleavage
     # behavior rather than inheriting the checked declaration's state.
     configure(b,'dam_target','dam_source','XbaI',policy='legacy');legacy=reconstruct(b);assert legacy['status']=='ConsistentUnderAssumptions'

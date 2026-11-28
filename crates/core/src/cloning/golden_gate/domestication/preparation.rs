@@ -577,6 +577,7 @@ impl Prepared {
     /// Bounded readonly source/target/method/graph checks, without genetic search,
     /// primer ranking, PCR simulation, native replay, or status adoption.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         serde_json::to_writer(&mut Bytes(0), self).map_err(|_| Error::TooLarge)?;
         if self.context_revision != expected || !digest(expected) || self.plan.inputs.len() != 1 {
             return Err(bad("prepared context/input malformed"));
@@ -763,7 +764,7 @@ impl Prepared {
             != crate::planning::plan::DesignPlan::revision(&self.plan)
             || self.verification.target_revision != self.target.revision()
             || self.verification.engine_version != verification::ENGINE_VERSION
-            || self.verification.products.len() > self.plan.steps.len()
+            || self.verification.planned_steps != self.plan.steps.len()
         {
             return Err(bad(
                 "verification belongs to another canonical plan/independent target",

@@ -112,9 +112,8 @@ fn original_catalog_backbone_and_actual_annealed_pair_ligate_to_literal_intent()
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         TARGET
@@ -346,7 +345,7 @@ fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() 
     );
     assert_eq!(located.rows[1].preparation_step, Some(1));
     assert_eq!(located.rows[1].total_steps, 2); // actual anneal and explicit phosphorylation
-    assert!(located.failure.is_none());
+    assert!(located.failures.is_empty());
     for forged in [
         (
             Source::Input("backbone".into()),
@@ -379,10 +378,14 @@ fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() 
     )
     .unwrap();
     let located = diagnostics::ligation(&missing).unwrap();
-    let failure = located.failure.unwrap();
+    let failure = located
+        .failures
+        .into_iter()
+        .next()
+        .expect("one documented failure");
     assert_eq!(
         (failure.step, failure.row, failure.stage),
         (1, Some(1), Stage::Annealing)
     );
-    assert_eq!(located.rows[1].state, RowState::Failed);
+    assert_eq!(located.rows[1].state, RowState::Rejected);
 }

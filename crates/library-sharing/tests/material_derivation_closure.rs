@@ -201,10 +201,12 @@ fn fixture() -> Fixture {
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.len(), 4);
+    assert_eq!(report.reconstructed_count(), 4);
     assert!(verification::engine::plan_target_matches(
         &plan,
-        report.products.last().unwrap(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &target
     ));
     let saved = cloning_outputs::finalize(

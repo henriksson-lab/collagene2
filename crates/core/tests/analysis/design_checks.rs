@@ -38,7 +38,10 @@ fn roundtrip(revision: String, job: AnalysisJob) -> Response {
         job,
     };
     let bytes = request.encode().unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 133);
+    assert_eq!(
+        u16::from_le_bytes([bytes[4], bytes[5]]),
+        collagene_core::protocol::schema::WORKER_SCHEMA_VERSION
+    );
     let output = process_request(&bytes).unwrap();
     assert_eq!(
         Response::admitted_frame_limit(&output, output.len()).unwrap(),

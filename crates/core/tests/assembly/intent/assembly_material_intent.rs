@@ -292,7 +292,13 @@ fn independent_actual_bottom_target_verifies_only_after_native_reconstruction_di
     };
     let v = verification::engine::verify(&plan, &target);
     assert_eq!(v.status, Status::ConsistentUnderAssumptions);
-    assert_eq!(v.products.last().unwrap().sequence.as_str(), ACTUAL);
+    assert_eq!(
+        v.final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        ACTUAL
+    );
     let wrong =
         Molecule::dna("Wrong independent target", "AATTCGTAAA", Topology::Circular).unwrap();
     let mut wrong_plan = plan.clone();

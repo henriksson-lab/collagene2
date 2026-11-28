@@ -75,6 +75,7 @@ pub fn from_origin_report(
         // Current envelope/closed-origin admission precedes decoding candidate
         // collections. This does not execute the plan or trust its claimed result.
         origin.validate_documentary()?;
+        report.validate_documentary()?;
         let candidate = crate::documents::transfer::decode_candidate_shallow(&origin.candidate)?;
         let selected = origin.selection.step_index;
         if report.engine_version != crate::verification::ENGINE_VERSION
@@ -84,13 +85,19 @@ pub fn from_origin_report(
             || report.target_revision != origin.target_event.revision
             || report.target_revision != origin.target.revision()
             || report.status == crate::verification::evidence::Status::Invalid
-            || report.products.len() != origin.products.len()
+            || report.steps.len() != origin.products.len()
             || selected >= candidate.plan.steps.len()
             || !report
-                .products
+                .steps
                 .iter()
                 .zip(&origin.products)
-                .all(|(product, binding)| product.revision() == binding.revision)
+                .all(|(step, binding)| {
+                    step.state == crate::verification::evidence::StepState::Reconstructed
+                        && step
+                            .product
+                            .as_ref()
+                            .is_some_and(|product| product.revision() == binding.revision)
+                })
         {
             return Err(super::bad(
                 "documentary conditions differ from the exact selected origin plan/target/product",
@@ -282,7 +289,7 @@ mod tests {
         };
         let report = crate::verification::engine::verify(&plan, &target);
         assert_eq!(
-            report.products.len(),
+            report.steps.len(),
             plan.steps.len(),
             "{:?}",
             report.findings
@@ -295,14 +302,17 @@ mod tests {
         );
         let selected = plan.steps.len() - 1;
         let products = report
-            .products
+            .steps
             .iter()
-            .enumerate()
-            .map(|(index, product)| ProductBinding {
-                step_index: index,
-                document_id: format!("product-{index}"),
-                event_id: format!("event-{:064x}", index + 1),
-                revision: product.revision(),
+            .map(|step| {
+                let index = step.step_index;
+                let product = step.product.as_ref().unwrap();
+                ProductBinding {
+                    step_index: index,
+                    document_id: format!("product-{index}"),
+                    event_id: format!("event-{:064x}", index + 1),
+                    revision: product.revision(),
+                }
             })
             .collect::<Vec<_>>();
         let product = &products[selected];
@@ -362,7 +372,11 @@ mod tests {
         wrong.target_revision = "0".repeat(64);
         assert!(from_origin_report(&origin, &wrong).is_err());
         wrong = report.clone();
-        wrong.products[origin.selection.step_index].name = "Tampered verifier output".into();
+        wrong.steps[origin.selection.step_index]
+            .product
+            .as_mut()
+            .unwrap()
+            .name = "Tampered verifier output".into();
         assert!(from_origin_report(&origin, &wrong).is_err());
         let mut another = origin;
         another.selection.step_index = another.products.len();
@@ -371,7 +385,7 @@ mod tests {
     #[test]
     fn renamed_outer_event_does_not_replace_recorded_verifier_product_identity() {
         let (mut origin, report) = branching_origin(false);
-        let mut renamed = report.products[origin.selection.step_index].clone();
+        let mut renamed = report.product(origin.selection.step_index).unwrap().clone();
         renamed.name = "Saved actual source".into();
         assert_ne!(
             renamed.revision(),

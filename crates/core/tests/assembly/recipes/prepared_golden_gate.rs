@@ -166,12 +166,14 @@ fn missing_middle_preparation_and_metadata_only_end_claims_withhold_the_entire_p
         *forward = Primer::new("missing actual forward", "AAAAAAAA", "").unwrap();
     }
     let report = inspect(&inputs, &target, &r).unwrap();
-    assert_eq!(report.preview.prepared.len(), 1);
+    assert_eq!(report.preview.prepared.len(), 2);
+    assert!(report.preview.prepared[0].is_some());
+    assert!(report.preview.prepared[1].is_none());
     assert!(!report.preview.preparation_complete);
     assert_eq!(report.missing_physical, vec![1]);
     assert!(report.pool.is_none());
     assert!(report.assessments.is_empty());
-    assert_eq!(report.preview.verification.products.len(), 2);
+    assert_eq!(report.preview.verification.reconstructed_count(), 2);
     let mut claimed = inputs.clone();
     claimed[0].molecule.metadata.insert(
         "duplex_model".into(),

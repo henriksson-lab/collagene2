@@ -104,9 +104,8 @@ fn fresh_three_piece_ligation_has_sealed_physical_state_and_schema_thirty_two() 
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "AAACCCGGGTTTATGCGT"

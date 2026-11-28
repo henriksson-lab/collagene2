@@ -33,9 +33,8 @@ fn released_actual_bottom_closure_retains_native_origin_and_omits_unrelated_priv
     assert_eq!(
         replay
             .current_report
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         material_library::EXPECTED

@@ -95,7 +95,10 @@ fn literal_linear_and_circular_targets_use_only_next_prefix_and_original_inputs(
             verification.findings
         );
         assert_eq!(
-            verification.products.last().unwrap().sequence,
+            verification
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence,
             target.sequence
         );
     }
@@ -151,7 +154,11 @@ fn actual_circular_source_interval_crosses_origin_without_rotating_source_or_tar
         verification.findings
     );
     assert_eq!(
-        verification.products[0].sequence.as_str(),
+        verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         "TAGCGATCACGATTCGGTACCTAGGCTAACGTGCTTACCG"
     );
     assert_eq!(serde_json::to_value(&inputs[0]).unwrap(), original);

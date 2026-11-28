@@ -11,6 +11,13 @@ pub(super) fn dispatch(
     context: &RequestContext,
 ) -> Result<AnalysisResult, Error> {
     match job {
+        AnalysisJob::AnalyzeBaseEditing { molecule, request } => {
+            super::base_editing::assess(context, molecule, request)
+        }
+        AnalysisJob::ListIvtProfiles => super::ivt::profiles(context),
+        AnalysisJob::AssessIvtTemplate { molecule, request } => {
+            super::ivt::assess(context, molecule, request)
+        }
         AnalysisJob::AnalyzeConstructQc { molecule, options } => {
             super::design_checks::construct_qc(context, molecule, options)
         }

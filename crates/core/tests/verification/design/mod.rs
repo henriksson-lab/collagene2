@@ -2,6 +2,7 @@
 mod advanced_verification;
 mod checked_verification_audit;
 mod edit_template_audit;
+mod independent_branches;
 mod method_protocol;
 mod method_verification;
 mod mutagenesis;

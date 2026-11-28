@@ -15,12 +15,12 @@ pub(crate) struct Capture {
     pub(crate) options: Options,
 }
 pub(crate) fn capture(snapshot: &Snapshot, options: Options) -> Result<Capture, String> {
-    if snapshot.prefix_error.is_some()
+    if snapshot.receipt_error.is_some()
         || snapshot.product_revision.is_none()
-        || snapshot.report.products.len() != snapshot.plan.steps.len()
+        || snapshot.report.final_product().is_none()
         || snapshot.plan.steps.is_empty()
     {
-        return Err("A bound actual final product is required; a leading preparation prefix cannot be compared as final.".into());
+        return Err("A bound actual final product is required; an intermediate product cannot be compared as final.".into());
     }
     collagene_core::cloning::assembly::junctions::source_preflight(
         &snapshot.plan,
@@ -162,7 +162,7 @@ mod tests {
         let bound = capture(snapshot, options).unwrap();
         let report = pairwise_review::compare(
             &snapshot.target,
-            snapshot.report.products.last().unwrap(),
+            snapshot.report.final_product().unwrap(),
             &options,
         )
         .unwrap();
@@ -261,7 +261,12 @@ mod tests {
     fn partial_prefix_cannot_be_compared_as_a_final_and_postcapture_product_changes_fail() {
         let mut snapshot = snapshot("ACTACCCCGGGGTAAC", false);
         let (bound, report) = compare(&snapshot, Options::Stored(Default::default()));
-        snapshot.report.products[0].name.push_str(" changed");
+        snapshot.report.steps[0]
+            .product
+            .as_mut()
+            .unwrap()
+            .name
+            .push_str(" changed");
         assert!(validate(&snapshot, &bound, &report).is_err());
         let initial = self::snapshot("ACTACCCCGGGGTAAC", false);
         let mut plan = initial.plan;
@@ -272,7 +277,7 @@ mod tests {
         });
         let report = verification::engine::verify(&plan, &initial.target);
         let partial = Snapshot::new(plan, initial.target, report);
-        assert_eq!(partial.prefix_available, 1);
+        assert_eq!(partial.reconstructed_count, 1);
         assert!(partial.product_revision.is_none());
         assert!(capture(&partial, Options::Stored(Default::default())).is_err());
         let mut snapshot = self::snapshot("ACTACCCCGGGGTAAC", false);

@@ -210,8 +210,15 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
         report.findings
     );
     assert_eq!(report.engine_version, v::ENGINE_VERSION);
-    assert_eq!(report.products.len(), 2);
-    assert_eq!(report.products[1].sequence.as_str(), LINEAR_ECORI);
+    assert_eq!(report.reconstructed_count(), 2);
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        LINEAR_ECORI
+    );
     assert_eq!(report.physical_processing_reports.len(), 1);
     assert_eq!(report.physical_processing_reports[0].step_index, 0);
 
@@ -224,14 +231,24 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
     assert_eq!(evidence.projection.physical.product.nicks.len(), 0);
     let d = evidence.duplex.as_ref().unwrap();
     assert_eq!(d.top.as_str(), ECORI_CIRCLE);
-    let summary: chemistry::DuplexSummary =
-        serde_json::from_str(&report.products[1].metadata["duplex_model"]).unwrap();
+    let summary: chemistry::DuplexSummary = serde_json::from_str(
+        &report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     assert_eq!(summary.bottom_start, 4);
     let (left, right) = summary.ends.unwrap();
     assert_eq!(left.overhang, "AATT");
     assert_eq!(right.overhang, "AATT");
-    let modifications: modified_duplex::ModificationSummary =
-        serde_json::from_str(&report.products[1].metadata["tracked_modifications"]).unwrap();
+    let modifications: modified_duplex::ModificationSummary = serde_json::from_str(
+        &report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .metadata["tracked_modifications"],
+    )
+    .unwrap();
     assert!(modifications.unknown_eligible > 0);
     assert_eq!(modifications.known_unmodified, 0);
     assert_eq!(modifications.known_modified, 0);
@@ -307,7 +324,7 @@ fn unsealed_nick_is_retained_and_downstream_digest_cannot_erase_it() {
     plan.steps.push(digest());
     let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     assert_eq!(
         {
             let v::evidence::PhysicalProcessingEvidence::TopoActions(e) =
@@ -328,7 +345,7 @@ fn unsealed_nick_is_retained_and_downstream_digest_cannot_erase_it() {
         report
             .findings
             .iter()
-            .any(|s| s.contains("digest propagation of existing nicks"))
+            .any(|s| s.message.contains("digest propagation of existing nicks"))
     );
 }
 #[test]
@@ -357,7 +374,7 @@ fn directional_flap_withholds_product_but_preserves_full_new_typed_evidence() {
     let plan = plan(&inputs, request, &target);
     let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     assert!(report.step_reports.iter().all(|s| s.topo.is_none()));
     let v::evidence::PhysicalProcessingEvidence::TopoActions(evidence) =
         &report.physical_processing_reports[0].evidence
@@ -394,7 +411,14 @@ fn actual_material_does_not_select_or_rewrite_an_independently_wrong_target() {
     let plan = plan(&inputs, request, &target);
     let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid);
-    assert_eq!(report.products[0].sequence.as_str(), CIRCLE);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        CIRCLE
+    );
     assert_eq!(report.physical_processing_reports.len(), 1);
     assert!(
         matches!(&report.physical_processing_reports[0].evidence,v::evidence::PhysicalProcessingEvidence::TopoActions(e) if e.tracked.is_some())
@@ -403,7 +427,8 @@ fn actual_material_does_not_select_or_rewrite_an_independently_wrong_target() {
         report
             .findings
             .iter()
-            .any(|s| s.contains("does not match the target"))
+            .any(|s| s.rule == v::checks::RuleId::TargetAgreement
+                && s.verdict == v::checks::CheckVerdict::Fail)
     );
 }
 #[test]
@@ -413,7 +438,10 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
     let target = Molecule::dna("Independent circle", CIRCLE, Topology::Circular).unwrap();
     let first = plan(&inputs, request.clone(), &target);
     let report = v::engine::verify(&first, &target);
-    let imported = report.products[0].clone();
+    let imported = report
+        .product(0)
+        .expect("selected step must reconstruct")
+        .clone();
     assert!(chemistry::has_unmapped_physical_evidence(&imported));
     let imported_plan = DesignPlan {
         name: "Portable summary is no material".into(),
@@ -431,7 +459,7 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
     };
     let report = v::engine::verify(&imported_plan, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     let mut nested = first.clone();
     let Operation::TopoActions { sources, .. } = &mut nested.steps[0] else {
         panic!()
@@ -447,12 +475,10 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
     let report = v::engine::verify(&nested, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(report.physical_processing_reports.is_empty());
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|s| { s.contains("Prepared activation hypotheses require original references") })
-    );
+    assert!(report.findings.iter().any(|s| {
+        s.message
+            .contains("Prepared activation hypotheses require original references")
+    }));
     // Even a source-reference shape that contains imported physical provenance
     // cannot be promoted by naming it as an original role in the new operation.
     let mut tainted = first;
@@ -463,13 +489,11 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
     tainted.inputs[0].revision = tainted.inputs[0].molecule.revision();
     let report = v::engine::verify(&tainted, &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert!(report.products.is_empty());
-    assert!(
-        report
-            .findings
-            .iter()
-            .any(|s| s.contains("imported physical/reference-only summaries"))
-    );
+    assert!((report.reconstructed_count() == 0));
+    assert!(report.findings.iter().any(|s| {
+        s.message
+            .contains("imported physical/reference-only summaries")
+    }));
 }
 #[test]
 fn treatment_and_nested_search_caps_reject_before_plan_revision_or_source_clones() {
@@ -484,7 +508,7 @@ fn treatment_and_nested_search_caps_reject_before_plan_revision_or_source_clones
     let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid);
     assert!(report.plan_revision.is_empty());
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     let Operation::TopoActions { request, .. } = &mut plan.steps[0] else {
         panic!()
     };

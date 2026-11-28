@@ -135,7 +135,7 @@ pub(crate) fn AssemblyComparison(
         generation.set(token);
         let bound_settings = settings.get_untracked();
         let (reference, query) =
-            snapshot.with_value(|s| (s.target.clone(), s.report.products.last().unwrap().clone()));
+            snapshot.with_value(|s| (s.target.clone(), s.report.final_product().unwrap().clone()));
         busy.set(true);
         proof.set(None);
         selected.set(None);
@@ -252,7 +252,7 @@ pub(crate) fn AssemblyComparison(
         }
     };
     view! {<details class="assembly-product-details"><summary>"Compare actual DNA with intended target"</summary>
-        <p>{snapshot.with_value(|s|{let p=s.report.products.last().unwrap();format!("Intended: {} nt / {:?} · actual: {} nt / {:?} · cloning verdict {:?}",s.target.sequence.len(),s.target.topology,p.sequence.len(),p.topology,s.report.status)})}</p>
+        <p>{snapshot.with_value(|s|{let p=s.report.final_product().unwrap();format!("Intended: {} nt / {:?} · actual: {} nt / {:?} · cloning verdict {:?}",s.target.sequence.len(),s.target.topology,p.sequence.len(),p.topology,s.report.status)})}</p>
         <p class="helper">"R is the intended reference; Q is the actual reconstructed product. Global sequence comparison explains differences. It does not change the cloning verdict, establish chemical compatibility or verify an experiment."</p>
         <details><summary>"Comparison policy and limits"</summary>
             <label><input type="checkbox" prop:checked=move||rotate.get() on:change=move|e|rotate.set(event_target_checked(&e))/>"Allow circular reference-origin rotation"</label>
@@ -279,7 +279,7 @@ pub(crate) fn AssemblyComparison(
         })}
         <For each={move||proof.get().and_then(|b|selected.get().map(|i|(b,i))).into_iter().collect::<Vec<_>>()} key={|(b,i)|(b.capture.context_revision.clone(),*i)} children={move|(bound,index)|{
             snapshot.with_value(|s|match model::selected_difference(s,&bound.capture,&bound.report,index){
-                Ok((reference,query))=>view!{<section><p>{format!("Original intended intervals {:?}; actual interval {:?} · zero-based half-open, empty intervals are carets",reference,query)}</p><details open><summary>"Intended reference at difference"</summary><ReferenceCanvas product=s.target.clone() identity=format!("{}:intended:{index}",bound.capture.context_revision) current on_message=Callback::new(move|m|status.set(m)) initial_spans=reference/></details><details open><summary>"Actual product at difference"</summary><ReferenceCanvas product=s.report.products.last().unwrap().clone() identity=format!("{}:actual:{index}",bound.capture.context_revision) current on_message=Callback::new(move|m|status.set(m)) initial_spans=vec![query]/></details></section>}.into_any(),
+                Ok((reference,query))=>view!{<section><p>{format!("Original intended intervals {:?}; actual interval {:?} · zero-based half-open, empty intervals are carets",reference,query)}</p><details open><summary>"Intended reference at difference"</summary><ReferenceCanvas product=s.target.clone() identity=format!("{}:intended:{index}",bound.capture.context_revision) current on_message=Callback::new(move|m|status.set(m)) initial_spans=reference/></details><details open><summary>"Actual product at difference"</summary><ReferenceCanvas product=s.report.final_product().unwrap().clone() identity=format!("{}:actual:{index}",bound.capture.context_revision) current on_message=Callback::new(move|m|status.set(m)) initial_spans=vec![query]/></details></section>}.into_any(),
                 Err(error)=>view!{<p role="alert">{error}</p>}.into_any(),
             })
         }}/>

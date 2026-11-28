@@ -44,11 +44,11 @@ fn options_equal(a: &Options, b: &Options) -> bool {
 /// is never reinterpreted as final, including when its letters happen to agree.
 /// The host must additionally guard workspace epoch and current UI ownership.
 pub(crate) fn capture(snapshot: &Snapshot, options: Options) -> Result<Capture, String> {
-    if snapshot.prefix_error.is_some()
+    if snapshot.receipt_error.is_some()
         || snapshot.product_revision.is_none()
         || snapshot.plan.steps.is_empty()
-        || snapshot.report.products.len() != snapshot.plan.steps.len()
-        || snapshot.prefix_available != snapshot.plan.steps.len()
+        || snapshot.report.reconstructed_count() != snapshot.plan.steps.len()
+        || snapshot.reconstructed_count != snapshot.plan.steps.len()
     {
         return Err("Junction navigation requires the actual final product, not an intermediate preparation.".into());
     }
@@ -128,7 +128,7 @@ pub(crate) fn validate(
         || report.target_revision != bound.target_revision
         || !options_equal(&report.options, &bound.options)
         || report.verification.engine_version != verification::ENGINE_VERSION
-        || report.verification.products.len() != snapshot.plan.steps.len()
+        || report.verification.reconstructed_count() != snapshot.plan.steps.len()
         || report.product_revision.as_ref() != Some(&bound.product_revision)
     {
         return Err(
@@ -138,8 +138,7 @@ pub(crate) fn validate(
     let actual = snapshot.product_at(snapshot.plan.steps.len() - 1)?;
     let inspected = report
         .verification
-        .products
-        .last()
+        .final_product()
         .ok_or("Junction inspection has no actual final product.")?;
     if inspected != actual
         || inspected.revision() != bound.product_revision
@@ -430,8 +429,9 @@ mod tests {
         // Identical DNA letters do not authorize a changed full molecule.
         let mut product_changed = snapshot.report.clone();
         product_changed
-            .products
+            .steps
             .last_mut()
+            .and_then(|step| step.product.as_mut())
             .unwrap()
             .metadata
             .insert("diagnostic change".into(), "changed".into());
@@ -455,7 +455,12 @@ mod tests {
         // A linear protein document is structurally valid, so this mutation
         // reaches the explicit DNA guard rather than the circular-protein ban.
         let (mut snapshot, _, _) = overlap(false, false);
-        let product = snapshot.report.products.last_mut().unwrap();
+        let product = snapshot
+            .report
+            .steps
+            .last_mut()
+            .and_then(|step| step.product.as_mut())
+            .unwrap();
         product.sequence = collagene_model::Sequence::new(
             collagene_model::Alphabet::Protein,
             product.sequence.as_str(),
@@ -468,20 +473,62 @@ mod tests {
         assert!(error.contains("DNA product"), "{error}");
 
         let (mut snapshot, _, _) = overlap(true, false);
-        snapshot.report.products.last_mut().unwrap().name = "x".repeat(1025);
+        snapshot
+            .report
+            .steps
+            .last_mut()
+            .and_then(|step| step.product.as_mut())
+            .unwrap()
+            .name = "x".repeat(1025);
         let error = capture(&snapshot, Options::default()).unwrap_err();
         assert!(error.contains("supported size limit"), "{error}");
     }
 
     #[test]
     fn a_leading_preparation_never_stands_in_for_missing_final_product() {
+        use collagene_core::verification::checks::{
+            CheckFinding, CheckScope, CheckVerdict, RuleId,
+        };
         let (snapshot, _, _) = ligation();
         let mut report = snapshot.report.clone();
-        report.products.pop();
+        let final_index = report.planned_steps - 1;
+        let last = report.steps.last_mut().unwrap();
+        last.product = None;
+        last.state = collagene_core::verification::evidence::StepState::Withheld;
+        report.findings.retain(|finding| {
+            !((finding.rule == RuleId::StepCompletion
+                && finding.verdict == CheckVerdict::Pass
+                && finding.scope
+                    == CheckScope::Step {
+                        step_index: final_index,
+                    })
+                || (finding.rule == RuleId::TargetAgreement
+                    && finding.scope
+                        == CheckScope::Target {
+                            step_index: final_index,
+                        }))
+        });
+        report.findings.push(CheckFinding::new(
+            RuleId::StepCompletion,
+            CheckVerdict::Indeterminate,
+            CheckScope::Step {
+                step_index: final_index,
+            },
+            "Synthetic fixture: final product remains withheld; preceding products are retained.",
+        ));
+        report.findings.push(CheckFinding::new(
+            RuleId::TargetAgreement,
+            CheckVerdict::Blocked,
+            CheckScope::Target {
+                step_index: final_index,
+            },
+            "Synthetic fixture: no designated final product is available for target comparison.",
+        ));
         report.status = Status::Incomplete;
+        report.validate_documentary().unwrap();
         let expected_prefix = snapshot.plan.steps.len() - 1;
         let prefix = Snapshot::new(snapshot.plan.clone(), snapshot.target.clone(), report);
-        assert_eq!(prefix.prefix_available, expected_prefix);
+        assert_eq!(prefix.reconstructed_count, expected_prefix);
         assert!(prefix.product_revision.is_none());
         assert!(capture(&prefix, Options::default()).is_err());
     }

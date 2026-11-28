@@ -409,13 +409,32 @@ fn inverse_replacement_substitution_insertion_deletion_and_tail_splits_verify_in
             );
             assert_eq!(report.forward.tail, inserted[split..]);
             assert_eq!(report.reverse.tail, reverse(&inserted[..split]));
-            let products = &report.verification.products;
-            assert_eq!(products.len(), 3);
-            assert_eq!(products[0].topology, Topology::Linear);
-            assert_eq!(products[2].topology, Topology::Circular);
+            let verification = &report.verification;
+            assert_eq!(verification.reconstructed_count(), 3);
+            assert_eq!(
+                verification
+                    .product(0)
+                    .expect("PCR step must reconstruct")
+                    .topology,
+                Topology::Linear
+            );
+            assert_eq!(
+                verification
+                    .product(2)
+                    .expect("final step must reconstruct")
+                    .topology,
+                Topology::Circular
+            );
             assert!(
-                analysis::rotation_offset(products[2].sequence.as_str(), target.sequence.as_str())
-                    .is_some()
+                analysis::rotation_offset(
+                    verification
+                        .product(2)
+                        .expect("final step must reconstruct")
+                        .sequence
+                        .as_str(),
+                    target.sequence.as_str()
+                )
+                .is_some()
             );
         }
     }
@@ -434,7 +453,7 @@ fn inverse_design_binds_the_separate_target_and_retains_failed_or_ambiguous_veri
     let wrong = dna("ACGTACGTACGTACGT", Topology::Circular);
     let report = design_inverse_pcr(&source, &wrong, None, &options).unwrap();
     assert_eq!(report.verification.status, Status::Invalid);
-    assert_eq!(report.verification.products.len(), 3);
+    assert_eq!(report.verification.reconstructed_count(), 3);
     let repeated = dna("ACGTACGTACGTACGTACGTACGTACGTACGT", Topology::Circular);
     let target = desired(&repeated, 3, 5, "GGA");
     let report = design_inverse_pcr(&repeated, &target, None, &options).unwrap();
@@ -444,7 +463,7 @@ fn inverse_design_binds_the_separate_target_and_retains_failed_or_ambiguous_veri
             .verification
             .findings
             .iter()
-            .any(|f| f.contains("require disambiguation"))
+            .any(|f| f.message.contains("require disambiguation"))
     );
 }
 #[test]

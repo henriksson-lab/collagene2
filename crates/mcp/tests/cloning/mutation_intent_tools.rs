@@ -213,7 +213,7 @@ async fn frozen_literal_intent_then_independent_inverse_pcr_and_wrong_target_che
     )
     .await;
     assert_eq!(checked["status"], "ConsistentUnderAssumptions");
-    assert_eq!(checked["products"].as_array().unwrap().len(), 3);
+    assert_eq!(checked["steps"].as_array().unwrap().len(), 3);
     let full = artifact(&c, &designed["artifact_id"]).await;
     assert_eq!(
         full["inverse_pcr"]["plan"]["steps"][1]["TreatEnds"]["treatment"],

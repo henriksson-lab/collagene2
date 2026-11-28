@@ -223,9 +223,8 @@ async fn explicit_physical_recipe_and_attested_saved_product_support_actual_pcr_
     assert_eq!(
         native
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE

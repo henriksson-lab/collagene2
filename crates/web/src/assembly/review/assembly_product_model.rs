@@ -207,8 +207,8 @@ pub(crate) struct Snapshot {
     pub(crate) error: Option<String>,
     pub(crate) physical: Option<DuplexSummary>,
     /// Bound leading documents for readonly inspection, never final/material authority.
-    pub(crate) prefix_available: usize,
-    pub(crate) prefix_error: Option<String>,
+    pub(crate) reconstructed_count: usize,
+    pub(crate) receipt_error: Option<String>,
 }
 impl Snapshot {
     pub(crate) fn new(plan: DesignPlan, target: Molecule, report: VerificationReport) -> Self {
@@ -227,35 +227,32 @@ impl Snapshot {
             if report.engine_version != verification::ENGINE_VERSION {
                 return Err("This reconstruction uses another scientific engine; reconstruct the current plan before inspecting its products.".into());
             }
-            if report.products.len() > plan.steps.len() {
-                return Err(
-                    "The receipt contains more step products than the current plan.".into(),
-                );
+            report
+                .validate_documentary()
+                .map_err(|error| error.to_string())?;
+            if report.planned_steps != plan.steps.len() {
+                return Err("Outcome slots do not match the current plan step count.".into());
             }
-            if report.status == Status::ConsistentUnderAssumptions
-                && report.products.len() != plan.steps.len()
-            {
-                return Err(
-                    "A consistent reconstruction receipt cannot omit step products.".into(),
-                );
-            }
-            let products = report.products.iter().collect::<Vec<_>>();
+            let products = report
+                .steps
+                .iter()
+                .filter_map(|step| step.product.as_ref())
+                .collect::<Vec<_>>();
             collagene_model::bounds::model_preflight(&products).map_err(|e| e.to_string())?;
-            for molecule in &report.products {
+            for molecule in products {
                 molecule.validate().map_err(|e| e.to_string())?;
                 if molecule.metadata.get("plan_revision") != Some(&plan_revision)
                     || molecule.metadata.get("engine_version").map(String::as_str)
                         != Some(verification::ENGINE_VERSION)
                 {
-                    return Err(
-                        "A step document belongs to a different plan or engine receipt.".into(),
-                    );
+                    return Err("A step document belongs to another plan or engine receipt.".into());
                 }
             }
             Ok((plan_revision, target_revision))
         })();
-        let (plan_revision, target_revision, prefix_available, prefix_error) = match validation {
-            Ok((p, t)) => (p, t, report.products.len(), None),
+        let (plan_revision, target_revision, reconstructed_count, receipt_error) = match validation
+        {
+            Ok((p, t)) => (p, t, report.reconstructed_count(), None),
             Err(error) => (
                 report.plan_revision.clone(),
                 report.target_revision.clone(),
@@ -263,12 +260,12 @@ impl Snapshot {
                 Some(error),
             ),
         };
-        let product_revision = if prefix_error.is_none() && prefix_available == plan.steps.len() {
-            report.products.last().map(Molecule::revision)
+        let product_revision = if receipt_error.is_none() {
+            report.final_product().map(Molecule::revision)
         } else {
             None
         };
-        let error=prefix_error.clone().or_else(||product_revision.is_none().then(||format!("Final product unavailable: {} of {} step products were reconstructed. Leading preparations are readonly diagnostic results, not the final assembly.",prefix_available,plan.steps.len())));
+        let error=receipt_error.clone().or_else(||product_revision.is_none().then(||format!("Final product unavailable: {} of {} step products were reconstructed. Available independent steps are readonly diagnostic results, not a verified final assembly.",reconstructed_count,plan.steps.len())));
         let mut result = Self {
             plan,
             target,
@@ -278,28 +275,51 @@ impl Snapshot {
             product_revision,
             error,
             physical: None,
-            prefix_available,
-            prefix_error,
+            reconstructed_count,
+            receipt_error,
         };
         if result.product_revision.is_some() {
-            result.physical = result.descriptive_physical_at(result.prefix_available - 1);
+            result.physical =
+                result.descriptive_physical_at(result.plan.steps.len().saturating_sub(1));
         }
         result
     }
     pub(crate) fn product_at(&self, index: usize) -> Result<&Molecule, String> {
-        if let Some(error) = &self.prefix_error {
+        if let Some(error) = &self.receipt_error {
             return Err(error.clone());
         }
-        if index >= self.prefix_available {
-            return Err(
-                "This step has no reconstructed product in the validated leading prefix.".into(),
-            );
-        }
-        self.report
-            .products
-            .get(index)
-            .ok_or_else(|| "The selected step product is unavailable.".into())
+        self.report.product(index).ok_or_else(|| {
+            self.report
+                .steps
+                .get(index)
+                .map(|outcome| {
+                    format!(
+                        "Step {} is {:?}; direct dependencies {:?}.",
+                        index + 1,
+                        outcome.state,
+                        outcome.blocked_by
+                    )
+                })
+                .unwrap_or_else(|| "The selected step is outside this plan.".into())
+        })
     }
+    pub(crate) fn available_steps(&self) -> impl Iterator<Item = usize> + '_ {
+        self.report
+            .steps
+            .iter()
+            .filter(|outcome| outcome.product.is_some())
+            .map(|outcome| outcome.step_index)
+    }
+    pub(crate) fn adjacent_product(&self, index: usize, forward: bool) -> Option<usize> {
+        if forward {
+            self.available_steps().find(|next| *next > index)
+        } else {
+            self.available_steps()
+                .filter(|previous| *previous < index)
+                .last()
+        }
+    }
+
     /// Descriptive metadata only; never restores tracked chemistry or authority.
     pub(crate) fn descriptive_physical_at(&self, index: usize) -> Option<DuplexSummary> {
         let product = self.product_at(index).ok()?;
@@ -382,11 +402,11 @@ mod tests {
     #[test]
     fn successfully_reconstructed_prefix_survives_unsupported_next_step_without_becoming_final() {
         let (plan, target, report) = fixture(true);
-        assert_eq!(report.products.len(), 2, "{:?}", report.findings);
+        assert_eq!(report.reconstructed_count(), 2, "{:?}", report.findings);
         assert_eq!(report.status, Status::Incomplete);
         let snapshot = Snapshot::new(plan, target, report);
-        assert_eq!(snapshot.prefix_available, 2);
-        assert!(snapshot.prefix_error.is_none());
+        assert_eq!(snapshot.reconstructed_count, 2);
+        assert!(snapshot.receipt_error.is_none());
         assert!(snapshot.product_revision.is_none() && snapshot.error.is_some());
         assert_eq!(
             snapshot.product_at(0).unwrap().sequence.as_str(),
@@ -410,7 +430,7 @@ mod tests {
             report.findings
         );
         let snapshot = Snapshot::new(plan, target, report);
-        assert_eq!(snapshot.prefix_available, 2);
+        assert_eq!(snapshot.reconstructed_count, 2);
         assert_eq!(
             snapshot.product_revision.as_deref(),
             Some(snapshot.product_at(1).unwrap().revision().as_str())
@@ -423,62 +443,71 @@ mod tests {
         let mut changed = plan.clone();
         changed.inputs[0].id = "different-role".into();
         let s = Snapshot::new(changed, target.clone(), report.clone());
-        assert_eq!(s.prefix_available, 0);
+        assert_eq!(s.reconstructed_count, 0);
         assert!(s.product_at(0).is_err());
         let mut changed = target.clone();
         changed
             .metadata
             .insert("changed".into(), "target identity".into());
         assert_eq!(
-            Snapshot::new(plan.clone(), changed, report.clone()).prefix_available,
+            Snapshot::new(plan.clone(), changed, report.clone()).reconstructed_count,
             0
         );
         let mut changed = report.clone();
         changed.plan_revision = "0".repeat(64);
         assert_eq!(
-            Snapshot::new(plan.clone(), target.clone(), changed).prefix_available,
+            Snapshot::new(plan.clone(), target.clone(), changed).reconstructed_count,
             0
         );
         let mut changed = report.clone();
         changed.engine_version = "historical".into();
         assert_eq!(
-            Snapshot::new(plan.clone(), target.clone(), changed).prefix_available,
+            Snapshot::new(plan.clone(), target.clone(), changed).reconstructed_count,
             0
         );
         let mut changed = report.clone();
-        changed.products[0]
+        changed.steps[0]
+            .product
+            .as_mut()
+            .unwrap()
             .metadata
             .insert("plan_revision".into(), "0".repeat(64));
         assert_eq!(
-            Snapshot::new(plan.clone(), target.clone(), changed).prefix_available,
+            Snapshot::new(plan.clone(), target.clone(), changed).reconstructed_count,
             0
         );
         let mut changed = report.clone();
-        changed.products[1]
+        changed.steps[1]
+            .product
+            .as_mut()
+            .unwrap()
             .metadata
             .insert("engine_version".into(), "historical".into());
         assert_eq!(
-            Snapshot::new(plan.clone(), target.clone(), changed).prefix_available,
+            Snapshot::new(plan.clone(), target.clone(), changed).reconstructed_count,
             0
         );
         let mut changed = report.clone();
         changed.status = Status::ConsistentUnderAssumptions;
         assert_eq!(
-            Snapshot::new(plan.clone(), target.clone(), changed).prefix_available,
+            Snapshot::new(plan.clone(), target.clone(), changed).reconstructed_count,
             0
         );
         let mut changed = report;
-        changed.products.resize(4, changed.products[0].clone());
-        assert_eq!(Snapshot::new(plan, target, changed).prefix_available, 0);
+        changed.steps.resize(4, changed.steps[0].clone());
+        assert_eq!(Snapshot::new(plan, target, changed).reconstructed_count, 0);
     }
     #[test]
     fn descriptive_metadata_never_changes_context_or_final_availability() {
         let (plan, target, mut report) = fixture(true);
-        report.products[0]
+        report.steps[0]
+            .product
+            .as_mut()
+            .unwrap()
             .metadata
             .insert("duplex_model".into(), "{}".into());
         let snapshot = Snapshot::new(plan, target, report);
-        assert_eq!(snapshot.prefix_available, 2);
+        assert_eq!(snapshot.reconstructed_count, 2);
         assert!(snapshot.descriptive_physical_at(0).is_none());
         assert!(snapshot.product_revision.is_none());
         assert!(operation_label(&snapshot.plan.steps[0]).contains("Intentional-mismatch PCR"));

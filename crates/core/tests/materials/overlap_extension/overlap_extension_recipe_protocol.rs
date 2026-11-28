@@ -164,13 +164,31 @@ fn branched_extension_preparation_roundtrips_current_plan_and_independent_target
     );
     assert_eq!(preview.compiled.plan.steps.len(), 6);
     assert_eq!(preview.compiled.assembly_step, 5);
-    assert_eq!(preview.prepared[0].sequence.as_str(), MUTANT);
-    assert_eq!(preview.prepared[1].sequence.as_str(), VECTOR);
+    assert_eq!(
+        preview.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        MUTANT
+    );
+    assert_eq!(
+        preview.prepared[1]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        VECTOR
+    );
     assert_eq!(
         preview
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 38, 24, 54]
@@ -178,9 +196,8 @@ fn branched_extension_preparation_roundtrips_current_plan_and_independent_target
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         TARGET
@@ -341,9 +358,8 @@ fn flat_saved_run_preparation_variant7_cannot_hide_under_old_from_run_envelope()
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         TARGET

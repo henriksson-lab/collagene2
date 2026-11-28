@@ -274,7 +274,13 @@ impl MaterialOrigin {
                         crate::material::derivation::reaction_conditions::from_origin_report(
                             origin, &report,
                         )?;
-                    let mut findings = report.findings;
+                    // This owner retains bounded human-readable origin notes,
+                    // while the complete scientific report stays typed in its capsule.
+                    let mut findings = report
+                        .findings
+                        .into_iter()
+                        .map(|finding| finding.message)
+                        .collect::<Vec<_>>();
                     findings.extend(
                         report
                             .assumptions
@@ -638,21 +644,27 @@ pub fn reconstruct(workspace: &Workspace, selection: &Selection) -> Result<Fresh
     let reference = selected_reference(workspace, selection, &run)?;
     let target = resolve(workspace, &run.target)?;
     let (report, mut states) = verification::engine::verify_with_tracked(&run.plan, target);
+    report.validate_documentary()?;
     if report.status == Status::Invalid
-        || report.products.len() != run.products.len()
+        || report.steps.len() != run.products.len()
         || !report
-            .products
+            .steps
             .iter()
             .zip(&run.products)
-            .all(|(p, b)| p.revision() == b.revision)
+            .all(|(step, binding)| {
+                step.state == crate::verification::evidence::StepState::Reconstructed
+                    && step
+                        .product
+                        .as_ref()
+                        .is_some_and(|product| product.revision() == binding.revision)
+            })
     {
         return Err(bad(
             "fresh reconstruction no longer matches the complete recorded run; replay and review it before reuse",
         ));
     }
     let fresh_reference = report
-        .products
-        .get(selection.step_index)
+        .product(selection.step_index)
         .ok_or_else(|| bad("selected product was not reconstructed"))?;
     if !cloning_outputs::same_reference(reference, fresh_reference) {
         return Err(bad(

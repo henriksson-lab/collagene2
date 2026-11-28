@@ -423,7 +423,7 @@ pub fn from_design<I: IntendedEdit + ?Sized>(
         frozen_target.clone(),
         report.verification.clone(),
     );
-    if let Some(error) = checked.prefix_error {
+    if let Some(error) = checked.receipt_error {
         return Err(format!(
             "The original worker reconstruction receipt is unbound: {error}"
         ));
@@ -739,8 +739,8 @@ mod tests {
                     rebound_check.plan_revision,
                     proposal.candidate.plan_revision
                 );
-                assert_eq!(proposal.verification.products.len(), 3);
-                let actual = proposal.verification.products.last().unwrap();
+                assert_eq!(proposal.verification.reconstructed_count(), 3);
+                let actual = proposal.verification.final_product().unwrap();
                 assert_eq!(actual.topology, Topology::Circular);
                 assert!(
                     analysis::rotation_offset(
@@ -772,7 +772,9 @@ mod tests {
         assert!(propose(&draft, &forged, &event, &forged.target, &options, None).is_err());
         let mut proposal =
             propose(&draft, &intent, &event, &intent.target, &options, None).unwrap();
-        proposal.verification.findings.push("forged receipt".into());
+        proposal.verification.findings[0]
+            .message
+            .push_str(" forged receipt");
         assert!(
             proposal
                 .validate_binding(&draft, &intent, &event, &intent.target, &options, None)
@@ -854,7 +856,10 @@ mod tests {
             .is_err()
         );
         let mut wrong = report.clone();
-        wrong.verification.products[0]
+        wrong.verification.steps[0]
+            .product
+            .as_mut()
+            .expect("selected step must reconstruct")
             .metadata
             .insert("plan_revision".into(), "0".repeat(64));
         assert!(
@@ -1147,7 +1152,7 @@ mod tests {
                 "{:?}",
                 fresh.findings
             );
-            let actual = fresh.products.last().unwrap();
+            let actual = fresh.final_product().unwrap();
             assert!(
                 analysis::rotation_offset(
                     actual.sequence.as_str(),

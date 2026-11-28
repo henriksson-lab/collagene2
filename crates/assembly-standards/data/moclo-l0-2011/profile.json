@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "id": "moclo-2011-level0-two-path-module-grammar",
+  "revision": "Weber2011-Fig1-L0-2026-11-28.1",
+  "name": "MoClo 2011 Level-0 module paths (body and declared fusion syntax)",
+  "scope": "Original Figure 1B/C Level-0 role and fusion syntax for one declared four-module cytosolic or five-module signal-peptide path. Body-only checks for original BpiI entry and BsaI release, with advisory Esp3I readiness for later hierarchy. This is not vector or full transcription-unit compliance.",
+  "limitations": [
+    "The declared module set must follow one complete four- or five-role path. This validates the selected syntax, not the biological identity, function or expression of each role.",
+    "Fusion labels are written along the assembled reference strand, not as reverse-complemented physical right-hand end labels. No actual cohesive termini, cleavage or ligation are inferred.",
+    "Inputs are explicit bodies only: additions are empty and the entire oriented sequence must be the declared body. BsaI/BpiI clamps, spacers, vector flanks and fusion-overlap bases are never invented or inserted.",
+    "AATG contains the original start-codon overlap; AGGT contains the signal-peptide/coding junction GGT. This profile checks neither body translation nor frame, start/stop codons, processing or targeting. It never prepends ATG or GGT.",
+    "Only the two separate-module paths in Figure 1B/C are admitted. Combined promoter/UTR modules, other composite modules, alternative tag syntax and Levels 1/2 or later overhangs remain unsupported.",
+    "BsaI and BpiI absence is required by this scoped original entry/release body policy. Esp3I absence is advisory for later hierarchical reuse, not a claim that an Esp3I site prevents an isolated BsaI-only Level-0-to-Level-1 assembly.",
+    "Only sequence motifs and declared grammar are checked. Circular destination vectors, source provenance, material isolation, reaction conditions, fidelity and experimental success require separate validation."
+  ],
+  "curation_license": "MIT (independent factual curation; upstream article remains CC Attribution)",
+  "expected_catalog_edition": "2026-11-28.2",
+  "sources": [
+    {
+      "id": "weber-2011-fig1",
+      "author": "Ernst Weber, Carola Engler, Ramona Gruetzner, Stefan Werner and Sylvestre Marillonnet",
+      "url": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0016765",
+      "revision": "PLoS ONE 6(2):e16765, 18 February 2011; DOI10.1371/journal.pone.0016765",
+      "reviewed_on": "2026-11-28",
+      "locator": "Figure 1B/C (visually inspected); Results: Technological background and general considerations; Module generation: the level 0 and level 1 modules; article permissions",
+      "source_license": "Creative Commons Attribution; captured article does not state a version",
+      "upstream_sha256": "cbc7be2584380029a96188834bff83a13eec15c0d35e83dc830101ad25ade0ad",
+      "snapshot_note": "Publisher manuscript XML captured at article/file?id=10.1371/journal.pone.0016765&type=manuscript (75479 bytes). Figure1 PNG independently captured/inspected; exact hashes in source-provenance.json. No article prose/assets redistributed."
+    },
+    {
+      "id": "neb-type-iis-reviewed-2026-11-28",
+      "author": "New England Biolabs",
+      "url": "https://www.neb.com/en-de/tools-and-resources/selection-charts/isoschizomers",
+      "revision": "Official live isoschizomer and Type IIS recognition tables reviewed 2026-11-28",
+      "reviewed_on": "2026-11-28",
+      "locator": "BpiI/BbsI GAAGAC(2/6), Esp3I/BsmBI CGTCTC(1/5); existing pinned catalog BsaI GGTCTC(1/5)",
+      "source_license": "Vendor prose/assets license not asserted; short factual recognition/cut records independently curated",
+      "upstream_sha256": null,
+      "snapshot_note": "Official documentation retrieval crosscheck only; no exact raw-byte capture or vendor asset redistribution. Corresponding exact catalogue geometries are independently pinned."
+    }
+  ],
+  "enzymes": [
+    {
+      "id": "bsai",
+      "geometry": {
+        "recognition": "GGTCTC",
+        "top_cut": 7,
+        "bottom_cut": 11
+      }
+    },
+    {
+      "id": "bbsi",
+      "geometry": {
+        "recognition": "GAAGAC",
+        "top_cut": 8,
+        "bottom_cut": 12
+      }
+    },
+    {
+      "id": "bsmbi",
+      "geometry": {
+        "recognition": "CGTCTC",
+        "top_cut": 7,
+        "bottom_cut": 11
+      }
+    }
+  ],
+  "grammar": {
+    "minimum_parts": 4,
+    "maximum_parts": 5,
+    "slots": [
+      {
+        "id": "promoter",
+        "name": "Promoter",
+        "minimum": 1,
+        "maximum": 1,
+        "left_overhang": "GGAG",
+        "right_overhang": "TACT",
+        "left_enzyme": "bsai",
+        "right_enzyme": "bsai",
+        "left_addition": "",
+        "right_addition": "",
+        "extra_avoided_sites": [],
+        "body_rules": [],
+        "source_ids": [
+          "weber-2011-fig1"
+        ]
+      },
+      {
+        "id": "five-prime-utr",
+        "name": "5-prime UTR",
+        "minimum": 1,
+        "maximum": 1,
+        "left_overhang": "TACT",
+        "right_overhang": "AATG",
+        "left_enzyme": "bsai",
+        "right_enzyme": "bsai",
+        "left_addition": "",
+        "right_addition": "",
+        "extra_avoided_sites": [],
+        "body_rules": [],
+        "source_ids": [
+          "weber-2011-fig1"
+        ]
+      },
+      {
+        "id": "signal-peptide",
+        "name": "Signal-peptide module",
+        "minimum": 0,
+        "maximum": 1,
+        "left_overhang": "AATG",
+        "right_overhang": "AGGT",
+        "left_enzyme": "bsai",
+        "right_enzyme": "bsai",
+        "left_addition": "",
+        "right_addition": "",
+        "extra_avoided_sites": [],
+        "body_rules": [],
+        "source_ids": [
+          "weber-2011-fig1"
+        ]
+      },
+      {
+        "id": "cds-after-signal",
+        "name": "Coding module after signal peptide",
+        "minimum": 0,
+        "maximum": 1,
+        "left_overhang": "AGGT",
+        "right_overhang": "GCTT",
+        "left_enzyme": "bsai",
+        "right_enzyme": "bsai",
+        "left_addition": "",
+        "right_addition": "",
+        "extra_avoided_sites": [],
+        "body_rules": [],
+        "source_ids": [
+          "weber-2011-fig1"
+        ]
+      },
+      {
+        "id": "cytosolic-cds",
+        "name": "Cytosolic coding module",
+        "minimum": 0,
+        "maximum": 1,
+        "left_overhang": "AATG",
+        "right_overhang": "GCTT",
+        "left_enzyme": "bsai",
+        "right_enzyme": "bsai",
+        "left_addition": "",
+        "right_addition": "",
+        "extra_avoided_sites": [],
+        "body_rules": [],
+        "source_ids": [
+          "weber-2011-fig1"
+        ]
+      },
+      {
+        "id": "terminator",
+        "name": "Terminator",
+        "minimum": 1,
+        "maximum": 1,
+        "left_overhang": "GCTT",
+        "right_overhang": "CGCT",
+        "left_enzyme": "bsai",
+        "right_enzyme": "bsai",
+        "left_addition": "",
+        "right_addition": "",
+        "extra_avoided_sites": [],
+        "body_rules": [],
+        "source_ids": [
+          "weber-2011-fig1"
+        ]
+      }
+    ],
+    "starts": [
+      "promoter"
+    ],
+    "ends": [
+      "terminator"
+    ],
+    "transitions": [
+      {
+        "to": "five-prime-utr",
+        "from": "promoter"
+      },
+      {
+        "to": "signal-peptide",
+        "from": "five-prime-utr"
+      },
+      {
+        "to": "cytosolic-cds",
+        "from": "five-prime-utr"
+      },
+      {
+        "to": "cds-after-signal",
+        "from": "signal-peptide"
+      },
+      {
+        "to": "terminator",
+        "from": "cds-after-signal"
+      },
+      {
+        "to": "terminator",
+        "from": "cytosolic-cds"
+      }
+    ]
+  },
+  "avoided_sites": [
+    {
+      "id": "bsai",
+      "name": "BsaI",
+      "recognition": "GGTCTC",
+      "requirement": "Required",
+      "source_ids": [
+        "weber-2011-fig1",
+        "neb-type-iis-reviewed-2026-11-28"
+      ]
+    },
+    {
+      "id": "bpii",
+      "name": "BpiI (BbsI)",
+      "recognition": "GAAGAC",
+      "requirement": "Required",
+      "source_ids": [
+        "weber-2011-fig1",
+        "neb-type-iis-reviewed-2026-11-28"
+      ]
+    },
+    {
+      "id": "esp3i",
+      "name": "Esp3I (BsmBI), later hierarchy",
+      "recognition": "CGTCTC",
+      "requirement": "Advisory",
+      "source_ids": [
+        "weber-2011-fig1",
+        "neb-type-iis-reviewed-2026-11-28"
+      ]
+    }
+  ],
+  "default_avoided_sites": [
+    "bsai",
+    "bpii",
+    "esp3i"
+  ]
+}

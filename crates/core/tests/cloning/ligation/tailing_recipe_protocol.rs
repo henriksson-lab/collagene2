@@ -162,9 +162,8 @@ fn tailing_recipe_reconstructs_literal_ta_and_gc_with_current_operations() {
         assert!(circle_eq(
             value
                 .verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .sequence
                 .as_str(),
             &expected

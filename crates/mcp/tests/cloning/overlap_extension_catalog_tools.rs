@@ -231,11 +231,11 @@ async fn actual_four_step_digest_and_compound_recipe_preserve_stock_and_conditio
     );
     let evidence = artifact(&client, &proposed["artifact_id"]).await;
     let final_product: collagene_model::Molecule = serde_json::from_value(
-        evidence["verification"]["products"]
+        evidence["verification"]["steps"]
             .as_array()
             .unwrap()
             .last()
-            .unwrap()
+            .unwrap()["product"]
             .clone(),
     )
     .unwrap();

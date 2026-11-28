@@ -8,20 +8,20 @@ use crate::{
     planning::plan::{DesignPlan, Operation, Source},
     verification::{
         self,
-        evidence::{Status, VerificationReport},
+        evidence::{Status, StepState, VerificationReport},
     },
 };
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {#[derive(Copy,PartialEq,Eq)] pub enum RowState {InputReference,Reconstructed,Failed,Blocked}}
+dto! {#[derive(Copy,PartialEq,Eq)] pub enum RowState {InputReference,Reconstructed,Rejected,Withheld,Blocked,NotEvaluated}}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum Stage {Pcr,Digest,Repair,EndTreatment,SourceDeclaration,OverlapAssembly,LigationAssembly,TargetComparison,Annealing,MaterialReconstruction,OverlapExtension}}
 dto! {#[derive(Copy,PartialEq,Eq)] pub enum JunctionState {ExactHomology,HomologyMismatch,HomologyUnavailable,EndpointsAvailable,EndpointsUnavailable}}
 dto! {pub struct Row {pub index:usize,pub role:String,pub input_id:String,pub reverse:bool,pub state:RowState,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub completed_steps:usize,pub total_steps:usize}}
-dto! {pub struct Failure {pub step:usize,pub stage:Stage,pub row:Option<usize>,pub upstream:Option<usize>,pub downstream:Option<usize>,pub message:String,pub recovery:String}}
+dto! {pub struct Failure {pub step_state:StepState,pub blocked_by:Vec<Source>,pub step:usize,pub stage:Stage,pub row:Option<usize>,pub upstream:Option<usize>,pub downstream:Option<usize>,pub message:String,pub recovery:String}}
 dto! {pub struct Junction {pub index:usize,pub upstream:usize,pub downstream:usize,pub closing:bool,pub state:JunctionState,pub message:String,pub recovery:String}}
-dto! {pub struct Report {pub context_revision:String,pub plan_revision:String,pub target_revision:String,pub status:Status,pub rows:Vec<Row>,pub failure:Option<Failure>,pub junctions:Vec<Junction>,pub findings:Vec<String>,pub warnings:Vec<String>}}
+dto! {pub struct Report {pub context_revision:String,pub plan_revision:String,pub target_revision:String,pub status:Status,pub rows:Vec<Row>,pub failures:Vec<Failure>,pub junctions:Vec<Junction>,pub findings:Vec<crate::verification::checks::CheckFinding>,pub warnings:Vec<String>}}
 fn bad(s: &str) -> Error {
     Error::Format(format!("assembly diagnostics: {s}"))
 }
@@ -46,10 +46,14 @@ fn stage(op: &Operation) -> Result<Stage, Error> {
         Operation::Pcr { .. } | Operation::PcrWithMismatches { .. } => Stage::Pcr,
         Operation::OverlapExtension { .. } => Stage::OverlapExtension,
         Operation::AnnealOligos { .. } => Stage::Annealing,
-        Operation::Digest { .. } | Operation::CatalogDigest { .. } => Stage::Digest,
+        Operation::Digest { .. }
+        | Operation::CatalogDigest { .. }
+        | Operation::CheckedDigest { .. } => Stage::Digest,
         Operation::RepairEnds { .. } | Operation::ResectThreePrime { .. } => Stage::Repair,
         Operation::TreatEnds { .. } => Stage::EndTreatment,
-        Operation::DeclareSourceTermini { .. } => Stage::SourceDeclaration,
+        Operation::DeclareSourceTermini { .. } | Operation::DeclareSourceModifications { .. } => {
+            Stage::SourceDeclaration
+        }
         Operation::ProfiledOverlap { .. }
         | Operation::HomologyAssembly { .. }
         | Operation::HomologyAnnealing { .. } => Stage::OverlapAssembly,
@@ -63,6 +67,7 @@ fn guard(
     context: &str,
     assembly: usize,
 ) -> Result<(), Error> {
+    report.validate_documentary()?;
     if !hex(context)
         || !hex(&plan.target_revision)
         || report.engine_version != verification::ENGINE_VERSION
@@ -70,14 +75,14 @@ fn guard(
         || plan.steps.is_empty()
         || plan.steps.len() > 1000
         || plan.inputs.len() > assembly_recipe::MAX_ROWS
-        || report.products.len() > plan.steps.len()
+        || report.planned_steps != plan.steps.len()
         || report.target_revision != plan.target_revision
         || report.plan_revision != crate::encoding::bounded_json::hash(plan)?
         || report.status == Status::ConsistentUnderAssumptions
-            && report.products.len() != plan.steps.len()
+            && report.reconstructed_count() != plan.steps.len()
     {
         return Err(bad(
-            "receipt context, engine or contiguous-product shape is invalid",
+            "receipt context, engine or original-indexed outcome shape is invalid",
         ));
     }
     verification::sources::validate_reference_steps(plan)?;
@@ -92,17 +97,22 @@ fn guard(
             return Err(bad("stale original input revision"));
         }
     }
-    for product in &report.products {
+    for product in report.steps.iter().filter_map(|step| step.product.as_ref()) {
         product.validate()?;
         if product.metadata.get("plan_revision") != Some(&report.plan_revision)
             || product.metadata.get("engine_version") != Some(&report.engine_version)
         {
             return Err(bad(
-                "retained product is not bound to this current reconstruction prefix",
+                "retained product is not bound to this current original step",
             ));
         }
     }
-    if report.findings.len() > 10_000 || report.findings.iter().any(|s| s.len() > 65_536) {
+    if report.findings.len() > 10_000
+        || report
+            .findings
+            .iter()
+            .any(|finding| finding.validate().is_err())
+    {
         return Err(Error::TooLarge);
     }
     Ok(())
@@ -132,33 +142,31 @@ fn resolve<'a>(
             .iter()
             .find(|i| &i.id == id)
             .map(|i| &i.molecule),
-        Source::Step(i) => report.products.get(*i),
+        Source::Step(i) => report.product(*i),
     }
 }
 fn prepared_binding(
     plan: &DesignPlan,
     report: &VerificationReport,
     sources: &[&Source],
-    prepared: &[Molecule],
+    prepared: &[Option<Molecule>],
     complete: bool,
 ) -> Result<(), Error> {
-    let mut count = 0usize;
-    for source in sources {
-        let Some(actual) = resolve(plan, report, source) else {
-            break;
-        };
-        let shown = prepared
-            .get(count)
-            .ok_or_else(|| bad("missing retained prepared-prefix row"))?;
-        if crate::encoding::bounded_json::hash(actual)?
-            != crate::encoding::bounded_json::hash(shown)?
-        {
-            return Err(bad("prepared row is not its actual reconstructed source"));
-        }
-        count += 1;
+    if prepared.len() != sources.len() || complete != prepared.iter().all(Option::is_some) {
+        return Err(bad("prepared original-row slots or completeness changed"));
     }
-    if count != prepared.len() || complete != (count == sources.len()) {
-        return Err(bad("prepared prefix/completeness changed"));
+    for (source, shown) in sources.iter().zip(prepared) {
+        match (resolve(plan, report, source), shown) {
+            (Some(actual), Some(shown))
+                if crate::encoding::bounded_json::hash(actual)?
+                    == crate::encoding::bounded_json::hash(shown)? => {}
+            (None, None) => {}
+            _ => {
+                return Err(bad(
+                    "prepared row differs from its original indexed reconstruction outcome",
+                ));
+            }
+        }
     }
     Ok(())
 }
@@ -205,11 +213,13 @@ fn failure(step: usize, stage: Stage, row: Option<usize>) -> Failure {
             "Inspect actual oriented endpoint summaries and the explicit nick policy. This receipt does not identify one incompatible junction.",
         ),
         Stage::TargetComparison => (
-            "Every operation retained a product, but the independent-target assessment is invalid.",
+            "The designated final reference does not satisfy the independent-target comparison.",
             "Compare the actual final reference with the separately declared target and topology/origin policy; do not replace the target with the simulator's answer.",
         ),
     };
     Failure {
+        step_state: StepState::Rejected,
+        blocked_by: vec![],
         step,
         stage,
         row,
@@ -234,49 +244,72 @@ fn finish(
             "compiled receipt contains an unassigned preparation/treatment step",
         ));
     }
-    let failed =
-        (verification.products.len() < plan.steps.len()).then_some(verification.products.len());
     let mut rows = Vec::with_capacity(chains.len());
-    for (index, (r, chain)) in prepared_rows.iter().zip(chains).enumerate() {
+    for (index, (row, chain)) in prepared_rows.iter().zip(chains).enumerate() {
         let completed_steps = chain
             .iter()
-            .filter(|i| **i < verification.products.len())
+            .filter(|index| verification.product(**index).is_some())
             .count();
         let state = if chain.is_empty() {
             RowState::InputReference
         } else if completed_steps == chain.len() {
             RowState::Reconstructed
-        } else if failed.is_some_and(|i| chain.contains(&i)) {
-            RowState::Failed
-        } else {
+        } else if chain
+            .iter()
+            .any(|index| verification.steps[*index].state == StepState::Rejected)
+        {
+            RowState::Rejected
+        } else if chain
+            .iter()
+            .any(|index| verification.steps[*index].state == StepState::Withheld)
+        {
+            RowState::Withheld
+        } else if chain
+            .iter()
+            .any(|index| verification.steps[*index].state == StepState::Blocked)
+        {
             RowState::Blocked
+        } else {
+            RowState::NotEvaluated
         };
         rows.push(Row {
             index,
-            role: r.role.clone(),
-            input_id: r.input_id.clone(),
-            reverse: r.reverse,
+            role: row.role.clone(),
+            input_id: row.input_id.clone(),
+            reverse: row.reverse,
             state,
-            preparation_step: r.preparation_step,
-            repair_step: r.repair_step,
+            preparation_step: row.preparation_step,
+            repair_step: row.repair_step,
             completed_steps,
             total_steps: chain.len(),
         });
     }
-    let failure = if let Some(step) = failed {
-        Some(failure(
-            step,
-            stage(&plan.steps[step])?,
-            owners.get(step).copied().flatten(),
-        ))
-    } else if verification.status == Status::Invalid {
-        Some(failure(assembly, Stage::TargetComparison, None))
-    } else {
-        None
-    };
-    let mut warnings=vec!["Readonly locations from a bound current-engine receipt, not a new scientific reconstruction or experimental verdict. Reconstructed means a step retained a reference product, not proof of valid chemistry or a successful preparation.".into()];
-    if verification.status == Status::Incomplete && failed.is_none() {
-        warnings.push("All operation products are retained, while the overall result remains incomplete under recorded assumptions. No missing operation or local cause is inferred from finding text.".into());
+    let mut failures = Vec::new();
+    for outcome in &verification.steps {
+        if outcome.state != StepState::Reconstructed {
+            let mut entry = failure(
+                outcome.step_index,
+                stage(&plan.steps[outcome.step_index])?,
+                owners.get(outcome.step_index).copied().flatten(),
+            );
+            entry.step_state = outcome.state;
+            entry.blocked_by = outcome.blocked_by.clone();
+            failures.push(entry);
+        }
+    }
+    if verification.findings.iter().any(|finding| {
+        finding.rule == crate::verification::checks::RuleId::TargetAgreement
+            && finding.verdict == crate::verification::checks::CheckVerdict::Fail
+    }) {
+        let mut entry = failure(assembly, Stage::TargetComparison, None);
+        entry.step_state = verification.steps[assembly].state;
+        failures.push(entry);
+    }
+    let mut warnings=vec!["Readonly locations from a bound current-engine receipt, not a new scientific reconstruction or experimental verdict. Reconstructed means that original step retained a reference product, not proof of valid chemistry or successful preparation.".into()];
+    if verification.status == Status::Incomplete
+        && verification.reconstructed_count() == plan.steps.len()
+    {
+        warnings.push("All operation products are retained while the overall result remains incomplete under explicit named checks. No missing operation or local cause is inferred from finding text.".into());
     }
     let result = Report {
         context_revision: context.into(),
@@ -284,7 +317,7 @@ fn finish(
         target_revision: verification.target_revision.clone(),
         status: verification.status,
         rows,
-        failure,
+        failures,
         junctions,
         findings: verification.findings.clone(),
         warnings,
@@ -355,25 +388,28 @@ pub fn overlap(p: &assembly_recipe::Preview) -> Result<Report, Error> {
         if profile.fragment_lengths
             != p.prepared
                 .iter()
-                .map(|m| m.sequence.len())
-                .collect::<Vec<_>>()
+                .map(|m| m.as_ref().map(|m| m.sequence.len()))
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| bad("profile requires every original prepared row"))?
         {
             return Err(bad("profile fragment lengths do not match prepared rows"));
         }
         for j in &profile.junctions {
-            if j.upstream_span
-                .as_ref()
-                .is_some_and(|span| !span_matches(&p.prepared[j.upstream], span, &j.homology))
-                || j.downstream_span.as_ref().is_some_and(|span| {
-                    !span_matches(&p.prepared[j.downstream], span, &j.downstream_homology)
-                })
-            {
+            if j.upstream_span.as_ref().is_some_and(|span| {
+                !p.prepared[j.upstream]
+                    .as_ref()
+                    .is_some_and(|model| span_matches(model, span, &j.homology))
+            }) || j.downstream_span.as_ref().is_some_and(|span| {
+                !p.prepared[j.downstream]
+                    .as_ref()
+                    .is_some_and(|model| span_matches(model, span, &j.downstream_homology))
+            }) {
                 return Err(bad(
                     "typed homology strings do not match their actual prepared source spans",
                 ));
             }
         }
-        if p.verification.products.len() == plan.steps.len() && !profile.geometry_valid {
+        if p.verification.final_product().is_some() && !profile.geometry_valid {
             return Err(bad(
                 "retained final overlap product contradicts typed mismatch evidence",
             ));

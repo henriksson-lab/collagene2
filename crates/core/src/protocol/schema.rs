@@ -2,8 +2,8 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 133;
-pub const CANDIDATE_SCHEMA_VERSION: u16 = 33;
+pub const WORKER_SCHEMA_VERSION: u16 = 135;
+pub const CANDIDATE_SCHEMA_VERSION: u16 = 34;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisJob {
@@ -1002,6 +1002,15 @@ pub enum AnalysisJob {
     SearchOligoCollection {
         request: crate::cloning::pcr::collection_binding::Request,
     },
+    ListIvtProfiles,
+    AssessIvtTemplate {
+        molecule: Molecule,
+        request: crate::rna_chemistry::ivt::Request,
+    },
+    AnalyzeBaseEditing {
+        molecule: Molecule,
+        request: crate::sequence::crispr::base_editing::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1210,6 +1219,14 @@ pub enum AnalysisResult {
     ConstructQc(crate::construct_qc::Report),
     AssemblyStandard(crate::cloning::assembly::standards::Report),
     OligoCollectionBinding(crate::cloning::pcr::collection_binding::Report),
+    IvtProfiles(
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, crate::rna_chemistry::ivt::Profile, 8>"
+        )]
+        Vec<crate::rna_chemistry::ivt::Profile>,
+    ),
+    IvtTemplate(crate::rna_chemistry::ivt::Report),
+    BaseEditing(crate::sequence::crispr::base_editing::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

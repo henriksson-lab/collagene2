@@ -195,7 +195,14 @@ fn exact_sbol_original_survives_real_saved_pcr_and_native_capsule_replay() {
         "{:?}",
         verified.findings
     );
-    assert_eq!(verified.products.last().unwrap().sequence.as_str(), DNA);
+    assert_eq!(
+        verified
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        DNA
+    );
 }
 
 #[test]

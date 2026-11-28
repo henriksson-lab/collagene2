@@ -124,7 +124,7 @@ async fn candidate_verification_and_artifact_workflow() {
     let report = call!("verify_plan", bound.clone());
     assert_eq!(report["status"], "ConsistentUnderAssumptions");
     assert_eq!(report["exhaustive_alternative_search"], false);
-    assert_eq!(report["products"][0]["length"], 12);
+    assert_eq!(report["steps"][0]["product"]["length"], 12);
     let artifact = call!("export_protocol", bound.clone());
     let html = call!(
         "read_artifact",
@@ -444,14 +444,14 @@ async fn restriction_ligation_tools_keep_nicks_and_strand_geometry_explicit() {
     let report = call!("verify_plan", bound.clone());
     assert_eq!(report["status"], "ConsistentUnderAssumptions", "{report}");
     assert_eq!(
-        report["products"][3]["duplex"]["nicks"]
+        report["steps"][3]["product"]["duplex"]["nicks"]
             .as_array()
             .unwrap()
             .len(),
         2
     );
     assert_eq!(
-        report["products"][3]["duplex"]["covalently_closed_in_model"],
+        report["steps"][3]["product"]["duplex"]["covalently_closed_in_model"],
         false
     );
     let artifact = call!("export_protocol", bound);
@@ -468,7 +468,9 @@ async fn restriction_ligation_tools_keep_nicks_and_strand_geometry_explicit() {
         json!({"plan_revision":forbidden["plan_revision"]})
     );
     assert_eq!(failure["status"], "Invalid");
-    assert_eq!(failure["products"].as_array().unwrap().len(), 3);
+    assert_eq!(failure["steps"].as_array().unwrap().len(), 4);
+    assert_eq!(failure["steps"][3]["state"], "Rejected");
+    assert!(failure["steps"][3]["product"].is_null());
     client.cancel().await.unwrap();
     task.await.unwrap();
 }

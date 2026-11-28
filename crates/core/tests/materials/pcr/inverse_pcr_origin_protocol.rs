@@ -60,7 +60,10 @@ fn saved_run_and_derived_inverse_pcr_current_worker_bind_full_context_and_physic
             "{:?}",
             report.verification.findings
         );
-        let product = report.verification.products.last().unwrap();
+        let product = report
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct");
         // Explicit PCR-origin order: inserted GGA + retained source[5..32] + source[0..3].
         // The independent target keeps its separately declared coordinate origin.
         assert_eq!(

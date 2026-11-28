@@ -95,10 +95,18 @@ fn declared_raw_cuts_closure_and_window_codon_use_current_wire_and_reject_noncur
     assert!(matches!(&path[0].template, Source::Step(0)));
     assert_eq!(
         path[0].template_revision,
-        report.verification.products[0].revision()
+        report
+            .verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .revision()
     );
     assert_eq!(
-        report.verification.products[0].sequence,
+        report
+            .verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence,
         plan.inputs[0].molecule.sequence
     );
     assert!(!path[0].reverse);
@@ -176,9 +184,8 @@ fn reverse_path_uses_the_retained_bottom_strand_not_reverse_complement_of_the_wh
     assert_eq!(
         report
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "TCATTCTGGAAACCCCGGGG"
@@ -186,9 +193,8 @@ fn reverse_path_uses_the_retained_bottom_strand_not_reverse_complement_of_the_wh
     assert_ne!(
         report
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         target.sequence.as_str()
@@ -351,5 +357,8 @@ fn failed_final_selection_never_presents_a_preparation_as_a_final_product() {
     assert!(report.product_revision.is_none());
     assert!(report.junctions.is_empty());
     assert!(!report.complete);
-    assert_eq!(report.verification.products.len() + 1, plan.steps.len());
+    assert_eq!(
+        report.verification.reconstructed_count() + 1,
+        plan.steps.len()
+    );
 }

@@ -160,13 +160,19 @@ async fn ordinary_recipe_sdk_retains_both_branches_independent_target_diagnostic
         preview.compiled.plan.inputs[0].molecule.sequence.as_str(),
         ORIGINAL
     );
-    assert_eq!(preview.prepared[0].sequence.as_str(), MUTANT);
+    assert_eq!(
+        preview.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        MUTANT
+    );
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         TARGET
@@ -223,16 +229,19 @@ async fn ordinary_recipe_sdk_retains_both_branches_independent_target_diagnostic
     let broken_evidence: Value =
         serde_json::from_str(&text(&client, &failed["artifact_id"]).await).unwrap();
     assert_eq!(
-        broken_evidence["diagnostics"]["failure"]["stage"],
+        broken_evidence["diagnostics"]["failures"][0]["stage"],
         "OverlapExtension"
     );
-    assert_eq!(broken_evidence["diagnostics"]["failure"]["row"], 0);
+    assert_eq!(broken_evidence["diagnostics"]["failures"][0]["row"], 0);
     assert_eq!(
-        broken_evidence["verification"]["products"]
+        broken_evidence["verification"]["steps"]
             .as_array()
             .unwrap()
             .len(),
-        2
+        broken_evidence["compiled"]["plan"]["steps"]
+            .as_array()
+            .unwrap()
+            .len()
     );
     assert_eq!(
         call(

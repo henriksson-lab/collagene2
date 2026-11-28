@@ -1699,7 +1699,7 @@ mod tests {
             checked.findings
         );
         assert_eq!(
-            checked.products.last().unwrap().sequence.as_str(),
+            checked.final_product().unwrap().sequence.as_str(),
             "ACTACCCCGGGGTAAC"
         );
         let before = serde_json::to_value(&frame).unwrap();
@@ -1834,7 +1834,7 @@ mod tests {
             checked.findings
         );
         assert_eq!(
-            checked.products.last().unwrap().sequence.as_str(),
+            checked.final_product().unwrap().sequence.as_str(),
             source.sequence.as_str()
         );
         let before = serde_json::to_value(&frame).unwrap();
@@ -1874,7 +1874,7 @@ mod tests {
         );
         assert_eq!(rechecked.status, verification::evidence::Status::Invalid);
         assert_eq!(
-            rechecked.products.last().unwrap().sequence.as_str(),
+            rechecked.final_product().unwrap().sequence.as_str(),
             source.sequence.as_str()
         );
         assert_eq!(serde_json::to_value(&frame).unwrap(), before);
@@ -2057,8 +2057,8 @@ mod tests {
             "{:?}",
             assessed.findings
         );
-        assert_eq!(assessed.products.len(), 3);
-        let actual = assessed.products.last().unwrap();
+        assert_eq!(assessed.reconstructed_count(), 3);
+        let actual = assessed.final_product().unwrap();
         assert_eq!(actual.topology, Topology::Circular);
         assert!(
             analysis::rotation_offset(

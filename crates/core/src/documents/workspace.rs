@@ -30,7 +30,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 1;
-pub const PLAN_SCHEMA_VERSION: u32 = 31;
+pub const PLAN_SCHEMA_VERSION: u32 = 32;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -5230,14 +5230,14 @@ implementation split is:
 
 | Feature | Owner / parallel boundary | Current action and integration rule |
 | --- | --- | --- |
-| F37 assembly-standard grammars | New independent `collagene-assembly-standards` crate | Parallel source authoring: data profiles, syntax/slot/cardinality/successor checks, exact enzyme geometry and source/licence pins. First admitted profile is explicitly RFC10 part-sequence format only; no invented functional order or whole-standard compliance. Core later adapts existing assembly/material workflows. |
-| F38 collection binding sweep | New independent `collagene-oligo-binding` crate | Parallel source authoring: bounded scored ungapped extension, original coordinates, both strands/circular sources, all supported ties or conservative IUPAC envelope and per-oligo completion. Core applies existing thermodynamics to supported facts; mismatch Tm remains unavailable until a separately sourced applicable model exists. No PCR success claim. |
-| F36 construct QC | New core-owned `construct_qc` module | Parallel source authoring: reuse canonical translation, annotation, ORF and junction owners. A standalone crate depending on core would introduce a dependency cycle or duplicate these engines. Typed per-rule verdicts, source/annotation/reference bindings and missing/unverified-evidence indeterminacy are required. No biological overall-pass claim. |
-| F39 agent verification contract | Existing typed plan, verifier and MCP owners | Extend directly; do not create a second plan/verifier representation or a prose-to-error-code adapter. Current reconstruction stops at the first failing operation, and findings remain strings: typed cited checks and independent-error accumulation are genuine gaps. Dependent steps must report why they are blocked. |
+| F37 assembly-standard grammars | New independent `collagene-assembly-standards` crate | The shared grammar and catalogue adapters serve RFC10 part-sequence format and RFC1000 Level0 profiles. The current source adds original MoClo2011 Level0 with two primary-source module paths. Other toolkits and physical wizard integration remain open; never infer functional order or whole-standard compliance. |
+| F38 collection binding sweep | New independent `collagene-oligo-binding` crate | The bounded collection sweep retains original coordinates, both strands/circular sources and explicit completion. Core applies the canonical perfect-match model and the separately sourced isolated internal DNA-mismatch model only within their stated domains. Unsupported configurations retain unavailable thermodynamics; no PCR success claim. |
+| F36 construct QC | New core-owned `construct_qc` module | The shared core owner covers annotation/CDS/register/reference checks, element chains, literal copy requirements, sourced initiation-context comparison and explicit ORF scans. Causal junction history and sourced vector-class checks remain open. Reuse canonical translation/location owners; no biological overall-pass claim. |
+| F39 agent verification contract | Existing typed plan, verifier and MCP owners | The current source has typed cited checks and indexed outcomes; independent branches continue and dependent steps retain explicit direct blockers. Complete combined native/WASM and scientific/MCP verification of this contract. Preserve the sole plan/verifier representation; no prose-to-code adapter. |
 | F28/F17 design versus consensus | Existing sequence import, pairwise alignment and verification owners | Compare supplied consensus against separately bound design, with retained differences. Do not add raw read pipelines, BAM/BAI, new MSA ports or new caches under this item. |
 | F20 screening strategy | Existing outcome enumeration, digest/PCR/gel owners | Evaluate explicitly named intended and decoy products. Distinguish models that discriminate from ambiguous/unsearched outcomes; no success probabilities. |
 | SBOL combinatorial/provenance and annotation merging | Existing external-format and annotation owners | Extend current representations and declared-loss review rather than build alternate internal histories. Preserve original annotations and per-feature provenance. Glyph assets remain separately licence-gated. |
-| F40 IVT / F41 editor geometry / fusion/library/control proposals | Existing RNA, CRISPR, translation, planning and exact-unit owners; new crates only for cohesive independent algorithms | Admit specific rules and parameter/data licences before implementation. Do not bundle external scientific executables or treat published ranges/heuristic ranks as calibrated probabilities. Genetic barcode design remains pending scope clarification. |
+| F40 IVT / F41 editor geometry / fusion/library/control proposals | Existing RNA, CRISPR, translation, planning and exact-unit owners; new crates only for cohesive independent algorithms | Current source adds sourced T7/original CleanCap AG template checks and finite BE1 reference-state/bystander enumeration, with binary/MCP/web integration under worker135. Full IVT restriction picking, other editor/pegRNA/donor/array rules and ranked extensions remain open. Admit exact rules and licences; no external executables or uncalibrated probabilities. Genetic barcode design remains pending scope clarification. |
 
 All three parallel workers author source/tests without running compilers. Workspace,
 transport, UI, MCP and fixtures are integrated in one subsequent batch; no duplicate
@@ -5432,3 +5432,51 @@ This includes all nine distinct prior published-CI failures after direct current
 caller corrections. Exact-head CI follows publication. Graphical, live-provider
 and installed-platform acceptance remain separate, and this checkpoint does not
 complete F39 or the full application goal.
+
+
+### F39 current verifier contract implementation
+
+The sole DesignPlan now reconstructs indexed StepOutcome records. A failed input
+or operation blocks its direct consumers while independent branches continue at
+their original indices. A final target match is reported separately and never
+erases another established failure. Unbound target semantics leave independent
+operations available but block target comparison and reject target-dependent
+CheckedTopo acceptance. The report contains named CheckFinding predicates,
+verdicts, scopes, source subjects, coordinates and versioned citations; strings
+remain only where they are genuine domain notes or presentation text.
+
+Native material and protocol consumers use exact step slots. Assembly, ligation
+and tailing preparation rows retain nullable original-row products. Complete-run
+publication still requires all intended steps and fresh private authority.
+Per-step product/material changes commit together; withheld graph evidence does
+not provide a product or usable chemistry. Resource-only admission is separate
+from semantic replay, including well-formed nested saved origins.
+
+Exact PCR now shares one actual-work ledger across plan searches, including
+failed searches; source preparation no longer uses a naive size-product work
+estimate. Existing cleavage, aggregate material, report and check budgets remain
+shared and explicit. The deliberate envelope versions are worker 135, candidate 34,
+workspace plan 32, editable draft 23, material derivation 5, batch 6/contract7,
+release 4 and science-38; no superseded decoder or compatibility facade remains.
+
+MCP always retains a full verification artifact, including ordinary failed plans.
+Compact output retains original step indices, state, direct blockers and nullable
+product summaries. The versioned verification-rule resource describes each named
+predicate. Web and HTML/PDF show typed checks and failed/blocked steps; product
+selectors no longer mistake success count for a step index.
+
+The combined batch passes native/WASM compiler checks and 1,860 unique focused
+scientific, model and in-memory MCP cases across its integration artifacts.
+[Execution and source evidence](audits/verifier-and-design-current-integration.json)
+separates discovery, initial failures and corrective execution. No browser, local
+application HTTP or live-provider checks have run. This checkpoint does not
+complete the full feature or product-acceptance goal.
+
+F40 integrated template foundation (2026-11-28): `rna-chemistry::ivt`, binary
+worker, MCP and web controls cover source-bound consensus-T7/original CleanCap AG
+initiator constraints, explicit G/GG/GGG conflicts, original strand/circular
+coordinates, supplied cut geometry and bounded encoded-poly(A) structure. Native
+and WASM checks and the core/binary/SDK/web-model cases pass. No efficiency or
+stability claim is made. Exact restriction-candidate discovery is authored in the
+next isolated batch and remains outside this checkpoint.
+[Admission limits and primary sources](audits/ivt-template-current.md).

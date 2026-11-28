@@ -83,20 +83,20 @@ impl<'a> Template<'a> {
         forward: &Primer,
         reverse: &Primer,
     ) -> Result<(Vec<PcrGeometryProduct>, usize), Error> {
-        let work = self
-            .comparison_bases()?
-            .checked_mul(
-                forward
-                    .annealing
-                    .len()
-                    .checked_add(reverse.annealing.len())
-                    .ok_or(Error::TooLarge)?,
-            )
-            .and_then(|n| n.checked_mul(4))
-            .ok_or(Error::TooLarge)?;
-        if work > 100_000_000 {
-            return Err(Error::TooLarge);
-        }
+        self.geometries_with_budget(
+            forward,
+            reverse,
+            &mut analysis::ExactSearchBudget::default(),
+        )
+    }
+    /// Shares actual matching/materialization work across coverage and selected
+    /// native frames. The returned usage remains materialized bytes, not work.
+    pub(crate) fn geometries_with_budget(
+        self,
+        forward: &Primer,
+        reverse: &Primer,
+        budget: &mut analysis::ExactSearchBudget,
+    ) -> Result<(Vec<PcrGeometryProduct>, usize), Error> {
         let mut materialized = 0usize;
         if let Some(tracked) = self.tracked {
             let d = &tracked.duplex;
@@ -132,6 +132,7 @@ impl<'a> Template<'a> {
                     })
                     .filter(|n| *n <= 64 * 1024 * 1024)
                     .ok_or(Error::TooLarge)?;
+                budget.charge(materialized)?;
                 let bottom_plus = d.bottom.reverse_complement()?;
                 let mut bases = Vec::with_capacity(length);
                 for i in 0..length {
@@ -168,7 +169,7 @@ impl<'a> Template<'a> {
                     Strand::Bottom => end.checked_sub(bottom_end).ok_or(Error::TooLarge)?,
                 })
                 .map_err(|_| Error::TooLarge)?;
-                for geometry in analysis::simulate_pcr_geometry_view(
+                for geometry in analysis::simulate_pcr_geometry_view_with_budget(
                     TemplateView {
                         sequence: &oriented,
                         topology: Topology::Linear,
@@ -176,6 +177,7 @@ impl<'a> Template<'a> {
                     },
                     forward,
                     reverse,
+                    budget,
                 )? {
                     materialized = materialized
                         .checked_add(geometry.product.sequence.len())
@@ -195,7 +197,12 @@ impl<'a> Template<'a> {
                 }
             }
         }
-        let products = analysis::simulate_pcr_geometry_view(self.view(), forward, reverse)?;
+        let products = analysis::simulate_pcr_geometry_view_with_budget(
+            self.view(),
+            forward,
+            reverse,
+            budget,
+        )?;
         for product in &products {
             materialized = materialized
                 .checked_add(product.product.sequence.len())

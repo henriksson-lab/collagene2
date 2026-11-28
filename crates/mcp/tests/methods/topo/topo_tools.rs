@@ -542,11 +542,11 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     .await;
     assert_eq!(verified["status"], "ConsistentUnderAssumptions");
     let full = evidence(&c, &verified["artifact_id"]).await;
-    assert_eq!(full["products"].as_array().unwrap().len(), 2);
+    assert_eq!(full["steps"].as_array().unwrap().len(), 2);
     assert_eq!(full["physical_processing_reports"][0]["step_index"], 1);
     let before: collagene_core::chemistry::tracked_duplex::ModificationSummary =
         serde_json::from_str(
-            full["products"][0]["metadata"]["tracked_modifications"]
+            full["steps"][0]["product"]["metadata"]["tracked_modifications"]
                 .as_str()
                 .unwrap(),
         )

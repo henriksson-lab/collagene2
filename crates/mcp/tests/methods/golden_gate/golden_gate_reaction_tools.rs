@@ -358,10 +358,11 @@ async fn saved_circular_whole_source_requires_exact_retained_workspace_and_canno
     assert_eq!(detached["candidate_count"], 0);
     let detached = full(&c, &detached["artifact_id"]).await;
     assert!(
-        detached["report"]["verification"]["products"]
+        detached["report"]["verification"]["steps"]
             .as_array()
             .unwrap()
-            .is_empty()
+            .iter()
+            .all(|step| step["product"].is_null())
     );
     assert_eq!(
         workspace::save_workspace(&saved.workspace).unwrap(),

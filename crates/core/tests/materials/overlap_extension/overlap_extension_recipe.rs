@@ -120,23 +120,49 @@ fn literal_edited_insert_then_multipart_overlap_retains_both_branches_and_outer_
         assert_eq!(
             preview
                 .verification
-                .products
+                .steps
                 .iter()
+                .map(|step| step
+                    .product
+                    .as_ref()
+                    .expect("each declared step must reconstruct"))
                 .map(|p| p.sequence.len())
                 .collect::<Vec<_>>(),
             vec![16, 26, 30, 38, 38, 46]
         );
         assert_eq!(
-            preview.verification.products[1].sequence.as_str(),
+            preview
+                .verification
+                .product(1)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
             "AGTCCGATGCTACGTATTTTCAGACC"
         );
         assert_eq!(
-            preview.verification.products[2].sequence.as_str(),
+            preview
+                .verification
+                .product(2)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
             "GCTACGTATTTTCAGACCTGTAGATCGTCA"
         );
-        assert_eq!(preview.prepared[1].sequence.as_str(), EDITED);
         assert_eq!(
-            preview.verification.products[5].sequence.as_str(),
+            preview.prepared[1]
+                .as_ref()
+                .expect("prepared row must reconstruct")
+                .sequence
+                .as_str(),
+            EDITED
+        );
+        assert_eq!(
+            preview
+                .verification
+                .product(5)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
             target.sequence.as_str()
         );
         let row = &preview.compiled.rows[1];
@@ -160,7 +186,7 @@ fn literal_edited_insert_then_multipart_overlap_retains_both_branches_and_outer_
         let diagnostics = assembly_diagnostics::overlap(&preview).unwrap();
         assert_eq!(diagnostics.rows[1].total_steps, 4);
         assert_eq!(diagnostics.rows[1].completed_steps, 4);
-        assert!(diagnostics.failure.is_none());
+        assert!(diagnostics.failures.is_empty());
         preview.validate_binding(&preview.context_revision).unwrap();
         assert_eq!(serde_json::to_value(&inputs).unwrap(), originals);
     }
@@ -209,9 +235,8 @@ fn actual_prepared_duplex_can_be_phosphorylated_and_ligated_without_reference_ma
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         FORWARD_TARGET
@@ -220,7 +245,7 @@ fn actual_prepared_duplex_can_be_phosphorylated_and_ligated_without_reference_ma
     assert!(preview.product_physical.as_ref().unwrap().nicks.is_empty());
     let diagnostics = assembly_diagnostics::ligation(&preview).unwrap();
     assert_eq!(diagnostics.rows[1].total_steps, 5);
-    assert!(diagnostics.failure.is_none());
+    assert!(diagnostics.failures.is_empty());
 }
 fn binding(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];
@@ -320,9 +345,8 @@ fn saved_original_is_replayed_before_both_branches_without_changing_its_origin_t
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         FORWARD_TARGET
@@ -373,9 +397,8 @@ fn graph_correspondence_rejects_wrong_branch_pair_outer_source_skips_and_shared_
     assert_eq!(
         mismatch
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         FORWARD_TARGET
@@ -412,16 +435,21 @@ fn invalid_oligos_and_search_limits_fail_before_source_copy_and_failure_points_t
     recipe.fragments[1].preparation = Preparation::OverlapExtensionPcr { request: bounded };
     let uncertain = a::preview(&inputs, &target, &recipe).unwrap();
     assert_eq!(uncertain.verification.status, Status::Incomplete);
-    assert_eq!(uncertain.verification.products.len(), 6);
+    assert_eq!(uncertain.verification.reconstructed_count(), 6);
     assert_eq!(
-        uncertain.verification.products[5].sequence.as_str(),
+        uncertain
+            .verification
+            .product(5)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         FORWARD_TARGET
     );
     assert!(
         assembly_diagnostics::overlap(&uncertain)
             .unwrap()
-            .failure
-            .is_none()
+            .failures
+            .is_empty()
     );
     let mut request = request();
     request.extension.overlap = 17;
@@ -433,8 +461,10 @@ fn invalid_oligos_and_search_limits_fail_before_source_copy_and_failure_points_t
     );
     let location = assembly_diagnostics::overlap(&failed)
         .unwrap()
-        .failure
-        .unwrap();
+        .failures
+        .into_iter()
+        .next()
+        .expect("documented failure");
     assert_eq!(location.stage, Stage::OverlapExtension);
     assert_eq!(location.row, Some(1));
     assert_eq!(location.step, 3);

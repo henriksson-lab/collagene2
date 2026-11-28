@@ -8,12 +8,14 @@ use std::collections::BTreeSet;
 
 pub const RFC10_ID: &str = "biobrick-rfc10-part-sequence-2007";
 pub const RFC1000_L0_ID: &str = "igem-rfc1000-level0-documented-body-2026";
-pub const BUILTIN_IDS: &[&str] = &[RFC10_ID, RFC1000_L0_ID];
+pub const MOCLO_2011_L0_ID: &str = "moclo-2011-level0-two-path-module-grammar";
+pub const BUILTIN_IDS: &[&str] = &[RFC10_ID, RFC1000_L0_ID, MOCLO_2011_L0_ID];
 
 fn builtin_bytes(id: &str) -> Result<&'static [u8]> {
     match id {
         RFC10_ID => Ok(include_bytes!("../data/rfc10-2007/profile.json")),
         RFC1000_L0_ID => Ok(include_bytes!("../data/rfc1000-l0-2026/profile.json")),
+        MOCLO_2011_L0_ID => Ok(include_bytes!("../data/moclo-l0-2011/profile.json")),
         _ => Err(Error::UnsupportedProfile),
     }
 }

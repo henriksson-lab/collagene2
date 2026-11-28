@@ -222,7 +222,11 @@ async fn single_stranded_circular_and_imported_physical_sources_cannot_be_redecl
         .await;
         assert_eq!(report["status"], "Incomplete", "{name}: {report}");
         assert!(
-            report["products"].as_array().unwrap().is_empty(),
+            report["steps"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|step| step["product"].is_null()),
             "{name} manufactured an intermediate"
         );
     }

@@ -175,7 +175,11 @@ fn original_ta_and_gc_preserve_literal_scars_and_finite_outcomes() {
             Profile::Gc => "AAACCCCGGGTTTG",
         };
         assert!(circle_eq(
-            e.verification().products.last().unwrap().sequence.as_str(),
+            e.verification()
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence
+                .as_str(),
             expected
         ));
         assert_eq!(
@@ -393,7 +397,11 @@ fn saved_run_keep_and_derived_add_use_exact_owned_material_after_archive_restart
     assert!(p.compiled.rows[0].tail_step.is_none());
     assert!(p.compiled.rows[1].tail_step.is_some());
     assert!(circle_eq(
-        e.verification().products.last().unwrap().sequence.as_str(),
+        e.verification()
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AAACCCTGGGTTTA"
     ));
     let mut alias_workspace = w.clone();
@@ -558,7 +566,11 @@ fn unscarred_independent_original_regions_are_not_replaced_by_tailed_product() {
     };
     assert_eq!(p.profile_status, ProfileStatus::Matched);
     assert!(circle_eq(
-        e.verification().products.last().unwrap().sequence.as_str(),
+        e.verification()
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AAACCCTGGGTTTA"
     ));
 }

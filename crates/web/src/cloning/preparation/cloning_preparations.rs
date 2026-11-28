@@ -418,11 +418,11 @@ mod tailing_tests {
                 preview.verification.findings
             );
             assert_eq!(
-                preview.verification.products.last().unwrap().sequence.len(),
+                preview.verification.final_product().unwrap().sequence.len(),
                 14
             );
             assert_eq!(
-                preview.verification.products.last().unwrap().topology,
+                preview.verification.final_product().unwrap().topology,
                 if circular {
                     Topology::Circular
                 } else {
@@ -506,8 +506,7 @@ mod tailing_tests {
         assert_eq!(
             preview
                 .verification
-                .products
-                .last()
+                .final_product()
                 .unwrap()
                 .sequence
                 .as_str(),
@@ -574,8 +573,7 @@ mod tailing_tests {
         assert_eq!(
             preview
                 .verification
-                .products
-                .last()
+                .final_product()
                 .unwrap()
                 .sequence
                 .as_str(),
@@ -704,8 +702,7 @@ mod annealed_tests {
         assert_eq!(
             preview
                 .verification
-                .products
-                .last()
+                .final_product()
                 .unwrap()
                 .sequence
                 .as_str(),
@@ -876,19 +873,48 @@ mod overlap_extension_tests {
         );
         assert_eq!(p.compiled.plan.inputs[0].id, "original-stock-event");
         assert_eq!(p.compiled.rows[0].role, "edited-insert");
-        assert_eq!(p.prepared[0].sequence.as_str(), EDITED);
         assert_eq!(
-            p.verification.products[0].sequence.as_str(),
+            p.prepared[0]
+                .as_ref()
+                .expect("prepared row must reconstruct")
+                .sequence
+                .as_str(),
+            EDITED
+        );
+        assert_eq!(
+            p.verification
+                .product(0)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
             "AGTCCGATGCTACGTATTTTCAGACC"
         );
         assert_eq!(
-            p.verification.products[1].sequence.as_str(),
+            p.verification
+                .product(1)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
             "GCTACGTATTTTCAGACCTGTAGATCGTCA"
         );
-        assert_eq!(p.verification.products[2].sequence.as_str(), EDITED);
-        assert_eq!(p.verification.products[3].sequence.as_str(), EDITED);
         assert_eq!(
-            p.verification.products.last().unwrap().sequence.as_str(),
+            p.verification
+                .product(2)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            EDITED
+        );
+        assert_eq!(
+            p.verification
+                .product(3)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            EDITED
+        );
+        assert_eq!(
+            p.verification.final_product().unwrap().sequence.as_str(),
             FINAL
         );
         assert_eq!(
@@ -1022,7 +1048,7 @@ mod overlap_extension_tests {
             }
         ));
         assert_eq!(
-            p.verification.products.last().unwrap().sequence.as_str(),
+            p.verification.final_product().unwrap().sequence.as_str(),
             FINAL
         );
         s.rows[0].preparation = OverlapPreparation::OverlapExtensionPcrCatalogDigest;
@@ -1191,15 +1217,32 @@ mod source_generation_tests {
             steps: compiled.steps,
         };
         let report = verification::engine::verify(&plan, &target);
-        assert_eq!(report.products.len(), 2, "{:?}", report.findings);
-        let before: ModificationSummary =
-            serde_json::from_str(&report.products[0].metadata["tracked_modifications"]).unwrap();
-        let after: ModificationSummary =
-            serde_json::from_str(&report.products[1].metadata["tracked_modifications"]).unwrap();
+        assert_eq!(report.reconstructed_count(), 2, "{:?}", report.findings);
+        let before: ModificationSummary = serde_json::from_str(
+            &report
+                .product(0)
+                .expect("selected step must reconstruct")
+                .metadata["tracked_modifications"],
+        )
+        .unwrap();
+        let after: ModificationSummary = serde_json::from_str(
+            &report
+                .product(1)
+                .expect("selected step must reconstruct")
+                .metadata["tracked_modifications"],
+        )
+        .unwrap();
         assert!(before.known_modified > 0);
         assert_eq!(after.known_modified, 0);
         assert_eq!(after.unknown_eligible, 0);
-        assert_eq!(report.products[1].sequence.as_str(), "CAGTGATCGTACGTAC");
+        assert_eq!(
+            report
+                .product(1)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            "CAGTGATCGTACGTAC"
+        );
     }
 }
 

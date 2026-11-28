@@ -119,8 +119,12 @@ fn outer_actual_pcr_is_cut_under_exact_catalog_pin_and_closes_real_sticky_ends()
     );
     assert_eq!(
         p.verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 58, 44, 44]
@@ -133,7 +137,14 @@ fn outer_actual_pcr_is_cut_under_exact_catalog_pin_and_closes_real_sticky_ends()
         p.compiled.rows[0].preparation.prepared_source,
         Source::Step(4)
     ));
-    assert_eq!(p.prepared[0].sequence.as_str(), DIGEST);
+    assert_eq!(
+        p.prepared[0]
+            .as_ref()
+            .expect("prepared row must reconstruct")
+            .sequence
+            .as_str(),
+        DIGEST
+    );
     assert!(
         p.product_physical
             .as_ref()
@@ -178,8 +189,22 @@ fn optional_fill_in_uses_the_digest_strands_and_final_orientation_is_separate() 
                 method: EndRepairMethod::FillFivePrimeOverhangs
             }
         ));
-        assert_eq!(p.prepared[0].sequence.as_str(), FILLED);
-        assert_eq!(p.verification.products[6].sequence.as_str(), letters);
+        assert_eq!(
+            p.prepared[0]
+                .as_ref()
+                .expect("prepared row must reconstruct")
+                .sequence
+                .as_str(),
+            FILLED
+        );
+        assert_eq!(
+            p.verification
+                .product(6)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            letters
+        );
         assert_eq!(
             assembly_diagnostics::overlap(&p).unwrap().rows[0].total_steps,
             6
@@ -308,7 +333,7 @@ fn stale_catalog_missing_fragments_and_broken_suffix_ownership_are_rejected() {
     }
     let failed = a::preview(&inputs, &target, &linear(prep, false)).unwrap();
     assert!(!failed.preparation_complete);
-    assert_eq!(failed.verification.products.len(), 4);
+    assert_eq!(failed.verification.reconstructed_count(), 4);
     let p = a::preview(
         &inputs,
         &target,

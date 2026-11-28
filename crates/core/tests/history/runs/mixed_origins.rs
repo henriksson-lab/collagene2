@@ -166,8 +166,22 @@ fn actual_sticky_fragment_then_new_pcr_survives_native_archive_and_mixed_run_rep
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products[0].sequence.as_str(), CUT);
-    assert_eq!(report.products[1].sequence.as_str(), AMPLICON);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        CUT
+    );
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        AMPLICON
+    );
     let saved = cloning_outputs::finalize(
         &w,
         &plan,

@@ -615,8 +615,8 @@ impl CollageneServer {
             report.validate_for_workspace(&value).map_err(bad)?;
             let full = serde_json::to_value(&report).map_err(bad)?;
             let artifact = server.session.analysis_artifact(&full)?;
-            let products = report.current_report.products.iter().take(100).map(|p| json!({"revision":p.revision(),"name":p.name.chars().take(256).collect::<String>(),"length":p.sequence.len()})).collect::<Vec<_>>();
-            output(json!({"workspace":args.workspace,"run_id":report.run_id,"source_workspace_fingerprint":report.source_workspace_fingerprint,"recorded_status":report.recorded_status,"recorded_engine":report.recorded_engine,"current_status":report.current_report.status,"current_engine":report.current_report.engine_version,"engine_matches":report.engine_matches,"products_match":report.products_match,"status_matches":report.status_matches,"products":products,"product_count":report.current_report.products.len(),"products_truncated":report.current_report.products.len()>100,"artifact_id":artifact}))
+            let steps = report.current_report.steps.iter().take(100).map(|outcome| json!({"step_index":outcome.step_index,"state":outcome.state,"blocked_by":outcome.blocked_by,"product":outcome.product.as_ref().map(|p|json!({"revision":p.revision(),"name":p.name.chars().take(256).collect::<String>(),"length":p.sequence.len()}))})).collect::<Vec<_>>();
+            output(json!({"workspace":args.workspace,"run_id":report.run_id,"source_workspace_fingerprint":report.source_workspace_fingerprint,"recorded_status":report.recorded_status,"recorded_engine":report.recorded_engine,"current_status":report.current_report.status,"current_engine":report.current_report.engine_version,"engine_matches":report.engine_matches,"products_match":report.products_match,"status_matches":report.status_matches,"steps":steps,"reconstructed_count":report.current_report.reconstructed_count(),"steps_truncated":report.current_report.planned_steps>100,"artifact_id":artifact}))
         }).await
     }
     #[tool(

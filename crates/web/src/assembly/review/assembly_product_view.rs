@@ -65,9 +65,9 @@ pub fn AssemblyProductView(
 
     let intermediates_open = RwSignal::new(false);
     let inspected_step =
-        RwSignal::new(snapshot.with_value(|s| s.prefix_available.saturating_sub(1)));
+        RwSignal::new(snapshot.with_value(|s| s.available_steps().last().unwrap_or(0)));
     let available = snapshot.with_value(|s| s.product_revision.is_some());
-    let report_available = snapshot.with_value(|s| s.prefix_error.is_none());
+    let report_available = snapshot.with_value(|s| s.receipt_error.is_none());
     let output_available =
         snapshot.with_value(|s| s.product_revision.is_some() && s.report.status != Status::Invalid);
     let identity = Memo::new(move |_| {
@@ -150,8 +150,7 @@ pub fn AssemblyProductView(
                 return Err("No actual final product is available for export.".into());
             }
             s.report
-                .products
-                .last()
+                .final_product()
                 .cloned()
                 .ok_or_else(|| "The actual final product is unavailable.".into())
         })
@@ -159,7 +158,7 @@ pub fn AssemblyProductView(
     let export_report = move |_| {
         let result = capture.run(()).and_then(|_| {
             snapshot.with_value(|s| {
-                if s.prefix_error.is_some() {
+                if s.receipt_error.is_some() {
                     return Err("The report context is not bound to this plan and target.".into());
                 }
                 let bytes = serde_json::to_vec_pretty(&s.report).map_err(|e| e.to_string())?;
@@ -203,7 +202,7 @@ pub fn AssemblyProductView(
                 if s.product_revision.is_none() || s.error.is_some() {
                     return Err("No bound final product is available.".into());
                 }
-                let final_product = s.report.products.last().ok_or("No final product")?;
+                let final_product = s.report.final_product().ok_or("No final product")?;
                 on_products.run(vec![final_product.clone()])
             })
         });
@@ -220,7 +219,7 @@ pub fn AssemblyProductView(
         <p class="helper product-review-scope">"Actual reconstructed reference DNA, separate from intended DNA. This view does not establish experimental success, exhaustive product uniqueness or newly prepared material."</p>
         <p class="assembly-product-status" role="status">{move||if !current.get(){"Workspace context changed. This snapshot is historical; reconstruct again before opening or inspecting it.".to_string()}else{status.get()}}</p>
         {snapshot.with_value(|s|s.error.clone()).map(|error|view!{<p class="assembly-product-status" role="alert">{error}</p>})}
-        {snapshot.with_value(|s|if s.product_revision.is_some(){s.report.products.last().map(|product|{
+        {snapshot.with_value(|s|if s.product_revision.is_some(){s.report.final_product().map(|product|{
             let product=product.clone();let product_identity=format!("{}:{}",s.plan_revision,s.product_revision.as_deref().unwrap_or_default());
             view!{<div>
                 <p>{format!("Final step {} · {} bases · {:?} · {} annotations",s.plan.steps.len(),product.sequence.len(),product.topology,product.features.len())}</p>
@@ -238,25 +237,22 @@ pub fn AssemblyProductView(
             }
             intermediates_open.set(open);
         }><summary>"Inspect preparation steps and intermediate DNA"</summary>
-            {snapshot.with_value(|s|s.prefix_error.clone()).map(|error|view!{<p role="alert">{error}</p>})}
-            <p class="helper">{snapshot.with_value(|s|format!("{} of {} step products available in this reconstruction. Intermediate views do not select the final output or restore physical material.",s.prefix_available,s.plan.steps.len()))}</p>
+            {snapshot.with_value(|s|s.receipt_error.clone()).map(|error|view!{<p role="alert">{error}</p>})}
+            <p class="helper">{snapshot.with_value(|s|format!("{} of {} step products available in this reconstruction. Intermediate views do not select the final output or restore physical material.",s.reconstructed_count,s.plan.steps.len()))}</p>
             {snapshot.with_value(|s|{
-                let index=s.prefix_available;
-                if s.prefix_error.is_some() || index>=s.plan.steps.len(){return None;}
-                let graphs=s.report.step_reports.iter().filter(|r|r.step_index==index).count();
-                let physical=s.report.physical_processing_reports.iter().filter(|r|r.step_index==index).count();
-                let reference=s.report.reference_step_reports.iter().filter(|r|r.step_index==index).count();
-                let annotation=s.report.step_reports.iter().filter(|r|r.step_index==index&&r.topo.as_ref().is_some_and(|topo|topo.annotations.is_some())).count();
-                Some(view!{<p>{format!("Next step not reconstructed: {}. {}",index+1,operation_label(&s.plan.steps[index]))}</p><p class="helper">{format!("Retained typed evidence at this step: {graphs} graph, {physical} physical processing, {reference} reference and {annotation} annotation reports. Export the full reconstruction JSON for complete evidence, including graph-only results with no DNA product.")}</p>})
+                if s.receipt_error.is_some() { return None; }
+                Some(view! {<ul>{s.report.steps.iter().filter(|step| step.product.is_none()).map(|step| view! {
+                    <li>{format!("Step {} · {:?} · direct blockers {:?}", step.step_index+1, step.state, step.blocked_by)}</li>
+                }).collect_view()}</ul>})
             })}
-            <Show when=move||snapshot.with_value(|s|s.prefix_available>0)>
+            <Show when=move||snapshot.with_value(|s|s.reconstructed_count>0)>
                 <label>"Reconstructed step"<select aria-label="Reconstructed preparation step" disabled=move||!current.get() prop:value=move||inspected_step.get().to_string() on:change=move|event|{
                     if let Ok(index)=event_target_value(&event).parse::<usize>() {
                         if let Err(error)=capture.run(()){status.set(error);intermediates_open.set(false);return;}
                     if snapshot.with_value(|s|s.product_at(index).is_ok()) {inspected_step.set(index);}
                     }
-                }>{snapshot.with_value(|s|(0..s.prefix_available).map(|index|view!{<option value=index.to_string()>{format!("{}. {}{}",index+1,operation_label(&s.plan.steps[index]),if index+1==s.plan.steps.len(){" · final step"}else{" · intermediate"})}</option>}).collect_view())}</select></label>
-                <div class="method-row-actions"><button class="text-tool" disabled=move||!current.get()||inspected_step.get()==0 on:click=move|_|{match capture.run(()){Ok(_)=>inspected_step.update(|index|*index=index.saturating_sub(1)),Err(error)=>{status.set(error);intermediates_open.set(false);}}}>"Previous step"</button><button class="text-tool" disabled={move||!current.get()||snapshot.with_value(|s|inspected_step.get().saturating_add(1)>=s.prefix_available)} on:click=move|_|{match capture.run(()){Ok(_)=>inspected_step.update(|index|*index=index.saturating_add(1)),Err(error)=>{status.set(error);intermediates_open.set(false);}}}>"Next step"</button></div>
+                }>{snapshot.with_value(|s|s.available_steps().map(|index|view!{<option value=index.to_string()>{format!("{}. {}{}",index+1,operation_label(&s.plan.steps[index]),if index+1==s.plan.steps.len(){" · final step"}else{" · intermediate"})}</option>}).collect_view())}</select></label>
+                <div class="method-row-actions"><button class="text-tool" disabled=move||!current.get()||snapshot.with_value(|s|s.adjacent_product(inspected_step.get(),false).is_none()) on:click=move|_|{match capture.run(()){Ok(_)=>if let Some(previous)=snapshot.with_value(|s|s.adjacent_product(inspected_step.get_untracked(),false)){inspected_step.set(previous);},Err(error)=>{status.set(error);intermediates_open.set(false);}}}>"Previous step"</button><button class="text-tool" disabled={move||!current.get()||snapshot.with_value(|s|s.adjacent_product(inspected_step.get(),true).is_none())} on:click=move|_|{match capture.run(()){Ok(_)=>if let Some(next)=snapshot.with_value(|s|s.adjacent_product(inspected_step.get_untracked(),true)){inspected_step.set(next);},Err(error)=>{status.set(error);intermediates_open.set(false);}}}>"Next step"</button></div>
                 <For each=move||if intermediates_open.get()&&current.get(){vec![inspected_step.get()]}else{Vec::new()} key=|index|*index children=move|index|{
                     snapshot.with_value(|s|match s.product_at(index) {
                         Ok(product)=>{
@@ -281,7 +277,7 @@ pub fn AssemblyProductView(
             <ol>{snapshot.with_value(|s|s.plan.inputs.iter().take(128).map(|input|view!{<li>{format!("{} · {} · {} bases · revision {}",clip(&input.id,128),clip(&input.molecule.name,120),input.molecule.sequence.len(),input.revision)}</li>}).collect_view())}</ol>
             <ol>{snapshot.with_value(|s|s.plan.steps.iter().take(100).map(|step|view!{<li>{operation_label(step)}</li>}).collect_view())}</ol>
             {snapshot.with_value(|s|(s.plan.steps.len()>100).then(||view!{<p class="helper">{format!("First100 of {} typed steps shown; the saved candidate/protocol retains the full plan.",s.plan.steps.len())}</p>}))}
-            <ul>{snapshot.with_value(|s|s.report.findings.iter().take(100).map(|finding|view!{<li>{clip(finding,2048)}</li>}).collect_view())}</ul>
+            <ul>{snapshot.with_value(|s|s.report.findings.iter().take(100).map(|finding|view!{<li>{crate::protocol::verification_view::finding(finding)}</li>}).collect_view())}</ul>
             <p class="helper">"Finding previews are bounded. Keep the full reconstruction JSON and HTML/PDF protocol for all findings and assumptions. Source annotation claims are not functional validation."</p>
         </details>
         {snapshot.with_value(|s|s.physical.as_ref().map(|physical|view!{<details class="assembly-product-details"><summary>{format!("Fresh report physical receipt · {} retained nicks",physical.nicks.len())}</summary>

@@ -250,9 +250,8 @@ fn run_and_derived_inverse_outputs_keep_independent_target_and_only_new_primers(
         );
         assert!(
             p.verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .features
                 .iter()
                 .any(|f| f.label() == "Retained native source region")
@@ -599,12 +598,12 @@ fn actual_nicked_saved_circle_does_not_gain_a_fabricated_pcr_template() {
     let r = request(&source, origin.clone(), "EcoRI", &[18], inverse(18));
     let p = prep::materialize(&input(source.clone()), &r, Some(&w)).unwrap();
     assert_eq!(p.verification.status, Status::Incomplete);
-    assert_eq!(p.verification.products.len(), 1);
+    assert_eq!(p.verification.reconstructed_count(), 1);
     assert!(
         p.verification
             .findings
             .iter()
-            .any(|f| f.to_lowercase().contains("nick"))
+            .any(|f| f.message.to_lowercase().contains("nick"))
     );
     let r = request(
         &source,
@@ -698,10 +697,12 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
     };
     let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 6);
+    assert_eq!(report.reconstructed_count(), 6);
     assert!(verification::engine::plan_target_matches(
         &plan,
-        report.products.last().unwrap(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &target
     ));
     let saved = cloning_outputs::finalize(
@@ -753,10 +754,12 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
         "{:?}",
         p.verification.findings
     );
-    assert_eq!(p.verification.products.len(), 4);
+    assert_eq!(p.verification.reconstructed_count(), 4);
     assert!(verification::engine::plan_target_matches(
         &p.plan,
-        p.verification.products.last().unwrap(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &p.target
     ));
     p.validate_binding(&p.context_revision).unwrap();

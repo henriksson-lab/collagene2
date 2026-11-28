@@ -144,9 +144,8 @@ fn check(w: &Workspace, event: EventBinding, origin: MaterialOrigin) {
     assert_eq!(
         report
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         EDITED_BOTTOM
@@ -237,16 +236,20 @@ fn derived_source_remains_a_native_recipe_and_never_becomes_an_original_bottom_s
     ));
     assert_eq!(p.expected.sequence.as_str(), EDITED_BOTTOM);
     assert_eq!(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         EDITED_BOTTOM
     );
     assert!(
         p.verification
             .findings
             .iter()
-            .any(|s| s.contains("incomplete")
-                || s.contains("unsealed")
-                || s.contains("conditional")),
+            .any(|s| s.message.contains("incomplete")
+                || s.message.contains("unsealed")
+                || s.message.contains("conditional")),
         "{:?}",
         p.verification.findings
     );

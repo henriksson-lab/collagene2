@@ -137,14 +137,21 @@ fn completed_ta_graph_with_blocked_third_transfer_stays_incomplete_despite_targe
         t::TargetOutcome::AcceptedUnderDeclaredGraph
     ));
     let verified = verification::engine::verify(&plan, &target);
-    assert_eq!(verified.products.len(), 1);
-    assert_eq!(verified.products[0].sequence.as_str(), literal::FINAL);
+    assert_eq!(verified.reconstructed_count(), 1);
+    assert_eq!(
+        verified
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        literal::FINAL
+    );
     assert_eq!(verified.status, Status::Incomplete);
     assert!(
         verified
             .findings
             .iter()
-            .any(|s| s.contains("incomplete saved native graph"))
+            .any(|s| s.message.contains("incomplete saved native graph"))
     );
     let (forged, selection) = forged_false_record(&saved.workspace, &saved.receipt.selection);
     let (_, task, bad_plan, target) = check(&forged, &selection);
@@ -238,8 +245,15 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
         Status::Incomplete,
         "the real annealing placement search cap must actually be reached"
     );
-    assert_eq!(report.products.len(), 1);
-    assert_eq!(report.products[0].sequence.as_str(), "CGAATG");
+    assert_eq!(report.reconstructed_count(), 1);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "CGAATG"
+    );
     let captured = cloning_outputs::finalize(
         &w,
         &plan,

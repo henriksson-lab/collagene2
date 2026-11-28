@@ -175,7 +175,7 @@ fn fixture(incomplete: bool) -> Fixture {
     let report =
         verification::engine::verify(&plan, w.head(&w.documents[original_target].id).unwrap());
     assert_eq!(
-        report.products.len(),
+        report.reconstructed_count(),
         plan.steps.len(),
         "{:?}",
         report.findings
@@ -324,14 +324,16 @@ fn finish(f: Fixture) {
     ));
     let report = verification::engine::verify(&compiled.plan, &target);
     assert_eq!(
-        report.products.len(),
+        report.reconstructed_count(),
         compiled.plan.steps.len(),
         "{:?}",
         report.findings
     );
     assert!(verification::engine::plan_target_matches(
         &compiled.plan,
-        report.products.last().unwrap(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &target
     ));
     assert_eq!(

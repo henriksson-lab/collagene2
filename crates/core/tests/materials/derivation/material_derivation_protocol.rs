@@ -186,8 +186,7 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
         }],
     };
     assert_eq!(tag(&plan.steps[0]), 26);
-    assert_eq!(protocol::schema::CANDIDATE_SCHEMA_VERSION, 33);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 31);
+
     let bytes = transfer::save_candidate(&transfer::Candidate::new(plan.clone())).unwrap();
     assert_eq!(
         &bytes[4..6],
@@ -340,9 +339,8 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "ACGACCCGGGATCGATCCGTATTGGAACG"

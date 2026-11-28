@@ -14,6 +14,9 @@ impl Work {
     pub(super) fn resume(used: usize, limit: usize) -> Self {
         Self { used, limit }
     }
+    pub(super) fn remaining(&self) -> usize {
+        self.limit.saturating_sub(self.used)
+    }
     pub(super) fn used(&self) -> usize {
         self.used
     }

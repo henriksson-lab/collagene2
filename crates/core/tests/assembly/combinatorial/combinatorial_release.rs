@@ -168,13 +168,13 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
         .collect::<Vec<_>>();
     let engine = "archived uncomputed request".to_string();
     let context = blake3::hash(
-        &serde_json::to_vec(&("combinatorial-batch-record-5", &engine, &request, &evidence))
+        &serde_json::to_vec(&("combinatorial-batch-record-6", &engine, &request, &evidence))
             .unwrap(),
     )
     .to_hex()
     .to_string();
     let record = batch::Record {
-        schema_version: 5,
+        schema_version: 6,
         context_revision: context,
         engine_version: engine,
         request,
@@ -538,7 +538,7 @@ fn actual_selected_rich_source_still_receives_scientific_bounds() {
     record.request.design.as_mut().unwrap().bins[0].choices[0].source = binding(&workspace, 3);
     record.context_revision = blake3::hash(
         &serde_json::to_vec(&(
-            "combinatorial-batch-record-5",
+            "combinatorial-batch-record-6",
             &record.engine_version,
             &record.request,
             &record.rows,

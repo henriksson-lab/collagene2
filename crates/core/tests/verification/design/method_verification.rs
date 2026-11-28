@@ -90,13 +90,31 @@ fn literal_ta_junctions_include_both_added_bases_and_are_independently_bound() {
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products[1].sequence.as_str(), "ACGCT");
-    assert_eq!(r.products[3].sequence.as_str(), "GGTAA");
-    assert_eq!(r.products[4].sequence.len(), 10);
+    assert_eq!(
+        r.product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "ACGCT"
+    );
+    assert_eq!(
+        r.product(3)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "GGTAA"
+    );
+    assert_eq!(
+        r.product(4)
+            .expect("selected step must reconstruct")
+            .sequence
+            .len(),
+        10
+    );
     assert!(
         r.findings
             .iter()
-            .any(|s| s.contains("no source-template ancestry"))
+            .any(|s| s.message.contains("no source-template ancestry"))
     );
     let wrong = dna("wrong", "ACGCGGTA", Topology::Circular);
     let mut wrong_plan = p.clone();
@@ -188,7 +206,10 @@ fn preview_metadata_cannot_grant_chemistry_and_unknown_or_blocked_tails_remain_i
     assert_eq!(verify(&p, &target_circle).status, Status::Incomplete);
     p.steps[0] = anneal("vt", "vb", Terminus::CLEAVED);
     let r = verify(&p, &target_circle);
-    let preview = r.products[1].clone();
+    let preview = r
+        .product(1)
+        .expect("selected step must reconstruct")
+        .clone();
     plan.inputs = vec![input("s", preview)];
     assert_eq!(verify(&plan, &target).status, Status::Incomplete);
 }
@@ -264,14 +285,25 @@ fn oriented_profiles_reconstruct_and_map_source_features_without_enforcing_recom
         "{:?}",
         r.findings
     );
-    assert!(r.findings.iter().any(|s| s.contains("advisory")));
-    let f = r.products[0]
+    assert!(r.findings.iter().any(|s| s.message.contains("advisory")));
+    let f = &r
+        .product(0)
+        .expect("selected step must reconstruct")
         .features
         .iter()
         .find(|f| f.label() == "original AA")
         .unwrap();
     assert_eq!(f.location.spans(), vec![(8, 10, true)]);
-    assert_eq!(f.location.extract(&r.products[0].sequence).unwrap(), "AA");
+    assert_eq!(
+        f.location
+            .extract(
+                &r.product(0)
+                    .expect("selected step must reconstruct")
+                    .sequence
+            )
+            .unwrap(),
+        "AA"
+    );
     let wrong = dna("wrong", "AAAACCGGTA", Topology::Linear);
     let mut p = plan;
     p.target_revision = wrong.revision();

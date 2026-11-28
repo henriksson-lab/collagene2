@@ -46,11 +46,13 @@ pub fn editing_candidate(
 }
 
 pub fn validate_report(p: &PreparedReview, r: &VerificationReport) -> Result<(), String> {
+    r.validate_documentary()
+        .map_err(|error| error.to_string())?;
     if r.engine_version != verification::ENGINE_VERSION
         || r.plan_revision != p.candidate.plan_revision
         || r.target_revision != p.target_event.revision
         || r.target_revision != p.target.revision()
-        || r.products.len() > p.candidate.plan.steps.len()
+        || r.planned_steps != p.candidate.plan.steps.len()
     {
         return Err(
             "Fresh verification does not match the exact saved plan and retained intended target."

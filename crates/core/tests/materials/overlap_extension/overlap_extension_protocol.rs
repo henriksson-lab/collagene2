@@ -125,7 +125,7 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
             .engine_version
             .eq(collagene_core::verification::ENGINE_VERSION)
     );
-    assert_eq!(report.products.len(), 4);
+    assert_eq!(report.reconstructed_count(), 4);
     let extension = report
         .physical_processing_reports
         .iter()
@@ -144,15 +144,37 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
     assert!(geometry.terminal_pairings.complete);
     assert!(geometry.terminal_pairings.unique);
     assert_eq!(
-        report.products[0].sequence.as_str(),
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         "AGTCCGATGCTACGTATTTTCAGACC"
     );
     assert_eq!(
-        report.products[1].sequence.as_str(),
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         "GCTACGTATTTTCAGACCTGTAGATCGTCA"
     );
-    assert_eq!(report.products[2].sequence.as_str(), EXPECTED);
-    assert_eq!(report.products[3].sequence.as_str(), EXPECTED);
+    assert_eq!(
+        report
+            .product(2)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        EXPECTED
+    );
+    assert_eq!(
+        report
+            .product(3)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        EXPECTED
+    );
     assert_eq!(
         serde_json::to_value(&plan.inputs[0].molecule).unwrap(),
         original
@@ -191,7 +213,14 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
         panic!("verification");
     };
     assert_eq!(report.status, Status::Invalid);
-    assert_eq!(report.products.last().unwrap().sequence.as_str(), EXPECTED);
+    assert_eq!(
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        EXPECTED
+    );
 }
 #[test]
 fn extension_candidates_reject_unsupported_internal_versions() {
@@ -341,7 +370,14 @@ fn closed_extension_origin_cannot_hide_new_semantics_in_old_worker_envelope() {
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.last().unwrap().sequence.as_str(), EXPECTED);
+    assert_eq!(
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        EXPECTED
+    );
     assert!(protocol::response::Response::decode(&wire(b"CGR\0", 80, &response)).is_err());
 }
 
@@ -406,9 +442,13 @@ fn competing_terminal_pairings_remain_incomplete_after_outer_pcr() {
     };
     let report = collagene_core::verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 4, "{:?}", report.findings);
+    assert_eq!(report.reconstructed_count(), 4, "{:?}", report.findings);
     assert_eq!(
-        report.products[3].sequence.as_str(),
+        report
+            .product(3)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
         target.sequence.as_str()
     );
     let collagene_core::verification::evidence::PhysicalProcessingEvidence::OverlapExtension(

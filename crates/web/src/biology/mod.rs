@@ -20,6 +20,8 @@ pub(crate) mod construct_qc_scans;
 pub(crate) mod construct_qc_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod controller;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod ivt;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod methylation;
 #[cfg(target_arch = "wasm32")]

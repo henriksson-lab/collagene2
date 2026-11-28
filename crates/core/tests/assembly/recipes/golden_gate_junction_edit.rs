@@ -164,7 +164,10 @@ fn literal_inserted_circle_uses_real_bsai_or_sapi_ends_and_keeps_retained_oligos
             report.findings
         );
         assert_eq!(
-            report.products.last().unwrap().sequence,
+            report
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence,
             p.intent.target.sequence
         );
     }

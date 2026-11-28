@@ -29,15 +29,15 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
-pub const ENGINE_VERSION: &str = "material-derivation-4";
-pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v4";
+pub const ENGINE_VERSION: &str = "material-derivation-5";
+pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v5";
 pub const MEDIA_TYPE: &str = "application/vnd.collagene.material-derivation";
-pub const EVENT_OPERATION: &str = "Target-free native material derivation v4";
+pub const EVENT_OPERATION: &str = "Target-free native material derivation v5";
 pub const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_CAPSULE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 pub const MAX_SOURCES: usize = 2;
-const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x04";
+const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x05";
 const HEADER: usize = 44;
 const CONTEXT_KEY: &str = "source:material_derivation:context";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -481,7 +481,7 @@ impl Record {
         crate::material::capsule::derived_record_preflight(self)
     }
     pub(crate) fn validate_shallow(&self) -> Result<(), Error> {
-        if self.schema_version != 4
+        if self.schema_version != 5
             || self.engine_version != ENGINE_VERSION
             || self.scientific_engine.is_empty()
             || self.scientific_engine.len() > 128
@@ -629,7 +629,7 @@ pub fn save_record(record: &Record) -> Result<Vec<u8>, Error> {
 }
 /// Header/size/checksum admission before decoding exactly ONE JSON level. Saved
 /// Derived origins contain opaque bytes, never recursively nested Record DTOs.
-pub(crate) fn load_record_shallow(bytes: &[u8]) -> Result<Record, Error> {
+pub(crate) fn decode_record_resources(bytes: &[u8]) -> Result<Record, Error> {
     if bytes.len() < HEADER || bytes.len() > MAX_RECORD_BYTES || &bytes[..8] != MAGIC {
         return Err(bad("invalid bounded native record header"));
     }
@@ -640,6 +640,14 @@ pub(crate) fn load_record_shallow(bytes: &[u8]) -> Result<Record, Error> {
     }
     let record: Record = serde_json::from_slice(&bytes[HEADER..])
         .map_err(|_| bad("invalid native derivation JSON"))?;
+    if record.schema_version != 5 || record.request.sources.len() > MAX_SOURCES {
+        return Err(bad("unsupported or oversized native derivation record"));
+    }
+    Ok(record)
+}
+/// Current-frame admission followed by exact documentary semantics.
+pub(crate) fn load_record_shallow(bytes: &[u8]) -> Result<Record, Error> {
+    let record = decode_record_resources(bytes)?;
     record.validate_shallow()?;
     if save_record_shallow(&record)? != bytes {
         return Err(bad("record is not canonical"));
@@ -1100,7 +1108,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
     };
     let modifications = fresh.tracked.summary()?;
     let record = Record {
-        schema_version: 4,
+        schema_version: 5,
         engine_version: ENGINE_VERSION.into(),
         scientific_engine: verification::ENGINE_VERSION.into(),
         source_workspace_fingerprint: fingerprint,

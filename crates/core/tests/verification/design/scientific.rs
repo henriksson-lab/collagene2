@@ -473,7 +473,13 @@ fn verifier_reconstructs_products_instead_of_believing_claims() {
     let (mut plan, target) = assembly_plan();
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::ConsistentUnderAssumptions);
-    assert_eq!(report.products[0].sequence, target.sequence);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence,
+        target.sequence
+    );
     assert!(!report.exhaustive_alternative_search);
     if let Operation::Overlap { overlaps, .. } = &mut plan.steps[0] {
         overlaps[0] = 3;

@@ -174,6 +174,7 @@ fn digest(s: &str) -> bool {
 }
 #[derive(Default)]
 struct Budget {
+    resource_only: bool,
     bytes: usize,
     steps: usize,
     bases: usize,
@@ -181,10 +182,28 @@ struct Budget {
     models: collagene_model::bounds::ModelBudget,
 }
 impl Budget {
+    fn plan_resources(&mut self, plan: &DesignPlan) -> Result<(), Error> {
+        add(&mut self.steps, plan.steps.len(), MAX_STEPS)?;
+        add(&mut self.inputs, plan.inputs.len(), 1000)?;
+        crate::encoding::bounded_json::preflight(plan, MAX_AGGREGATE_ORIGIN_BYTES)?;
+        for input in &plan.inputs {
+            add(
+                &mut self.bases,
+                input.molecule.sequence.len(),
+                MAX_INPUT_BASES,
+            )?;
+            self.models.molecule(&input.molecule)?;
+        }
+        Ok(())
+    }
     fn model(&mut self, molecule: &Molecule) -> Result<(), Error> {
         add(&mut self.bases, molecule.sequence.len(), MAX_INPUT_BASES)?;
         self.models.molecule(molecule)?;
-        molecule.validate()
+        if self.resource_only {
+            Ok(())
+        } else {
+            molecule.validate()
+        }
     }
     fn plan(&mut self, plan: &DesignPlan) -> Result<(), Error> {
         add(&mut self.steps, plan.steps.len(), MAX_STEPS)?;
@@ -435,8 +454,12 @@ fn walk<'a>(
                 budget.model(&origin.target)?;
                 let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
 
-                budget.plan(&candidate.plan)?;
-                shallow_binding(&origin, &candidate)?;
+                if budget.resource_only {
+                    budget.plan_resources(&candidate.plan)?;
+                } else {
+                    budget.plan(&candidate.plan)?;
+                    shallow_binding(&origin, &candidate)?;
+                }
                 visit(&origin, &candidate)?;
                 for step in candidate.plan.steps {
                     match step {
@@ -462,20 +485,27 @@ fn walk<'a>(
                     origin.as_ref(),
                     crate::material::derivation::MAX_CAPSULE_BYTES,
                 )?;
-                if origin.schema_version != 4 {
+                if origin.schema_version != 5 {
                     return Err(bad("unsupported material capsule schema"));
                 }
-                run_material::event_shape(&origin.product)?;
-                let record =
-                    crate::material::derivation::load_record_shallow(&origin.record_bytes)?;
-                record.validate_shallow()?;
-                crate::material::derivation::validate_source_snapshots(
-                    &record.request,
-                    &origin.source_snapshots,
-                )?;
-                if origin.product != record.product {
-                    return Err(bad("material capsule source/product snapshot changed"));
+                if origin.source_snapshots.len() > crate::material::derivation::MAX_SOURCES {
+                    return Err(Error::TooLarge);
                 }
+                let record = if budget.resource_only {
+                    crate::material::derivation::decode_record_resources(&origin.record_bytes)?
+                } else {
+                    run_material::event_shape(&origin.product)?;
+                    let record =
+                        crate::material::derivation::load_record_shallow(&origin.record_bytes)?;
+                    crate::material::derivation::validate_source_snapshots(
+                        &record.request,
+                        &origin.source_snapshots,
+                    )?;
+                    if origin.product != record.product {
+                        return Err(bad("material capsule source/product snapshot changed"));
+                    }
+                    record
+                };
                 for source in &origin.source_snapshots {
                     budget.model(&source.molecule)?;
                 }
@@ -496,7 +526,16 @@ fn walk<'a>(
                 for source in &origin.source_snapshots {
                     budget.model(&source.molecule)?;
                 }
-                let record = origin.validate_shallow()?;
+                let record = if budget.resource_only {
+                    if origin.schema_version != 2 || origin.source_snapshots.len() > 32 {
+                        return Err(bad("unsupported or oversized graph capsule"));
+                    }
+                    crate::cloning::topo::graph_history::decode_record_resources(
+                        &origin.record_bytes,
+                    )?
+                } else {
+                    origin.validate_shallow()?
+                };
                 add(
                     &mut budget.steps,
                     record
@@ -522,7 +561,17 @@ fn walk<'a>(
                     record.as_ref(),
                     crate::cloning::topo::graph_history::MAX_RECORD_BYTES,
                 )?;
-                record.validate_documentary()?;
+                if budget.resource_only {
+                    if record.schema_version != 2
+                        || record.request.bindings.len() > 32
+                        || record.request.request.steps.len() > 64
+                        || record.request.request.recipe.materials.len() > 64
+                    {
+                        return Err(bad("unsupported or oversized graph record"));
+                    }
+                } else {
+                    record.validate_documentary()?;
+                }
                 add(
                     &mut budget.steps,
                     record
@@ -558,7 +607,15 @@ fn walk<'a>(
             }
             Pending::DerivedRecord(record) => {
                 charge_serialized(&mut budget, record.as_ref())?;
-                record.validate_shallow()?;
+                if budget.resource_only {
+                    if record.schema_version != 5
+                        || record.request.sources.len() > crate::material::derivation::MAX_SOURCES
+                    {
+                        return Err(bad("unsupported or oversized native derivation record"));
+                    }
+                } else {
+                    record.validate_shallow()?;
+                }
                 add(&mut budget.steps, 1, MAX_STEPS)?;
                 derived_visit(&record, None)?;
                 match record {
@@ -597,6 +654,25 @@ impl Capsule {
             |_, _| Ok(()),
         )
     }
+}
+/// Resource admission for a current editable plan. Input identity/revisions,
+/// molecule semantics and dependency validity are independent engine checks.
+/// Native origins retain the shared ancestry byte/base/step/input/depth budgets.
+/// Their selection, revision and source semantics are checked only on actual use;
+/// a bounded wrong origin does not invalidate unrelated independent branches.
+pub fn plan_resource_preflight(plan: &DesignPlan) -> Result<(), Error> {
+    let mut budget = Budget {
+        resource_only: true,
+        ..Budget::default()
+    };
+    budget.plan_resources(plan)?;
+    walk(
+        origins(plan),
+        budget,
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+        |_, _| Ok(()),
+    )
 }
 pub fn plan_preflight(plan: &DesignPlan) -> Result<(), Error> {
     if origins(plan).is_empty() {
@@ -1027,7 +1103,7 @@ pub fn documentary_origins(
                     return Err(bad("root kind differs"));
                 };
                 run_material::MaterialOrigin::Derived(crate::material::derivation::Capsule {
-                    schema_version: 4,
+                    schema_version: 5,
                     product: product.clone(),
                     record_bytes: workspace.attachments[&hash].bytes.clone(),
                     source_snapshots: record
@@ -1320,8 +1396,9 @@ impl ReplayEvidence {
             return Err(bad("invalid material revision summary"));
         }
         let report = self.decode_report()?;
+        report.validate_documentary()?;
         let mut bases = 0;
-        for product in &report.products {
+        for product in report.steps.iter().filter_map(|step| step.product.as_ref()) {
             add(&mut bases, product.sequence.len(), 32_000_000)?;
             collagene_model::bounds::model_preflight(&[product])?;
             product.validate()?;
@@ -1330,12 +1407,18 @@ impl ReplayEvidence {
         if report.plan_revision != candidate.plan_revision
             || report.target_revision != self.origin.target_event.revision
             || report.status == Status::Invalid
-            || report.products.len() != self.origin.products.len()
+            || report.steps.len() != self.origin.products.len()
             || !report
-                .products
+                .steps
                 .iter()
                 .zip(&self.origin.products)
-                .all(|(p, b)| p.revision() == b.revision)
+                .all(|(step, binding)| {
+                    step.state == crate::verification::evidence::StepState::Reconstructed
+                        && step
+                            .product
+                            .as_ref()
+                            .is_some_and(|product| product.revision() == binding.revision)
+                })
             || report.engine_version.is_empty()
             || report.engine_version.len() > 128
         {
@@ -1355,27 +1438,38 @@ pub(crate) struct Replayed {
 pub(crate) fn replay(origin: &Capsule, source: &Molecule) -> Result<Replayed, Error> {
     origin.validate_documentary()?;
     if source.revision() != origin.selection.event.revision {
-        return Err(bad("selected outer source revision changed"));
+        return Err(Error::Format(
+            "saved material recipe: selected outer source revision changed".into(),
+        ));
     }
     let candidate = transfer::decode_candidate_shallow(&origin.candidate)?;
     let (report, mut states) =
         verification::engine::verify_with_tracked(&candidate.plan, &origin.target);
+    report.validate_documentary()?;
     if report.status == Status::Invalid
-        || report.products.len() != origin.products.len()
+        || report.steps.len() != origin.products.len()
         || !report
-            .products
+            .steps
             .iter()
             .zip(&origin.products)
-            .all(|(p, b)| p.revision() == b.revision)
+            .all(|(step, binding)| {
+                step.state == crate::verification::evidence::StepState::Reconstructed
+                    && step
+                        .product
+                        .as_ref()
+                        .is_some_and(|product| product.revision() == binding.revision)
+            })
     {
         return Err(bad(
             "origin no longer reconstructs its complete recorded product set against its own target",
         ));
     }
-    let product = &report.products[origin.selection.step_index];
+    let product = report
+        .product(origin.selection.step_index)
+        .ok_or_else(|| bad("selected original step has no reconstructed product"))?;
     if !cloning_outputs::same_reference(source, product) {
-        return Err(bad(
-            "outer source differs from freshly reconstructed origin material",
+        return Err(Error::Format(
+            "saved material recipe: outer source differs from freshly reconstructed origin material".into(),
         ));
     }
     let tracked = states

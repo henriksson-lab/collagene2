@@ -190,7 +190,7 @@ fn paired_library_projection_compiles_fresh_annealing_with_both_ordered_sources(
     assert!(anneals.iter().all(|(_, _, candidate)| *candidate == 0));
     let report = verification::engine::verify(&compiled.plan, &compiled.resolved.target);
     assert_eq!(
-        report.products.last().unwrap().sequence.as_str(),
+        report.final_product().unwrap().sequence.as_str(),
         "ACGTTAAAGGCC"
     );
     assert!(

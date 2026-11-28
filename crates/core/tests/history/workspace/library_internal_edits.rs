@@ -217,9 +217,8 @@ fn proposal(
     assert_eq!(
         p.preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         EDITED
@@ -338,9 +337,8 @@ fn derived_source_row_proposal_batch_restart_release_and_native_replay_preserve_
     assert_eq!(
         replay
             .current_report
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         EDITED

@@ -49,6 +49,8 @@ impl ServerHandler for CollageneServer {
         let store = self.session.store.lock().unwrap();
         let catalog = catalog_tools::builtin()?;
         let mut resources = vec![
+            Resource::new(collagene_core::verification::checks::RULE_SPEC,
+                "Versioned deterministic verification predicates").with_mime_type("application/json"),
             Resource::new(
                 multisite_recombination_tools::THREE_ENTRY_PROFILE_URI,
                 "Finite three-entry LR source contexts · Tol2kit228/383/302 and destination VectorII",
@@ -99,7 +101,12 @@ impl ServerHandler for CollageneServer {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, ErrorData> {
-        let value = if request.uri == recombination_tools::PROFILE_URI {
+        let value = if request.uri == collagene_core::verification::checks::RULE_SPEC {
+            use collagene_core::verification::checks::{RULE_SPEC, RuleId};
+            serde_json::json!({"uri":RULE_SPEC,"revision":1,"engine":collagene_core::verification::ENGINE_VERSION,
+                "rules":RuleId::ALL.iter().map(|rule| serde_json::json!({"id":rule.id(),"predicate":rule.predicate()})).collect::<Vec<_>>(),
+                "authority":"Named deterministic model predicates, not measured experimental outcomes. Scientific/profile citations are retained separately at their actual check sites."})
+        } else if request.uri == recombination_tools::PROFILE_URI {
             recombination_tools::profile()?
         } else if request.uri == multisite_recombination_tools::THREE_ENTRY_PROFILE_URI {
             multisite_recombination_tools::three_entry_profile()?

@@ -113,7 +113,7 @@ pub fn inspect(
         origin_report
             .findings
             .into_iter()
-            .map(|s| format!("Origin finding: {s}")),
+            .map(|finding| format!("Origin finding: {}", finding.message)),
     );
     findings.extend(
         origin_report

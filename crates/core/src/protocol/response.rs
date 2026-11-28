@@ -72,6 +72,23 @@ impl Response {
         let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::BaseEditing(report) => report.validate_binding(&response.revision)?,
+            AnalysisResult::IvtProfiles(profiles) => {
+                let expected = crate::rna_chemistry::ivt::profiles()
+                    .map_err(|error| Error::Format(error.to_string()))?;
+                if profiles != &expected
+                    || response.revision
+                        != crate::rna_chemistry::ivt::catalogue_revision()
+                            .map_err(|error| Error::Format(error.to_string()))?
+                {
+                    return Err(Error::Format("IVT profile catalogue changed".into()));
+                }
+            }
+            AnalysisResult::IvtTemplate(report) => {
+                report
+                    .validate_binding(&response.revision)
+                    .map_err(|error| Error::Format(error.to_string()))?;
+            }
             AnalysisResult::ConstructQc(report) => report.validate_binding(&response.revision)?,
             AnalysisResult::AssemblyStandard(report) => {
                 report.validate_binding(&response.revision)?

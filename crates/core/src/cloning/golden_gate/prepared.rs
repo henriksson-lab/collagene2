@@ -161,22 +161,31 @@ pub fn inspect(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<R
         &mut budget,
     )?;
     let missing_physical = (0..r.recipe.fragments.len())
-        .filter(|i| *i >= preview.prepared.len() || physical.get(*i).is_none_or(Option::is_none))
+        .filter(|i| {
+            preview.prepared.get(*i).is_none_or(Option::is_none)
+                || physical.get(*i).is_none_or(Option::is_none)
+        })
         .collect::<Vec<_>>();
     let pool = if preview.preparation_complete && missing_physical.is_empty() {
+        // This branch has every original row. Never compact sparse preparations.
+        let references = preview
+            .prepared
+            .iter()
+            .map(|m| {
+                m.as_ref()
+                    .ok_or_else(|| bad("complete original-row reference unavailable"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        collagene_model::bounds::model_preflight(&references)?;
+        crate::encoding::bounded_json::preflight(&references, 32 * 1024 * 1024)?;
+        let references = references.into_iter().cloned().collect::<Vec<_>>();
         let substrates = physical
             .into_iter()
             .map(|d| d.ok_or_else(|| bad("fresh prepared physical state unavailable")))
             .collect::<Result<Vec<_>, _>>()?;
         Some(
-            golden_gate::simulate_tracked(
-                &preview.prepared,
-                &substrates,
-                &r.options,
-                None,
-                &mut budget,
-            )?
-            .report,
+            golden_gate::simulate_tracked(&references, &substrates, &r.options, None, &mut budget)?
+                .report,
         )
     } else {
         None
@@ -245,7 +254,9 @@ fn pool_guard(report: &Report, pool: &GoldenGateReport) -> Result<(), Error> {
     texts(&pool.truncation_reasons)?;
     let motif = pool.options.enzyme.profile().recognition.len();
     for (i, s) in pool.sources.iter().enumerate() {
-        let actual = &report.preview.prepared[i];
+        let actual = report.preview.prepared[i]
+            .as_ref()
+            .ok_or_else(|| bad("pool source original row is unavailable"))?;
         if s.source_index != i
             || s.revision != crate::encoding::bounded_json::hash(actual)?
             || s.name != actual.name.chars().take(1024).collect::<String>()
@@ -264,7 +275,9 @@ fn pool_guard(report: &Report, pool: &GoldenGateReport) -> Result<(), Error> {
         if f.source_index >= n
             || f.fragment_index >= 128
             || f.source_revision != pool.sources[f.source_index].revision
-            || f.top_start > report.preview.prepared[f.source_index].sequence.len()
+            || report.preview.prepared[f.source_index]
+                .as_ref()
+                .is_none_or(|source| f.top_start > source.sequence.len())
         {
             return Err(bad("invalid pool source/fragment binding"));
         }
@@ -394,12 +407,12 @@ impl Report {
             }
         }
         for i in 0..n {
-            if (i >= self.preview.prepared.len()
+            if (self.preview.prepared.get(i).is_none_or(Option::is_none)
                 || self.preview.physical.get(i).is_none_or(Option::is_none))
                 != missing.contains(&i)
             {
                 return Err(bad(
-                    "missing physical roles disagree with the fresh prepared prefix",
+                    "missing physical roles disagree with the original-row-indexed fresh preparation",
                 ));
             }
         }

@@ -295,7 +295,7 @@ fn topo_step_text(
                 .iter()
                 .find(|input| input.id == *id)
                 .map(|input| input.revision.clone()),
-            Source::Step(index) => report.products.get(*index).map(Molecule::revision),
+            Source::Step(index) => report.product(*index).map(Molecule::revision),
         };
         writeln!(
             out,
@@ -443,7 +443,7 @@ fn topo_actions_step_text(
                 .iter()
                 .find(|i| i.id == *id)
                 .map(|i| i.revision.clone()),
-            Source::Step(i) => report.products.get(*i).map(Molecule::revision),
+            Source::Step(i) => report.product(*i).map(Molecule::revision),
         };
         writeln!(
             out,
@@ -1969,9 +1969,13 @@ fn export_protocol_pdf_checked_inner(
                         }
                     }
 
-                    layout.paragraph_size(&format!("Fresh originating reconstruction: {:?}, engine {}, plan {}, target {}. Selected originating step {} of {}; material revision {}. Complete origin products and typed graph evidence are retained in the reconstruction report. No component isolation or newly performed historical reaction is inferred.",origin_report.status,origin_report.engine_version,origin_report.plan_revision,origin_report.target_revision,evidence.origin.selection.step_index+1,origin_report.products.len(),evidence.material_revision),9.0,INK)?;
+                    layout.paragraph_size(&format!("Fresh originating reconstruction: {:?}, engine {}, plan {}, target {}. Selected originating step {} of {}; material revision {}. Complete origin products and typed graph evidence are retained in the reconstruction report. No component isolation or newly performed historical reaction is inferred.",origin_report.status,origin_report.engine_version,origin_report.plan_revision,origin_report.target_revision,evidence.origin.selection.step_index+1,origin_report.planned_steps,evidence.material_revision),9.0,INK)?;
                     for finding in &origin_report.findings {
-                        layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
+                        layout.paragraph_size(
+                            &format!("Origin finding: {}", finding.summary()),
+                            9.0,
+                            INK,
+                        )?;
                     }
                     for assumption in &origin_report.assumptions {
                         layout.paragraph_size(
@@ -1998,7 +2002,7 @@ fn export_protocol_pdf_checked_inner(
                 }
             }
         }
-        if let Some(product) = report.products.get(index) {
+        if let Some(product) = report.product(index) {
             layout.paragraph_size(
                 &format!(
                     "Reconstructed: {} | {} symbols | {:?}\nProduct revision {}",
@@ -2018,12 +2022,19 @@ fn export_protocol_pdf_checked_inner(
                 layout.paragraph_size(&summary.describe(), 9.0, INK)?;
             }
         } else {
-            layout.paragraph_size("No reconstructed product for this step. See verification findings; later steps are not established.",9.0,RED)?;
+            layout.paragraph_size("No reconstructed product for this step. Review its typed outcome and direct dependencies; independent later steps are reported separately.",9.0,RED)?;
         }
     }
     layout.heading("Verification findings")?;
     for finding in &report.findings {
-        layout.paragraph(&format!("- {finding}"))?;
+        layout.paragraph(&format!("- {}", finding.summary()))?;
+        for citation in &finding.citations {
+            layout.paragraph_size(
+                &format!("{} · {}", citation.source, citation.locator),
+                9.0,
+                INK,
+            )?;
+        }
     }
     layout.heading("Assumptions and limits")?;
     for assumption in &report.assumptions {

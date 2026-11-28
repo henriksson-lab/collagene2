@@ -202,7 +202,7 @@ pub fn save_record(r: &Record) -> Result<Vec<u8>, Error> {
     out.extend(body);
     Ok(out)
 }
-pub fn load_record(bytes: &[u8]) -> Result<Record, Error> {
+pub(crate) fn decode_record_resources(bytes: &[u8]) -> Result<Record, Error> {
     if bytes.len() < 44
         || bytes.len() > MAX_RECORD_BYTES
         || &bytes[..8] != MAGIC
@@ -212,6 +212,17 @@ pub fn load_record(bytes: &[u8]) -> Result<Record, Error> {
         return Err(bad("graph record frame/hash differs"));
     }
     let r: Record = serde_json::from_slice(&bytes[44..]).map_err(|e| bad(&e.to_string()))?;
+    if r.schema_version != 2
+        || r.request.bindings.len() > 32
+        || r.request.request.steps.len() > 64
+        || r.request.request.recipe.materials.len() > 64
+    {
+        return Err(bad("unsupported or oversized graph record"));
+    }
+    Ok(r)
+}
+pub fn load_record(bytes: &[u8]) -> Result<Record, Error> {
+    let r = decode_record_resources(bytes)?;
     r.validate_documentary()?;
     if save_record(&r)? != bytes {
         return Err(bad("graph record is not canonical"));

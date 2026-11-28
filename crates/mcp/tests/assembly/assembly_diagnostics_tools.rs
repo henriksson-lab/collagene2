@@ -119,31 +119,32 @@ async fn failed_middle_preparation_locates_the_executed_step_and_blocks_later_ro
         assert_eq!(d["plan_revision"], result["plan_revision"]);
         assert_eq!(d["target_revision"], target["revision"]);
         // compile_preparations emits all PCR operations first; treatments follow.
+        assert_eq!(d["rows"][0]["state"], "Reconstructed");
         assert_eq!(
-            d["rows"][0]["state"],
-            if ligation { "Blocked" } else { "Reconstructed" }
+            d["rows"][0]["completed_steps"],
+            if ligation { 2 } else { 1 }
         );
-        assert_eq!(d["rows"][0]["completed_steps"], 1);
         assert_eq!(d["rows"][0]["total_steps"], if ligation { 2 } else { 1 });
         assert_eq!(d["rows"][0]["role"], "first");
-        assert_eq!(d["rows"][1]["state"], "Failed");
+        assert_eq!(d["rows"][1]["state"], "Rejected");
         assert_eq!(d["rows"][1]["index"], 1);
         assert_eq!(d["rows"][1]["role"], "middle");
         assert_eq!(d["rows"][1]["input_id"], "b");
-        assert_eq!(d["rows"][2]["state"], "Blocked");
-        assert_eq!(d["failure"]["row"], 1);
-        assert_eq!(d["failure"]["step"], expected_step);
-        assert_eq!(d["failure"]["stage"], "Pcr");
+        assert_eq!(d["rows"][2]["state"], "Reconstructed");
+        assert_eq!(
+            d["rows"][2]["completed_steps"], d["rows"][2]["total_steps"],
+            "independent later preparation must complete despite the rejected middle row"
+        );
+        assert_eq!(d["failures"][0]["row"], 1);
+        assert_eq!(d["failures"][0]["step"], expected_step);
+        assert_eq!(d["failures"][0]["stage"], "Pcr");
         assert!(
-            d["failure"]["recovery"]
+            d["failures"][0]["recovery"]
                 .as_str()
                 .is_some_and(|s| !s.is_empty())
         );
         let full = matches_artifact(&c, &result).await;
-        assert_eq!(
-            full["prepared"].as_array().unwrap().len(),
-            if ligation { 0 } else { 1 }
-        );
+        assert_eq!(full["prepared"].as_array().unwrap().len(), 3);
         if ligation {
             assert_eq!(full["compiled"]["rows"][0]["treatment_step"], 3);
             assert!(full["compiled"]["plan"]["steps"][0].get("Pcr").is_some());
@@ -155,9 +156,16 @@ async fn failed_middle_preparation_locates_the_executed_step_and_blocks_later_ro
             );
         }
         assert_eq!(
-            full["verification"]["products"].as_array().unwrap().len(),
-            expected_step as usize
+            full["verification"]["steps"].as_array().unwrap().len(),
+            full["compiled"]["plan"]["steps"].as_array().unwrap().len()
         );
+        assert!(full["prepared"][1].is_null());
+        assert!(full["prepared"][2].is_object());
+        assert_eq!(
+            full["verification"]["steps"][expected_step as usize]["state"],
+            "Rejected"
+        );
+        assert!(full["verification"]["steps"][expected_step as usize]["product"].is_null());
         // Diagnostics do not change registry count, candidate identity or historical export routes.
         let repeated = call(
             &c,
@@ -212,8 +220,8 @@ async fn final_target_mismatch_preserves_reconstructed_rows_and_real_junction_ev
         assert_eq!(d["status"], "Invalid");
         assert_eq!(d["rows"][0]["state"], "Reconstructed");
         assert_eq!(d["rows"][1]["state"], "Reconstructed");
-        assert_eq!(d["failure"]["stage"], "TargetComparison");
-        assert!(d["failure"]["row"].is_null());
+        assert_eq!(d["failures"][0]["stage"], "TargetComparison");
+        assert!(d["failures"][0]["row"].is_null());
         assert_eq!(d["junctions"][0]["upstream"], 0);
         assert_eq!(d["junctions"][0]["downstream"], 1);
         assert_eq!(

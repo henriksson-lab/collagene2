@@ -71,10 +71,24 @@ fn blocked_cpg_site_keeps_a_circle_intact_and_unknown_withholds_the_digest() {
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 2);
-    assert_eq!(r.products[1].sequence.as_str(), "AAGCGGCCGCAATT");
-    assert_eq!(r.products[1].topology, Topology::Circular);
-    assert_eq!(summary(&r.products[1]).known_modified, 4);
+    assert_eq!(r.reconstructed_count(), 2);
+    assert_eq!(
+        r.product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AAGCGGCCGCAATT"
+    );
+    assert_eq!(
+        r.product(1)
+            .expect("selected step must reconstruct")
+            .topology,
+        Topology::Circular
+    );
+    assert_eq!(
+        summary(r.product(1).expect("selected step must reconstruct")).known_modified,
+        4
+    );
     let p = plan(
         source.clone(),
         &source,
@@ -82,7 +96,7 @@ fn blocked_cpg_site_keeps_a_circle_intact_and_unknown_withholds_the_digest() {
     );
     let r = verify(&p, &source);
     assert_eq!(r.status, Status::Incomplete);
-    assert_eq!(r.products.len(), 1);
+    assert_eq!(r.reconstructed_count(), 1);
 }
 #[test]
 fn unmodified_checked_cut_and_self_ligation_reconstruct_literal_independent_target() {
@@ -111,14 +125,38 @@ fn unmodified_checked_cut_and_self_ligation_reconstruct_literal_independent_targ
         "{:?}",
         r.findings
     );
-    assert_eq!(r.products.len(), 3);
-    assert_eq!(r.products[1].sequence.as_str(), "GGCCGCAATTAAGC");
-    assert_eq!(r.products[1].topology, Topology::Linear);
-    assert_eq!(r.products[2].topology, Topology::Circular);
-    assert!(r.products.iter().all(|m| {
-        let s = summary(m);
-        s.known_modified == 0 && s.unknown_eligible == 0 && s.generation.len() == 1
-    }));
+    assert_eq!(r.reconstructed_count(), 3);
+    assert_eq!(
+        r.product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "GGCCGCAATTAAGC"
+    );
+    assert_eq!(
+        r.product(1)
+            .expect("selected step must reconstruct")
+            .topology,
+        Topology::Linear
+    );
+    assert_eq!(
+        r.product(2)
+            .expect("selected step must reconstruct")
+            .topology,
+        Topology::Circular
+    );
+    assert!(
+        r.steps
+            .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
+            .all(|m| {
+                let s = summary(m);
+                s.known_modified == 0 && s.unknown_eligible == 0 && s.generation.len() == 1
+            })
+    );
     let html = export_protocol_html(&p, &source);
     assert!(html.contains("Checked positional-modification digest"));
     assert!(html.contains("closed Dam/Dcm/CpG source generation"));
@@ -159,16 +197,25 @@ fn uncatalogued_cleavage_cannot_hide_declared_modifications_and_cut_ligate_prese
     );
     let r = verify(&p, &source);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert_eq!(r.products.len(), 4);
-    for product in &r.products {
+    assert_eq!(r.reconstructed_count(), 4);
+    for step in &r.steps {
+        let product = step
+            .product
+            .as_ref()
+            .expect("each declared step must reconstruct");
         assert_eq!(summary(product).known_modified, 4);
     }
     assert!(
         r.findings
             .iter()
-            .any(|s| s.contains("uncatalogued assumed-complete cleavage"))
+            .any(|s| s.message.contains("uncatalogued assumed-complete cleavage"))
     );
-    assert_eq!(r.products[3].topology, Topology::Circular);
+    assert_eq!(
+        r.product(3)
+            .expect("selected step must reconstruct")
+            .topology,
+        Topology::Circular
+    );
 }
 #[test]
 fn source_generation_cannot_be_reapplied_to_a_descendant() {
@@ -186,8 +233,12 @@ fn source_generation_cannot_be_reapplied_to_a_descendant() {
     );
     let r = verify(&p, &source);
     assert_eq!(r.status, Status::Incomplete);
-    assert_eq!(r.products.len(), 1);
-    assert!(r.findings.iter().any(|s| s.contains("original input")));
+    assert_eq!(r.reconstructed_count(), 1);
+    assert!(
+        r.findings
+            .iter()
+            .any(|s| s.message.contains("original input"))
+    );
 }
 #[test]
 fn imported_summary_cannot_supply_physical_modification_authority() {
@@ -205,7 +256,7 @@ fn imported_summary_cannot_supply_physical_modification_authority() {
     );
     let r = verify(&p, &source);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
     if let Ok(dir) = std::env::var("COLLAGENE_QA_FIXTURE_DIR") {
         let path = std::path::Path::new(&dir).join("collagene2-checked-forged.cg2");
         std::fs::write(path, protocol::save_document(&source).unwrap()).unwrap();
@@ -213,6 +264,10 @@ fn imported_summary_cannot_supply_physical_modification_authority() {
 }
 #[test]
 fn stale_catalog_selection_is_refused_before_native_processing() {
+    use collagene_core::verification::{
+        checks::{CheckScope, CheckVerdict, RuleId},
+        evidence::StepState,
+    };
     let source = source();
     let mut step = checked(Source::Step(0), "NotI");
     if let Operation::CheckedDigest { selection, .. } = &mut step {
@@ -220,8 +275,22 @@ fn stale_catalog_selection_is_refused_before_native_processing() {
     }
     let p = plan(source.clone(), &source, vec![declare(M::Unmodified), step]);
     let r = verify(&p, &source);
-    assert_ne!(r.status, Status::ConsistentUnderAssumptions);
-    assert!(r.products.is_empty());
+    assert_eq!(r.status, Status::Invalid);
+    assert_eq!(r.reconstructed_count(), 1);
+    assert_eq!(r.steps[0].state, StepState::Reconstructed);
+    let declared = r
+        .product(0)
+        .expect("valid original-source declaration is retained");
+    assert_eq!(declared.sequence, source.sequence);
+    assert_eq!(declared.topology, source.topology);
+    assert_eq!(r.steps[1].state, StepState::Rejected);
+    assert!(r.product(1).is_none());
+    assert!(r.findings.iter().any(|finding| {
+        finding.rule == RuleId::RestrictionProfile
+            && finding.verdict == CheckVerdict::Fail
+            && finding.scope == CheckScope::Step { step_index: 1 }
+    }));
+    r.validate_documentary().unwrap();
 }
 #[test]
 fn text_exports_disclose_the_loss_of_positional_state_and_do_not_restore_it() {
@@ -233,7 +302,10 @@ fn text_exports_disclose_the_loss_of_positional_state_and_do_not_restore_it() {
     );
     let r = verify(&p, &source);
     assert_eq!(r.status, Status::ConsistentUnderAssumptions);
-    let mut product = r.products[1].clone();
+    let mut product = r
+        .product(1)
+        .expect("selected step must reconstruct")
+        .clone();
     product.name = "tracked_product".into(); // EMBL profile requires a valid entry identifier.
     for format in [formats::TextFormat::GenBank, formats::TextFormat::Embl] {
         let export = formats::export_with_report(&product, format).unwrap();

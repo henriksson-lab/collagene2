@@ -113,8 +113,12 @@ fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_st
     assert_eq!(
         report
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![26, 30, 38, 38]
@@ -139,7 +143,11 @@ fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_st
     let verified = verification::engine::verify(&candidate.plan, &report.expected);
     assert_eq!(verified.status, Status::ConsistentUnderAssumptions);
     assert_eq!(
-        verified.products.last().unwrap().sequence.as_str(),
+        verified
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         EXPECTED
     );
     assert_eq!(serde_json::to_value(&source).unwrap(), before);
@@ -246,9 +254,8 @@ fn multiple_edits_and_reverse_original_stock_remain_explicit_in_binary_proposals
         assert_eq!(
             report
                 .verification
-                .products
-                .last()
-                .unwrap()
+                .final_product()
+                .expect("final declared step must reconstruct")
                 .sequence
                 .as_str(),
             stored_expected

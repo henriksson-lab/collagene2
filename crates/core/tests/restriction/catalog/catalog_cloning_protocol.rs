@@ -88,7 +88,14 @@ fn catalog_opcode_and_fresh_report_require_their_own_semantics_version() {
         report.status,
         verification::evidence::Status::ConsistentUnderAssumptions
     );
-    assert_eq!(report.products[0].sequence.as_str(), "CTAGCCCCAAAAG");
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "CTAGCCCCAAAAG"
+    );
     let response = Response {
         id: 170,
         revision: target.revision(),

@@ -107,11 +107,26 @@ fn sequence_only_overlap_outputs_remain_diagnostic_but_cannot_supply_either_pcr_
             "{:?}",
             reference.findings
         );
-        assert_eq!(reference.products.len(), 1);
-        assert_eq!(reference.products[0].sequence.as_str(), EXPECTED);
-        assert!(!reference.products[0].metadata.contains_key("duplex_model"));
+        assert_eq!(reference.reconstructed_count(), 1);
+        assert_eq!(
+            reference
+                .product(0)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            EXPECTED
+        );
         assert!(
-            !reference.products[0]
+            !reference
+                .product(0)
+                .expect("selected step must reconstruct")
+                .metadata
+                .contains_key("duplex_model")
+        );
+        assert!(
+            !reference
+                .product(0)
+                .expect("selected step must reconstruct")
                 .metadata
                 .contains_key("tracked_modifications")
         );
@@ -124,23 +139,41 @@ fn sequence_only_overlap_outputs_remain_diagnostic_but_cannot_supply_either_pcr_
             let report = verification::engine::verify(&attempted, &target);
             assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
             assert_eq!(
-                report.products.len(),
+                report.reconstructed_count(),
                 1,
                 "No PCR product may be invented from the reference prefix"
             );
-            assert_eq!(report.products[0].sequence.as_str(), EXPECTED);
-            assert!(!report.products[0].metadata.contains_key("duplex_model"));
+            assert_eq!(
+                report
+                    .product(0)
+                    .expect("selected step must reconstruct")
+                    .sequence
+                    .as_str(),
+                EXPECTED
+            );
             assert!(
-                !report.products[0]
+                !&report
+                    .product(0)
+                    .expect("selected step must reconstruct")
+                    .metadata
+                    .contains_key("duplex_model")
+            );
+            assert!(
+                !&report
+                    .product(0)
+                    .expect("selected step must reconstruct")
                     .metadata
                     .contains_key("tracked_modifications")
             );
             assert!(
-                report.findings.iter().any(|f| f.contains(if mismatches {
-                    "established physical template"
-                } else {
-                    "actual physical source state"
-                })),
+                report
+                    .findings
+                    .iter()
+                    .any(|f| f.message.contains(if mismatches {
+                        "established physical template"
+                    } else {
+                        "actual physical source state"
+                    })),
                 "{:?}",
                 report.findings
             );
@@ -166,10 +199,22 @@ fn original_reference_input_retains_its_explicit_intact_template_hypothesis() {
             "{:?}",
             report.findings
         );
-        assert_eq!(report.products.len(), 1);
-        assert_eq!(report.products[0].sequence.as_str(), EXPECTED);
-        let duplex: DuplexSummary =
-            serde_json::from_str(&report.products[0].metadata["duplex_model"]).unwrap();
+        assert_eq!(report.reconstructed_count(), 1);
+        assert_eq!(
+            report
+                .product(0)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            EXPECTED
+        );
+        let duplex: DuplexSummary = serde_json::from_str(
+            &report
+                .product(0)
+                .expect("selected step must reconstruct")
+                .metadata["duplex_model"],
+        )
+        .unwrap();
         assert_eq!(duplex.topology, Topology::Linear);
         assert!(duplex.nicks.is_empty());
     }
@@ -210,18 +255,39 @@ fn reconstructed_physical_pcr_feeds_exact_or_mutagenic_pcr_and_real_terminal_che
             "{:?}",
             report.findings
         );
-        assert_eq!(report.products.len(), 4);
-        assert_eq!(report.products[0].sequence.as_str(), EXPECTED);
-        assert_eq!(report.products[1].sequence.as_str(), expected);
-        let final_product = report.products.last().unwrap();
+        assert_eq!(report.reconstructed_count(), 4);
+        assert_eq!(
+            report
+                .product(0)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            EXPECTED
+        );
+        assert_eq!(
+            report
+                .product(1)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            expected
+        );
+        let final_product = report
+            .final_product()
+            .expect("final declared step must reconstruct");
         assert_eq!(final_product.sequence.as_str(), expected);
         assert_eq!(final_product.topology, Topology::Circular);
         let duplex: DuplexSummary =
             serde_json::from_str(&final_product.metadata["duplex_model"]).unwrap();
         assert!(duplex.covalently_closed_in_model);
         assert!(duplex.nicks.is_empty());
-        let modifications: ModificationSummary =
-            serde_json::from_str(&report.products[1].metadata["tracked_modifications"]).unwrap();
+        let modifications: ModificationSummary = serde_json::from_str(
+            &report
+                .product(1)
+                .expect("selected step must reconstruct")
+                .metadata["tracked_modifications"],
+        )
+        .unwrap();
         assert_eq!(modifications.known_modified, 0);
         assert_eq!(modifications.unknown_eligible, 0);
         assert!(modifications.known_unmodified > 0);
@@ -250,13 +316,16 @@ fn imported_projection_metadata_is_not_reinterpreted_as_an_original_physical_tem
         );
         let report = verification::engine::verify(&plan, &target);
         assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-        assert!(report.products.is_empty());
+        assert!((report.reconstructed_count() == 0));
         assert!(
-            report.findings.iter().any(|f| f.contains(if mismatches {
-                "imported physical"
-            } else {
-                "fresh native origin"
-            })),
+            report
+                .findings
+                .iter()
+                .any(|f| f.message.contains(if mismatches {
+                    "imported physical"
+                } else {
+                    "fresh native origin"
+                })),
             "{:?}",
             report.findings
         );
@@ -282,17 +351,32 @@ fn exact_pcr_uses_covered_staggered_template_but_mismatch_profile_remains_unsupp
         let report = verification::engine::verify(&plan, &target);
         // Tailing changes the actual template; subsequent PCR must neither
         // overwrite that parent nor inherit its unpaired enzymatic tails.
-        assert_eq!(report.products[1].sequence.as_str(), format!("{EXPECTED}A"));
-        let template: DuplexSummary =
-            serde_json::from_str(&report.products[1].metadata["duplex_model"]).unwrap();
+        assert_eq!(
+            report
+                .product(1)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            format!("{EXPECTED}A")
+        );
+        let template: DuplexSummary = serde_json::from_str(
+            &report
+                .product(1)
+                .expect("selected step must reconstruct")
+                .metadata["duplex_model"],
+        )
+        .unwrap();
         assert_eq!(template.top_length, EXPECTED.len() + 1);
         assert_eq!(template.bottom_length, EXPECTED.len() + 1);
         assert_eq!(template.bottom_start, -1);
         if mismatches {
             assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-            assert_eq!(report.products.len(), 2);
+            assert_eq!(report.reconstructed_count(), 2);
             assert!(
-                report.findings.iter().any(|f| f.contains("staggered")),
+                report
+                    .findings
+                    .iter()
+                    .any(|f| f.message.contains("staggered")),
                 "{:?}",
                 report.findings
             );
@@ -303,10 +387,22 @@ fn exact_pcr_uses_covered_staggered_template_but_mismatch_profile_remains_unsupp
                 "{:?}",
                 report.findings
             );
-            assert_eq!(report.products.len(), 3);
-            assert_eq!(report.products[2].sequence.as_str(), EXPECTED);
-            let product: DuplexSummary =
-                serde_json::from_str(&report.products[2].metadata["duplex_model"]).unwrap();
+            assert_eq!(report.reconstructed_count(), 3);
+            assert_eq!(
+                report
+                    .product(2)
+                    .expect("selected step must reconstruct")
+                    .sequence
+                    .as_str(),
+                EXPECTED
+            );
+            let product: DuplexSummary = serde_json::from_str(
+                &report
+                    .product(2)
+                    .expect("selected step must reconstruct")
+                    .metadata["duplex_model"],
+            )
+            .unwrap();
             assert_eq!(product.top_length, EXPECTED.len());
             assert_eq!(product.bottom_length, EXPECTED.len());
             assert_eq!(product.bottom_start, 0);

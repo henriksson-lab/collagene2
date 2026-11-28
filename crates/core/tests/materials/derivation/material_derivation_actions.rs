@@ -276,13 +276,17 @@ fn saved_staggered() -> (Workspace, EventBinding, MaterialOrigin) {
     };
     let reconstruction = collagene_core::verification::engine::verify(&plan, &target);
     assert_eq!(
-        reconstruction.products.len(),
+        reconstruction.reconstructed_count(),
         plan.steps.len(),
         "actual EcoRV cleavage and resection must reconstruct every step: {:?}",
         reconstruction.findings
     );
     assert_eq!(
-        reconstruction.products.last().unwrap().sequence.as_str(),
+        reconstruction
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AGTCCGATCGTAC"
     );
     let saved = run_lineage::record_run(

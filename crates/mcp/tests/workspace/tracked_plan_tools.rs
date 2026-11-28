@@ -91,8 +91,8 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
         report["engine_version"].as_str().unwrap(),
         collagene_core::verification::ENGINE_VERSION
     );
-    assert_eq!(report["products"].as_array().unwrap().len(), 2);
-    assert!(report["products"][1]["tracked_modifications"].is_object());
+    assert_eq!(report["steps"].as_array().unwrap().len(), 2);
+    assert!(report["steps"][1]["product"]["tracked_modifications"].is_object());
     let html = call(&c, "export_protocol", plan.clone()).await;
     let html = call(
         &c,

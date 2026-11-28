@@ -179,7 +179,10 @@ fn one_selected_row_preserves_manual_and_catalog_bytes_and_matches_literal_indep
         checked.findings
     );
     assert_eq!(
-        checked.products.last().unwrap().sequence,
+        checked
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence,
         report.intent.target.sequence
     );
 }

@@ -303,7 +303,9 @@ fn pinned_host_choice_is_documentary_and_cannot_change_or_forge_strand_calls() {
         .clone();
     let source = Molecule::dna("host declaration", "AAGATCCAGGCGTT", Topology::Linear).unwrap();
     let mut declaration = GenerationAssumptions {
-        host: Some(collagene_core::chemistry::source_host::SourceHost::from_current(&host.id).unwrap()),
+        host: Some(
+            collagene_core::chemistry::source_host::SourceHost::from_current(&host.id).unwrap(),
+        ),
         ..Default::default()
     };
     let tracked = TrackedDuplex::from_input(&source, &declaration).unwrap();

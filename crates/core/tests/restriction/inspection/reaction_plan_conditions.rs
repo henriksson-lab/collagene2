@@ -75,13 +75,20 @@ fn declared_unknown_and_unmet_conditions_keep_products_and_independent_compariso
         let (plan, target) = fixture(Some(choices("ecori", formulation)));
         let report = engine::verify(&plan, &target);
         assert_eq!(report.status, outcome, "{:?}", report.findings);
-        assert_eq!(report.products.len(), 1);
-        assert_eq!(report.products[0].sequence.as_str(), "AATTCTT");
+        assert_eq!(report.reconstructed_count(), 1);
+        assert_eq!(
+            report
+                .product(0)
+                .expect("selected step must reconstruct")
+                .sequence
+                .as_str(),
+            "AATTCTT"
+        );
         assert!(
             report
                 .findings
                 .iter()
-                .any(|f| f.contains("matches the separately bound target"))
+                .any(|f| f.message.contains("matches the separately bound target"))
         );
         let evidence = report.step_reports[0].reaction_conditions.as_ref().unwrap();
         assert_eq!(evidence.source_revision, plan.inputs[0].revision);
@@ -212,7 +219,7 @@ fn pcr_digest_conditions_bind_fresh_amplicon_and_html_escapes_declared_context()
         "{:?}",
         preview.verification.findings
     );
-    assert_eq!(preview.verification.products.len(), 3);
+    assert_eq!(preview.verification.reconstructed_count(), 3);
     let evidence = preview
         .verification
         .step_reports
@@ -221,7 +228,11 @@ fn pcr_digest_conditions_bind_fresh_amplicon_and_html_escapes_declared_context()
         .unwrap();
     assert_eq!(
         evidence.source_revision,
-        preview.verification.products[0].revision()
+        preview
+            .verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .revision()
     );
     assert_ne!(
         evidence.source_revision,
@@ -270,19 +281,32 @@ fn checked_digest_preserves_documentary_failure_separately_from_positional_cleav
     ];
     let report = engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 2);
-    assert_eq!(report.products[1].sequence.as_str(), "AATTCTT");
+    assert_eq!(report.reconstructed_count(), 2);
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        "AATTCTT"
+    );
     let evidence = report.step_reports[0].reaction_conditions.as_ref().unwrap();
     assert_eq!(report.step_reports[0].step_index, 1);
     assert_eq!(
         evidence.report.documentary_status,
         EvidenceStatus::BelowThreshold
     );
-    assert_eq!(evidence.source_revision, report.products[0].revision());
+    assert_eq!(
+        evidence.source_revision,
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .revision()
+    );
     assert!(
         report
             .findings
             .iter()
-            .any(|f| f.contains("matches the separately bound target"))
+            .any(|f| f.message.contains("matches the separately bound target"))
     );
 }

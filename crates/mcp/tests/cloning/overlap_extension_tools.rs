@@ -141,12 +141,12 @@ async fn sdk_proposal_verification_and_exports_use_actual_extension_not_target_s
         verified["engine_version"].as_str(),
         Some(collagene_core::verification::ENGINE_VERSION)
     );
-    let products = verified["products"].as_array().unwrap();
-    assert_eq!(products.len(), 4);
-    assert_eq!(products[0]["length"], 26);
-    assert_eq!(products[1]["length"], 30);
-    assert_eq!(products[2]["length"], 38);
-    assert_eq!(products[3]["length"], 38);
+    let steps = verified["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 4);
+    assert_eq!(steps[0]["product"]["length"], 26);
+    assert_eq!(steps[1]["product"]["length"], 30);
+    assert_eq!(steps[2]["product"]["length"], 38);
+    assert_eq!(steps[3]["product"]["length"], 38);
     let evidence = artifact(&client, &verified["artifact_id"]).await;
     let extension = evidence["physical_processing_reports"]
         .as_array()
@@ -207,14 +207,15 @@ async fn sdk_proposal_verification_and_exports_use_actual_extension_not_target_s
     )
     .await;
     assert_eq!(withheld["status"], "Incomplete");
-    assert_eq!(withheld["products"].as_array().unwrap().len(), 3);
+    assert_eq!(withheld["steps"].as_array().unwrap().len(), 4);
+    assert!(withheld["steps"][3]["product"].is_null());
     assert!(
         withheld["findings"]
             .as_array()
             .unwrap()
             .iter()
             .any(|finding| {
-                finding
+                finding["message"]
                     .as_str()
                     .is_some_and(|text| text.contains("actual physical source state"))
             }),

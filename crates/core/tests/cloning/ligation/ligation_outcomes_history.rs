@@ -98,7 +98,14 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products[4].sequence.as_str(), INTENDED);
+    assert_eq!(
+        report
+            .product(4)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        INTENDED
+    );
     let saved = cloning_outputs::finalize(
         &w,
         &plan,
@@ -225,7 +232,14 @@ fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_do
     let (docs, plan) = fixture(ALTERNATIVE);
     let report = verification::engine::verify(&plan, &docs[2]);
     assert_eq!(report.status, Status::Invalid);
-    assert_eq!(report.products.last().unwrap().sequence.as_str(), INTENDED);
+    assert_eq!(
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        INTENDED
+    );
     let PhysicalProcessingEvidence::LigationOutcomes(evidence) =
         &report.physical_processing_reports[0].evidence
     else {
@@ -333,7 +347,11 @@ fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration
         preview.verification.findings
     );
     assert_eq!(
-        preview.verification.products.last().unwrap().sequence,
+        preview
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence,
         target.sequence
     );
     assert_eq!(preview.verification.physical_processing_reports.len(), 1);

@@ -14,8 +14,8 @@ use crate::{
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
-pub const KIND: &str = "combinatorial-release-v3";
-pub const CONTRACT: &str = "combinatorial-release-3";
+pub const KIND: &str = "combinatorial-release-v4";
+pub const CONTRACT: &str = "combinatorial-release-4";
 pub const MAX_MANIFEST_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_INSPECTION_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ROW_BYTES: usize = 256 * 1024;
@@ -496,7 +496,7 @@ impl ReleaseSession {
             .take()
             .ok_or_else(|| bad("private release state was discarded"))?;
         let manifest = Manifest {
-            schema_version: 3,
+            schema_version: 4,
             context_revision: self.context_revision.clone(),
             source_workspace_fingerprint: self.source_workspace_fingerprint.clone(),
             batch_hash: self.request.batch_hash.clone(),
@@ -733,7 +733,7 @@ impl Manifest {
     pub fn validate(&self, workspace: &Workspace) -> Result<(), Error> {
         attachment_versions(workspace)?;
         self.request.validate()?;
-        if self.schema_version != 3
+        if self.schema_version != 4
             || !digest(&self.context_revision)
             || !digest(&self.source_workspace_fingerprint)
             || self.batch_hash != self.request.batch_hash

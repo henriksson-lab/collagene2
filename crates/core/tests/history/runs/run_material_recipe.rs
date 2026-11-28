@@ -195,9 +195,8 @@ fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "AATTCTTACGGGAATTGCTACG"
@@ -458,9 +457,8 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         "GGGAAACCCCCCTGGGTTTA"

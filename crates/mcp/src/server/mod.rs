@@ -91,6 +91,8 @@ impl Default for CollageneServer {
             tool_router: Self::analysis_router()
                 + Self::codon_router()
                 + Self::design_checks_router()
+                + Self::ivt_router()
+                + Self::base_editing_router()
                 + Self::assembly_intents_router()
                 + Self::assembly_router()
                 + Self::catalog_router()

@@ -811,6 +811,7 @@ impl InversePcrPreparation {
 impl InversePcrDesign {
     /// Readonly receipt/shape check. Fresh verification still determines material.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         serde_json::to_writer(&mut SizeLimit(0), self).map_err(|_| Error::TooLarge)?;
         validate_inverse_fields(
             expected,
@@ -829,7 +830,7 @@ impl InversePcrDesign {
             != crate::planning::plan::DesignPlan::revision(&self.plan)
             || self.verification.target_revision != self.target_revision
             || self.verification.engine_version != verification::ENGINE_VERSION
-            || self.verification.products.len() > self.plan.steps.len()
+            || self.verification.planned_steps != self.plan.steps.len()
         {
             return Err(unsupported(
                 "inverse-PCR verification receipt differs from the declared plan",

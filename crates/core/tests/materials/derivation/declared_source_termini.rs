@@ -74,15 +74,27 @@ fn declared_phosphate_oh_seals_while_oh_nicks_unknown_and_blocked_remain_explici
         "{:?}",
         r.findings
     );
-    let physical: chemistry::DuplexSummary =
-        serde_json::from_str(&r.products[2].metadata["duplex_model"]).unwrap();
+    let physical: chemistry::DuplexSummary = serde_json::from_str(
+        &r.product(2)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     assert!(physical.nicks.is_empty());
-    assert!(r.findings.iter().any(|s| s.contains("operator hypothesis")));
+    assert!(
+        r.findings
+            .iter()
+            .any(|s| s.message.contains("operator hypothesis"))
+    );
     let (p, t) = plan(known, hydroxyl, true);
     let r = v::engine::verify(&p, &t);
     assert_eq!(r.status, Status::ConsistentUnderAssumptions);
-    let physical: chemistry::DuplexSummary =
-        serde_json::from_str(&r.products[2].metadata["duplex_model"]).unwrap();
+    let physical: chemistry::DuplexSummary = serde_json::from_str(
+        &r.product(2)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     assert_eq!(physical.nicks.len(), 1);
     let (p, t) = plan(hydroxyl, hydroxyl, true);
     assert_eq!(v::engine::verify(&p, &t).status, Status::Invalid);
@@ -115,7 +127,7 @@ fn dna_annotations_citations_and_unknown_modification_state_are_preserved() {
         "{:?}",
         report.findings
     );
-    let p = &report.products[0];
+    let p = report.product(0).expect("selected step must reconstruct");
     assert_eq!(p.sequence, m.sequence);
     assert_eq!(p.features, m.features);
     assert_eq!(p.original_genbank, m.original_genbank);
@@ -149,7 +161,7 @@ fn descendants_circles_and_restrictive_markers_cannot_be_promoted_by_declaration
     ];
     let r = v::engine::verify(&p, &t);
     assert_eq!(r.status, Status::Incomplete);
-    assert_eq!(r.products.len(), 1);
+    assert_eq!(r.reconstructed_count(), 1);
     for (key, value) in [
         ("duplex_model", "{}"),
         ("source:legacy:chemistry_unmapped", "false"),
@@ -223,6 +235,8 @@ fn preparation_and_operation_are_append_only_and_whole_linear_is_not_upgraded() 
     );
     assert!(
         !preview.prepared[1]
+            .as_ref()
+            .expect("prepared row must reconstruct")
             .metadata
             .contains_key("source:declared_termini")
     );

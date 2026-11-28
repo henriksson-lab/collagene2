@@ -461,8 +461,7 @@ mod tests {
         assert_eq!(
             checked
                 .verification
-                .products
-                .last()
+                .final_product()
                 .unwrap()
                 .sequence
                 .as_str(),
@@ -556,8 +555,7 @@ mod tests {
         assert_eq!(
             replay
                 .current_report
-                .products
-                .last()
+                .final_product()
                 .unwrap()
                 .sequence
                 .as_str(),

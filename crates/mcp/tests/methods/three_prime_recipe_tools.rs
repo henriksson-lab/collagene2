@@ -147,7 +147,7 @@ async fn annealing_preview_retains_incomplete_strands_and_never_saves_or_grants_
             .as_array()
             .unwrap()
             .iter()
-            .any(|finding| finding
+            .any(|finding| finding["message"]
                 .as_str()
                 .is_some_and(|text| text.contains("3′") || text.contains("3-prime")))
     );
@@ -163,9 +163,8 @@ async fn annealing_preview_retains_incomplete_strands_and_never_saves_or_grants_
     assert_eq!(
         native
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE

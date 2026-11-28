@@ -1,6 +1,7 @@
 //! Bounded guide/PAM geometry and selected-record mismatch/bulge evidence.
 //! No empirical efficiency score, external aligner or physical cleavage products.
 pub mod alignment;
+pub mod base_editing;
 use crate::sequence::analysis;
 use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};

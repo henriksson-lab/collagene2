@@ -137,7 +137,7 @@ impl CollageneServer {
     }
 
     #[tool(
-        description = "List the exact installed assembly-standard catalogue, profile/catalog identities, actual supported part-sequence scope and source evidence. The sole built-in is the sourced RFC10 part-sequence (2007) profile; this is not full vector/host/registry compliance or a guessed MoClo/SEVA/RFC1000 profile. No document changes or assembly simulation."
+        description = "List the exact installed assembly-standard catalogue, profile/catalog identities, actual supported part-sequence scope and source evidence. Each returned profile defines its exact supported body/part/role scope; catalogue membership does not establish complete vector, host or registry compliance. No document changes or assembly simulation."
     )]
     pub(crate) async fn list_assembly_standards(
         &self,
@@ -153,7 +153,7 @@ impl CollageneServer {
     }
 
     #[tool(
-        description = "Check an ordered set of immutable document fragments against an exact discovered assembly-standard profile identity and declared slot/body boundaries. Fragment start/length use original forward source coordinates; reverse and a single circular wrap are explicit; body coordinates index the oriented extracted part. Returns bounded findings, mapped original-source site intervals, local grammar successors and complete JSON evidence. Sole installed profile is RFC10 part-sequence (2007), not full registry/vector/host compliance, functional ordering or physical assembly verification. No sequence edits or persistence."
+        description = "Check an ordered set of immutable document fragments against an exact discovered assembly-standard profile identity and declared slot/body boundaries. Fragment start/length use original forward source coordinates; reverse and a single circular wrap are explicit; body coordinates index the oriented extracted part. Returns bounded findings, mapped original-source site intervals, local grammar successors and complete JSON evidence. Only the exact discovered profile scope is checked; conformance does not establish full registry/vector/host compliance, biological function or physical assembly verification. No sequence edits or persistence."
     )]
     pub(crate) async fn check_assembly_standard(
         &self,

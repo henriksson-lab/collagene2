@@ -20,28 +20,28 @@ fn digest(s: &str) -> bool {
     s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 impl Profile {
+    pub fn resource_preflight(&self) -> Result<(), Error> {
+        super::profile_resource_preflight(
+            &self.id,
+            &self.edition,
+            &self.sources,
+            &self.variants,
+            &self.limitations,
+        )
+    }
     pub fn validate(&self) -> Result<(), Error> {
+        self.resource_preflight()?;
         if self.id.trim().is_empty()
-            || self.id.len() > 256
             || self.edition.trim().is_empty()
-            || self.edition.len() > 256
             || self.sources.is_empty()
-            || self.sources.len() > 64
             || self.variants.is_empty()
-            || self.variants.len() > 64
-            || self.limitations.len() > 64
-            || self.limitations.iter().any(|s| s.len() > 4096)
         {
             return Err(Error::TooLarge);
         }
         let mut sources = BTreeSet::new();
         for s in &self.sources {
             if s.id.trim().is_empty()
-                || s.id.len() > 256
                 || !sources.insert(s.id.as_str())
-                || s.vector_name.len() > 1024
-                || s.url.len() > 4096
-                || s.map_url.len() > 4096
                 || !s.url.starts_with("https://")
                 || !s.map_url.starts_with("https://")
                 || !digest(&s.raw_sha256)
@@ -57,13 +57,10 @@ impl Profile {
         let mut cores = BTreeMap::<u8, &str>::new();
         for v in &self.variants {
             if v.id.trim().is_empty()
-                || v.id.len() > 256
                 || !ids.insert(v.id.as_str())
-                || v.source_id.len() > 256
                 || !sources.contains(v.source_id.as_str())
                 || !(1..=16).contains(&v.subtype)
                 || v.sequence.len() < 9
-                || v.sequence.len() > 4096
                 || !v.sequence.bytes().all(|b| b"ACGT".contains(&b))
                 || v.overlap_start == 0
                 || v.overlap_start
@@ -111,7 +108,7 @@ pub fn three_entry_source_contexts() -> Result<Profile, Error> {
     Ok(profile)
 }
 
-fn limits(l: &Limits) -> Result<(), Error> {
+pub fn limits_preflight(l: &Limits) -> Result<(), Error> {
     if l.max_input_bases == 0
         || l.max_input_bases > 2_000_000
         || l.max_comparisons == 0
@@ -133,11 +130,20 @@ fn limits(l: &Limits) -> Result<(), Error> {
     }
     Ok(())
 }
+impl Request {
+    pub fn resource_preflight(&self) -> Result<(), Error> {
+        limits_preflight(&self.limits)?;
+        self.profile.resource_preflight()?;
+        if self.specificities.len() > 16 {
+            return Err(Error::TooLarge);
+        }
+        Ok(())
+    }
+}
 pub fn preflight(inputs: &[Input], r: &Request) -> Result<(), Error> {
-    limits(&r.limits)?;
+    r.resource_preflight()?;
     r.profile.validate()?;
-    if !(2..=5).contains(&inputs.len()) || r.specificities.is_empty() || r.specificities.len() > 16
-    {
+    if !(2..=5).contains(&inputs.len()) || r.specificities.is_empty() {
         return Err(bad(
             "two to five parents and one to sixteen explicit specificities are required",
         ));

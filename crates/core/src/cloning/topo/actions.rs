@@ -30,27 +30,21 @@ fn digest(s: &str) -> bool {
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
+/// Resource-only admission before plan hashes or source cloning. Selection pins,
+/// immutable calls and source-role relationships are branch-local semantic checks.
+pub fn resource_preflight(r: &Request) -> Result<(), Error> {
+    physical::steps_resource_preflight(&r.preparation.steps, &r.preparation.engine_limits)
+        .map_err(|error| Error::Unsupported(format!("TOPO transcript resources: {error}")))?;
+    r.options.limits.validate().map_err(physical_error)
+}
 fn shape(r: &Request) -> Result<(), Error> {
+    resource_preflight(r)?;
     physical::steps_preflight(&r.preparation.steps, &r.preparation.engine_limits)
-        .map_err(|e| Error::Unsupported(format!("TOPO transcript: {e}")))?;
-    if r.preparation.steps.len() > 64 {
-        return Err(Error::TooLarge);
-    }
-    let l = &r.options.limits;
+        .map_err(|error| Error::Unsupported(format!("TOPO transcript: {error}")))?;
     if !digest(&r.selection.source_batch_revision)
         || r.selection.component >= 64
         || r.selection.reference_seed.strand >= 32
         || r.selection.reference_seed.index >= 100_000
-        || l.max_pairs == 0
-        || l.max_pairs > 500_000
-        || l.max_work_cells == 0
-        || l.max_work_cells > 128_000_000
-        || l.max_work_bytes == 0
-        || l.max_work_bytes > 128 * 1024 * 1024
-        || l.max_mapping_segments == 0
-        || l.max_mapping_segments > 16384
-        || l.max_report_bytes == 0
-        || l.max_report_bytes > 32 * 1024 * 1024
     {
         return Err(Error::TooLarge);
     }

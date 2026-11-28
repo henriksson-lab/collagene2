@@ -105,9 +105,8 @@ fn check(report: &design::Report, expected: &str) {
         report
             .preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         expected
@@ -127,8 +126,12 @@ fn mixed_exact_and_edited_rows_prepare_actual_branches_before_whole_independent_
     assert_eq!(
         p.preview
             .verification
-            .products
+            .steps
             .iter()
+            .map(|step| step
+                .product
+                .as_ref()
+                .expect("each declared step must reconstruct"))
             .map(|m| m.sequence.len())
             .collect::<Vec<_>>(),
         vec![24, 26, 30, 38, 38, 54]
@@ -160,7 +163,15 @@ fn outgoing_homology_prefix_is_taken_after_the_downstream_literal_indel() {
     assert_eq!(tails[0].reverse_tail, "AAAATACGTAGCATCGGACT");
     let p = design::design(&inputs(), &req, None).unwrap();
     check(&p, TARGET);
-    assert_eq!(p.preview.verification.products[0].sequence.len(), 36);
+    assert_eq!(
+        p.preview
+            .verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .len(),
+        36
+    );
 }
 #[test]
 fn source_orientation_is_preserved_for_reverse_ordinary_and_reverse_edited_contributions() {
@@ -192,7 +203,11 @@ fn source_orientation_is_preserved_for_reverse_ordinary_and_reverse_edited_contr
         }
         if insert_reverse {
             assert_eq!(
-                p.preview.prepared[1].sequence.as_str(),
+                p.preview.prepared[1]
+                    .as_ref()
+                    .expect("prepared row must reconstruct")
+                    .sequence
+                    .as_str(),
                 "TGACGATCTACAGGTCTGAAAATACGTAGCATCGGACT"
             );
         }
@@ -253,9 +268,8 @@ fn incoming_trims_junction_insert_and_snp_are_normalized_to_retained_core_coordi
     assert_eq!(
         p.preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .len(),
         64
@@ -277,7 +291,11 @@ fn circular_closure_and_its_literal_insert_keep_first_retained_origin_and_uncert
         "CACGTTCGTAGGACCAAGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCATA",
     );
     assert_eq!(
-        p.preview.verification.products.last().unwrap().topology,
+        p.preview
+            .verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .topology,
         Topology::Circular
     );
     assert_eq!(p.tails[1].homology, "CACGTTCG");
@@ -290,9 +308,8 @@ fn circular_closure_and_its_literal_insert_keep_first_retained_origin_and_uncert
         conditional
             .preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence,
         p.intent.target.sequence
     );
@@ -391,7 +408,14 @@ fn ambiguous_source_exact_pcr_cannot_be_selected_using_the_independent_whole_tar
     let p = design::design(&ins, &request(), None).unwrap();
     assert_eq!(p.intent.target.sequence.as_str(), TARGET);
     assert_eq!(p.preview.verification.status, Status::Incomplete);
-    assert!(p.preview.verification.products.is_empty());
+    assert!(p.preview.prepared[0].is_none());
+    assert!(
+        p.preview.prepared[1].is_some(),
+        "the independent insert preparation remains available"
+    );
+    assert!(p.preview.verification.reconstructed_count() > 0);
+    assert!(p.preview.verification.final_product().is_none());
+    p.preview.verification.validate_documentary().unwrap();
     assert!(!p.rows[0].search[0].unique_geometry);
     let mut wrong = Molecule::dna(
         "Wrong independent stock target",
@@ -408,7 +432,14 @@ fn ambiguous_source_exact_pcr_cannot_be_selected_using_the_independent_whole_tar
     plan.target_revision = wrong.revision();
     let report = verification::engine::verify(&plan, &wrong);
     assert_eq!(report.status, Status::Invalid);
-    assert_eq!(report.products.last().unwrap().sequence.as_str(), TARGET);
+    assert_eq!(
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
 }
 #[test]
 fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_guarded() {

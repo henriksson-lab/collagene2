@@ -67,12 +67,18 @@ fn whole_linear_and_circular_oe_materialize_the_frozen_literal_target_through_cu
             p.verification.findings
         );
         assert_eq!(
-            p.verification.products.last().unwrap().sequence.as_str(),
+            p.verification
+                .final_product()
+                .expect("final declared step must reconstruct")
+                .sequence
+                .as_str(),
             fixture::INTENDED
         );
         assert!(verification::engine::plan_target_matches(
             &p.plan,
-            p.verification.products.last().unwrap(),
+            p.verification
+                .final_product()
+                .expect("final declared step must reconstruct"),
             &target
         ));
         let wrong = verification::engine::verify(&p.plan, &source_before);

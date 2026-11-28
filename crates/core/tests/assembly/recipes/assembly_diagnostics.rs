@@ -52,8 +52,7 @@ fn three() -> (Vec<PlanInput>, Vec<FragmentSpec>, Molecule) {
     )
 }
 #[test]
-fn missing_middle_pcr_product_locates_that_row_and_keeps_later_steps_blocked_without_text_parsing()
-{
+fn missing_middle_pcr_product_locates_that_row_and_preserves_independent_later_row() {
     let (inputs, fragments, target) = three();
     let recipe = a::Recipe {
         name: "Missing middle PCR".into(),
@@ -63,13 +62,21 @@ fn missing_middle_pcr_product_locates_that_row_and_keeps_later_steps_blocked_wit
         options: Default::default(),
     };
     let mut p = a::preview(&inputs, &target, &recipe).unwrap();
-    assert_eq!(p.verification.products.len(), 1);
+    assert_eq!(p.verification.reconstructed_count(), 2);
     let report = d::overlap(&p).unwrap();
     assert_eq!(
         report.rows.iter().map(|r| r.state).collect::<Vec<_>>(),
-        vec![RowState::Reconstructed, RowState::Failed, RowState::Blocked]
+        vec![
+            RowState::Reconstructed,
+            RowState::Rejected,
+            RowState::Reconstructed
+        ]
     );
-    let failure = report.failure.unwrap();
+    let failure = report
+        .failures
+        .into_iter()
+        .next()
+        .expect("one documented failure");
     assert_eq!(
         (failure.step, failure.row, failure.stage),
         (1, Some(1), Stage::Pcr)
@@ -84,9 +91,18 @@ fn missing_middle_pcr_product_locates_that_row_and_keeps_later_steps_blocked_wit
             .iter()
             .all(|j| j.state == JunctionState::HomologyUnavailable)
     );
-    p.verification.findings = vec!["Arbitrary presentation text claiming row99 and step100".into()];
+    p.verification.findings[0].message =
+        "Arbitrary presentation text claiming row99 and step100".into();
     let located = d::overlap(&p).unwrap();
-    assert_eq!(located.failure.unwrap().row, Some(1));
+    assert_eq!(
+        located
+            .failures
+            .into_iter()
+            .next()
+            .expect("one documented failure")
+            .row,
+        Some(1)
+    );
     assert_eq!(located.findings, p.verification.findings);
 }
 fn raw(mismatch: bool, max_comparisons: usize, scan: bool, wrong_target: bool) -> a::Preview {
@@ -138,7 +154,7 @@ fn local_typed_profile_mismatch_keeps_both_prepared_references_and_does_not_gues
     let p = raw(true, 10000, false, false);
     assert!(p.preparation_complete);
     assert_eq!(p.prepared.len(), 2);
-    assert!(p.verification.products.is_empty());
+    assert!((p.verification.reconstructed_count() == 0));
     let report = d::overlap(&p).unwrap();
     assert!(
         report
@@ -146,7 +162,11 @@ fn local_typed_profile_mismatch_keeps_both_prepared_references_and_does_not_gues
             .iter()
             .all(|r| r.state == RowState::InputReference)
     );
-    let failure = report.failure.unwrap();
+    let failure = report
+        .failures
+        .into_iter()
+        .next()
+        .expect("one documented failure");
     assert_eq!(failure.stage, Stage::OverlapAssembly);
     assert_eq!(failure.row, None);
     assert_eq!(failure.upstream, None);
@@ -162,17 +182,28 @@ fn complete_products_do_not_turn_incomplete_evidence_or_wrong_target_into_local_
  {
     let consistent = d::overlap(&raw(false, 10000, false, false)).unwrap();
     assert_eq!(consistent.status, Status::ConsistentUnderAssumptions);
-    assert!(consistent.failure.is_none());
+    assert!(consistent.failures.is_empty());
     assert_eq!(consistent.junctions[0].state, JunctionState::ExactHomology);
     let p = raw(false, 4, true, false);
-    assert_eq!(p.verification.products.len(), p.compiled.plan.steps.len());
+    assert_eq!(
+        p.verification.reconstructed_count(),
+        p.compiled.plan.steps.len()
+    );
     let incomplete = d::overlap(&p).unwrap();
     assert_eq!(incomplete.status, Status::Incomplete);
-    assert!(incomplete.failure.is_none());
+    assert!(incomplete.failures.is_empty());
     assert!(!incomplete.warnings.is_empty());
     let mismatch = d::overlap(&raw(false, 10000, false, true)).unwrap();
     assert_eq!(mismatch.status, Status::Invalid);
-    assert_eq!(mismatch.failure.unwrap().stage, Stage::TargetComparison);
+    assert_eq!(
+        mismatch
+            .failures
+            .into_iter()
+            .next()
+            .expect("one documented failure")
+            .stage,
+        Stage::TargetComparison
+    );
     assert_eq!(mismatch.junctions[0].state, JunctionState::ExactHomology);
 }
 #[test]
@@ -198,20 +229,28 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
-    assert_eq!(p.verification.products.len(), 1);
+    assert_eq!(p.verification.reconstructed_count(), 4);
     let report = d::ligation(&p).unwrap();
     assert_eq!(
         report.rows.iter().map(|r| r.state).collect::<Vec<_>>(),
-        vec![RowState::Blocked, RowState::Failed, RowState::Blocked]
+        vec![
+            RowState::Reconstructed,
+            RowState::Rejected,
+            RowState::Reconstructed
+        ]
     );
     assert_eq!(
         (report.rows[0].completed_steps, report.rows[0].total_steps),
-        (1, 2)
+        (2, 2)
     );
     assert_eq!(
         (
-            report.failure.as_ref().unwrap().step,
-            report.failure.as_ref().unwrap().row
+            report
+                .failures
+                .first()
+                .expect("one documented failure")
+                .step,
+            report.failures.first().expect("one documented failure").row
         ),
         (1, Some(1))
     );
@@ -246,7 +285,11 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
             .iter()
             .all(|r| r.state == RowState::Reconstructed)
     );
-    let f = report.failure.unwrap();
+    let f = report
+        .failures
+        .into_iter()
+        .next()
+        .expect("one documented failure");
     assert_eq!(f.stage, Stage::LigationAssembly);
     assert_eq!((f.row, f.upstream, f.downstream), (None, None, None));
     assert_eq!(report.junctions[0].state, JunctionState::EndpointsAvailable);
@@ -280,7 +323,10 @@ fn forged_source_prepared_mapping_engine_and_context_shape_fail_closed() {
     stale.compiled.plan.inputs[0].revision = "0".repeat(64);
     assert!(d::overlap(&stale).is_err());
     let mut prepared = p.clone();
-    prepared.prepared[0].sequence = collagene_model::Sequence::dna("AAAAAAAAAAAAAAAA").unwrap();
+    prepared.prepared[0]
+        .as_mut()
+        .expect("prepared row must reconstruct")
+        .sequence = collagene_model::Sequence::dna("AAAAAAAAAAAAAAAA").unwrap();
     assert!(d::overlap(&prepared).is_err());
     let mut engine = p.clone();
     engine.verification.engine_version = "archived engine with unknown prefix semantics".into();

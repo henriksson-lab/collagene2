@@ -376,6 +376,7 @@ pub fn inspect(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<R
 }
 impl Report {
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         let actual = inspect_revision(&self.probe_plan.inputs, &self.target, &self.request)?;
         if expected != actual || self.context_revision != actual {
             return Err(bad("reaction context changed"));
@@ -388,11 +389,16 @@ impl Report {
             || self.verification.plan_revision != crate::planning::plan::DesignPlan::revision(&plan)
             || self.verification.target_revision != self.target.revision()
             || self.verification.engine_version != verification::ENGINE_VERSION
-            || self.verification.products.len() > plan.steps.len()
+            || self.verification.planned_steps != plan.steps.len()
         {
             return Err(bad("reaction plan/preparation receipt changed"));
         }
-        for product in &self.verification.products {
+        for product in self
+            .verification
+            .steps
+            .iter()
+            .filter_map(|step| step.product.as_ref())
+        {
             collagene_model::bounds::model_preflight(&[product])?;
             product.validate()?;
             if product.metadata.get("plan_revision") != Some(&self.verification.plan_revision) {
@@ -408,7 +414,15 @@ impl Report {
                 || pool.candidates.len() > self.request.options.max_products
                 || pool.states_examined > self.request.options.max_states + 1
                 || pool.exhaustive_mixture_search
-                || self.verification.products.len() + 1 < plan.steps.len()
+                || self
+                    .verification
+                    .steps
+                    .iter()
+                    .take(plan.steps.len().saturating_sub(1))
+                    .any(|step| {
+                        step.state != crate::verification::evidence::StepState::Reconstructed
+                            || step.product.is_none()
+                    })
             {
                 return Err(bad("reaction enumeration scope changed"));
             }
@@ -424,8 +438,7 @@ impl Report {
                     }
                     Source::Step(i) => self
                         .verification
-                        .products
-                        .get(*i)
+                        .product(*i)
                         .ok_or_else(|| bad("actual preparation missing"))?,
                 };
                 if s.source_index != index || s.revision != actual.revision() {

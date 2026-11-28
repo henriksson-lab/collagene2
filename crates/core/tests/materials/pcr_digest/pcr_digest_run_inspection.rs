@@ -307,7 +307,7 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
         }],
     };
     let report = verification::engine::verify(&plan, &source);
-    assert_eq!(report.products.len(), 1);
+    assert_eq!(report.reconstructed_count(), 1);
     let verification::evidence::PhysicalProcessingEvidence::RunProduct(evidence) =
         &report.physical_processing_reports[0].evidence
     else {
@@ -316,8 +316,7 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
     let original = evidence.decode_report().unwrap();
     let summary: collagene_core::chemistry::DuplexSummary = serde_json::from_str(
         original
-            .products
-            .last()
+            .final_product()
             .unwrap()
             .metadata
             .get("duplex_model")
@@ -329,6 +328,6 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
         original
             .findings
             .iter()
-            .any(|f| f.to_ascii_lowercase().contains("nick"))
+            .any(|f| f.message.to_ascii_lowercase().contains("nick"))
     );
 }

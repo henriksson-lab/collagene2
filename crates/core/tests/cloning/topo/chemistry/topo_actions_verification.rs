@@ -189,7 +189,7 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
     );
     assert_eq!(report.engine_version, v::ENGINE_VERSION);
     assert!(report.step_reports.is_empty());
-    assert_eq!(report.products.len(), 2);
+    assert_eq!(report.reconstructed_count(), 2);
     let e = evidence(&report);
     let graph = &e.projection.physical.product;
     assert_eq!(e.projection.physical.source_bases, 54);
@@ -244,15 +244,32 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
     assert_eq!(cuts.len(), 1);
     assert_eq!(cuts[0].top_start, 19);
     assert_eq!(cuts[0].bottom_start, 23);
-    assert_eq!(report.products[1].sequence.as_str(), ECO_TARGET);
-    let summary: chemistry::DuplexSummary =
-        serde_json::from_str(&report.products[1].metadata["duplex_model"]).unwrap();
+    assert_eq!(
+        report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        ECO_TARGET
+    );
+    let summary: chemistry::DuplexSummary = serde_json::from_str(
+        &report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     assert_eq!(summary.bottom_start, 4);
     let (left, right) = summary.ends.unwrap();
     assert_eq!(left.overhang, "AATT");
     assert_eq!(right.overhang, "AATT");
-    let modifications: modified_duplex::ModificationSummary =
-        serde_json::from_str(&report.products[1].metadata["tracked_modifications"]).unwrap();
+    let modifications: modified_duplex::ModificationSummary = serde_json::from_str(
+        &report
+            .product(1)
+            .expect("selected step must reconstruct")
+            .metadata["tracked_modifications"],
+    )
+    .unwrap();
     assert!(modifications.unknown_eligible > 0);
     assert_eq!(modifications.known_unmodified, 0);
     assert_eq!(modifications.known_modified, 0);
@@ -285,7 +302,14 @@ fn original52call_oracle_retains_free_fragment_and_wrong_target_never_selects_ma
         report.findings
     );
     assert_eq!(evidence(&report).projection.physical.source_bases, 52);
-    assert_eq!(report.products[0].sequence.as_str(), ORIGINAL_MAIN);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        ORIGINAL_MAIN
+    );
     assert!(
         evidence(&report)
             .projection
@@ -304,7 +328,14 @@ fn original52call_oracle_retains_free_fragment_and_wrong_target_never_selects_ma
     p.target_revision = wrong.revision();
     let report = v::engine::verify(&p, &wrong);
     assert_eq!(report.status, Status::Invalid);
-    assert_eq!(report.products[0].sequence.as_str(), ORIGINAL_MAIN);
+    assert_eq!(
+        report
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        ORIGINAL_MAIN
+    );
     assert!(evidence(&report).tracked.is_some());
 }
 #[test]
@@ -321,7 +352,7 @@ fn no_cut_retains_anchored_flap_and_full_generic_typed_evidence_without_product_
     .unwrap();
     let report = v::engine::verify(&plan(&inputs, r, &target), &target);
     assert_eq!(report.status, Status::Incomplete);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     let e = evidence(&report);
     assert!(e.tracked.is_none());
     assert!(e.product.is_none());
@@ -425,7 +456,7 @@ fn current_action_encoding_preserves_original_source_context() {
         .insert("different original capture".into(), "true".into());
     let report = v::engine::verify(&stale, &target);
     assert_eq!(report.status, Status::Invalid);
-    assert!(report.products.is_empty());
+    assert!((report.reconstructed_count() == 0));
     let Operation::TopoActions { sources, .. } = &p.steps[0] else {
         panic!()
     };
@@ -603,7 +634,11 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
         evidence(&fresh.current_report).engine_version,
         actions::ENGINE_VERSION
     );
-    let portable = fresh.current_report.products[0].clone();
+    let portable = fresh
+        .current_report
+        .product(0)
+        .expect("selected step must reconstruct")
+        .clone();
     assert!(chemistry::has_unmapped_physical_evidence(&portable));
     let imported = DesignPlan {
         name: "Historical reference is not isolated material".into(),

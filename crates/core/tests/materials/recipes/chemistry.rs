@@ -321,13 +321,19 @@ fn typed_plan_reconstructs_duplex_graph_and_retains_intermediates_on_failure() {
         "{:?}",
         report.findings
     );
-    assert_eq!(report.products.len(), 3);
-    assert_eq!(report.products[2].sequence, target.sequence);
+    assert_eq!(report.reconstructed_count(), 3);
+    assert_eq!(
+        report
+            .product(2)
+            .expect("selected step must reconstruct")
+            .sequence,
+        target.sequence
+    );
     assert!(
         report
             .findings
             .iter()
-            .any(|f| f.contains("0 retained nicks"))
+            .any(|f| f.message.contains("0 retained nicks"))
     );
     let html = export_protocol_html(&plan, &target);
     assert!(
@@ -350,7 +356,7 @@ fn typed_plan_reconstructs_duplex_graph_and_retains_intermediates_on_failure() {
     };
     let report = verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid, "{:?}", report.findings);
-    assert_eq!(report.products.len(), 2);
+    assert_eq!(report.reconstructed_count(), 2);
     plan.steps[0] = Operation::Digest {
         template: Source::Input("vector".into()),
         enzymes: vec!["Unmodeled".into()],

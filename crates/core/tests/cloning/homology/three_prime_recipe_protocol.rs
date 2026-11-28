@@ -122,9 +122,8 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
     assert_eq!(
         preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         CIRCLE
@@ -250,7 +249,11 @@ fn standalone_resection_uses_operation25_evidence4_and_never_hides_under_old_fra
         report.findings
     );
     assert_eq!(
-        report.products.last().unwrap().sequence.as_str(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AGTCCGATG"
     );
     let evidence = &report.physical_processing_reports.last().unwrap().evidence;

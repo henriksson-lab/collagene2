@@ -344,7 +344,14 @@ fn saved_template_new_pcr_processed_product_finalization_archive_and_second_reus
         "{:?}",
         checked.findings
     );
-    assert_eq!(checked.products.last().unwrap().sequence.as_str(), TARGET);
+    assert_eq!(
+        checked
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
     let bindings = vec![
         InputEventBinding {
             input_id: "vt".into(),
@@ -944,7 +951,11 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
     let report = v::engine::verify(&plan, &assembled);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(
-        report.products.last().unwrap().sequence.as_str(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "CACCATGACGAAAATTGC"
     );
     let w = Workspace::from_documents(
@@ -1034,7 +1045,14 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
     .unwrap();
     let fresh = v::engine::verify(&newplan, &target);
     assert_eq!(fresh.status, Status::Incomplete, "{:?}", fresh.findings);
-    assert_eq!(fresh.products.last().unwrap().sequence.as_str(), TARGET);
+    assert_eq!(
+        fresh
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
     let bindings = vec![
         InputEventBinding {
             input_id: "vt".into(),
@@ -1225,7 +1243,14 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
         "{:?}",
         result.findings
     );
-    assert_eq!(result.products.last().unwrap().sequence.as_str(), TARGET);
+    assert_eq!(
+        result
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
+        TARGET
+    );
     let finalrun = cloning_outputs::finalize(
         &w,
         &plan,

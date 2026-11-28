@@ -52,13 +52,13 @@ fn saved(sources: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (Mo
     let expected = &w.revisions[&w.documents[n].head];
     let reconstruction = collagene_core::verification::engine::verify(&plan, expected);
     assert_eq!(
-        reconstruction.products.len(),
+        reconstruction.reconstructed_count(),
         plan.steps.len(),
         "Origin preparation failed before capture: {:?}",
         reconstruction.findings
     );
     assert!(
-        reconstruction.products.last().is_some_and(|product| {
+        reconstruction.final_product().is_some_and(|product| {
             collagene_core::verification::engine::plan_target_matches(&plan, product, expected)
         }),
         "Origin differs from its independent literal target: {:?}",

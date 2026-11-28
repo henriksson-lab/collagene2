@@ -11,9 +11,9 @@ use crate::{
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
-pub const KIND: &str = "combinatorial-batch-record-v5";
+pub const KIND: &str = "combinatorial-batch-record-v6";
 pub const ENGINE_VERSION: &str = verification::ENGINE_VERSION;
-const CONTRACT: &str = "combinatorial-batch-6";
+const CONTRACT: &str = "combinatorial-batch-7";
 pub const MAX_RECORD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 /// Aggregate declared DNA-search/repeat work, not a measured CPU-time claim.
@@ -41,7 +41,7 @@ dto! {pub struct RowEvidence {
     pub plan_revision:Option<String>,pub target_revision:Option<String>,pub final_product_revision:Option<String>,
     pub completed_steps:usize,pub planned_steps:usize,pub preparation_complete:bool,
     #[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub tailing_profile:Option<TailingProfileEvidence>,
-    pub findings:Vec<String>,pub assumptions:Vec<String>,pub exhaustive_alternative_search:Option<bool>,
+    pub findings:Vec<crate::verification::checks::CheckFinding>,pub assumptions:Vec<String>,pub exhaustive_alternative_search:Option<bool>,
 }}
 dto! {pub struct Progress {pub context_revision:String,pub next_index:usize,pub total_rows:usize,pub finished:bool,pub row:Option<RowEvidence>}}
 dto! {pub struct Record {pub schema_version:u16,pub context_revision:String,pub engine_version:String,pub request:Request,pub rows:Vec<RowEvidence>}}
@@ -320,13 +320,15 @@ fn evaluate_row(
     let result = (|| -> Result<RowEvidence, Error> {
         let evaluated = resolved?.evaluate()?;
         let report = evaluated.verification();
+        report.validate_documentary()?;
         let plan = evaluated.plan();
         if report.findings.len() > 4096
             || report.assumptions.len() > 4096
             || report
                 .findings
                 .iter()
-                .chain(&report.assumptions)
+                .map(|finding| finding.message.as_str())
+                .chain(report.assumptions.iter().map(String::as_str))
                 .any(|s| s.len() > 65_536)
         {
             return Err(Error::TooLarge);
@@ -338,17 +340,12 @@ fn evaluate_row(
         if report.engine_version != verification::ENGINE_VERSION
             || report.target_revision != evaluated.resolved.target.revision()
             || report.plan_revision != crate::planning::plan::DesignPlan::revision(plan)
-            || report.products.len() > plan.steps.len()
+            || report.planned_steps != plan.steps.len()
         {
             return Err(bad("native row report identity is inconsistent"));
         }
         let preparation_complete = evaluated.preparation_complete();
-        let final_product_revision =
-            if !plan.steps.is_empty() && report.products.len() == plan.steps.len() {
-                report.products.last().map(|m| m.revision())
-            } else {
-                None
-            };
+        let final_product_revision = report.final_product().map(|m| m.revision());
         let evidence = RowEvidence {
             index,
             construct_id: construct.id.clone(),
@@ -363,7 +360,7 @@ fn evaluate_row(
             plan_revision: Some(report.plan_revision.clone()),
             target_revision: Some(report.target_revision.clone()),
             final_product_revision,
-            completed_steps: report.products.len(),
+            completed_steps: report.reconstructed_count(),
             planned_steps: plan.steps.len(),
             preparation_complete,
             tailing_profile: match &evaluated.preview {
@@ -388,6 +385,9 @@ fn evaluate_row(
 }
 impl RowEvidence {
     pub fn validate(&self) -> Result<(), Error> {
+        for finding in &self.findings {
+            finding.validate()?;
+        }
         if self.index >= design::MAX_SELECTED
             || !identifier(&self.construct_id)
             || !label(&self.name)
@@ -411,7 +411,8 @@ impl RowEvidence {
             || self
                 .findings
                 .iter()
-                .chain(&self.assumptions)
+                .map(|finding| finding.message.as_str())
+                .chain(self.assumptions.iter().map(String::as_str))
                 .any(|s| s.len() > 65_536)
         {
             return Err(Error::TooLarge);
@@ -632,7 +633,7 @@ impl Session {
         }
         let context_revision = record_revision(ENGINE_VERSION, &self.request, &self.rows)?;
         let record = Record {
-            schema_version: 5,
+            schema_version: 6,
             context_revision,
             engine_version: ENGINE_VERSION.into(),
             request: self.request.clone(),
@@ -663,7 +664,7 @@ impl Session {
 }
 fn record_revision(engine: &str, request: &Request, rows: &[RowEvidence]) -> Result<String, Error> {
     count(&(engine, request, rows), MAX_RECORD_BYTES - 1024)?;
-    crate::encoding::bounded_json::hash(&("combinatorial-batch-record-5", engine, request, rows))
+    crate::encoding::bounded_json::hash(&("combinatorial-batch-record-6", engine, request, rows))
 }
 
 impl Record {
@@ -714,7 +715,7 @@ impl Record {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), Error> {
-        if self.schema_version != 5
+        if self.schema_version != 6
             || !digest(&self.context_revision)
             || self.engine_version.is_empty()
             || self.engine_version.len() > 256

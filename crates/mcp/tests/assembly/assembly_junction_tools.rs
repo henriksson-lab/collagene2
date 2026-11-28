@@ -114,11 +114,11 @@ async fn actual_ligation_crossing_codon_keeps_source_cds_conditional_and_target_
     assert_eq!(junction["frames"][0]["crossing_codon"]["window_start"], 3);
     assert_eq!(junction["physical"]["upstream_end"]["polarity"], "Blunt");
     assert!(
-        full["verification"]["products"]
+        full["verification"]["steps"]
             .as_array()
             .unwrap()
             .last()
-            .unwrap()["features"]
+            .unwrap()["product"]["features"]
             .as_array()
             .unwrap()
             .iter()

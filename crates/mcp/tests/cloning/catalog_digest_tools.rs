@@ -237,8 +237,20 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
     );
     let resources = c.list_all_resources().await.unwrap();
     let uri = first["catalog_resource_uri"].as_str().unwrap();
-    assert!(uri.contains("/v2/"));
-    assert!(uri.ends_with(first["catalog_content_hash"].as_str().unwrap()));
+    let current = builtin_catalog().unwrap();
+    assert_eq!(
+        first["catalog_schema_version"],
+        current.edition().schema_version
+    );
+    assert_eq!(
+        uri,
+        format!(
+            "collagene://enzyme-catalog/v{}/{}/{}",
+            current.edition().schema_version,
+            current.edition().edition,
+            current.content_hash()
+        )
+    );
     assert!(resources.iter().any(|r| r.uri == uri));
     let resource = c
         .read_resource(ReadResourceRequestParams::new(uri))
@@ -256,9 +268,10 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
         first["count"].as_u64().unwrap() as usize
     );
     assert!(
-        c.read_resource(ReadResourceRequestParams::new(
-            "collagene://enzyme-catalog/v2/latest"
-        ))
+        c.read_resource(ReadResourceRequestParams::new(format!(
+            "collagene://enzyme-catalog/v{}/latest",
+            current.edition().schema_version
+        )))
         .await
         .is_err()
     );

@@ -203,9 +203,8 @@ async fn whole_proposal_uses_literal_junction_and_native_oe_then_separate_intent
         report
             .preview
             .verification
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         TARGET

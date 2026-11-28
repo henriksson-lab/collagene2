@@ -205,7 +205,7 @@ fn failed_final_operation_never_exposes_preparation_as_final_but_wrong_target_do
         ],
     };
     let report = j::inspect_plan(&plan, &target, &j::Options::default()).unwrap();
-    assert_eq!(report.verification.products.len(), 1);
+    assert_eq!(report.verification.reconstructed_count(), 1);
     assert!(report.product_revision.is_none());
     assert!(report.junctions.is_empty());
     assert!(!report.complete);

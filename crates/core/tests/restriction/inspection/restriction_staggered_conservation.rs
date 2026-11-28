@@ -58,7 +58,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     let w = Workspace::from_documents("Actual13/17 source", vec![top, bottom, target.clone()], 2)
         .unwrap();
     let report = verification::engine::verify(&plan, &target);
-    assert_eq!(report.products.len(), 1, "{:?}", report.findings);
+    assert_eq!(report.reconstructed_count(), 1, "{:?}", report.findings);
     let saved = cloning_outputs::finalize(
         &w,
         &plan,

@@ -100,7 +100,7 @@ async fn actual_saved_run_and_derived_inverse_templates_are_attested_without_sta
         )
         .await;
         assert_eq!(verified["status"], "ConsistentUnderAssumptions");
-        assert_eq!(verified["products"].as_array().unwrap().len(), 4);
+        assert_eq!(verified["steps"].as_array().unwrap().len(), 4);
         assert_eq!(
             call(&c, "design_inverse_pcr", args.clone()).await["artifact_id"],
             response["artifact_id"]

@@ -910,15 +910,15 @@ impl CollageneServer {
             struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::cloning::assembly::recipe::Recipe,policy:&'a collagene_core::cloning::overlap::assembly::Options,origin_workspaces:&'a[MaterialOriginWorkspace],preview:&'a collagene_core::cloning::assembly::recipe::Preview,diagnostics:&'a collagene_core::cloning::assembly::diagnostics::Report}
             let evidence=Evidence{inputs:&args.inputs,target:&args.target,recipe:&args.recipe,policy:&args.policy,origin_workspaces:&args.origin_workspaces,preview:&preview,diagnostics:&diagnostics};
             let artifact=server.session.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","physical-homology-recipe.json")?;
-            let product=(preview.verification.products.len()==preview.compiled.plan.steps.len()).then(||preview.verification.products.last()).flatten();
+            let product=preview.verification.final_product();
             let physical=preview.verification.physical_processing_reports.iter().find_map(|step|match &step.evidence{verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(report) if step.step_index==preview.compiled.assembly_step=>Some(report),_=>None});
             output(json!({"state":"preview","verified":false,"candidate_saved":false,"inputs":args.inputs,"target":args.target,
                 "context_revision":context,"plan_revision":preview.verification.plan_revision,"target_revision":preview.verification.target_revision,
                 "engine_version":preview.verification.engine_version,"status":preview.verification.status,"preparation_complete":preview.preparation_complete,
                 "product":product.map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
                 "physical":physical.map(|report|json!({"engine_version":report.engine_version,"paired_product_available":report.product.is_some(),"reusable_material_available":report.product.as_ref().is_some_and(|product|product.nicks.is_empty()),"terminal_search_complete":report.terminal_search_complete,"incomplete":report.incomplete,"comparisons":report.comparisons,"source_geometry_revisions":report.source_geometry_revisions})),
-                "findings":preview.verification.findings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
-                "findings_truncated":preview.verification.findings.len()>100||preview.verification.findings.iter().take(100).any(|s|s.chars().count()>1024),
+                "findings":preview.verification.findings.iter().take(100).collect::<Vec<_>>(),
+                "findings_truncated":preview.verification.findings.len()>100,
                 "policy":args.policy,"diagnostics":diagnostics,"artifact_id":artifact,"plan_artifact_path":"preview.compiled.plan",
                 "authority":"Fresh explicit physical-model preview and independent-target comparison only. Paired reference DNA can remain diagnostic when joining termini cannot seal; it does not grant reusable material. Eligible material requires fresh native reconstruction under the same policy and explicit saved-origin replay for reuse. This response saves no candidate or product and makes no experimental-success, isolation or mixture-uniqueness claim."
             }))
@@ -994,15 +994,15 @@ impl CollageneServer {
             struct Evidence<'a>{inputs:&'a[BoundInput],target:&'a DocumentRef,recipe:&'a collagene_core::cloning::assembly::recipe::Recipe,policy:&'a collagene_core::cloning::overlap::annealing::Options,origin_workspaces:&'a[MaterialOriginWorkspace],preview:&'a collagene_core::cloning::assembly::recipe::Preview,diagnostics:&'a collagene_core::cloning::assembly::diagnostics::Report}
             let evidence=Evidence{inputs:&args.inputs,target:&args.target,recipe:&args.recipe,policy:&args.policy,origin_workspaces:&args.origin_workspaces,preview:&preview,diagnostics:&diagnostics};
             let artifact=server.session.text_artifact(bounded_json_limit(&evidence,32*1024*1024)?,"application/json","three-prime-annealing-recipe.json")?;
-            let product=(preview.verification.products.len()==preview.compiled.plan.steps.len()).then(||preview.verification.products.last()).flatten();
+            let product=preview.verification.final_product();
             let physical=preview.verification.physical_processing_reports.iter().find_map(|step|match &step.evidence{verification::evidence::PhysicalProcessingEvidence::HomologyAnnealing(report) if step.step_index==preview.compiled.assembly_step=>Some(report),_=>None});
             output(json!({"state":"preview","verified":false,"candidate_saved":false,"inputs":args.inputs,"target":args.target,
                 "context_revision":context,"plan_revision":preview.verification.plan_revision,"target_revision":preview.verification.target_revision,
                 "engine_version":preview.verification.engine_version,"status":preview.verification.status,"preparation_complete":preview.preparation_complete,
                 "product":product.map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),
                 "physical":physical.map(|report|json!({"engine_version":report.engine_version,"paired_diagnostic_available":report.paired_diagnostic.is_some(),"reusable_material_available":false,"terminal_search_complete":report.terminal_search_complete,"incomplete":report.incomplete,"comparisons":report.comparisons,"source_geometry_revisions":report.source_geometry_revisions})),
-                "findings":preview.verification.findings.iter().take(100).map(|s|s.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
-                "findings_truncated":preview.verification.findings.len()>100||preview.verification.findings.iter().take(100).any(|s|s.chars().count()>1024),
+                "findings":preview.verification.findings.iter().take(100).collect::<Vec<_>>(),
+                "findings_truncated":preview.verification.findings.len()>100,
                 "policy":args.policy,"diagnostics":diagnostics,"artifact_id":artifact,"plan_artifact_path":"preview.compiled.plan",
                 "authority":"Fresh 3-prime resection and homology-annealing preview against an independent target. The joined reference remains incomplete and documentary; all gaps and nicks remain, no fill, sealing or host activity is inferred, and no reusable assembled physical material is created. This response saves no candidate or product and makes no experimental-success, isolation or mixture-uniqueness claim."
             }))
@@ -1386,7 +1386,7 @@ impl CollageneServer {
             let artifact = server.session.text_artifact(text,"application/json","golden-gate-reaction.json")?;
             output(json!({"state":"advisory","verified":false,"context_revision":report.context_revision,
                 "probe_plan_revision":report.verification.plan_revision,"target_revision":report.verification.target_revision,
-                "inputs":args.inputs,"target":args.target,"preparation_complete":(report.verification.products.len()+1>=report.probe_plan.steps.len()),"pool_available":report.pool.is_some(),"products_determined":report.pool.as_ref().map(|p|p.products_determined),"profile_revision":report.pool.as_ref().map(|p|p.profile_revision.clone()),"cleavage_comparisons":report.pool.as_ref().map(|p|p.comparisons),"cleavage_budget_scope":"Preparative checked cuts plus Golden Gate source/candidate scans in this native plan; saved-ancestry replay has separate bounded scopes.",
+                "inputs":args.inputs,"target":args.target,"preparation_complete":report.verification.steps.iter().take(report.probe_plan.steps.len().saturating_sub(1)).all(|step|step.state==verification::evidence::StepState::Reconstructed&&step.product.is_some()),"pool_available":report.pool.is_some(),"products_determined":report.pool.as_ref().map(|p|p.products_determined),"profile_revision":report.pool.as_ref().map(|p|p.profile_revision.clone()),"cleavage_comparisons":report.pool.as_ref().map(|p|p.comparisons),"cleavage_budget_scope":"Preparative checked cuts plus Golden Gate source/candidate scans in this native plan; saved-ancestry replay has separate bounded scopes.",
                 "probe_verification":{"status":report.verification.status,"engine_version":report.verification.engine_version,
                     "findings":report.verification.findings.iter().take(100).collect::<Vec<_>>(),"findings_truncated":report.verification.findings.len()>100,
                     "assumptions":report.verification.assumptions.iter().take(100).collect::<Vec<_>>(),"assumptions_truncated":report.verification.assumptions.len()>100},
@@ -1492,8 +1492,8 @@ impl CollageneServer {
             })).collect::<Vec<_>>();
             output(json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,
                 "context_revision":report.context_revision,"engine_version":report.engine_version,"options":report.options,
-                "verification_status":report.verification.status,"verification_findings":report.verification.findings.iter().take(100).map(|finding|finding.chars().take(1024).collect::<String>()).collect::<Vec<_>>(),
-                "verification_findings_truncated":report.verification.findings.len()>100 || report.verification.findings.iter().take(100).any(|f|f.chars().count()>1024),
+                "verification_status":report.verification.status,"verification_findings":report.verification.findings.iter().take(100).collect::<Vec<_>>(),
+                "verification_findings_truncated":report.verification.findings.len()>100,
                 "product_revision":report.product_revision,"product_length":report.product_length,"product_topology":report.product_topology,
                 "method":report.method,"complete":report.complete,"omitted_junctions":report.omitted_junctions,
                 "junction_count":report.junctions.len(),"junctions":junctions,"junction_preview_truncated":report.junctions.len()>10,

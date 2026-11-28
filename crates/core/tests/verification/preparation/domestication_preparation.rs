@@ -119,10 +119,13 @@ fn a_checked_literal_site_change_is_supplied_by_real_primers_from_original_dna()
         "{:?}",
         report.verification.findings
     );
-    assert_eq!(report.verification.products.len(), 3);
+    assert_eq!(report.verification.reconstructed_count(), 3);
     assert!(verification::engine::plan_target_matches(
         &report.plan,
-        &report.verification.products[2],
+        report
+            .verification
+            .product(2)
+            .expect("selected step must reconstruct"),
         &report.target
     ));
     assert_eq!(input.molecule, original);

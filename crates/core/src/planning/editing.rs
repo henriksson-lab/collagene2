@@ -23,7 +23,7 @@ fn identifiers(ids: &[String]) -> Result<BTreeSet<&str>, Error> {
 }
 // Bound the variable-size reference vectors before the shared visitor allocates
 // its borrowed references. Other operation settings remain editable declarations.
-fn reference_count(op: &Operation) -> usize {
+pub(crate) fn reference_count(op: &Operation) -> usize {
     match op {
         Operation::Topo { sources, .. }
         | Operation::CheckedTopo { sources, .. }

@@ -121,7 +121,14 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
         "{:?}",
         p.verification.findings
     );
-    assert_eq!(p.verification.products[0].sequence.as_str(), INTENDED);
+    assert_eq!(
+        p.verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        INTENDED
+    );
     assert!(
         p.product_physical
             .as_ref()
@@ -137,7 +144,7 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
     ));
     let d = collagene_core::cloning::assembly::diagnostics::ligation(&p).unwrap();
     assert_eq!(d.rows[0].total_steps, 2);
-    assert!(d.failure.is_none());
+    assert!(d.failures.is_empty());
     let wrong = Molecule::dna(
         "Original letters are not the declared mutant",
         ORIGINAL,
@@ -317,7 +324,14 @@ fn shared_overlap_compilation_keeps_mismatch_policy_without_inferring_target() {
         Operation::PcrWithMismatches { .. }
     ));
     let p = assembly_recipe::preview(&inputs, &target, &r).unwrap();
-    assert_eq!(p.verification.products[0].sequence.as_str(), INTENDED);
+    assert_eq!(
+        p.verification
+            .product(0)
+            .expect("selected step must reconstruct")
+            .sequence
+            .as_str(),
+        INTENDED
+    );
     p.validate_binding(&assembly_recipe::preview_revision(&inputs, &target, &r).unwrap())
         .unwrap();
 }
@@ -382,7 +396,11 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
         p.verification.findings
     );
     assert_eq!(
-        p.verification.products.last().unwrap().sequence.as_str(),
+        p.verification
+            .final_product()
+            .expect("final declared step must reconstruct")
+            .sequence
+            .as_str(),
         "AGACCGATGCTACGTAGGACTTCAGACCTGGATGGGTTTA"
     );
     p.validate_binding(&tail::preview_revision(&inputs, &target, &recipe).unwrap())

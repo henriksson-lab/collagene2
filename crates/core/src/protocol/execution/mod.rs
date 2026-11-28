@@ -1,8 +1,10 @@
 //! Bounded stateless worker entrypoint, typed domain routing and current response serialization.
 mod assembly;
+mod base_editing;
 mod context;
 mod design_checks;
 mod documents;
+mod ivt;
 mod library;
 mod material;
 mod output;

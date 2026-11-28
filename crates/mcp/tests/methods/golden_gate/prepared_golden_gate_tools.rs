@@ -230,7 +230,7 @@ async fn prepared_pool_keeps_self_backgrounds_and_selected_plans_reconstruct_aga
         assert_eq!(checked["status"], status);
         assert_eq!(checked["target_revision"], target["revision"]);
         assert_eq!(
-            checked["products"].as_array().unwrap().last().unwrap()["length"],
+            checked["steps"].as_array().unwrap().last().unwrap()["product"]["length"],
             length
         );
         assert_eq!(checked["exhaustive_alternative_search"], false);

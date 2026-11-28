@@ -275,14 +275,16 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
     let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(
-        report.products.len(),
+        report.reconstructed_count(),
         plan.steps.len(),
         "{:?}",
         report.findings
     );
     assert!(verification::engine::plan_target_matches(
         &plan,
-        report.products.last().unwrap(),
+        report
+            .final_product()
+            .expect("final declared step must reconstruct"),
         &target
     ));
     let w =

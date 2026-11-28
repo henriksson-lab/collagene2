@@ -223,9 +223,8 @@ fn explicit_native_pin_preserves_preparation_and_wrong_target_cannot_choose_a_pr
     assert_eq!(
         evaluated
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         AB
@@ -248,9 +247,8 @@ fn explicit_native_pin_preserves_preparation_and_wrong_target_cannot_choose_a_pr
     assert_eq!(
         failed
             .verification()
-            .products
-            .last()
-            .unwrap()
+            .final_product()
+            .expect("final declared step must reconstruct")
             .sequence
             .as_str(),
         AB
@@ -274,7 +272,7 @@ fn changed_search_context_or_forged_candidate_keys_never_gain_authority() {
     let invalid = design::evaluate(&d, &row, &w).unwrap();
     assert_eq!(invalid.verification().status, Status::Invalid);
     assert_eq!(
-        invalid.verification().products.len(),
+        invalid.verification().reconstructed_count(),
         4,
         "only three declared-generation prefixes and PCR exist; forged pool candidate was withheld"
     );

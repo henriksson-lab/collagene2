@@ -113,10 +113,20 @@ fn literal_both_components_match_only_as_reference_models_and_protocols_retain_p
         let (target, plan) = fixture(byproduct);
         let r = verification::engine::verify(&plan, &target);
         assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
-        assert_eq!(r.products.len(), 1);
+        assert_eq!(r.reconstructed_count(), 1);
         assert!(!r.exhaustive_alternative_search);
-        assert!(!r.products[0].metadata.contains_key("tracked_modifications"));
-        assert!(!r.products[0].metadata.contains_key("duplex_model"));
+        assert!(
+            !r.product(0)
+                .expect("selected step must reconstruct")
+                .metadata
+                .contains_key("tracked_modifications")
+        );
+        assert!(
+            !r.product(0)
+                .expect("selected step must reconstruct")
+                .metadata
+                .contains_key("duplex_model")
+        );
         let html = verification::output::export_protocol_html(&plan, &target);
         assert!(
             html.contains("reference")
@@ -157,15 +167,9 @@ fn stale_source_profile_policy_slot_and_component_never_rebind_by_target() {
                 _ => {}
             }
         }
-        assert_ne!(
-            verification::engine::verify(&p, &target).status,
-            Status::ConsistentUnderAssumptions
-        );
-        assert!(
-            verification::engine::verify(&p, &target)
-                .products
-                .is_empty()
-        );
+        let report = verification::engine::verify(&p, &target);
+        assert_ne!(report.status, Status::ConsistentUnderAssumptions);
+        assert_eq!(report.reconstructed_count(), 0);
     }
     let mut wrong = target.clone();
     wrong.sequence = collagene_model::Sequence::dna(&"A".repeat(target.sequence.len())).unwrap();
@@ -213,12 +217,31 @@ fn reference_ancestry_cannot_gain_physical_authority_directly_or_after_overlap()
             });
             let r = verification::engine::verify(&p, &target);
             assert_eq!(r.status, Status::Incomplete);
-            assert!(r.products.len() < p.steps.len());
+            assert!(r.reconstructed_count() < p.steps.len());
+            let reference_steps = 1 + usize::from(through_overlap);
             assert!(
-                r.products
-                    .iter()
-                    .all(|m| !m.metadata.contains_key("tracked_modifications"))
+                r.product(0).is_some(),
+                "the original recombination reference remains visible"
             );
+            assert!(
+                r.steps
+                    .iter()
+                    .filter_map(|step| step.product.as_ref())
+                    .all(|product| !product.metadata.contains_key("tracked_modifications"))
+            );
+            if through_overlap {
+                assert_eq!(
+                    r.steps[1].state,
+                    verification::evidence::StepState::Withheld
+                );
+                assert_eq!(r.steps[2].state, verification::evidence::StepState::Blocked);
+                assert_eq!(r.steps[2].blocked_by, vec![Source::Step(1)]);
+            }
+            assert!(
+                r.product(reference_steps).is_none(),
+                "chemical consumer cannot gain reference-only authority"
+            );
+            r.validate_documentary().unwrap();
         }
     }
 }
@@ -378,7 +401,7 @@ fn forged_embedded_snapshot_is_rejected_before_plan_hashing() {
     }
     let r = verification::engine::verify(&plan, &target);
     assert_eq!(r.status, Status::Invalid);
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
     assert!(r.plan_revision.is_empty());
 }
 
@@ -387,7 +410,10 @@ fn text_roundtrips_keep_annotations_and_unverified_recipe_but_never_chemical_aut
     use collagene_core::{chemistry::Duplex, formats::sequence as formats};
     let (target, plan) = fixture(false);
     let r = verification::engine::verify(&plan, &target);
-    let mut product = r.products[0].clone();
+    let mut product = r
+        .product(0)
+        .expect("selected step must reconstruct")
+        .clone();
     product.name = "reference_product".into();
     assert!(product.original_genbank.is_none());
     assert!(plan.inputs[0].molecule.original_genbank.is_some());
@@ -476,7 +502,7 @@ fn native_source_and_target_trees_are_bounded_before_plan_or_target_hashing() {
     t.features.push(feature);
     let r = verification::engine::verify(&p, &t);
     assert!(r.plan_revision.is_empty());
-    assert!(r.products.is_empty());
+    assert!((r.reconstructed_count() == 0));
 }
 
 #[test]
@@ -484,8 +510,9 @@ fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input
     use collagene_core::{chemistry::AnnealOptions, formats::sequence as formats};
     let (target, plan) = fixture(true);
     let mut reference = verification::engine::verify(&plan, &target)
-        .products
-        .remove(0);
+        .product(0)
+        .expect("reference reconstruction remains documentary")
+        .clone();
     reference.name = "reference_source".into();
     for format in [formats::TextFormat::GenBank, formats::TextFormat::Embl] {
         let imported = formats::import_text(
@@ -541,7 +568,7 @@ fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input
         };
         let r = verification::engine::verify(&p, &target);
         assert_eq!(r.status, Status::Incomplete);
-        assert!(r.products.is_empty());
+        assert!((r.reconstructed_count() == 0));
     }
     // Explicitly declared, ordinary ssDNA remains a supported independent input.
     let mut top = Molecule::dna("ordered top", "AACCGGTTAACCGGTT", Topology::Linear).unwrap();

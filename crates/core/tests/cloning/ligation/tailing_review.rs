@@ -109,7 +109,9 @@ fn forward_and_reversed_ta_targets_keep_original_features_off_the_two_added_base
             "{:?}",
             r.findings
         );
-        let product = r.products.last().unwrap();
+        let product = r
+            .final_product()
+            .expect("final declared step must reconstruct");
         assert_eq!(product.sequence.as_str(), sequence);
         assert_eq!(product.features.len(), 2);
         let vector = product
@@ -167,7 +169,9 @@ fn gc_phosphates_and_nick_acceptance_are_not_inferred_from_tails_or_target_match
         "{:?}",
         r.findings
     );
-    let product = r.products.last().unwrap();
+    let product = r
+        .final_product()
+        .expect("final declared step must reconstruct");
     let summary: DuplexSummary = serde_json::from_str(&product.metadata["duplex_model"]).unwrap();
     assert_eq!(
         summary.nicks,
@@ -244,11 +248,11 @@ fn imported_physical_metadata_cannot_establish_accessible_tailing_ends() {
         };
         let r = verification::engine::verify(&p, &target);
         assert_eq!(r.status, Status::Incomplete);
-        assert!(r.products.is_empty());
+        assert!((r.reconstructed_count() == 0));
         assert!(
             !r.findings
                 .iter()
-                .any(|f| f.contains("matches the separately bound target"))
+                .any(|f| f.message.contains("matches the separately bound target"))
         );
     }
 }
@@ -295,8 +299,12 @@ fn prior_trusted_linear_ligation_nicks_survive_tailing_with_unchanged_five_prime
         "{:?}",
         r.findings
     );
-    let summary: DuplexSummary =
-        serde_json::from_str(&r.products.last().unwrap().metadata["duplex_model"]).unwrap();
+    let summary: DuplexSummary = serde_json::from_str(
+        &r.final_product()
+            .expect("final declared step must reconstruct")
+            .metadata["duplex_model"],
+    )
+    .unwrap();
     assert_eq!(
         summary.nicks,
         vec![Nick {
@@ -337,7 +345,9 @@ fn reversed_compound_source_feature_preserves_biological_order_after_either_liga
             "{:?}",
             r.findings
         );
-        let product = r.products.last().unwrap();
+        let product = r
+            .final_product()
+            .expect("final declared step must reconstruct");
         let feature = product
             .features
             .iter()

@@ -1392,6 +1392,7 @@ impl Report {
     /// Bounded documentary correspondence only. This does not repeat primer
     /// ranking/PCR or grant material authority to an imported report.
     pub fn validate(&self) -> Result<(), Error> {
+        self.verification.validate_documentary()?;
         if !hex(&self.context_revision)
             || !hex(&self.source_revision)
             || self.engine_version != ENGINE_VERSION
@@ -1399,7 +1400,7 @@ impl Report {
             || self.plan.steps.len() != 4 + usize::from(self.request.material_binding.is_some())
             || self.designs.len() != 3
             || self.search.len() != 3
-            || self.verification.products.len() > self.plan.steps.len()
+            || self.verification.planned_steps != self.plan.steps.len()
             || self.verification.physical_processing_reports.len()
                 > 1 + usize::from(self.request.material_binding.is_some())
             || self.verification.step_reports.len() > self.plan.steps.len()
@@ -1410,7 +1411,8 @@ impl Report {
                 .verification
                 .findings
                 .iter()
-                .chain(&self.verification.assumptions)
+                .map(|finding| finding.message.as_str())
+                .chain(self.verification.assumptions.iter().map(String::as_str))
                 .any(|s| s.len() > 8192)
             || self.warnings.len() > 32
             || self.warnings.iter().any(|s| s.len() > 8192)
@@ -1459,8 +1461,8 @@ impl Report {
             || self.verification.target_revision != self.expected.revision()
             || self.verification.engine_version != verification::ENGINE_VERSION
             || self.verification.status == Status::ConsistentUnderAssumptions
-                && (self.verification.products.len() != self.plan.steps.len()
-                    || !self.verification.products.last().is_some_and(|p| {
+                && (self.verification.reconstructed_count() != self.plan.steps.len()
+                    || !self.verification.final_product().is_some_and(|p| {
                         p.sequence == self.expected.sequence && p.topology == Topology::Linear
                     }))
         {
@@ -1468,7 +1470,12 @@ impl Report {
                 "returned plan/verification/expected-reference correspondence changed",
             ));
         }
-        for p in &self.verification.products {
+        for p in self
+            .verification
+            .steps
+            .iter()
+            .filter_map(|step| step.product.as_ref())
+        {
             collagene_model::bounds::model_preflight(&[p])?;
         }
         bytes(self, MAX_REPORT_BYTES)

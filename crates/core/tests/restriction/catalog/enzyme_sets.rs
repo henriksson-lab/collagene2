@@ -1,8 +1,10 @@
 use collagene_core::{
-    catalog_digest,
-    enzyme_sets::{self, Set},
-    restriction_inspection::EnzymeSpec,
-    workspace::{Workspace, WorkspaceAttachment},
+    cloning::restriction::{
+        catalog as catalog_digest,
+        enzyme_sets::{self, Set},
+        inspection::EnzymeSpec,
+    },
+    documents::workspace::{Workspace, WorkspaceAttachment},
 };
 use collagene_model::{Molecule, Topology};
 fn frame() -> Workspace {
@@ -244,8 +246,8 @@ fn native_archive_roundtrip_and_deletion_leave_unrelated_assets_intact() {
     let c = catalog_digest::builtin_catalog().unwrap();
     let set = enzyme_sets::build_for_catalog("archive preferences", &choices(), &c).unwrap();
     let (stored, hash) = enzyme_sets::store(&original, &set).unwrap();
-    let bytes = collagene_core::workspace::save_workspace(&stored).unwrap();
-    let restored = collagene_core::workspace::load_workspace(&bytes).unwrap();
+    let bytes = collagene_core::documents::workspace::save_workspace(&stored).unwrap();
+    let restored = collagene_core::documents::workspace::load_workspace(&bytes).unwrap();
     assert_eq!(enzyme_sets::load(&restored, &hash).unwrap(), set);
     assert!(enzyme_sets::delete(&restored, &asset_hash).is_err());
     let deleted = enzyme_sets::delete(&restored, &hash).unwrap();

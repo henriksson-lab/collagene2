@@ -1,4 +1,4 @@
-use collagene_core::workspace::Workspace;
+use collagene_core::documents::workspace::Workspace;
 use collagene_desktop_credentials as credentials;
 use collagene_desktop_sync_host::{SyncAdapter, SyncHost};
 use collagene_desktop_sync_protocol as wire;
@@ -365,7 +365,7 @@ fn failed_direct_key_forget_expires_existing_publication_review_for_that_scope()
     let mut w = Workspace::from_documents("Private original", vec![molecule], 0).unwrap();
     w.attachments.insert(
         hash,
-        collagene_core::workspace::WorkspaceAttachment {
+        collagene_core::documents::workspace::WorkspaceAttachment {
             kind: "sbol-design-exchange-v1".into(),
             name: "Original.jsonld".into(),
             media_type: "application/ld+json".into(),

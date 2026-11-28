@@ -1,4 +1,4 @@
-use collagene_core::annotation_batch::{self as batch, ColorEdit, Request};
+use collagene_core::sequence::annotations::batch::{self, ColorEdit, Request};
 use collagene_model::{Feature, Location, Molecule, Topology};
 
 fn feature(location: Location) -> Feature {

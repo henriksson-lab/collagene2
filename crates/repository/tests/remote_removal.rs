@@ -1,4 +1,4 @@
-use collagene_core::workspace::Workspace;
+use collagene_core::documents::workspace::Workspace;
 use collagene_lab_library::{self as store, mutations as durable};
 use collagene_library_protocol as wire;
 use collagene_library_sync as sync;

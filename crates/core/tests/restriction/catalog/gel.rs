@@ -1,5 +1,5 @@
 //! Independent lengths, log-coordinate geometry, mass accounting and diagnostic cases.
-use collagene_core::{analysis::Primer, gel::*};
+use collagene_core::{output::gel::*, sequence::analysis::Primer};
 use collagene_model::{Error, Molecule, Topology};
 fn dna(s: &str, t: Topology) -> Molecule {
     Molecule::dna("gel fixture", s, t).unwrap()
@@ -365,7 +365,7 @@ fn serialized_source_evidence_is_bounded_before_materializing_revision_buffers()
     let mut m = dna("ACGT", Topology::Linear);
     m.metadata.insert(
         "large attachment".into(),
-        "X".repeat(collagene_core::formats::MAX_IMPORT_BYTES),
+        "X".repeat(collagene_core::formats::sequence::MAX_IMPORT_BYTES),
     );
     let lane = input(m, Preparation::Uncut);
     assert!(matches!(

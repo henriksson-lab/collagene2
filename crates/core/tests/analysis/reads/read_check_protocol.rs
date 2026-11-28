@@ -1,14 +1,16 @@
 use collagene_core::{
-    oligo_formats::{self, QualityEncoding},
+    documents::workspace::Workspace,
+    formats::oligos::{self as oligo_formats, QualityEncoding},
+    material::lineage::EventBinding,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    read_checks,
-    run_lineage::EventBinding,
-    trace_validation::{TraceValidationOptions, TrimMode, ValidationStatus},
-    workspace::Workspace,
+    review::reads::{
+        checks as read_checks,
+        trace_validation::{TraceValidationOptions, TrimMode, ValidationStatus},
+    },
 };
 use collagene_model::{Molecule, Topology};
 fn binding(w: &Workspace, index: usize) -> EventBinding {

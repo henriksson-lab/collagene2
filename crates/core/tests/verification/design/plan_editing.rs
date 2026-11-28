@@ -1,9 +1,11 @@
 //! Graph edits retain producer identity; scientific recipe validity is separate.
 use collagene_core::{
-    analysis::Primer,
     chemistry::{EndRepairMethod, EndTreatment},
-    plan_editing as edit,
-    verification::{Operation, OrientedSource, Source, operation_sources, operation_sources_mut},
+    planning::{
+        editing as edit,
+        plan::{Operation, OrientedSource, Source},
+    },
+    sequence::analysis::Primer,
 };
 fn input(id: &str) -> Source {
     Source::Input(id.into())
@@ -66,16 +68,18 @@ fn edges(ops: &[Operation]) -> Vec<String> {
     let mut edges = ops
         .iter()
         .flat_map(|op| {
-            operation_sources(op).into_iter().map(move |source| {
-                format!(
-                    "{}<-{}",
-                    label(op),
-                    match source {
-                        Source::Input(id) => format!("input:{id}"),
-                        Source::Step(index) => label(&ops[*index]).into(),
-                    }
-                )
-            })
+            collagene_core::planning::plan::Operation::sources(op)
+                .into_iter()
+                .map(move |source| {
+                    format!(
+                        "{}<-{}",
+                        label(op),
+                        match source {
+                            Source::Input(id) => format!("input:{id}"),
+                            Source::Step(index) => label(&ops[*index]).into(),
+                        }
+                    )
+                })
         })
         .collect::<Vec<_>>();
     edges.sort();
@@ -362,13 +366,13 @@ fn shared_mutable_visitor_edits_actual_ordered_sources_without_touching_paramete
         ],
         circular: false,
         allow_nicked: true,
-        options: collagene_core::ligation_outcomes::Options {
+        options: collagene_core::cloning::ligation::outcomes::Options {
             max_products: 7,
             max_path_checks: 9,
             ..Default::default()
         },
     };
-    for source in operation_sources_mut(&mut operation) {
+    for source in collagene_core::planning::plan::Operation::sources_mut(&mut operation) {
         if let Source::Input(id) = source {
             *source = Source::Step(if id == "original-a" { 2 } else { 4 });
         }
@@ -389,7 +393,7 @@ fn shared_mutable_visitor_edits_actual_ordered_sources_without_touching_paramete
     assert_eq!(options.max_products, 7);
     assert_eq!(options.max_path_checks, 9);
     assert!(matches!(
-        operation_sources(&operation).as_slice(),
+        collagene_core::planning::plan::Operation::sources(&operation).as_slice(),
         [Source::Step(2), Source::Step(4)]
     ));
 }
@@ -398,7 +402,7 @@ fn shared_mutable_visitor_edits_actual_ordered_sources_without_touching_paramete
 fn replacement_can_repair_one_invalid_imported_dependency_without_changing_other_edges() {
     let ids = inputs();
     let mut broken = graph();
-    *operation_sources_mut(&mut broken[0])[0] = Source::Step(4);
+    *collagene_core::planning::plan::Operation::sources_mut(&mut broken[0])[0] = Source::Step(4);
     assert!(edit::validate_steps(&ids, &broken).is_err());
     let fixed = edit::replaced(&ids, &broken, 0, graph()[0].clone()).unwrap();
     edit::validate_steps(&ids, &fixed).unwrap();
@@ -407,5 +411,8 @@ fn replacement_can_repair_one_invalid_imported_dependency_without_changing_other
         serde_json::to_value(graph()).unwrap()
     );
     assert!(edit::replaced(&ids, &broken, 1, graph()[1].clone()).is_err());
-    assert!(matches!(operation_sources(&broken[0])[0], Source::Step(4)));
+    assert!(matches!(
+        collagene_core::planning::plan::Operation::sources(&broken[0])[0],
+        Source::Step(4)
+    ));
 }

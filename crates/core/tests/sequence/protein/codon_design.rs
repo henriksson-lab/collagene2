@@ -1,4 +1,4 @@
-use collagene_core::codon_design::*;
+use collagene_core::sequence::codon_design::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn protein(s: &str) -> Molecule {
     Molecule {

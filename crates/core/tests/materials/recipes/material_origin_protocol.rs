@@ -1,13 +1,19 @@
 //! Current worker material-origin reconstruction, identity and output fixtures.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, cloning_outputs,
-    history::DocumentHistory,
-    material_derivation as native,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin, MaterialSelection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    cloning::restriction::catalog as catalog_digest,
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::{
+        derivation as native,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin, MaterialSelection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -69,7 +75,7 @@ fn digest_fixture() -> (Workspace, native::Capsule, EventBinding) {
         step_index: 0,
         event: saved.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&saved.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&saved.workspace, &selected).unwrap();
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let enzyme = catalog
         .edition()
@@ -82,8 +88,8 @@ fn digest_fixture() -> (Workspace, native::Capsule, EventBinding) {
     let prepared = native::prepare_install(
         &saved.workspace,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: selected.event,
                 origin: native::SourceOrigin::Saved(MaterialOrigin::Run(origin)),
             }],
@@ -136,12 +142,12 @@ fn prepared_plan(
 }
 
 use collagene_core::{
-    material_pcr, pcr_outputs,
+    cloning::pcr::{material as material_pcr, outputs as pcr_outputs},
+    documents::transfer,
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer,
 };
 fn wire<T: serde::Serialize>(magic: &[u8; 4], version: u16, payload: &T) -> Vec<u8> {
     let payload = postcard::to_allocvec(payload).unwrap();
@@ -320,7 +326,7 @@ fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
     old[4..6].copy_from_slice(&20u16.to_le_bytes());
     assert_eq!(&old[6..], &candidate[6..]);
     assert!(transfer::load_candidate(&old).is_err());
-    let report = verification::verify(&plan, &w.revisions[&target.revision]);
+    let report = verification::engine::verify(&plan, &w.revisions[&target.revision]);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -365,11 +371,12 @@ fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
     )
     .unwrap();
     let mut record =
-        collagene_core::run_lineage::load_run(&saved.workspace, &saved.receipt.run.run_id).unwrap();
+        collagene_core::material::lineage::load_run(&saved.workspace, &saved.receipt.run.run_id)
+            .unwrap();
     assert_eq!(record.plan_schema, workspace::PLAN_SCHEMA_VERSION);
     // An unsupported internal plan representation is refused even inside a current run envelope.
     record.plan_schema = workspace::PLAN_SCHEMA_VERSION - 1;
-    assert!(collagene_core::run_lineage::save_run_record(&record).is_err());
+    assert!(collagene_core::material::lineage::save_run_record(&record).is_err());
 }
 #[test]
 fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
@@ -382,8 +389,8 @@ fn source_step_reconstruction_is_refused_before_material_can_be_recovered() {
             origin: cap,
         },
     );
-    assert!(run_material::plan_preflight(&plan).is_err());
-    let report = verification::verify(&plan, &w.revisions[&target.revision]);
+    assert!(collagene_core::material::capsule::plan_preflight(&plan).is_err());
+    let report = verification::engine::verify(&plan, &w.revisions[&target.revision]);
     assert_eq!(report.status, Status::Invalid);
     assert!(report.products.is_empty());
 }
@@ -402,7 +409,7 @@ fn current_encoding_retains_documentary_producer_stamps_without_granting_authori
             .iter()
             .all(|s| matches!(s, Operation::Pcr { .. }))
     );
-    let report = verification::verify(&plan, &origin.target);
+    let report = verification::engine::verify(&plan, &origin.target);
     assert!(
         report
             .engine_version

@@ -1,5 +1,5 @@
 //! Literal genetic-code, edit-cost, protected-site and boundary-motif oracles.
-use collagene_core::codon_design::{
+use collagene_core::sequence::codon_design::{
     self as codon, CodingRange, CodonDomain, CodonWeight, ConstrainedPolicy, DesignOptions,
     DesignStatus, ScopedMotif,
 };

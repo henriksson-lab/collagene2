@@ -1,15 +1,20 @@
 //! Actual standalone PCR/digest descendants retain source chemistry and intended ligation paths.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{EndTreatment, FivePrime, Strand, ThreePrime},
-    material_derivation as native,
-    methylation::MethylationState,
-    modified_duplex::{self, CallState, Chemical, GenerationAssumptions},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    tailing::TailingBase,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    chemistry::{
+        EndTreatment, FivePrime, Strand, ThreePrime,
+        methylation::MethylationState,
+        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+    },
+    cloning::ligation::tailing::TailingBase,
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as native,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn pin(w: &Workspace, index: usize) -> EventBinding {
@@ -36,8 +41,8 @@ fn request(
     action: native::TerminalAction,
 ) -> native::Request {
     native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: source,
             origin: origin,
         }],
@@ -63,8 +68,8 @@ fn pcr(w: &Workspace, index: usize, f: &str, r: &str) -> native::PreparedInstall
     native::prepare_install(
         w,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: source,
                 origin: native::SourceOrigin::OriginalReference,
             }],
@@ -235,7 +240,7 @@ fn independently_declared_ta_ligation_keeps_intended_path_and_alternative_produc
             origin: native::capsule(&w, event).unwrap(),
         })
         .collect::<Vec<_>>();
-    steps.push(collagene_core::ligation_outcomes::operation(
+    steps.push(collagene_core::cloning::ligation::outcomes::operation(
         vec![
             OrientedSource {
                 source: Source::Step(0),
@@ -259,7 +264,7 @@ fn independently_declared_ta_ligation_keeps_intended_path_and_alternative_produc
             .collect(),
         steps,
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -270,7 +275,9 @@ fn independently_declared_ta_ligation_keeps_intended_path_and_alternative_produc
         .physical_processing_reports
         .iter()
         .find_map(|step| {
-            if let verification::PhysicalProcessingEvidence::LigationOutcomes(e) = &step.evidence {
+            if let verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(e) =
+                &step.evidence
+            {
                 Some(&e.report)
             } else {
                 None
@@ -298,7 +305,7 @@ fn independently_declared_ta_ligation_keeps_intended_path_and_alternative_produc
     let reopened =
         workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap()).unwrap();
     assert!(reopened.attachments.len() > w.attachments.len());
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(html.contains("ligation") || html.contains("Ligation"));
 }
 #[test]
@@ -472,7 +479,7 @@ fn cut_created_oh_and_original_dam_calls_survive_tailing_and_phosphorylation_wit
         revision: product.revision.clone(),
     };
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &saved.workspace,
             &run_material::Selection {
                 run_id: saved.receipt.run_id,
@@ -638,7 +645,7 @@ fn tailing_keeps_a_real_internal_nick_and_treatment_refuses_to_seal_it() {
         revision: product.revision.clone(),
     };
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &saved.workspace,
             &run_material::Selection {
                 run_id: saved.receipt.run_id,
@@ -684,7 +691,7 @@ fn conditionally_capped_upstream_pcr_does_not_become_complete_after_terminal_pro
     let w = Workspace::from_documents("Conditional source", vec![source.clone()], 0).unwrap();
     let forward = Primer::new("Changed F", "AGACCGAT", "").unwrap();
     let reverse = Primer::new("Changed R", "TCCAGGTC", "").unwrap();
-    let mut options = collagene_core::mutagenesis::PcrOptions::default();
+    let mut options = collagene_core::cloning::pcr::mutagenesis::PcrOptions::default();
     options.binding.max_mismatches = 1;
     options.binding.min_three_prime_exact = 2;
     options.max_products = 1;
@@ -701,8 +708,8 @@ fn conditionally_capped_upstream_pcr_does_not_become_complete_after_terminal_pro
     let seed = native::prepare_install(
         &w,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: pin(&w, 0),
                 origin: native::SourceOrigin::OriginalReference,
             }],

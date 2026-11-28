@@ -1,13 +1,14 @@
 //! A sequence-only assembly is not a physical PCR template. Independent target
 //! agreement must not repair missing strands, termini or modification ancestry.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{DuplexSummary, EndTreatment},
-    modified_duplex::ModificationSummary,
-    mutagenesis::PcrOptions,
-    overlap_profiles::ProfileOptions,
-    tailing::TailingBase,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
+    chemistry::{DuplexSummary, EndTreatment, tracked_duplex::ModificationSummary},
+    cloning::{
+        ligation::tailing::TailingBase, overlap::profiles::ProfileOptions,
+        pcr::mutagenesis::PcrOptions,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 
@@ -99,7 +100,7 @@ fn sequence_only_overlap_outputs_remain_diagnostic_but_cannot_supply_either_pcr_
             input("right", "CGTATTCAGACCTGTA"),
         ];
         let prefix = plan(&target, inputs, vec![assembly(profiled)]);
-        let reference = verification::verify(&prefix, &target);
+        let reference = verification::engine::verify(&prefix, &target);
         assert_eq!(
             reference.status,
             Status::ConsistentUnderAssumptions,
@@ -120,7 +121,7 @@ fn sequence_only_overlap_outputs_remain_diagnostic_but_cannot_supply_either_pcr_
                 .steps
                 .push(pcr(Source::Step(0), mismatches, false));
             let before = serde_json::to_value(&attempted).unwrap();
-            let report = verification::verify(&attempted, &target);
+            let report = verification::engine::verify(&attempted, &target);
             assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
             assert_eq!(
                 report.products.len(),
@@ -158,7 +159,7 @@ fn original_reference_input_retains_its_explicit_intact_template_hypothesis() {
             vec![input("original", EXPECTED)],
             vec![pcr(Source::Input("original".into()), mismatches, false)],
         );
-        let report = verification::verify(&plan, &target);
+        let report = verification::engine::verify(&plan, &target);
         assert_eq!(
             report.status,
             Status::ConsistentUnderAssumptions,
@@ -202,7 +203,7 @@ fn reconstructed_physical_pcr_feeds_exact_or_mutagenic_pcr_and_real_terminal_che
             ],
         );
         let before = serde_json::to_value(&plan).unwrap();
-        let report = verification::verify(&plan, &target);
+        let report = verification::engine::verify(&plan, &target);
         assert_eq!(
             report.status,
             Status::ConsistentUnderAssumptions,
@@ -247,7 +248,7 @@ fn imported_projection_metadata_is_not_reinterpreted_as_an_original_physical_tem
                 false,
             )],
         );
-        let report = verification::verify(&plan, &target);
+        let report = verification::engine::verify(&plan, &target);
         assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
         assert!(report.products.is_empty());
         assert!(
@@ -278,7 +279,7 @@ fn exact_pcr_uses_covered_staggered_template_but_mismatch_profile_remains_unsupp
                 pcr(Source::Step(1), mismatches, false),
             ],
         );
-        let report = verification::verify(&plan, &target);
+        let report = verification::engine::verify(&plan, &target);
         // Tailing changes the actual template; subsequent PCR must neither
         // overwrite that parent nor inherit its unpaired enzymatic tails.
         assert_eq!(report.products[1].sequence.as_str(), format!("{EXPECTED}A"));

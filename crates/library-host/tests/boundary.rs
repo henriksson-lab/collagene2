@@ -1,9 +1,10 @@
 use collagene_core::{
-    analysis::Primer,
+    documents::workspace::{self, Workspace},
+    material::lineage::{EventBinding, InputEventBinding},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol,
-    run_lineage::{EventBinding, InputEventBinding},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_lab_library as store;
 use collagene_library_host::{self as host, ArchiveInventory, PublicationScope};
@@ -547,7 +548,7 @@ fn real_saved_run_archive_retains_ancestry_while_native_snapshot_never_restores_
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
         }],
     };
-    let saved = collagene_core::cloning_outputs::finalize(
+    let saved = collagene_core::material::outputs::finalize(
         &frame,
         &plan,
         event(&frame, 1),
@@ -555,7 +556,7 @@ fn real_saved_run_archive_retains_ancestry_while_native_snapshot_never_restores_
             input_id: "stock".into(),
             event: event(&frame, 0),
         }],
-        &collagene_core::cloning_outputs::Options {
+        &collagene_core::material::outputs::Options {
             name: "Saved PCR stock".into(),
             show_prepared: false,
             save_primers: false,
@@ -563,7 +564,7 @@ fn real_saved_run_archive_retains_ancestry_while_native_snapshot_never_restores_
         },
     )
     .unwrap();
-    let selection = collagene_core::run_material::Selection {
+    let selection = collagene_core::material::run::Selection {
         run_id: saved.receipt.run.run_id.clone(),
         step_index: 0,
         event: saved.receipt.construct.clone(),
@@ -606,14 +607,14 @@ fn real_saved_run_archive_retains_ancestry_while_native_snapshot_never_restores_
     let loaded = workspace::load_workspace(opened.bytes.as_slice()).unwrap();
     assert_eq!(loaded.history.len(), export.workspace.history.len());
     assert_eq!(loaded.attachments.len(), export.workspace.attachments.len());
-    let fresh = collagene_core::run_material::reconstruct(&loaded, &selection).unwrap();
+    let fresh = collagene_core::material::run::reconstruct(&loaded, &selection).unwrap();
     assert_eq!(fresh.report().status, Status::ConsistentUnderAssumptions);
     let molecule = &loaded.revisions[&selection.event.revision];
     let bytes = protocol::save_document(molecule).unwrap();
     let isolated = protocol::load_document(&bytes).unwrap();
     assert_eq!(isolated.revision(), molecule.revision());
     let isolated = Workspace::from_documents("Reference snapshot only", vec![isolated], 0).unwrap();
-    assert!(collagene_core::run_material::reconstruct(&isolated, &selection).is_err());
+    assert!(collagene_core::material::run::reconstruct(&isolated, &selection).is_err());
 }
 #[test]
 fn malformed_frames_and_unknown_actor_claims_never_reach_storage() {

@@ -1,13 +1,15 @@
 //! Actual native-source read decisions and derived reference history through MCP SDK.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    oligo_formats::{self, QualityEncoding},
-    read_checks,
-    run_lineage::EventBinding,
-    trace_validation::{SiteState, TraceValidationOptions, TrimMode},
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    formats::oligos::{self as oligo_formats, QualityEncoding},
+    material::lineage::EventBinding,
+    review::reads::{
+        checks as read_checks,
+        trace_validation::{SiteState, TraceValidationOptions, TrimMode},
+    },
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

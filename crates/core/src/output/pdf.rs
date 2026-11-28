@@ -1,0 +1,2051 @@
+//! Embedded, deterministic, printable protocol PDF. No filesystem or subprocess use.
+//! PDF syntax/font objects use pdf-writer; scientific content is reverified here.
+use crate::{
+    chemistry::DuplexSummary,
+    output::svg::{self, MapScene},
+    planning::plan::{DesignPlan, Operation, Source},
+    verification::{self, evidence::Status},
+};
+use collagene_model::{Error, Molecule, Topology};
+use pdf_writer::types::{CidFontType, FontFlags, SystemInfo, UnicodeCmap};
+use pdf_writer::{Content, Finish, Name, Pdf, Rect, Ref, Str, TextStr};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    f64::consts::{FRAC_PI_2, TAU},
+    io,
+};
+use ttf_parser::Face;
+
+const FONT: &[u8] = include_bytes!("../../assets/fonts/LiberationSans-Regular.ttf");
+const MARGIN: f32 = 42.0;
+const WIDTH: f32 = 595.0;
+const HEIGHT: f32 = 842.0;
+const TEXT_WIDTH: f32 = WIDTH - MARGIN * 2.0;
+const BOTTOM: f32 = 56.0;
+const TOP: f32 = 762.0;
+pub const MAX_PDF_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_PDF_PAGES: usize = 256;
+pub const MAX_PDF_TEXT_BYTES: usize = 512 * 1024;
+const MAX_INPUT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_GLYPHS: usize = 4096;
+const GREEN: [f32; 3] = [0.08, 0.31, 0.27];
+const INK: [f32; 3] = [0.10, 0.19, 0.17];
+const RED: [f32; 3] = [0.65, 0.13, 0.12];
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PdfReport {
+    pub bytes: Vec<u8>,
+    pub pages: usize,
+    pub warnings: Vec<String>,
+    pub status: Status,
+    pub plan_revision: String,
+    pub target_revision: String,
+    pub engine_version: String,
+}
+
+struct CountBytes(usize);
+impl io::Write for CountBytes {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len())
+            .filter(|n| *n <= MAX_INPUT_BYTES)
+            .ok_or_else(|| io::Error::other("PDF source limit"))?;
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+pub(crate) fn preflight(plan: &DesignPlan, target: &Molecule) -> Result<(), Error> {
+    if plan.inputs.len() > 1000 || plan.steps.len() > 1000 {
+        return Err(Error::TooLarge);
+    }
+    target.validate()?;
+    for input in &plan.inputs {
+        input.molecule.validate()?;
+    }
+    let mut count = CountBytes(0);
+    serde_json::to_writer(&mut count, plan).map_err(|_| Error::TooLarge)?;
+    serde_json::to_writer(&mut count, target).map_err(|_| Error::TooLarge)?;
+    Ok(())
+}
+fn source_name(source: &Source) -> String {
+    match source {
+        Source::Input(id) => format!("input {id}"),
+        Source::Step(i) => i
+            .checked_add(1)
+            .map(|n| format!("product of step {n}"))
+            .unwrap_or_else(|| format!("invalid step index {i}")),
+    }
+}
+// TOPO request/evidence text shares the PDF text ceiling before collecting a
+// String. Large valid graphs fail explicitly rather than truncate a recipe or
+// allocate an unbounded JSON value merely to discover the PDF is too large.
+struct TopoText(Vec<u8>);
+impl io::Write for TopoText {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        if self
+            .0
+            .len()
+            .checked_add(bytes.len())
+            .is_none_or(|n| n > MAX_PDF_TEXT_BYTES)
+        {
+            return Err(io::Error::other("TOPO PDF text limit"));
+        }
+        self.0
+            .try_reserve(bytes.len())
+            .map_err(|_| io::Error::other("TOPO PDF text allocation"))?;
+        self.0.extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+impl TopoText {
+    fn json(&mut self, value: &impl serde::Serialize) -> Result<(), Error> {
+        serde_json::to_writer(self, value).map_err(|_| Error::TooLarge)
+    }
+    fn finish(self) -> Result<String, Error> {
+        String::from_utf8(self.0).map_err(|error| Error::Format(error.to_string()))
+    }
+}
+// Render the declared recipe, not opaque capsule bytes or a second simulation.
+// The protocol's fresh native evidence supplies actual transfer outcomes below.
+fn topo_recipe_text(
+    out: &mut TopoText,
+    request: &crate::cloning::topo::Request,
+) -> Result<(), Error> {
+    crate::material::capsule::native_origins_preflight(
+        request
+            .recipe
+            .materials
+            .iter()
+            .filter_map(|material| match material {
+                crate::cloning::topo::MaterialRecipe::SavedGraph { origin, .. } => {
+                    Some(crate::material::capsule::NativeOriginRef::TopoGraph(origin))
+                }
+                _ => None,
+            }),
+    )?;
+    topo_recipe_lines(out, request, None, 0)
+}
+fn topo_recipe_lines(
+    out: &mut TopoText,
+    request: &crate::cloning::topo::Request,
+    historical_graph: Option<&str>,
+    depth: usize,
+) -> Result<(), Error> {
+    use io::Write as _;
+    if depth > crate::material::capsule::MAX_NESTING {
+        return Err(Error::TooLarge);
+    }
+    if let Some(owner) = historical_graph {
+        writeln!(out, "Retained preparation history for saved graph {owner}; these declarations are provenance, not new orders or repeated reactions.").map_err(|_| Error::TooLarge)?;
+    } else {
+        writeln!(out, "Current material preparation and saved graph inputs:")
+            .map_err(|_| Error::TooLarge)?;
+    }
+    for (index, material) in request.recipe.materials.iter().enumerate() {
+        match material {
+            crate::cloning::topo::MaterialRecipe::Prepared {
+                declaration_id,
+                assumption,
+                strands,
+                pairing,
+            } => {
+                writeln!(out, "Prepared material {index} / {declaration_id}: {assumption}. Activation and terminal chemistry are explicit hypotheses.").map_err(|_| Error::TooLarge)?;
+                for strand in strands {
+                    writeln!(
+                        out,
+                        "Strand {}: 5prime {:?}; 3prime {:?}.",
+                        strand.id, strand.five_prime, strand.three_prime
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                    for interval in &strand.segments {
+                        writeln!(out, "Read source role {} from zero-based offset {} for {} bases; reverse complement {}.", interval.source_role, interval.start, interval.length, interval.reverse).map_err(|_| Error::TooLarge)?;
+                    }
+                }
+                for span in pairing {
+                    writeln!(
+                        out,
+                        "Pair {} antiparallel bases: strand {} offset {}, strand {} offset {}.",
+                        span.length, span.strand_a, span.start_a, span.strand_b, span.start_b
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                }
+            }
+            crate::cloning::topo::MaterialRecipe::ExactPcr {
+                material_id,
+                template_role,
+                forward,
+                reverse,
+                tail,
+            } => {
+                writeln!(out, "Exact PCR material {index} / {material_id} from role {template_role:?}: forward ordered oligo {} = {} (annealing {}; explicit 5prime tail {}); reverse ordered oligo {} = {} (annealing {}; explicit 5prime tail {}). Explicit subsequent 3prime tailing {tail:?}. Copied/synthesized strands do not inherit template modifications or establish empirical amplification.", forward.name, forward.ordered_sequence(), forward.annealing.as_str(), forward.tail, reverse.name, reverse.ordered_sequence(), reverse.annealing.as_str(), reverse.tail).map_err(|_| Error::TooLarge)?;
+            }
+            crate::cloning::topo::MaterialRecipe::SavedGraph {
+                material_id,
+                origin,
+            } => {
+                let record =
+                    crate::cloning::topo::graph_history::load_record(&origin.record_bytes)?;
+                writeln!(out, "Use saved graph material {index} / {material_id}; native record {}; state {}. Retain the entire graph and its chronological prefix, including consumed activations and other components. No new insert, activation or physical isolation is inferred.", origin.selection.record_hash, origin.selection.state_revision).map_err(|_| Error::TooLarge)?;
+                for binding in &record.request.bindings {
+                    writeln!(
+                        out,
+                        "Historical source role {}: document {}; event {}; revision {}.",
+                        binding.role,
+                        binding.event.document_id,
+                        binding.event.event_id,
+                        binding.event.revision
+                    )
+                    .map_err(|_| Error::TooLarge)?;
+                }
+                topo_recipe_lines(
+                    out,
+                    &record.request.request,
+                    Some(&origin.selection.record_hash),
+                    depth + 1,
+                )?;
+            }
+        }
+    }
+    for (index, step) in request.steps.iter().enumerate() {
+        topo_declared_step_text(out, step, index, historical_graph)?;
+    }
+    writeln!(out, "Physical work limits:").map_err(|_| Error::TooLarge)?;
+    out.json(&request.engine_limits)?;
+    writeln!(out, "\nPaired-contour projection options:").map_err(|_| Error::TooLarge)?;
+    out.json(&request.projection_options)?;
+    writeln!(out).map_err(|_| Error::TooLarge)?;
+    Ok(())
+}
+
+fn topo_declared_step_text(
+    out: &mut TopoText,
+    step: &crate::cloning::topo::physical::Step,
+    index: usize,
+    owner: Option<&str>,
+) -> Result<(), Error> {
+    use crate::cloning::topo::physical::{Step, processing::Action};
+    use io::Write as _;
+    if let Some(owner) = owner {
+        writeln!(out,"Retained requested step {} in saved graph {owner}; provenance only, not a repeated reaction:",index+1).map_err(|_|Error::TooLarge)?;
+    } else {
+        writeln!(out, "New requested step {}:", index + 1).map_err(|_| Error::TooLarge)?;
+    }
+    match step {
+        Step::Transfer(t)=>writeln!(out,"Transfer activated donor source strand {} call {} to acceptor source strand {} call {}, {:?} geometry. Handles identify immutable original calls; actual eligibility is checked at this chronological position.",t.donor.strand,t.donor.index,t.acceptor.strand,t.acceptor.index,t.geometry),
+        Step::Process(Action::CleaveThreePrimeFlap{bond,displacement_step,profile,assumption})=>writeln!(out,"Explicit flap hydrolysis {:?}: source strand {} call {} -> strand {} call {}, supported by displacement at transcript step {}. Assumption: {}. The actual anchored flap must be established; detached calls retain their new terminal chemistry and remain present.",profile,bond.upstream.strand,bond.upstream.index,bond.downstream.strand,bond.downstream.index,displacement_step+1,assumption),
+        Step::Process(Action::SealNick{selection,ligase_assumption})=>writeln!(out,"Seal source strand {} call {} (3prime side) to strand {} call {} (5prime side). Ligase assumption: {}. Actual template continuity, 3prime OH and 5prime phosphate are required. No kinase, activation replacement or host repair is inferred.",selection.three.strand,selection.three.index,selection.five.strand,selection.five.index,ligase_assumption),
+    }.map_err(|_|Error::TooLarge)?;
+    Ok(())
+}
+fn topo_outcomes_text(
+    out: &mut TopoText,
+    physical: &crate::cloning::topo::physical::Report,
+) -> Result<(), Error> {
+    use crate::cloning::topo::physical::{StepEvidence, processing::ActionEvidence};
+    use io::Write as _;
+    for step in &physical.steps {
+        match step {
+            StepEvidence::Transfer(e) => {
+                writeln!(out,"Execution step {} transfer: {:?}; {}. Actual donor source strand {} call {}, acceptor strand {} call {}; geometry {:?}. Released activation {:?}.",e.step+1,e.outcome,e.reason,e.donor_call.strand,e.donor_call.index,e.acceptor_call.strand,e.acceptor_call.index,e.transfer.geometry,e.released_activation).map_err(|_|Error::TooLarge)?;
+                writeln!(out, "Removed source-call pairs:").map_err(|_| Error::TooLarge)?;
+                out.json(&e.removed_pairs)?;
+                writeln!(out, "\nAdded source-call pairs:").map_err(|_| Error::TooLarge)?;
+                out.json(&e.added_pairs)?;
+                if let Some(displacement) = &e.displacement {
+                    writeln!(out, "\nActual displaced calls and retained continuation:")
+                        .map_err(|_| Error::TooLarge)?;
+                    out.json(displacement)?;
+                }
+                writeln!(out).map_err(|_| Error::TooLarge)?;
+            }
+            StepEvidence::Process(ActionEvidence::FlapCleavage(e)) => {
+                writeln!(out,"Execution step {} flap cleavage: {:?}; {}. Profile {:?}; displaced at step {}. {} actual flap calls retained; new 3prime {:?}, new 5prime {:?}. Bond {:?}; anchor template {:?}.",e.step+1,e.outcome,e.reason,e.profile,e.displacement_step+1,e.flap_calls.len(),e.created_three_prime,e.created_five_prime,e.bond,e.anchor_template).map_err(|_|Error::TooLarge)?;
+                out.json(&e.flap_calls)?;
+                writeln!(out).map_err(|_| Error::TooLarge)?;
+            }
+            StepEvidence::Process(ActionEvidence::NickSealing(e)) => {
+                writeln!(out,"Execution step {} nick sealing: {:?}; {}. Source calls {:?}; actual 3prime {:?}, 5prime {:?}; opposite template calls {:?} and {:?}.",e.step+1,e.outcome,e.reason,e.selection,e.three_prime,e.five_prime,e.template_three,e.template_five).map_err(|_|Error::TooLarge)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn topo_step_text(
+    sources: &[crate::planning::plan::TopoSource],
+    request: &crate::cloning::topo::Request,
+    selection: &crate::cloning::topo::Selection,
+    policy: Option<&crate::cloning::topo::AcceptancePolicy>,
+    plan: &DesignPlan,
+    report: &verification::evidence::VerificationReport,
+) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"TOPO elementary strand-transfer reconstruction under explicitly declared preparation hypotheses. No supplier label or imported reference metadata proves activation, terminal chemistry, kit formulation or experimental success.").map_err(|_|Error::TooLarge)?;
+    for source in sources {
+        let revision = match &source.source {
+            Source::Input(id) => plan
+                .inputs
+                .iter()
+                .find(|input| input.id == *id)
+                .map(|input| input.revision.clone()),
+            Source::Step(index) => report.products.get(*index).map(Molecule::revision),
+        };
+        writeln!(
+            out,
+            "Source role {:?}: {}; revision {}",
+            source.role,
+            source_name(&source.source),
+            revision
+                .as_deref()
+                .unwrap_or("unavailable; upstream reconstruction is not established")
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    topo_recipe_text(&mut out, request)?;
+    writeln!(out, "Explicit component/source-seed selection:").map_err(|_| Error::TooLarge)?;
+    out.json(selection)?;
+    writeln!(out,"\nAll reciprocal components, open nicks, retained flaps/free strands and unreleased activations remain in the physical graph. A paired contour is not covalent closure or host repair. Kit conditions, quantities, enzyme recycling, mixture kinetics and laboratory efficacy are unspecified.").map_err(|_|Error::TooLarge)?;
+    if let Some(policy) = policy {
+        writeln!(out,"Final-only checked TOPO target policy: accept nicks {}; accept unknown terminal chemistry {}; accept unapplied steps {}; accept other components {}; allow circular-origin rotation {}; allow reverse-complement comparison {}.",policy.allow_nicks,policy.allow_unknown_terminal_chemistry,policy.allow_unapplied_steps,policy.allow_other_components,policy.allow_circular_rotation,policy.allow_reverse_complement).map_err(|_|Error::TooLarge)?;
+        out.json(policy)?;
+        writeln!(out,"\nThe final step reconstructs the graph and checks the independent target afresh. Acceptance establishes consistency under these declared assumptions only; it does not repair termini/nicks/flaps, establish experimental confidence or authorize downstream generic chemical transformations. Fully specified graph DNA is required. Annotation correspondence and review evidence do not validate biological function.").map_err(|_|Error::TooLarge)?;
+    } else {
+        writeln!(out,"Preview-only TOPO operation: no physical-target acceptance policy is supplied; plan verification remains incomplete.").map_err(|_|Error::TooLarge)?;
+    }
+    out.finish()
+}
+fn topo_layout_text(
+    out: &mut TopoText,
+    preparation: &crate::cloning::topo::PreparationEvidence,
+) -> Result<(), Error> {
+    use io::Write as _;
+    for layout in &preparation.layout {
+        let owner = layout
+            .owner
+            .as_deref()
+            .map(|id| format!("saved graph {id}"))
+            .unwrap_or_else(|| "current input recipe".into());
+        writeln!(
+            out,
+            "Material {} in {}: original strand slots map to current prepared strands {:?} (zero-based).",
+            layout.material, owner, layout.source_strands
+        )
+        .map_err(|_| Error::TooLarge)?;
+        for (original, current) in &layout.source_roles {
+            writeln!(
+                out,
+                "Historical source role {original:?} maps to current role {current:?}."
+            )
+            .map_err(|_| Error::TooLarge)?;
+        }
+    }
+    for origin in &preparation.graph_origins {
+        writeln!(out, "Freshly replayed saved graph {}; state {}; prepared source strands [{}..{}); retained prefix through step {}; inherited incompleteness {}. All source components remain present.", origin.selection.record_hash, origin.selection.state_revision, origin.strand_start, origin.strand_end, origin.after_steps, origin.incomplete).map_err(|_| Error::TooLarge)?;
+        for (scoped, original) in &origin.activation_unmap {
+            writeln!(
+                out,
+                "Activation identity {scoped}: original declared label {original:?}."
+            )
+            .map_err(|_| Error::TooLarge)?;
+        }
+        for (original, current) in origin.step_map.iter().enumerate() {
+            writeln!(
+                out,
+                "Retained original step {} maps to current execution step {}.",
+                original + 1,
+                current + 1
+            )
+            .map_err(|_| Error::TooLarge)?;
+        }
+    }
+    writeln!(out, "The first {} execution steps are retained source history, not new instructions; their individual actual outcomes remain below.", preparation.retained_steps.len()).map_err(|_| Error::TooLarge)?;
+    Ok(())
+}
+fn topo_evidence_text(product: &crate::cloning::topo::Product) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    topo_layout_text(&mut out, &product.preparation)?;
+    let physical = &product.projection.physical;
+    writeln!(out,"Fresh TOPO evidence: adapter {} / {}; physical engine {} / model {}. Work complete {}; all requested steps applied {}; unsupported/unknown {}; fully specified DNA {}.",product.engine_version,product.batch_revision,physical.engine,physical.model,physical.work_complete,physical.all_requested_steps_applied,physical.unsupported_or_unknown,physical.fully_specified_dna).map_err(|_|Error::TooLarge)?;
+    for assumption in product
+        .preparation
+        .assumptions
+        .iter()
+        .chain(physical.assumptions.iter())
+    {
+        writeln!(out, "Preparation/model assumption: {assumption}").map_err(|_| Error::TooLarge)?;
+    }
+    writeln!(
+        out,
+        "Actual chronological outcomes, source-call pair changes, displacement and processing:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    topo_outcomes_text(&mut out, physical)?;
+    writeln!(out, "\nEvery reconstructed component:").map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.components)?;
+    for (index, chain) in physical.product.chains.iter().enumerate() {
+        writeln!(out,"\nChemical chain {index}: {} stored 5′→3′ bases; actual ends and immutable source placements:",chain.sequence.len()).map_err(|_|Error::TooLarge)?;
+        out.json(&chain.ends)?;
+        out.json(&chain.sources)?;
+    }
+    writeln!(
+        out,
+        "\nOpen nicks with actual source calls and terminal chemistry:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.nicks)?;
+    writeln!(
+        out,
+        "\nRetained unpaired runs, including flaps and free strands:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.unpaired)?;
+    writeln!(out, "\nExplicitly released activation identities:").map_err(|_| Error::TooLarge)?;
+    out.json(&physical.product.released_activations)?;
+    match &product.projection.outcome {
+        crate::cloning::topo::physical::projection::Outcome::Proven(view) => {
+            writeln!(out,"\nSelected paired contour {:?}: top {} bases, actual bottom {} bases; known terminal chemistry {}; all requested steps applied {}. External ends and every retained nick follow:",view.topology,view.top.len(),view.bottom.len(),view.fully_known_terminal_chemistry,view.all_requested_steps_applied).map_err(|_|Error::TooLarge)?;
+            out.json(&view.ends)?;
+            out.json(&view.nicks)?;
+        }
+        crate::cloning::topo::physical::projection::Outcome::Withheld(reason) => {
+            writeln!(
+                out,
+                "\nPaired contour withheld; no replacement reference DNA or repair is fabricated:"
+            )
+            .map_err(|_| Error::TooLarge)?;
+            out.json(reason)?;
+        }
+    }
+    writeln!(out,"\nReference preview present: {}. This summary cannot restore physical authority from saved/imported producer metadata or establish experimental target acceptance.",product.reference.is_some()).map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
+fn topo_actions_step_text(
+    sources: &[crate::planning::plan::TopoSource],
+    request: &crate::cloning::topo::actions::Request,
+    plan: &DesignPlan,
+    report: &verification::evidence::VerificationReport,
+) -> Result<String, Error> {
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"TOPO chronological physical reconstruction: prepare declared source strands and replay retained history, then execute only the explicitly ordered transfer, flap-cleavage and nick-sealing steps. Flap cleavage uses the ideal duplex-anchored 3prime hydrolysis profile. This is not a named nuclease, kit protocol, host-repair model or efficacy guarantee.").map_err(|_|Error::TooLarge)?;
+    for source in sources {
+        let revision = match &source.source {
+            Source::Input(id) => plan
+                .inputs
+                .iter()
+                .find(|i| i.id == *id)
+                .map(|i| i.revision.clone()),
+            Source::Step(i) => report.products.get(*i).map(Molecule::revision),
+        };
+        writeln!(
+            out,
+            "Source role {}: {}; revision {}",
+            source.role,
+            source_name(&source.source),
+            revision
+                .as_deref()
+                .unwrap_or("unavailable; upstream reconstruction is not established")
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    topo_recipe_text(&mut out, &request.preparation)?;
+    writeln!(out,"Select actual component {}, reference seed source strand {} call {}. Require every requested step {}; require known terminal chemistry {}. Physical transcript context: {}.",request.selection.component,request.selection.reference_seed.strand,request.selection.reference_seed.index,request.options.require_all_requested_steps_applied,request.options.require_known_terminal_chemistry,request.selection.source_batch_revision).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Every source call, detached chain, unpaired run, remaining nick and other component is retained. Contour selection is not physical isolation; cleavage is not target-driven trimming. The independent target is compared only after fresh plan reconstruction. Concentrations, reaction conditions, enzyme identity/activity and experimental success require laboratory review.").map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
+fn topo_actions_evidence_text(
+    evidence: &crate::cloning::topo::actions::Report,
+) -> Result<String, Error> {
+    use crate::cloning::topo::physical::projection::Outcome;
+    use io::Write as _;
+    let mut out = TopoText(Vec::new());
+    topo_layout_text(&mut out, &evidence.preparation)?;
+    let physical = &evidence.projection.physical;
+    let product = &physical.product;
+    let retained = product.chains.iter().try_fold(0usize, |n, c| {
+        n.checked_add(c.sequence.len()).ok_or(Error::TooLarge)
+    })?;
+    writeln!(out,"Fresh chronological graph evidence: {} original source calls; {} calls retained across all {} components, {} nicks, {} unpaired runs. Work complete {}; all requested steps applied {}; unsupported or unknown {}. No earlier phase report supplies material.",physical.source_bases,retained,product.components.len(),product.nicks.len(),product.unpaired.len(),physical.work_complete,physical.all_requested_steps_applied,physical.unsupported_or_unknown).map_err(|_|Error::TooLarge)?;
+    topo_outcomes_text(&mut out, physical)?;
+    for (index, component) in product.components.iter().enumerate() {
+        let count = component.chains.iter().try_fold(0usize, |n, i| {
+            product
+                .chains
+                .get(*i)
+                .and_then(|c| n.checked_add(c.sequence.len()))
+                .ok_or(Error::TooLarge)
+        })?;
+        writeln!(out,"{} component {index}: {count} retained source calls; {} paired, {} unpaired; {} chains; covalently closed {}.",if index==evidence.request.selection.component{"Selected"}else{"Other retained"},component.paired_nucleotides,component.unpaired_nucleotides,component.chains.len(),component.covalently_closed).map_err(|_|Error::TooLarge)?;
+    }
+    for (index, chain) in product.chains.iter().enumerate() {
+        writeln!(out,"Chemical chain {index}: {} actual stored5prime-to-3prime calls; circular {}. Sequence {}. Terminal chemistry and full immutable source placements follow:",chain.sequence.len(),matches!(chain.ends, crate::cloning::topo::physical::ChainEnds::CovalentlyCircular),chain.sequence.as_str()).map_err(|_|Error::TooLarge)?;
+        out.json(&chain.ends)?;
+        writeln!(out).map_err(|_| Error::TooLarge)?;
+        out.json(&chain.sources)?;
+        writeln!(out).map_err(|_| Error::TooLarge)?;
+    }
+    writeln!(
+        out,
+        "Retained unpaired runs, including attached flaps and detached byproducts:"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&product.unpaired)?;
+    writeln!(out).map_err(|_| Error::TooLarge)?;
+    writeln!(
+        out,
+        "Explicitly released activation identities (each actual consumption retained once):"
+    )
+    .map_err(|_| Error::TooLarge)?;
+    out.json(&product.released_activations)?;
+    writeln!(out).map_err(|_| Error::TooLarge)?;
+    for nick in &product.nicks {
+        writeln!(out,"Remaining nick: source strand {} call {} ({:?}, 3prime) -> strand {} call {} ({:?}, 5prime).",nick.three.strand,nick.three.index,nick.three_prime,nick.five.strand,nick.five.index,nick.five_prime).map_err(|_|Error::TooLarge)?;
+    }
+    match &evidence.projection.outcome {
+        Outcome::Proven(v) => {
+            writeln!(out,"Proven {:?} paired contour: actual top {} / bottom {} bases; {} retained contour nicks; terminal chemistry known {}.",v.topology,v.top.len(),v.bottom.len(),v.nicks.len(),v.fully_known_terminal_chemistry).map_err(|_|Error::TooLarge)?;
+        }
+        Outcome::Withheld(reason) => {
+            writeln!(out,"Contour withheld: {reason:?}. No replacement material or target-directed repair was created.").map_err(|_|Error::TooLarge)?;
+        }
+    }
+    writeln!(out,"Faithful duplex available {}; tracked bridge {}; source-derived reference {}. A faithful bridge does not prove biological function, isolation or laboratory success.",evidence.duplex.is_some(),evidence.tracked.is_some(),evidence.product.is_some()).map_err(|_|Error::TooLarge)?;
+    if let Some(annotations) = &evidence.annotations {
+        for source in &annotations.sources {
+            writeln!(out,"Annotation source {}: {} projected, {} outside selected contour, {} unmapped originals; projection supported {}. Disrupted and PCR-derived features require review.",source.role,source.projected,source.dropped,source.unmapped.len(),source.projection_supported).map_err(|_|Error::TooLarge)?;
+        }
+    }
+    for assumption in evidence
+        .preparation
+        .assumptions
+        .iter()
+        .chain(&physical.assumptions)
+    {
+        writeln!(out, "Preparation/model assumption: {assumption}").map_err(|_| Error::TooLarge)?;
+    }
+    for note in &evidence.bridge_notes {
+        writeln!(out, "Bridge limitation: {note}").map_err(|_| Error::TooLarge)?;
+    }
+    let hash = crate::cloning::assembly::recipe::hash(evidence)?;
+    writeln!(out,"Complete chronological graph, ordered transfer/cut/seal evidence, displacement, terminal activation and source maps remain in the matching cloning-run JSON sidecar. Action evidence content hash: {hash}. Source/request context: {}. This readable protocol summarizes that evidence; the full graph is not embedded here.",evidence.context_revision).map_err(|_|Error::TooLarge)?;
+    out.finish()
+}
+fn status_text(status: Status) -> &'static str {
+    match status {
+        Status::Invalid => "DRAFT - INVALID: do not use as a validated protocol",
+        Status::Incomplete => "DRAFT - INCOMPLETE: scientific checks are unresolved",
+        Status::ConsistentUnderAssumptions => {
+            "Consistent under assumptions - laboratory review required"
+        }
+    }
+}
+
+struct EmbeddedEvidence {
+    name: String,
+    mime: &'static [u8],
+    bytes: Vec<u8>,
+}
+struct EvidenceBytes {
+    bytes: Vec<u8>,
+    limit: usize,
+}
+impl io::Write for EvidenceBytes {
+    fn write(&mut self, b: &[u8]) -> io::Result<usize> {
+        if self
+            .bytes
+            .len()
+            .checked_add(b.len())
+            .is_none_or(|n| n > self.limit)
+        {
+            return Err(io::Error::other("PDF evidence attachment bound"));
+        }
+        self.bytes
+            .try_reserve(b.len())
+            .map_err(|_| io::Error::other("PDF attachment allocation"))?;
+        self.bytes.extend_from_slice(b);
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+fn ligation_pdf_limit(e: Error) -> Error {
+    if matches!(e, Error::TooLarge) {
+        Error::Unsupported("Ligation alternatives exceed the bounded PDF text, page or file size. No partial protocol was produced; export the full reconstruction JSON instead.".into())
+    } else {
+        e
+    }
+}
+fn ligation_path(path: &[crate::cloning::ligation::outcomes::Placement]) -> String {
+    path.iter()
+        .map(|p| {
+            format!(
+                "{} ({})",
+                p.key,
+                if p.reverse { "reverse" } else { "forward" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" -> ")
+}
+fn ligation_evidence_text(
+    e: &verification::evidence::LigationOutcomeEvidence,
+) -> Result<String, Error> {
+    use io::Write as _;
+    e.validate_documentary()?;
+    let r = &e.report;
+    let mut out = TopoText(Vec::new());
+    writeln!(out,"LIGATION INTENDED PATH AND ALTERNATIVES. Exactly one copy of every declared fragment, declared {:?} topology and explicit nick policy only. No partial assemblies, additional copy numbers, vector-only/self-ligation, multimers, concentrations, kinetics, yields or isolation. Alternatives do not establish target success. No probabilities are assigned.",r.intended.topology).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Scope: {} source fragments; enumeration fragment limit {}; checked paths {}; incompatible {}; unresolved {}; withheld products {}; enumeration complete {}; exhaustive within this scope only {}. Limits {:?}. Retained bases {}; work {}. Report context {}.",r.sources.len(),r.request.options.max_enumeration_fragments,r.paths_checked,r.incompatible_paths,r.unresolved_paths,r.withheld_products,r.enumeration_complete,r.exhaustive_within_scope,r.limits,r.retained_product_bases,r.work,r.context_revision).map_err(|_|Error::TooLarge)?;
+    writeln!(out,"Request limits: paths {}, products {}, product bases {}, report bytes {}, work {}. Full typed evidence and all retained product strands are embedded as JSON and FASTA attachments to this PDF. FASTA is sequence-only; topology, ends, nicks and modification state remain in the JSON and the text below.",r.request.options.max_path_checks,r.request.options.max_products,r.request.options.max_total_product_bases,r.request.options.max_report_bytes,r.request.options.max_work).map_err(|_|Error::TooLarge)?;
+    for b in &e.bindings {
+        writeln!(
+            out,
+            "Operand {}: {}; source revision {}; actual material state {}.",
+            b.key,
+            source_name(&b.source),
+            b.source_revision,
+            b.material_revision
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for (i, p) in std::iter::once(&r.intended)
+        .chain(&r.alternatives)
+        .enumerate()
+    {
+        let label = if i == 0 {
+            "Intended path".into()
+        } else {
+            format!("Alternative {i}")
+        };
+        writeln!(
+            out,
+            "{label}: {}. {:?}; {} reference bases. {}",
+            ligation_path(&p.path),
+            p.topology,
+            p.sequence.len(),
+            p.duplex.summary()?.describe()
+        )
+        .map_err(|_| Error::TooLarge)?;
+        write!(out,"Actual modification state {}; known modified {}, unknown eligible {}, known unmodified {}. Generation provenance: ",p.modifications.state_revision,p.modifications.known_modified,p.modifications.unknown_eligible,p.modifications.known_unmodified).map_err(|_|Error::TooLarge)?;
+        out.json(&p.modifications.generation)?;
+        writeln!(out, ".").map_err(|_| Error::TooLarge)?;
+        writeln!(
+            out,
+            "Top strand 5prime to 3prime: {}
+Bottom strand 5prime to 3prime: {}",
+            p.duplex.top.as_str(),
+            p.duplex.bottom.as_str()
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    for x in &r.unresolved_examples {
+        writeln!(
+            out,
+            "Unresolved path {}: {}",
+            ligation_path(&x.path),
+            x.reason
+        )
+        .map_err(|_| Error::TooLarge)?;
+    }
+    writeln!(out,"Unresolved examples retained {} of {}; examples truncated {}. Unresolved paths and withheld products are not absent alternatives.",r.unresolved_examples.len(),r.unresolved_paths,r.unresolved_examples_truncated).map_err(|_|Error::TooLarge)?;
+    for w in &r.warnings {
+        writeln!(out, "Scope note: {w}").map_err(|_| Error::TooLarge)?;
+    }
+    out.finish()
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum DocumentaryKind {
+    SequenceComparison,
+    PlateLayout,
+    ReactionQuantities,
+}
+impl DocumentaryKind {
+    fn header(self) -> &'static str {
+        match self {
+            Self::SequenceComparison => "COLLAGENE 2 / SEQUENCE COMPARISON",
+            Self::PlateLayout => "COLLAGENE 2 / PLATE LAYOUT",
+            Self::ReactionQuantities => "COLLAGENE 2 / REACTION QUANTITIES",
+        }
+    }
+    fn footer(self) -> (&'static str, &'static str) {
+        match self {
+            Self::SequenceComparison => ("Reference", "Query"),
+            Self::PlateLayout => ("Layout", "Context"),
+            Self::ReactionQuantities => ("Quantities", "Context"),
+        }
+    }
+    fn producer(self) -> &'static str {
+        match self {
+            Self::SequenceComparison => "Collagene embedded Rust comparison exporter",
+            Self::PlateLayout => "Collagene embedded Rust plate layout exporter",
+            Self::ReactionQuantities => "Collagene embedded Rust reaction quantity exporter",
+        }
+    }
+}
+struct Layout {
+    face: Face<'static>,
+    pages: Vec<Content>,
+    current: Content,
+    y: f32,
+    glyphs: BTreeMap<char, u16>,
+    escaped: BTreeSet<char>,
+    text_bytes: usize,
+    status: Status,
+    review_label: Option<String>,
+    review_kind: Option<DocumentaryKind>,
+    attachments: Vec<EmbeddedEvidence>,
+}
+impl Layout {
+    fn new(status: Status) -> Result<Self, Error> {
+        Self::with_review_label(status, None, None)
+    }
+    fn with_review_label(
+        status: Status,
+        review_label: Option<String>,
+        review_kind: Option<DocumentaryKind>,
+    ) -> Result<Self, Error> {
+        if review_label.is_some() != review_kind.is_some() {
+            return Err(Error::Format("documentary PDF kind/label missing".into()));
+        }
+        let mut layout = Self {
+            face: Face::parse(FONT, 0)
+                .map_err(|_| Error::Format("bundled PDF font is invalid".into()))?,
+            pages: vec![],
+            current: Content::new(),
+            y: TOP,
+            glyphs: BTreeMap::new(),
+            escaped: BTreeSet::new(),
+            text_bytes: 0,
+            status,
+            review_label,
+            review_kind,
+            attachments: vec![],
+        };
+        layout.header()?;
+        Ok(layout)
+    }
+    fn ligation_attachments(
+        &mut self,
+        step: usize,
+        e: &verification::evidence::LigationOutcomeEvidence,
+    ) -> Result<(), Error> {
+        use io::Write as _;
+        let used = self
+            .attachments
+            .iter()
+            .try_fold(0usize, |n, a| n.checked_add(a.bytes.len()))
+            .ok_or(Error::TooLarge)?;
+        let limit = MAX_PDF_BYTES
+            .checked_sub(FONT.len() + used)
+            .ok_or(Error::TooLarge)?;
+        let mut json = EvidenceBytes {
+            bytes: vec![],
+            limit,
+        };
+        serde_json::to_writer(&mut json, e).map_err(|_| Error::TooLarge)?;
+        let mut fasta = EvidenceBytes {
+            bytes: vec![],
+            limit: limit.checked_sub(json.bytes.len()).ok_or(Error::TooLarge)?,
+        };
+        for (i, p) in std::iter::once(&e.report.intended)
+            .chain(&e.report.alternatives)
+            .enumerate()
+        {
+            for (strand, sequence) in [("top", &p.duplex.top), ("bottom", &p.duplex.bottom)] {
+                writeln!(
+                    fasta,
+                    ">step_{}_{}_{}_{} topology={:?} strand_5prime_to_3prime bottom_start={}",
+                    step + 1,
+                    if i == 0 { "intended" } else { "alternative" },
+                    i,
+                    strand,
+                    p.topology,
+                    p.duplex.bottom_start
+                )
+                .map_err(|_| Error::TooLarge)?;
+                for bases in sequence.as_str().as_bytes().chunks(80) {
+                    fasta.write_all(bases).map_err(|_| Error::TooLarge)?;
+                    fasta.write_all(b"\n").map_err(|_| Error::TooLarge)?;
+                }
+            }
+        }
+        self.attachments.push(EmbeddedEvidence {
+            name: format!("ligation-step-{:04}.json", step + 1),
+            mime: b"application/json",
+            bytes: json.bytes,
+        });
+        self.attachments.push(EmbeddedEvidence {
+            name: format!("ligation-step-{:04}.fasta", step + 1),
+            mime: b"text/plain",
+            bytes: fasta.bytes,
+        });
+        Ok(())
+    }
+    fn header(&mut self) -> Result<(), Error> {
+        if let Some(label) = self.review_label.clone() {
+            self.text_at(MARGIN, 790.0, &label, 10.0, INK)?;
+            self.text_at(
+                MARGIN,
+                822.0,
+                self.review_kind
+                    .ok_or_else(|| Error::Format("documentary PDF kind missing".into()))?
+                    .header(),
+                9.0,
+                GREEN,
+            )?;
+            return Ok(());
+        }
+        let draft = self.status != Status::ConsistentUnderAssumptions;
+        let color = if draft { RED } else { GREEN };
+        self.current
+            .set_fill_rgb(0.95, 0.97, 0.95)
+            .rect(MARGIN, 779.0, TEXT_WIDTH, 30.0)
+            .fill_nonzero();
+        self.text_at(MARGIN + 8.0, 790.0, status_text(self.status), 10.0, color)?;
+        self.text_at(MARGIN, 822.0, "COLLAGENE 2 / CLONING PROTOCOL", 9.0, GREEN)?;
+        Ok(())
+    }
+    fn next_page(&mut self) -> Result<(), Error> {
+        if self.pages.len() + 1 >= MAX_PDF_PAGES {
+            return Err(Error::TooLarge);
+        }
+        self.pages
+            .push(std::mem::replace(&mut self.current, Content::new()));
+        self.y = TOP;
+        self.header()
+    }
+    fn ensure(&mut self, height: f32) -> Result<(), Error> {
+        if self.y - height < BOTTOM {
+            self.next_page()?;
+        }
+        Ok(())
+    }
+    fn width(&self, text: &str, size: f32) -> f32 {
+        text.chars()
+            .map(|c| {
+                self.face
+                    .glyph_index(c)
+                    .and_then(|g| self.face.glyph_hor_advance(g))
+                    .unwrap_or(0) as f32
+            })
+            .sum::<f32>()
+            * size
+            / self.face.units_per_em() as f32
+    }
+    fn normalize(&mut self, text: &str) -> Result<String, Error> {
+        self.text_bytes = self
+            .text_bytes
+            .checked_add(text.len())
+            .filter(|n| *n <= MAX_PDF_TEXT_BYTES)
+            .ok_or(Error::TooLarge)?;
+        let mut normalized = String::new();
+        for c in text.chars() {
+            // No bidi/complex-script shaping is claimed. Render unsupported scalars visibly,
+            // rather than reorder names incorrectly or silently substitute an empty glyph.
+            let simple = matches!(c as u32, 0x20..=0x2ff | 0x370..=0x52f | 0x1e00..=0x1eff | 0x2000..=0x206f | 0x2100..=0x22ff);
+            let bidi = matches!(c as u32, 0x200b..=0x200f | 0x202a..=0x202e | 0x2060..=0x206f);
+            if c == '\n' {
+                normalized.push(c);
+            } else if c == '\t' {
+                normalized.push(' ');
+            } else if simple && !bidi && self.face.glyph_index(c).is_some() {
+                normalized.push(c);
+            } else {
+                self.escaped.insert(c);
+                normalized.push_str(&format!("[U+{:04X}]", c as u32));
+            }
+            if normalized.len() > MAX_PDF_TEXT_BYTES {
+                return Err(Error::TooLarge);
+            }
+        }
+        Ok(normalized)
+    }
+    fn text_at(
+        &mut self,
+        x: f32,
+        y: f32,
+        text: &str,
+        size: f32,
+        color: [f32; 3],
+    ) -> Result<(), Error> {
+        let text = self.normalize(text)?;
+        if text.contains('\n') {
+            return Err(Error::Format("internal PDF line contains newline".into()));
+        }
+        let mut encoded = Vec::with_capacity(text.len() * 2);
+        for c in text.chars() {
+            let next = self.glyphs.len() + 1;
+            if next > MAX_GLYPHS && !self.glyphs.contains_key(&c) {
+                return Err(Error::TooLarge);
+            }
+            let cid = *self.glyphs.entry(c).or_insert(next as u16);
+            encoded.extend_from_slice(&cid.to_be_bytes());
+        }
+        self.current.set_fill_rgb(color[0], color[1], color[2]);
+        self.current
+            .begin_text()
+            .set_font(Name(b"F1"), size)
+            .next_line(x, y)
+            .show(Str(&encoded))
+            .end_text();
+        Ok(())
+    }
+    fn paragraph(&mut self, text: &str) -> Result<(), Error> {
+        self.paragraph_size(text, 10.5, INK)
+    }
+    fn paragraph_size(&mut self, text: &str, size: f32, color: [f32; 3]) -> Result<(), Error> {
+        let text = self.normalize(text)?;
+        let line_height = size * 1.4;
+        for paragraph in text.split('\n') {
+            let mut line = String::new();
+            for word in paragraph.split_whitespace() {
+                let separator = if line.is_empty() { "" } else { " " };
+                if self.width(&format!("{line}{separator}{word}"), size) <= TEXT_WIDTH {
+                    line.push_str(separator);
+                    line.push_str(word);
+                    continue;
+                }
+                if !line.is_empty() {
+                    self.ensure(line_height)?;
+                    let y = self.y;
+                    self.text_at(MARGIN, y, &line, size, color)?;
+                    self.y -= line_height;
+                    line.clear();
+                }
+                // Hashes, long oligos and source URLs may have no whitespace.
+                for c in word.chars() {
+                    let mut candidate = line.clone();
+                    candidate.push(c);
+                    if self.width(&candidate, size) > TEXT_WIDTH && !line.is_empty() {
+                        self.ensure(line_height)?;
+                        let y = self.y;
+                        self.text_at(MARGIN, y, &line, size, color)?;
+                        self.y -= line_height;
+                        line.clear();
+                    }
+                    line.push(c);
+                }
+            }
+            self.ensure(line_height)?;
+            let y = self.y;
+            self.text_at(MARGIN, y, &line, size, color)?;
+            self.y -= line_height;
+        }
+        self.y -= 6.0;
+        Ok(())
+    }
+    fn heading(&mut self, text: &str) -> Result<(), Error> {
+        self.ensure(48.0)?;
+        self.y -= 8.0;
+        self.paragraph_size(text, 14.0, GREEN)
+    }
+    fn circle_arc(&mut self, center: (f32, f32), radius: f32, start: f64, end: f64) {
+        let count = ((end - start).abs() / std::f64::consts::FRAC_PI_2)
+            .ceil()
+            .max(1.0) as usize;
+        let delta = (end - start) / count as f64;
+        let point = |a: f64| {
+            (
+                center.0 + radius * a.cos() as f32,
+                center.1 + radius * a.sin() as f32,
+            )
+        };
+        let (x, y) = point(start);
+        self.current.move_to(x, y);
+        for i in 0..count {
+            let a = start + i as f64 * delta;
+            let b = a + delta;
+            let k = (4.0 / 3.0 * (delta / 4.0).tan()) as f32 * radius;
+            let p = point(a);
+            let q = point(b);
+            self.current.cubic_to(
+                p.0 - k * a.sin() as f32,
+                p.1 + k * a.cos() as f32,
+                q.0 + k * b.sin() as f32,
+                q.1 - k * b.cos() as f32,
+                q.0,
+                q.1,
+            );
+        }
+        self.current.stroke();
+    }
+    fn map(&mut self, scene: &MapScene) -> Result<(), Error> {
+        self.next_page()?;
+        self.heading("Intended target map (reference, not a proof of construction)")?;
+        self.paragraph(&format!(
+            "{} | {} symbols | {:?} {:?}",
+            scene.name, scene.length, scene.topology, scene.alphabet
+        ))?;
+        // The scene has the same positions/lanes/strand terminal span as the SVG exporter.
+        // PDF coordinates are bottom-up; the source scene is top-down.
+        let scale = TEXT_WIDTH / 1000.0;
+        let top = self.y - 4.0;
+        let px = |x: f64| MARGIN + x as f32 * scale;
+        let py = |y: f64| top - y as f32 * scale;
+        let coordinate = |position: usize, radius: f64| {
+            let a = position as f64 / scene.length as f64 * TAU - FRAC_PI_2;
+            (px(500.0 + radius * a.cos()), py(350.0 + radius * a.sin()))
+        };
+        self.current
+            .set_stroke_rgb(0.73, 0.80, 0.76)
+            .set_line_width(1.2);
+        if scene.topology == Topology::Circular {
+            self.circle_arc((px(500.0), py(350.0)), 190.0 * scale, 0.0, TAU);
+            let center = format!("{} symbols", scene.length);
+            let w = self.width(&center, 12.0);
+            self.text_at(px(500.0) - w / 2.0, py(350.0), &center, 12.0, INK)?;
+        } else {
+            let y = py(scene.linear_feature_y + 40.0);
+            self.current
+                .move_to(px(80.0), y)
+                .line_to(px(920.0), y)
+                .stroke();
+            self.text_at(px(80.0), y - 15.0, "1", 8.0, INK)?;
+            self.text_at(px(900.0), y - 15.0, &scene.length.to_string(), 8.0, INK)?;
+        }
+        for feature in &scene.features {
+            let color = color(feature.color);
+            let uncertain =
+                feature.fuzzy || feature.ordered || feature.unresolved || feature.partial;
+            for (i, span) in feature.spans.iter().enumerate() {
+                if uncertain {
+                    self.current.set_dash_pattern([3.0, 2.0], 0.0);
+                } else {
+                    self.current.set_dash_pattern([], 0.0);
+                }
+                let passes: Vec<([f32; 3], f32)> = if feature.needs_review {
+                    vec![(RED, 7.5), (color, 5.0)]
+                } else {
+                    vec![(color, 5.0)]
+                };
+                for (stroke, width) in passes {
+                    self.current
+                        .set_stroke_rgb(stroke[0], stroke[1], stroke[2])
+                        .set_line_width(width);
+                    if scene.topology == Topology::Circular {
+                        self.circle_arc(
+                            (px(500.0), py(350.0)),
+                            (205.0 + feature.lane as f32 * 14.0) * scale,
+                            FRAC_PI_2 - span.start as f64 / scene.length as f64 * TAU,
+                            FRAC_PI_2 - span.end as f64 / scene.length as f64 * TAU,
+                        );
+                    } else {
+                        let y = py(scene.linear_feature_y - feature.lane as f64 * 28.0);
+                        self.current
+                            .move_to(
+                                px(80.0 + span.start as f64 / scene.length as f64 * 840.0),
+                                y,
+                            )
+                            .line_to(px(80.0 + span.end as f64 / scene.length as f64 * 840.0), y)
+                            .stroke();
+                    }
+                }
+                if feature.terminal_span == Some(i) {
+                    let position = if span.reverse { span.start } else { span.end };
+                    let (tip, base, normal) = if scene.topology == Topology::Circular {
+                        let radius = 205.0 + feature.lane as f64 * 14.0;
+                        let tip = coordinate(position, radius);
+                        let angle = FRAC_PI_2 - position as f64 / scene.length as f64 * TAU;
+                        let direction = if span.reverse { -1.0 } else { 1.0 };
+                        let len = (((span.end - span.start) as f64 / scene.length as f64
+                            * TAU
+                            * radius
+                            * 0.7)
+                            .min(12.0)) as f32
+                            * scale;
+                        (
+                            tip,
+                            (
+                                tip.0 - direction * angle.sin() as f32 * len,
+                                tip.1 + direction * angle.cos() as f32 * len,
+                            ),
+                            (angle.cos() as f32 * 3.5, angle.sin() as f32 * 3.5),
+                        )
+                    } else {
+                        let tip = (
+                            px(80.0 + position as f64 / scene.length as f64 * 840.0),
+                            py(scene.linear_feature_y - feature.lane as f64 * 28.0),
+                        );
+                        let direction = if span.reverse { -1.0 } else { 1.0 };
+                        let len =
+                            (((span.end - span.start) as f64 / scene.length as f64 * 840.0 * 0.7)
+                                .min(12.0)) as f32
+                                * scale;
+                        (tip, (tip.0 - direction * len, tip.1), (0.0, 3.5))
+                    };
+                    self.current
+                        .set_fill_rgb(color[0], color[1], color[2])
+                        .move_to(tip.0, tip.1)
+                        .line_to(base.0 + normal.0, base.1 + normal.1)
+                        .line_to(base.0 - normal.0, base.1 - normal.1)
+                        .close_path()
+                        .fill_nonzero();
+                }
+            }
+        }
+        self.current.set_dash_pattern([], 0.0).set_line_width(0.5);
+        for label in &scene.labels {
+            let feature = &scene.features[label.feature_index];
+            self.current
+                .set_stroke_rgb(0.62, 0.70, 0.66)
+                .move_to(px(label.anchor_x), py(label.anchor_y))
+                .line_to(px(label.x), py(label.y - 4.0))
+                .stroke();
+            let label_text = self.normalize(&label.text)?;
+            let size = 6.3;
+            let width = self.width(&label_text, size);
+            // Text is fitted in the same bounded label slots; full names remain in documents.
+            let max_width = if scene.topology == Topology::Circular {
+                222.0 * scale
+            } else {
+                230.0 * scale
+            };
+            let size = if width > max_width {
+                size * max_width / width
+            } else {
+                size
+            };
+            let width = self.width(&label_text, size);
+            let x = if scene.topology == Topology::Circular {
+                if label.right_aligned {
+                    px(230.0) - width
+                } else {
+                    px(770.0)
+                }
+            } else {
+                px(label.x) - width / 2.0
+            };
+            self.text_at(x, py(label.y), &label_text, size, color(feature.color))?;
+        }
+        let map_bottom = if scene.topology == Topology::Circular {
+            640.0
+        } else {
+            scene.linear_feature_y + 100.0
+        };
+        self.y = py(map_bottom);
+        let legend = scene
+            .legend
+            .iter()
+            .map(|e| format!("{} ({})", e.name, e.count))
+            .collect::<Vec<_>>()
+            .join(" | ");
+        self.paragraph_size(&legend, 9.0, INK)?;
+        self.paragraph_size("Dashed: uncertain/order/partial geometry. Red outline: review required. Arrow: biological terminal strand direction where exact. Labels may be abbreviated; full annotations remain in the sequence document.",9.0,INK)?;
+        for warning in &scene.warnings {
+            self.paragraph_size(warning, 9.0, RED)?;
+        }
+        Ok(())
+    }
+    fn finish(
+        mut self,
+        title: &str,
+        plan_revision: &str,
+        target_revision: &str,
+    ) -> Result<(Vec<u8>, usize, Vec<String>), Error> {
+        self.pages
+            .push(std::mem::replace(&mut self.current, Content::new()));
+        let count = self.pages.len();
+        let revision_label = |revision: &str| {
+            if revision.is_empty() {
+                "unavailable".to_owned()
+            } else {
+                revision.chars().take(12).collect::<String>()
+            }
+        };
+        // Add final page count without disturbing the scientific content layout.
+        for index in 0..count {
+            let page = std::mem::replace(&mut self.pages[index], Content::new());
+            self.current = page;
+            self.text_at(
+                MARGIN,
+                30.0,
+                &format!(
+                    "Page {} of {} | {} {} | {} {}",
+                    index + 1,
+                    count,
+                    self.review_kind.map(|k| k.footer().0).unwrap_or("Plan"),
+                    revision_label(plan_revision),
+                    self.review_kind.map(|k| k.footer().1).unwrap_or("Target"),
+                    revision_label(target_revision)
+                ),
+                8.0,
+                INK,
+            )?;
+            self.pages[index] = std::mem::replace(&mut self.current, Content::new());
+        }
+        let mut pdf = Pdf::new();
+        let catalog = Ref::new(1);
+        let pages = Ref::new(2);
+        let font = Ref::new(3);
+        let cid = Ref::new(4);
+        let descriptor = Ref::new(5);
+        let font_file = Ref::new(6);
+        let cmap_id = Ref::new(7);
+        let gid_map_id = Ref::new(8);
+        let info = Ref::new(9);
+        let mut attachment_ids = Vec::new();
+        for i in 0..self.attachments.len() {
+            attachment_ids.push((
+                Ref::new(10 + count as i32 * 2 + i as i32 * 2),
+                Ref::new(11 + count as i32 * 2 + i as i32 * 2),
+            ));
+        }
+        {
+            let mut cat = pdf.catalog(catalog);
+            cat.pages(pages).lang(TextStr("en"));
+            if !self.attachments.is_empty() {
+                let mut names = cat.names();
+                let mut tree = names.embedded_files();
+                let mut entries = tree.names();
+                let mut ordered: Vec<_> = self.attachments.iter().zip(&attachment_ids).collect();
+                ordered.sort_by(|a, b| a.0.name.cmp(&b.0.name));
+                for (a, (spec, _)) in ordered {
+                    entries.insert(Str(a.name.as_bytes()), *spec);
+                }
+            }
+        }
+        let mut attachment_bytes = 0usize;
+        for (a, (spec, data)) in self.attachments.iter().zip(&attachment_ids) {
+            attachment_bytes = attachment_bytes
+                .checked_add(a.bytes.len())
+                .filter(|n| *n <= MAX_PDF_BYTES - FONT.len())
+                .ok_or(Error::TooLarge)?;
+            pdf.file_spec(*spec).path(Str(a.name.as_bytes())).unic_file(TextStr(&a.name)).description(TextStr("Ligation documentary alternatives; sequence-only FASTA does not convey material authority")).embedded_file_with_unicode(*data);
+            pdf.embedded_file(*data, &a.bytes).subtype(Name(a.mime));
+        }
+        let subject = self
+            .review_label
+            .as_deref()
+            .unwrap_or_else(|| status_text(self.status));
+        pdf.document_info(info)
+            .title(TextStr(title))
+            .subject(TextStr(subject))
+            .creator(TextStr("Collagene 2"))
+            .producer(TextStr(
+                self.review_kind
+                    .map(DocumentaryKind::producer)
+                    .unwrap_or("Collagene embedded Rust protocol exporter"),
+            ));
+        let page_ids: Vec<_> = (0..count).map(|i| Ref::new(10 + i as i32 * 2)).collect();
+        pdf.pages(pages)
+            .kids(page_ids.iter().copied())
+            .count(count as i32);
+        let mut page_bytes = attachment_bytes;
+        for (i, content) in self.pages.into_iter().enumerate() {
+            let content_id = Ref::new(11 + i as i32 * 2);
+            let mut page = pdf.page(page_ids[i]);
+            page.parent(pages)
+                .media_box(Rect::new(0.0, 0.0, WIDTH, HEIGHT))
+                .contents(content_id);
+            page.resources().fonts().pair(Name(b"F1"), font);
+            page.finish();
+            let bytes = content.finish();
+            page_bytes = page_bytes
+                .checked_add(bytes.len())
+                .filter(|n| *n <= MAX_PDF_BYTES - FONT.len())
+                .ok_or(Error::TooLarge)?;
+            pdf.stream(content_id, &bytes);
+        }
+        pdf.type0_font(font)
+            .base_font(Name(b"LiberationSans"))
+            .encoding_predefined(Name(b"Identity-H"))
+            .descendant_font(cid)
+            .to_unicode(cmap_id);
+        let system = SystemInfo {
+            registry: Str(b"Adobe"),
+            ordering: Str(b"Identity"),
+            supplement: 0,
+        };
+        let mut cid_font = pdf.cid_font(cid);
+        cid_font
+            .subtype(CidFontType::Type2)
+            .base_font(Name(b"LiberationSans"))
+            .system_info(system)
+            .font_descriptor(descriptor)
+            .cid_to_gid_map_stream(gid_map_id);
+        let mut widths = vec![0.0; self.glyphs.len() + 1];
+        let mut gid_map = vec![0u8; (self.glyphs.len() + 1) * 2];
+        let scale = 1000.0 / self.face.units_per_em() as f32;
+        let mut cmap = UnicodeCmap::new(Name(b"CollageneUnicode"), system);
+        for (&character, &code) in &self.glyphs {
+            let glyph = self
+                .face
+                .glyph_index(character)
+                .ok_or_else(|| Error::Format("internal unsupported PDF glyph".into()))?;
+            widths[code as usize] = self.face.glyph_hor_advance(glyph).unwrap_or(0) as f32 * scale;
+            gid_map[code as usize * 2..code as usize * 2 + 2]
+                .copy_from_slice(&glyph.0.to_be_bytes());
+            cmap.pair(code, character);
+        }
+        cid_font.widths().consecutive(0, widths);
+        cid_font.finish();
+        let bbox = self.face.global_bounding_box();
+        pdf.font_descriptor(descriptor)
+            .name(Name(b"LiberationSans"))
+            .flags(FontFlags::SYMBOLIC)
+            .bbox(Rect::new(
+                bbox.x_min as f32 * scale,
+                bbox.y_min as f32 * scale,
+                bbox.x_max as f32 * scale,
+                bbox.y_max as f32 * scale,
+            ))
+            .italic_angle(0.0)
+            .ascent(self.face.ascender() as f32 * scale)
+            .descent(self.face.descender() as f32 * scale)
+            .cap_height(self.face.capital_height().unwrap_or(self.face.ascender()) as f32 * scale)
+            .stem_v(80.0)
+            .font_file2(font_file);
+        pdf.stream(font_file, FONT)
+            .pair(Name(b"Length1"), FONT.len() as i32);
+        pdf.stream(gid_map_id, &gid_map);
+        let cmap_bytes = cmap.finish();
+        let cmap_text = std::str::from_utf8(&cmap_bytes)
+            .map_err(|_| Error::Format("internal PDF CMap encoding".into()))?
+            .replace("/CMapType 0 def", "/CMapType 2 def");
+        pdf.cmap(cmap_id, cmap_text.as_bytes());
+        let bytes = pdf.finish();
+        if bytes.len() > MAX_PDF_BYTES {
+            return Err(Error::TooLarge);
+        }
+        let warnings = if self.escaped.is_empty() {
+            vec![]
+        } else {
+            vec![format!(
+                "PDF font/layout cannot represent {} distinct scalars without unsupported shaping or missing glyphs. They are displayed as [U+XXXX] escapes; original Unicode remains in source documents and title metadata. Examples: {}",
+                self.escaped.len(),
+                self.escaped
+                    .iter()
+                    .take(16)
+                    .map(|c| format!("U+{:04X}", *c as u32))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )]
+        };
+        Ok((bytes, count, warnings))
+    }
+}
+
+/// Shared bounded text/report renderer. Fixed lines position each ASCII glyph in
+/// an equal-width cell; the bundled proportional font cannot align base columns
+/// by merely drawing an ordinary text paragraph.
+pub(crate) enum ReviewBlock {
+    Heading(String),
+    Paragraph(String),
+    Fixed(Vec<String>),
+}
+pub(crate) fn export_documentary_pdf(
+    kind: DocumentaryKind,
+    title: &str,
+    label: &str,
+    reference_revision: &str,
+    query_revision: &str,
+    blocks: &[ReviewBlock],
+) -> Result<(Vec<u8>, usize, Vec<String>), Error> {
+    if title.len() > 8192
+        || label.len() > 256
+        || reference_revision.len() != 64
+        || query_revision.len() != 64
+    {
+        return Err(Error::TooLarge);
+    }
+    let mut layout = Layout::with_review_label(Status::Incomplete, Some(label.into()), Some(kind))?;
+    for block in blocks {
+        match block {
+            ReviewBlock::Heading(text) => layout.heading(text)?,
+            ReviewBlock::Paragraph(text) => layout.paragraph(text)?,
+            ReviewBlock::Fixed(lines) => {
+                let height = lines.len() as f32 * 11.0 + 6.0;
+                if lines.len() > 8
+                    || lines.iter().any(|line| {
+                        !line.is_ascii()
+                            || line.len() > 84
+                            || line.bytes().any(|b| b.is_ascii_control())
+                    })
+                {
+                    return Err(Error::Format(
+                        "invalid fixed-column documentary block".into(),
+                    ));
+                }
+                layout.ensure(height)?;
+                for line in lines {
+                    for (column, character) in line.chars().enumerate() {
+                        let mut buffer = [0; 4];
+                        layout.text_at(
+                            MARGIN + column as f32 * 6.0,
+                            layout.y,
+                            character.encode_utf8(&mut buffer),
+                            8.0,
+                            INK,
+                        )?;
+                    }
+                    layout.y -= 11.0;
+                }
+                layout.y -= 6.0;
+            }
+        }
+    }
+    layout.finish(title, reference_revision, query_revision)
+}
+fn color(hex: &str) -> [f32; 3] {
+    let component =
+        |start| u8::from_str_radix(&hex[start..start + 2], 16).unwrap_or(0) as f32 / 255.0;
+    [component(1), component(3), component(5)]
+}
+
+/// Reconstructs the plan against this exact target at export time. An externally
+/// asserted report/status cannot be supplied. Invalid/incomplete plans export as
+/// conspicuously marked drafts, including successfully reconstructed intermediates.
+pub fn export_protocol_pdf(plan: &DesignPlan, target: &Molecule) -> Result<PdfReport, Error> {
+    preflight(plan, target)?;
+    let checked = verification::output::CheckedProtocol::new(plan, target);
+    export_protocol_pdf_checked(&checked)
+}
+/// Only a fresh in-process native reconstruction can supply this shared renderer.
+pub(crate) fn export_protocol_pdf_checked(
+    checked: &verification::output::CheckedProtocol<'_>,
+) -> Result<PdfReport, Error> {
+    export_protocol_pdf_checked_inner(checked).map_err(|error| {
+        if checked
+            .plan()
+            .steps
+            .iter()
+            .any(|step| matches!(step, Operation::Ligate { .. }))
+        {
+            ligation_pdf_limit(error)
+        } else {
+            error
+        }
+    })
+}
+fn export_protocol_pdf_checked_inner(
+    checked: &verification::output::CheckedProtocol<'_>,
+) -> Result<PdfReport, Error> {
+    let plan = checked.plan();
+    let target = checked.target();
+    preflight(plan, target)?;
+    let report = checked.report();
+    let mut layout = Layout::new(report.status)?;
+    layout.paragraph_size(&plan.name, 21.0, GREEN)?;
+    layout.paragraph("Computed sequence/chemistry checks. Reaction conditions, quantities and experimental outcome require laboratory review.")?;
+    layout.paragraph(&format!(
+        "Target: {} | {} symbols | {:?} {:?}",
+        target.name,
+        target.sequence.len(),
+        target.topology,
+        target.sequence.alphabet()
+    ))?;
+    layout.heading("Starting materials")?;
+    for input in &plan.inputs {
+        layout.paragraph(&format!(
+            "Input {}: {} | {} symbols | {:?}\nRevision {}",
+            input.id,
+            input.molecule.name,
+            input.molecule.sequence.len(),
+            input.molecule.topology,
+            input.revision
+        ))?;
+        for key in [
+            "source:provider",
+            "source:canonical_url",
+            "source:identifier",
+            "source:accession_version",
+            "source:retrieved_at",
+            "source:content_blake3",
+        ] {
+            if let Some(value) = input.molecule.metadata.get(key) {
+                layout.paragraph_size(&format!("{key}: {value}"), 9.0, INK)?;
+            }
+        }
+    }
+    layout.heading("Cloning steps")?;
+    for (index, step) in plan.steps.iter().enumerate() {
+        let body = match step {
+            Operation::ResectThreePrime { source, cuts } => format!(
+                "Explicit3′→5′ shortening of {}: bottom3′ left {} nt, top3′ right {} nt. Original5′ groups and surviving source modifications remain; no unblocking, synthesis, ligation or host repair. The actual bottom5′ extension remains physical even beyond the displayed top reference.",
+                source_name(source),
+                cuts.left,
+                cuts.right
+            ),
+            Operation::HomologyAnnealing {
+                fragments,
+                options,
+                policy,
+            } => format!(
+                "Generic3′ processing/exposed5′tail annealing of {} ordered operands with {:?} advisory guidance. Explicit overlaps {:?}, cuts {:?}, topology {:?}, minimum paired {} bases, comparison/candidate bounds {}/{}. Planned next step: {} (documentary only; no transformation or host repair is simulated). Every joining strand remains separate at a nick or gap: no cellular rescue, filling, sealing or reusable assembled material is inferred.",
+                fragments.len(),
+                options.method,
+                policy.overlaps,
+                policy.cuts,
+                policy.topology,
+                policy.min_paired_bases,
+                policy.max_comparisons,
+                policy.max_candidates,
+                policy
+                    .planned_rescue
+                    .as_ref()
+                    .map(|r| r.label())
+                    .unwrap_or("none declared")
+            ),
+            Operation::HomologyAssembly {
+                fragments,
+                options,
+                policy,
+            } => format!(
+                "Physical homology assembly of {}. Explicit source-strand resection, complementary synthesis and sealing under policy {}. {:?} sequence guidance remains advisory; this model does not establish reagent activity, experimental completion or mixture uniqueness.",
+                fragments
+                    .iter()
+                    .map(|fragment| format!(
+                        "{} ({})",
+                        source_name(&fragment.source),
+                        if fragment.reverse {
+                            "reverse complement"
+                        } else {
+                            "forward"
+                        }
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" -> "),
+                serde_json::to_string(policy).map_err(|error| Error::Format(error.to_string()))?,
+                options.method
+            ),
+            Operation::OverlapExtension {
+                left,
+                right,
+                options,
+            } => format!(
+                "Denature overlapping duplexes {} ({}) and {} ({}), reanneal left top/right bottom over {} bp, and extend both paired 3prime ends. Minimum terminal pairing {} bp. Retained strands preserve positional modifications; complementary synthesis is assumed unmodified. The selected geometry does not establish isolation, amplification efficiency or experimental success.",
+                source_name(&left.source),
+                if left.reverse {
+                    "reverse complement"
+                } else {
+                    "forward"
+                },
+                source_name(&right.source),
+                if right.reverse {
+                    "reverse complement"
+                } else {
+                    "forward"
+                },
+                options.overlap,
+                options.min_paired_bases
+            ),
+            Operation::ReconstructRunProduct { template, origin } => format!(
+                "Reconstruct already-prepared saved material {} from complete origin run {}, step {}. Exact source event {}; original independent target {} (event {}). Replay uses the retained origin plan unchanged, including its separate target and source declarations. Historical status and imported strand summaries do not grant chemical authority. This is material reuse, not a new execution of historical laboratory reactions, isolation or a supplier guarantee; all origin assumptions and incomplete findings remain applicable.",
+                source_name(template),
+                origin.selection.run_id,
+                origin.selection.step_index + 1,
+                origin.selection.event.event_id,
+                origin.target.name,
+                origin.target_event.event_id
+            ),
+            Operation::ReconstructMaterial { template, origin } => format!(
+                "Retrieve saved material {} from exact derivation event {} by replaying its original source and typed native recipe. Retain actual strands, termini, modifications and inherited limitations. This is material retrieval, not a new laboratory reaction, invented target check or evidence of isolation.",
+                source_name(template),
+                origin.product.event_id
+            ),
+            Operation::DeclareSourceTermini {
+                template,
+                left,
+                right,
+            } => format!(
+                "Declare original intact linear duplex termini for {}: left 5prime {:?} / 3prime {:?}; right 5prime {:?} / 3prime {:?}. These are explicit source-material assumptions, not measured chemistry, imported proof, synthesis or repair of a physical intermediate.",
+                source_name(template),
+                left.five_prime,
+                left.three_prime,
+                right.five_prime,
+                right.three_prime
+            ),
+            Operation::Topo {
+                sources,
+                request,
+                selection,
+            } => topo_step_text(sources, request, selection, None, plan, &report)?,
+            Operation::CheckedTopo {
+                sources,
+                request,
+                selection,
+                policy,
+            } => topo_step_text(sources, request, selection, Some(policy), plan, &report)?,
+            Operation::TopoActions { sources, request } => {
+                topo_actions_step_text(sources, request, plan, &report)?
+            }
+            Operation::MultiSiteRecombineReference {
+                sources,
+                request,
+                selection,
+            } => format!(
+                "Multi-parent {:?} reference exchange of {}. Declared full-context profile {} / {}; specificities {:?}. Candidate {}, component {} from batch {}. All reciprocal components retained. Reference sequence agreement establishes neither physical chemistry nor kit success.",
+                request.reaction.reaction,
+                sources
+                    .iter()
+                    .map(|s| format!("{}: {}", s.role, source_name(&s.source)))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                request.reaction.profile.id,
+                request.reaction.profile.edition,
+                request.reaction.specificities,
+                selection.candidate_id + 1,
+                selection.component_id + 1,
+                selection.batch_revision
+            ),
+            Operation::RecombineReference {
+                sources,
+                request,
+                selection,
+            } => format!(
+                "Reference-only {:?} exchange of {} and {}. Pinned full profile, data, work and annotation limits: {}. Explicit selected candidate/component: {}. All reciprocal components are reconstructed; reference sequence matching does not establish physical chemistry, biological repair, efficacy or experimental selection.",
+                request.reaction,
+                source_name(&sources[0]),
+                source_name(&sources[1]),
+                serde_json::to_string(request).map_err(|e| Error::Format(e.to_string()))?,
+                serde_json::to_string(selection).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::DeclareSourceModifications {
+                template,
+                assumptions,
+            } => format!(
+                "Declare source-generation modification assumptions for {}: Dam {:?}, Dcm {:?}, CpG {:?}. This is an explicit three-mechanism generation model; it is not measured methylation or an imported physical-state claim.",
+                source_name(template),
+                assumptions.dam,
+                assumptions.dcm,
+                assumptions.cpg
+            ),
+            Operation::CheckedDigest {
+                template,
+                selection,
+                options,
+                fragment_index,
+            } => format!(
+                "Checked digest of {} with {}; select fragment index {} (zero based) under current positional profile {}. Catalog edition {} and complete limits {} are pinned; unknown/impaired effects withhold products. No enzyme conditions or reaction completion are inferred.",
+                source_name(template),
+                selection
+                    .enzymes
+                    .iter()
+                    .map(|e| e.enzyme.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                fragment_index,
+                crate::chemistry::tracked_duplex::profile_revision(),
+                selection.catalog_edition,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::PcrWithMismatches {
+                template,
+                forward,
+                reverse,
+                options,
+            } => format!(
+                "Intentional-mismatch PCR of {}. Oligos 5′→3′: {} (annealing {}; tail {}), {} (annealing {}; tail {}). Recorded binding/search policy: {}. Primer-derived changes are reconstructed; empirical amplification is not established.",
+                source_name(template),
+                forward.ordered_sequence(),
+                forward.annealing.as_str(),
+                forward.tail,
+                reverse.ordered_sequence(),
+                reverse.annealing.as_str(),
+                reverse.tail,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::SelectedGoldenGate {
+                templates,
+                options,
+                candidate_index,
+                directed_sequence_key,
+                physical_sequence_key,
+            } => format!(
+                "Key-bound Golden Gate with {:?}; inputs {}. Explicit zero-based candidate {}. Fresh native enumeration must match directed key {} and physical key {} under policy {}. Finite one-copy search does not establish exhaustive reaction-mixture uniqueness; conditions and quantities are not specified by the molecular model.",
+                options.enzyme,
+                templates
+                    .iter()
+                    .map(source_name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                candidate_index,
+                directed_sequence_key,
+                physical_sequence_key,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::GoldenGate {
+                templates,
+                options,
+                candidate_index,
+            } => format!(
+                "Golden Gate with {:?}; inputs {}. Explicit zero-based candidate index {} under search policy {}. Complete cleavage, orientation, cohesive ends and recognition-site removal are checked. One-copy fragment search does not establish exhaustive mixture uniqueness; reaction conditions and quantities are not specified by the molecular model.",
+                options.enzyme,
+                templates
+                    .iter()
+                    .map(source_name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                candidate_index,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::Pcr {
+                template,
+                forward,
+                reverse,
+                template_strand,
+            } => format!(
+                "PCR of {} using the actual {:?} template frame. Primers 5′→3′:\n{}: {} (annealing {}; 5′ tail {})\n{}: {} (annealing {}; 5′ tail {}).\nThe molecular model does not specify reaction conditions, enzyme choice or quantities.",
+                source_name(template),
+                template_strand,
+                forward.name,
+                forward.ordered_sequence(),
+                forward.annealing.as_str(),
+                forward.tail,
+                reverse.name,
+                reverse.ordered_sequence(),
+                reverse.annealing.as_str(),
+                reverse.tail
+            ),
+            Operation::CatalogDigest {
+                template,
+                selection,
+                fragment_index,
+            } => format!(
+                "Catalog-pinned complete digest of {}. Exact ordered identity/name/geometry selection: {}. Select zero-based fragment {} in top-reference cut ordering. The embedded catalog pin is checked; complete cleavage/conditions remain assumptions. Supplier documentary observations do not prove methylation compatibility, reaction kinetics or experimental completion.",
+                source_name(template),
+                serde_json::to_string(selection).unwrap_or_default(),
+                fragment_index
+            ),
+            Operation::Digest {
+                template,
+                enzymes,
+                fragment_index,
+            } => format!(
+                "Complete restriction digest of {} with {}. Select zero-based fragment index {} in ascending top-reference cut order. Cleavage assumes compatible conditions and no blocking methylation.",
+                source_name(template),
+                enzymes.join(", "),
+                fragment_index
+            ),
+            Operation::TreatEnds {
+                template,
+                treatment,
+            } => format!(
+                "Terminal {treatment:?} treatment of {}. Internal nick repair is not assumed; reaction conditions and quantities are not specified by the molecular model.",
+                source_name(template)
+            ),
+            Operation::Tail3Prime { template, base } => format!(
+                "Append one {} nucleotide to BOTH strand3′ ends of {}. Requires reconstructed blunt linear DNA and accessible3′-OH. Retain5′ chemistry and internal nicks. No template ancestry, enzyme kinetics or commercial kit activity is inferred.",
+                base.as_str(),
+                source_name(template)
+            ),
+            Operation::ProfiledOverlap {
+                fragments,
+                overlaps,
+                circular,
+                options,
+            } => format!(
+                "{:?} profiled ordered overlap assembly: {}. Homology lengths {:?}bp; {} product. Explicit orientations are checked. Vendor recommendations are advisory; reagent compatibility, completion and uniqueness remain unestablished. Options {}.",
+                options.method,
+                fragments
+                    .iter()
+                    .map(|f| format!(
+                        "{} ({})",
+                        source_name(&f.source),
+                        if f.reverse {
+                            "reverse complement"
+                        } else {
+                            "forward"
+                        }
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(" -> "),
+                overlaps,
+                if *circular { "circular" } else { "linear" },
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::RepairEnds { template, method } => format!(
+                "End repair {method:?} of {}. Reconstruct explicit 3′ fill-in/exonuclease changes. Five-prime chemistry and internal nicks remain unchanged; conditions, reagents and empirical success are not established.",
+                source_name(template)
+            ),
+            Operation::AnnealOligos {
+                top,
+                bottom,
+                options,
+                candidate_index,
+            } => format!(
+                "Anneal declared 5′→3′ ssDNA inputs {} and {}.\nTop ordered oligo 5′→3′: {} (5′ {:?}; 3′ {:?}).\nBottom ordered oligo 5′→3′: {} (5′ {:?}; 3′ {:?}).\nSelect zero-based candidate {} under policy {}. Exact antiparallel pairing and placement alternatives are reconstructed. Terminal chemistry is an explicit assumption; annealing performs no ligation or implicit phosphorylation.",
+                source_name(top),
+                source_name(bottom),
+                verification::output::protocol_oligo_sequence(plan, &report, top, index)
+                    .unwrap_or("Unresolved or unsupported bound oligo sequence"),
+                options.top_chemistry.five_prime,
+                options.top_chemistry.three_prime,
+                verification::output::protocol_oligo_sequence(plan, &report, bottom, index)
+                    .unwrap_or("Unresolved or unsupported bound oligo sequence"),
+                options.bottom_chemistry.five_prime,
+                options.bottom_chemistry.three_prime,
+                candidate_index,
+                serde_json::to_string(options).map_err(|e| Error::Format(e.to_string()))?
+            ),
+            Operation::Ligate {
+                fragments,
+                circular,
+                allow_nicked,
+                options,
+            } => format!(
+                "Ordered intended ligation plus bounded alternative enumeration: {}. {} topology; nicks allowed {}. Exactly one copy of every declared fragment. Up to {} operands are enumerated with at most {} paths, {} retained products, {} product bases, {} report bytes and {} work units. Intended material remains distinct from alternatives; no product isolation, probabilities or experimental success is inferred.",
+                fragments
+                    .iter()
+                    .map(|f| format!(
+                        "{} ({})",
+                        source_name(&f.source),
+                        if f.reverse { "reverse" } else { "forward" }
+                    ))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if *circular { "circular" } else { "linear" },
+                allow_nicked,
+                options.max_enumeration_fragments,
+                options.max_path_checks,
+                options.max_products,
+                options.max_total_product_bases,
+                options.max_report_bytes,
+                options.max_work
+            ),
+            Operation::Overlap {
+                fragments,
+                overlaps,
+                circular,
+            } => format!(
+                "Ordered overlap assembly: {}. Junction overlaps {overlaps:?} bp; {} product. Reagent conditions and quantities are not specified by the molecular model.",
+                fragments
+                    .iter()
+                    .map(source_name)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                if *circular { "circular" } else { "linear" }
+            ),
+        };
+        layout.paragraph(&format!("Step {}. {body}", index + 1))?;
+        if let Some(topo) = report
+            .step_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+            .and_then(|entry| entry.topo.as_ref())
+        {
+            layout.paragraph_size(&topo_evidence_text(topo)?, 9.0, INK)?;
+        }
+        if let Some(entry) = report
+            .reference_step_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+        {
+            let verification::evidence::ReferenceStepEvidence::MultiSiteRecombination {
+                selection,
+                batch,
+            } = &entry.evidence;
+            layout.paragraph_size(&format!("Whole reference network: {} original parents, {} candidate networks, {} reciprocal components retained; complete within declared model {}. Selected candidate {}, component {}. No target chooses pairings. Reference provenance supplies no physical strand/modification authority.",batch.sources.len(),batch.reference.candidates.len(),batch.documents.len(),batch.reference.complete,selection.candidate_id+1,selection.component_id+1),9.0,INK)?;
+            for note in batch
+                .reference
+                .warnings
+                .iter()
+                .chain(&batch.reference.limits)
+                .chain(&batch.reference.unsupported)
+                .chain(&batch.warnings)
+            {
+                layout.paragraph_size(note, 9.0, INK)?;
+            }
+        }
+        if let Some(entry) = report
+            .physical_processing_reports
+            .iter()
+            .find(|entry| entry.step_index == index)
+        {
+            match &entry.evidence {
+                verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(evidence) => {
+                    let text = ligation_evidence_text(evidence).map_err(ligation_pdf_limit)?;
+                    layout
+                        .ligation_attachments(index, evidence)
+                        .map_err(ligation_pdf_limit)?;
+                    layout
+                        .paragraph_size(&text, 9.0, INK)
+                        .map_err(ligation_pdf_limit)?;
+                }
+
+                verification::evidence::PhysicalProcessingEvidence::DerivedOrigin(evidence) => {
+                    evidence.validate_documentary()?;
+                    let material = &evidence.material;
+                    layout.paragraph_size(&format!("Fresh material derivation event {}. Actual top/bottom lengths {}/{} nt, bottom start {}, retained nicks {}. Modified / chemically unknown eligible / known unmodified bases: {} / {} / {}. Origin incomplete: {}. Material identity {}. This documentary summary does not grant imported chemical authority, isolation or a newly performed historical reaction.", evidence.origin.product.event_id, material.duplex.top_length, material.duplex.bottom_length, material.duplex.bottom_start, material.duplex.nicks.len(), material.modifications.known_modified, material.modifications.unknown_eligible, material.modifications.known_unmodified, material.origin_incomplete, material.material_revision),9.0,INK)?;
+                    layout.paragraph_size(
+                        &format!(
+                            "Origin findings shown {} of {}; excerpt truncated: {}. {}",
+                            material.origin_findings.len(),
+                            material.origin_findings_total,
+                            material.origin_findings_truncated,
+                            material.duplex.describe()
+                        ),
+                        9.0,
+                        INK,
+                    )?;
+                    for finding in &material.origin_findings {
+                        layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
+                    }
+                }
+                verification::evidence::PhysicalProcessingEvidence::ThreePrimeResection(
+                    geometry,
+                ) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Actual3′ resection left/right {}/{} nt. Retained top/bottom {}/{} nt; bottom start {}. Unchanged5′ groups left/right {:?}/{:?};3′ groups {:?}/{:?}. Complete literal copied/removed strand mappings remain in JSON, not synthesized DNA.",geometry.cuts.left,geometry.cuts.right,geometry.product.top.len(),geometry.product.bottom.len(),geometry.product.bottom_start,geometry.product.left.five_prime,geometry.product.right.five_prime,geometry.product.left.three_prime,geometry.product.right.three_prime),9.0,INK)?;
+                }
+                verification::evidence::PhysicalProcessingEvidence::HomologyAnnealing(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Annealed diagnostic: {} separate surviving strands, {} junctions; gapless paired view {}, terminal search complete {}. No assembled private material. Missing strand intervals remain gaps, not filled bases.",geometry.segments.len(),geometry.junctions.len(),geometry.paired_diagnostic.is_some(),geometry.terminal_search_complete),9.0,INK)?;
+                    for j in &geometry.junctions {
+                        layout.paragraph_size(&format!("Sources {} → {}, homology {} bp. Unsealed top [{}..{})3′{:?}/5′{:?}, bottom [{}..{})5′{:?}/3′{:?}. Equal boundaries are nicks. Circular coordinates are unwrapped to preserve actual gap lengths.",j.left_source+1,j.right_source+1,j.overlap,j.top.start,j.top.end,j.top.three_prime,j.top.five_prime,j.bottom.start,j.bottom.end,j.bottom.five_prime,j.bottom.three_prime),9.0,INK)?;
+                    }
+                }
+                verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Homology assembly physical evidence: selected product top length {:?}; terminal search complete {}; incomplete {}; comparisons {}. Source geometry identities: {}. Full strand/resection/mapping evidence remains in the retained report.", geometry.product.as_ref().map(|product|product.top.len()), geometry.terminal_search_complete, geometry.incomplete, geometry.comparisons, geometry.source_geometry_revisions.join(" / ")), 9.0, INK)?;
+                }
+                verification::evidence::PhysicalProcessingEvidence::OverlapExtension(geometry) => {
+                    geometry.validate_documentary()?;
+                    layout.paragraph_size(&format!("Reciprocal extension evidence: selected homology {} bp; retained terminal pairings {:?}; complete {}; unique within terminal model {}; {} comparisons. Source geometry revisions {} / {}. Exact copied/synthesized strand mappings are retained in the reconstruction report.", geometry.options.overlap, geometry.terminal_pairings.overlaps, geometry.terminal_pairings.complete, geometry.terminal_pairings.unique, geometry.terminal_pairings.comparisons, geometry.source_geometry_revisions[0], geometry.source_geometry_revisions[1]), 9.0, INK)?;
+                }
+                verification::evidence::PhysicalProcessingEvidence::TopoActions(evidence) => {
+                    layout.paragraph_size(&topo_actions_evidence_text(evidence)?, 9.0, INK)?
+                }
+                verification::evidence::PhysicalProcessingEvidence::RunProduct(evidence) => {
+                    evidence.validate_documentary()?;
+                    let origin_report = evidence.decode_report()?;
+                    layout.paragraph_size(&format!("Fresh originating reconstruction: {:?}, engine {}, plan {}, target {}. Selected originating step {} of {}; material revision {}. Complete origin products and typed graph evidence are retained in the reconstruction report. No component isolation or newly performed historical reaction is inferred.",origin_report.status,origin_report.engine_version,origin_report.plan_revision,origin_report.target_revision,evidence.origin.selection.step_index+1,origin_report.products.len(),evidence.material_revision),9.0,INK)?;
+                    for finding in &origin_report.findings {
+                        layout.paragraph_size(&format!("Origin finding: {finding}"), 9.0, INK)?;
+                    }
+                    for assumption in &origin_report.assumptions {
+                        layout.paragraph_size(
+                            &format!("Origin assumption: {assumption}"),
+                            9.0,
+                            INK,
+                        )?;
+                    }
+                }
+            }
+        }
+        for annotations in report
+            .step_reports
+            .iter()
+            .filter(|entry| entry.step_index == index)
+            .filter_map(|entry| entry.topo.as_ref())
+            .filter_map(|product| product.annotations.as_ref())
+        {
+            layout.paragraph_size("TOPO annotation correspondence follows actual top-reference source calls. It is not inherited chemical state or experimental validation.",9.0,INK)?;
+            for source in &annotations.sources {
+                layout.paragraph_size(&format!("Source role {} (revision {}): {} projected, {} outside this selected contour, {} retained only as original unmapped evidence. Projection supported: {}. Review all disrupted/PCR-derived annotations.",source.role,source.source_revision,source.projected,source.dropped,source.unmapped.len(),source.projection_supported),9.0,INK)?;
+                for warning in source.warnings.iter().take(8) {
+                    layout.paragraph_size(warning, 9.0, INK)?;
+                }
+            }
+        }
+        if let Some(product) = report.products.get(index) {
+            layout.paragraph_size(
+                &format!(
+                    "Reconstructed: {} | {} symbols | {:?}\nProduct revision {}",
+                    product.name,
+                    product.sequence.len(),
+                    product.topology,
+                    product.revision()
+                ),
+                9.0,
+                INK,
+            )?;
+            if let Some(summary) = product
+                .metadata
+                .get("duplex_model")
+                .and_then(|s| serde_json::from_str::<DuplexSummary>(s).ok())
+            {
+                layout.paragraph_size(&summary.describe(), 9.0, INK)?;
+            }
+        } else {
+            layout.paragraph_size("No reconstructed product for this step. See verification findings; later steps are not established.",9.0,RED)?;
+        }
+    }
+    layout.heading("Verification findings")?;
+    for finding in &report.findings {
+        layout.paragraph(&format!("- {finding}"))?;
+    }
+    layout.heading("Assumptions and limits")?;
+    for assumption in &report.assumptions {
+        layout.paragraph(&format!("- {assumption}"))?;
+    }
+    layout.paragraph(&format!(
+        "Exhaustive alternative-product search: {}",
+        report.exhaustive_alternative_search
+    ))?;
+    if let Some(appendix) = checked.appendix() {
+        layout.heading("Declared reaction quantities")?;
+        layout.paragraph("Arithmetic for the declared reaction subset is separate from molecular verification. Unlisted operations and omitted reagents remain unspecified.")?;
+        for line in &appendix.paragraphs {
+            layout.paragraph(line)?;
+        }
+        for table in &appendix.tables {
+            layout.heading(&table.heading)?;
+            layout.paragraph(&table.columns.join(" | "))?;
+            for row in &table.rows {
+                layout.paragraph(&row.join(" | "))?;
+            }
+        }
+    }
+    layout.heading("Laboratory details to complete before use")?;
+    layout.paragraph(if checked.appendix().is_some() {
+        "The appendix records only explicitly declared quantities. Review all unlisted operations/reagents, stock measurements, buffer, temperature/time program, purification/selection and experimental confirmation. Arithmetic does not validate chemical suitability or laboratory outcome."
+    } else {
+        "Record reaction volumes, material quantities/concentrations, enzymes/reagents, buffer, temperature/time program, purification/selection and experimental confirmation. These are not supplied or validated by the sequence model."
+    })?;
+    layout.heading("Provenance")?;
+    layout.paragraph(&format!(
+        "Engine {}\nPlan {}\nTarget {}",
+        report.engine_version, report.plan_revision, report.target_revision
+    ))?;
+    let mut map_warnings = Vec::new();
+    match svg::layout_map(target) {
+        Ok(scene) => {
+            map_warnings.extend(scene.warnings.iter().cloned());
+            layout.map(&scene)?;
+        }
+        Err(e) => {
+            let warning = format!("Target map unavailable: {e}");
+            layout.paragraph(&warning)?;
+            map_warnings.push(warning);
+        }
+    }
+    if !layout.escaped.is_empty() {
+        layout.heading("PDF text rendering limits")?;
+        layout.paragraph("Some Unicode scalars need shaping or a different font. They are visibly written as [U+XXXX] escapes, never silently removed. Full Unicode names remain in the original sequence documents and PDF title metadata. This export is not tagged PDF, PDF/A, or a claim of complete script shaping.")?;
+    }
+    let (bytes, pages, mut warnings) = layout
+        .finish(&plan.name, &report.plan_revision, &report.target_revision)
+        .map_err(|e| {
+            if report.physical_processing_reports.iter().any(|r| {
+                matches!(
+                    &r.evidence,
+                    verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(_)
+                )
+            }) {
+                ligation_pdf_limit(e)
+            } else {
+                e
+            }
+        })?;
+    warnings.extend(map_warnings);
+    Ok(PdfReport {
+        bytes,
+        pages,
+        warnings,
+        status: report.status,
+        plan_revision: report.plan_revision.clone(),
+        target_revision: report.target_revision.clone(),
+        engine_version: report.engine_version.clone(),
+    })
+}

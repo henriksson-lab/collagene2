@@ -1,7 +1,13 @@
 use collagene_core::{
-    gcg_sequence, legacy_formats, protocol,
-    sequence_export::{self as export, Format},
-    snapgene,
+    formats::{
+        original as legacy_formats,
+        sequence::{
+            export::{self, Format},
+            gcg as gcg_sequence,
+        },
+        snapgene,
+    },
+    protocol,
 };
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn molecule() -> Molecule {

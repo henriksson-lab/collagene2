@@ -1,6 +1,12 @@
-use collagene_core::{topo as t, verification::*};
+use collagene_core::cloning::topo::physical::{self as p, projection as v};
+use collagene_core::{
+    cloning::topo as t,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+    verification::{
+        engine::verify, evidence::Status, output::export_protocol_html, sources::topo_inputs,
+    },
+};
 use collagene_model::{Molecule, Topology};
-use t::physical::{self as p, projection as v};
 fn molecule(dna: &str) -> Molecule {
     Molecule::dna("same display name", dna, Topology::Linear).unwrap()
 }
@@ -122,7 +128,7 @@ fn matching_contour_retains_full_graph_and_nicks_without_implicit_target_accepta
     assert_eq!(report.products.len(), 1);
     assert_eq!(report.products[0].sequence, target.sequence);
     assert_eq!(
-        report.products[0].metadata[collagene_core::recombination::REFERENCE_ONLY_KEY],
+        report.products[0].metadata[collagene_core::cloning::recombination::REFERENCE_ONLY_KEY],
         "true"
     );
     assert!(collagene_core::chemistry::has_unmapped_physical_evidence(
@@ -240,8 +246,10 @@ fn html_pcr_preparation_includes_actual_ordered_oligos_and_explicit_physical_ass
             materials: vec![t::MaterialRecipe::ExactPcr {
                 material_id: "new PCR".into(),
                 template_role: "template".into(),
-                forward: collagene_core::analysis::Primer::new("f", "GACTAGTC", "GG").unwrap(),
-                reverse: collagene_core::analysis::Primer::new("r", "TGCATCGG", "CC").unwrap(),
+                forward: collagene_core::sequence::analysis::Primer::new("f", "GACTAGTC", "GG")
+                    .unwrap(),
+                reverse: collagene_core::sequence::analysis::Primer::new("r", "TGCATCGG", "CC")
+                    .unwrap(),
                 tail: None,
             }],
         },

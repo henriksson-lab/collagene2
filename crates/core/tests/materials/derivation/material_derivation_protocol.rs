@@ -1,17 +1,19 @@
 //! Native material selectors, source identity and current encoding integrity.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, material_derivation as native,
+    cloning::restriction::catalog as catalog_digest,
+    documents::{
+        transfer,
+        workspace::{self, Workspace},
+    },
+    material::{derivation as native, lineage::EventBinding, run::MaterialOrigin},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    run_material::MaterialOrigin,
-    transfer,
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const TEMPLATE: &str = "ACGACCCGGGATCGATCCGTA";
@@ -68,7 +70,7 @@ fn installed() -> (Workspace, EventBinding) {
     let w = Workspace::from_documents("PCR source", vec![source.clone()], 0).unwrap();
     let forward = Primer::new("F", "ACGAC", "").unwrap();
     let reverse = Primer::new("R", "TACGG", "").unwrap();
-    let mut previews = verification::simulate_pcr_documents(
+    let mut previews = verification::pcr::simulate_pcr_documents(
         &source,
         &forward,
         &reverse,
@@ -78,8 +80,8 @@ fn installed() -> (Workspace, EventBinding) {
     assert_eq!(previews.len(), 1);
     let p = previews.remove(0);
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event(&w, 0),
             origin: native::SourceOrigin::OriginalReference,
         }],
@@ -139,7 +141,7 @@ fn current_install_and_digest_jobs_bind_actual_material() {
         .clone();
     let selection = catalog_digest::select(&catalog, &[enzyme]).unwrap();
     let options = Default::default();
-    let role = collagene_core::restriction_history::source_role(&product).unwrap();
+    let role = collagene_core::cloning::restriction::history::source_role(&product).unwrap();
     let context =
         native::digest_inspection_revision(&role, &source, &origin, &selection, &options).unwrap();
     let response = call(
@@ -194,7 +196,7 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
     old[4..6].copy_from_slice(&(protocol::schema::CANDIDATE_SCHEMA_VERSION - 1).to_le_bytes());
     assert_eq!(&old[6..], &bytes[6..]);
     assert!(transfer::load_candidate(&old).is_err());
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -227,14 +229,14 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
         .is_err()
     );
     assert!(
-        collagene_core::snapgene_export::export_snapgene(
+        collagene_core::formats::snapgene::export::export_snapgene(
             &source,
-            collagene_core::snapgene_export::Policy::AllowOmissions
+            collagene_core::formats::snapgene::export::Policy::AllowOmissions
         )
         .is_err()
     );
     let origin = MaterialOrigin::Derived(native::capsule(&w, &product).unwrap());
-    let mut reference = collagene_core::material_pcr::simulate(
+    let mut reference = collagene_core::cloning::pcr::material::simulate(
         &w.revisions[&product.revision],
         &origin,
         &Primer::new("F", "ACGAC", "").unwrap(),
@@ -248,7 +250,7 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
     assert!(
         reference
             .metadata
-            .contains_key(collagene_core::material_pcr::ORIGIN_METADATA)
+            .contains_key(collagene_core::cloning::pcr::material::ORIGIN_METADATA)
     );
     assert!(
         native::preview_pcr(
@@ -264,7 +266,9 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
 
 #[test]
 fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assembly() {
-    use collagene_core::assembly_recipe::{self as a, FragmentSpec, Preparation, RunPreparation};
+    use collagene_core::cloning::assembly::recipe::{
+        self as a, FragmentSpec, Preparation, RunPreparation,
+    };
     let (w, product) = installed();
     let amp = w.revisions[&product.revision].clone();
     let other = Molecule::dna("Second original", "CGTATTGGAACG", Topology::Linear).unwrap();
@@ -319,7 +323,7 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
         circular: false,
         options: Default::default(),
     };
-    let policy = collagene_core::homology_assembly::Options {
+    let policy = collagene_core::cloning::overlap::assembly::Options {
         overlaps: vec![4],
         topology: Topology::Linear,
         min_paired_bases: 4,
@@ -346,11 +350,14 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
         preview.compiled.plan.steps[0],
         Operation::ReconstructMaterial { .. }
     ));
-    let orders =
-        collagene_core::plan_oligos::build(&preview.compiled.plan, &target, &Default::default())
-            .unwrap();
+    let orders = collagene_core::planning::oligos::build(
+        &preview.compiled.plan,
+        &target,
+        &Default::default(),
+    )
+    .unwrap();
     assert_eq!(orders.oligos.records.len(), 4);
-    let verification::PhysicalProcessingEvidence::DerivedOrigin(evidence) =
+    let verification::evidence::PhysicalProcessingEvidence::DerivedOrigin(evidence) =
         &preview.verification.physical_processing_reports[0].evidence
     else {
         unreachable!()

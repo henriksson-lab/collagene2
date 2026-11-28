@@ -1,6 +1,6 @@
 use collagene_core::{
-    analysis::*,
-    formats::*,
+    formats::sequence::*,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         execution::process_request,
         load_document,
@@ -8,7 +8,8 @@ use collagene_core::{
         save_document,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::*,
+    sequence::analysis::*,
+    verification::{engine::verify, evidence::Status, output::export_protocol_html},
 };
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 
@@ -510,5 +511,5 @@ fn reports_escape_untrusted_names_and_bind_current_revisions() {
     assert!(!html.contains("<script>"));
     assert!(html.contains("&lt;script&gt;"));
     assert!(html.contains(&target.revision()));
-    assert!(html.contains(&plan_revision(&plan)));
+    assert!(html.contains(&collagene_core::planning::plan::DesignPlan::revision(&plan)));
 }

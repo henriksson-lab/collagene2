@@ -1,16 +1,29 @@
 //! Supplied oligos prepare a changed insert from unchanged stock before assembly.
 use collagene_core::{
-    analysis::Primer,
-    assembly_diagnostics::{self, Stage},
-    assembly_recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
     chemistry::EndTreatment,
-    cloning_outputs, ligation_recipe as lig, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request},
-    overlap_profiles::ProfileOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::{
+            diagnostics::{self as assembly_diagnostics, Stage},
+            recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
+        },
+        ligation::recipe as lig,
+        overlap::{
+            extension::{
+                self as overlap_extension,
+                pcr::{PrimerPair, Request},
+            },
+            profiles::ProfileOptions,
+        },
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -183,7 +196,7 @@ fn actual_prepared_duplex_can_be_phosphorylated_and_ligated_without_reference_ma
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -255,7 +268,7 @@ fn saved_original_is_replayed_before_both_branches_without_changing_its_origin_t
     )
     .unwrap();
     let event = commit.receipt.construct.clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id.clone(),
@@ -316,7 +329,8 @@ fn saved_original_is_replayed_before_both_branches_without_changing_its_origin_t
     );
 }
 fn rebind_plan(preview: &mut a::Preview) {
-    preview.verification.plan_revision = verification::plan_revision(&preview.compiled.plan);
+    preview.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&preview.compiled.plan);
 }
 #[test]
 fn graph_correspondence_rejects_wrong_branch_pair_outer_source_skips_and_shared_ownership() {

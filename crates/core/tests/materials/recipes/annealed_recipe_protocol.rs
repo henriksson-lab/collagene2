@@ -1,16 +1,17 @@
 //! Appended preparation capability is gated separately from old generic annealing plans.
 use collagene_core::{
-    assembly_recipe::{self, FragmentSpec, Preparation},
     chemistry::{AnnealOptions, Terminus},
-    ligation_recipe,
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation},
+        ligation::{recipe as ligation_recipe, tailing::TailingBase, tailing_recipe},
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    tailing::TailingBase,
-    tailing_recipe,
-    verification::{self, PlanInput},
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Vec<PlanInput>, Molecule, ligation_recipe::Recipe) {
@@ -102,11 +103,11 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs: inputs.clone(),
             target: target.clone(),
             recipe: recipe.clone(),
@@ -123,7 +124,7 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     };
     assert_eq!(
         p.verification.status,
-        verification::Status::ConsistentUnderAssumptions
+        verification::evidence::Status::ConsistentUnderAssumptions
     );
     assert_eq!(p.compiled.plan.inputs.len(), 3);
     assert_eq!(p.compiled.rows.len(), 2);
@@ -158,7 +159,7 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     };
     assert!(protocol::execution::process_request(&wire(b"CGQ\0", 70, &request)).is_err());
     let tail = tailing_recipe::Recipe {
-        profile: collagene_core::tailing_recipe::Profile::Ta,
+        profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: recipe.name,
         fragments: recipe
@@ -166,7 +167,7 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
             .into_iter()
             .map(|f| tailing_recipe::Fragment {
                 source: f.source,
-                action: collagene_core::tailing_recipe::Action::AddTail {
+                action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                     base: TailingBase::A,
                 },
                 treatment: f.treatment,

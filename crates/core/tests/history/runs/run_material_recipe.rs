@@ -1,14 +1,20 @@
 //! Named saved material feeds the ordinary shared compiler through fresh origin replay.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation, RunPreparation},
     chemistry::{EndTreatment, FivePrime, Terminus},
-    cloning_outputs::{self, Options},
-    ligation_recipe as lig,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Capsule, Selection},
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as lig,
+    },
+    documents::workspace::Workspace,
+    material::{
+        capsule::Capsule,
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Options},
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn binding(w: &Workspace, i: usize) -> EventBinding {
@@ -52,7 +58,7 @@ fn saved(source: Molecule, target: Molecule, steps: Vec<Operation>) -> (Molecule
     .unwrap();
     let event = commit.receipt.construct.clone();
     let m = commit.workspace.revisions[&event.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -109,8 +115,8 @@ fn row(id: &str, preparation: Preparation, treatment: Option<EndTreatment>) -> l
         treatment,
     }
 }
-fn selected(name: &str) -> collagene_core::catalog_digest::CatalogSelection {
-    let c = collagene_core::catalog_digest::builtin_catalog().unwrap();
+fn selected(name: &str) -> collagene_core::cloning::restriction::catalog::CatalogSelection {
+    let c = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let id = c
         .edition()
         .enzymes
@@ -119,7 +125,7 @@ fn selected(name: &str) -> collagene_core::catalog_digest::CatalogSelection {
         .unwrap()
         .id
         .clone();
-    collagene_core::catalog_digest::select(&c, &[id]).unwrap()
+    collagene_core::cloning::restriction::catalog::select(&c, &[id]).unwrap()
 }
 #[test]
 fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
@@ -176,7 +182,7 @@ fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -210,7 +216,7 @@ fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
         preview.compiled.rows[0].preparation.preparation_step,
         Some(0)
     );
-    let diagnostics = collagene_core::assembly_diagnostics::ligation(&preview).unwrap();
+    let diagnostics = collagene_core::cloning::assembly::diagnostics::ligation(&preview).unwrap();
     assert_eq!(diagnostics.rows[0].total_steps, 2);
     assert!(preview.product_physical.unwrap().covalently_closed_in_model);
 }
@@ -263,7 +269,7 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap();
         assert!(untreated.product_physical.is_none());
@@ -284,7 +290,7 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap();
         assert_eq!(
@@ -306,12 +312,12 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
                     &inputs,
                     &target,
                     &recipe,
-                    collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+                    collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
                 )
                 .unwrap(),
             )
             .unwrap();
-        collagene_core::assembly_diagnostics::ligation(&preview).unwrap();
+        collagene_core::cloning::assembly::diagnostics::ligation(&preview).unwrap();
     }
 }
 #[test]
@@ -340,7 +346,7 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -352,7 +358,7 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
         *template = Source::Input("saved".into());
     }
     forged.verification.plan_revision =
-        collagene_core::verification::plan_revision(&forged.compiled.plan);
+        collagene_core::planning::plan::DesignPlan::revision(&forged.compiled.plan);
     assert!(forged.validate().is_err());
     if let Preparation::FromRun { origin, .. } = &mut recipe.fragments[0].source.preparation {
         origin.selection.event.revision = "0".repeat(64);
@@ -362,7 +368,7 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .is_err()
     );
@@ -371,7 +377,8 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
 #[test]
 fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() {
     use collagene_core::{
-        chemistry::EndRepairMethod, tailing::TailingBase, tailing_recipe as tail,
+        chemistry::EndRepairMethod,
+        cloning::ligation::{tailing::TailingBase, tailing_recipe as tail},
     };
     let (m, origin) = pcr_saved();
     let inputs = vec![
@@ -391,7 +398,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
     )
     .unwrap();
     let recipe = tail::Recipe {
-        profile: collagene_core::tailing_recipe::Profile::Ta,
+        profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: "Serial prepared material with complete downstream chain".into(),
         circular: true,
@@ -415,7 +422,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                         },
                     },
                 },
-                action: collagene_core::tailing_recipe::Action::AddTail {
+                action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                     base: TailingBase::T,
                 },
                 treatment: None,
@@ -432,7 +439,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
                         template_strand: collagene_core::chemistry::Strand::Top,
                     },
                 },
-                action: collagene_core::tailing_recipe::Action::AddTail {
+                action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                     base: TailingBase::A,
                 },
                 treatment: Some(EndTreatment::Phosphorylate),
@@ -483,6 +490,6 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
         *template = Source::Step(0);
     }
     forged.verification.plan_revision =
-        collagene_core::verification::plan_revision(&forged.compiled.plan);
+        collagene_core::planning::plan::DesignPlan::revision(&forged.compiled.plan);
     assert!(forged.validate().is_err());
 }

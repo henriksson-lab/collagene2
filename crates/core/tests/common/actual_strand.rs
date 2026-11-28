@@ -1,12 +1,14 @@
 //! Shared literal source fixture, not a production origin resolver.
 use collagene_core::{
-    assembly_intent::{self, Contribution, MaterialBinding, Selector},
     chemistry::{AnnealOptions, Strand, Terminus},
-    cloning_outputs,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialSelection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    cloning::assembly::intent::{self as assembly_intent, Contribution, MaterialBinding, Selector},
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialSelection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
 };
 use collagene_model::{Molecule, Topology};
 pub fn event(w: &Workspace, i: usize) -> EventBinding {
@@ -85,9 +87,13 @@ pub fn fixture() -> (
         step_index: 0,
         event: saved.receipt.construct.clone(),
     });
-    let origins = run_material::documentary_origins(&saved.workspace, &[selection.clone()], &[])
-        .unwrap()
-        .materials;
+    let origins = collagene_core::material::capsule::documentary_origins(
+        &saved.workspace,
+        &[selection.clone()],
+        &[],
+    )
+    .unwrap()
+    .materials;
     let reference = saved.workspace.revisions[&selection.event().revision].clone();
     let fresh = origins[0].replay(&reference).unwrap();
     assert_eq!(fresh.tracked().duplex.bottom_start, 4);
@@ -95,7 +101,7 @@ pub fn fixture() -> (
         fresh.tracked().duplex.bottom.as_str(),
         "AATTCGTAAGAATTCCGTAGC"
     );
-    let state = collagene_core::modified_duplex::summary(fresh.tracked())
+    let state = collagene_core::chemistry::tracked_duplex::summary(fresh.tracked())
         .unwrap()
         .state_revision;
     let request = assembly_intent::Request {

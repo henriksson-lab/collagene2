@@ -1,15 +1,20 @@
 //! Independent literal mutation intent through the ordinary shared preparation compiler.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self, FragmentSpec, Preparation, RunPreparation},
     chemistry::{EndTreatment, FivePrime},
-    cloning_outputs::{self, Options},
-    ligation_recipe as lig,
-    mutagenesis::PcrOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as lig,
+        pcr::mutagenesis::PcrOptions,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Options},
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
@@ -85,7 +90,7 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
         &inputs,
         &target,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(untreated.preparation_complete);
@@ -107,7 +112,7 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
         &inputs,
         &target,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -130,7 +135,7 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
             ..
         }
     ));
-    let d = collagene_core::assembly_diagnostics::ligation(&p).unwrap();
+    let d = collagene_core::cloning::assembly::diagnostics::ligation(&p).unwrap();
     assert_eq!(d.rows[0].total_steps, 2);
     assert!(d.failure.is_none());
     let wrong = Molecule::dna(
@@ -143,7 +148,7 @@ fn primer_encoded_changes_follow_literal_target_and_real_pcr_chemistry() {
         &inputs,
         &wrong,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
@@ -161,7 +166,7 @@ fn mismatch_three_prime_and_search_budgets_remain_explicit_and_cannot_inherit_a_
         &inputs,
         &target,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     for case in 0..3 {
@@ -179,7 +184,7 @@ fn mismatch_three_prime_and_search_budgets_remain_explicit_and_cannot_inherit_a_
             &inputs,
             &target,
             &changed,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap();
         assert_ne!(context, original.context_revision);
@@ -188,7 +193,7 @@ fn mismatch_three_prime_and_search_budgets_remain_explicit_and_cannot_inherit_a_
             &inputs,
             &target,
             &changed,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap();
         assert_ne!(
@@ -236,7 +241,7 @@ fn mismatch_preparation_reuses_a_fresh_saved_origin_and_preserves_the_replay_dep
     )
     .unwrap();
     let event = commit.receipt.construct;
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -262,7 +267,7 @@ fn mismatch_preparation_reuses_a_fresh_saved_origin_and_preserves_the_replay_dep
         &inputs,
         &target,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -283,12 +288,13 @@ fn mismatch_preparation_reuses_a_fresh_saved_origin_and_preserves_the_replay_dep
         }
     ));
     assert_eq!(p.compiled.rows[0].preparation.preparation_step, Some(0));
-    collagene_core::assembly_diagnostics::ligation(&p).unwrap();
+    collagene_core::cloning::assembly::diagnostics::ligation(&p).unwrap();
     let mut forged = p.clone();
     if let Operation::PcrWithMismatches { template, .. } = &mut forged.compiled.plan.steps[1] {
         *template = Source::Input("source".into());
     }
-    forged.verification.plan_revision = verification::plan_revision(&forged.compiled.plan);
+    forged.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&forged.compiled.plan);
     assert!(forged.validate().is_err());
 }
 #[test]
@@ -318,7 +324,7 @@ fn shared_overlap_compilation_keeps_mismatch_policy_without_inferring_target() {
 
 #[test]
 fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
-    use collagene_core::{tailing::TailingBase, tailing_recipe as tail};
+    use collagene_core::cloning::ligation::{tailing::TailingBase, tailing_recipe as tail};
     let inputs = vec![
         input(Molecule::dna("Original32bp", ORIGINAL, Topology::Linear).unwrap()),
         PlanInput {
@@ -336,7 +342,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
     )
     .unwrap();
     let recipe = tail::Recipe {
-        profile: collagene_core::tailing_recipe::Profile::Ta,
+        profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: "Mismatch preparation and explicit complementary tails".into(),
         circular: true,
@@ -344,7 +350,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
         fragments: vec![
             tail::Fragment {
                 source: fragment(ordinary()),
-                action: collagene_core::tailing_recipe::Action::AddTail {
+                action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                     base: TailingBase::T,
                 },
                 treatment: Some(EndTreatment::Phosphorylate),
@@ -361,7 +367,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
                         template_strand: collagene_core::chemistry::Strand::Top,
                     },
                 },
-                action: collagene_core::tailing_recipe::Action::AddTail {
+                action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                     base: TailingBase::A,
                 },
                 treatment: Some(EndTreatment::Phosphorylate),
@@ -384,6 +390,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
     if let Operation::PcrWithMismatches { options, .. } = &mut p.compiled.plan.steps[0] {
         options.binding.max_mismatches = 0;
     }
-    p.verification.plan_revision = verification::plan_revision(&p.compiled.plan);
+    p.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&p.compiled.plan);
     assert!(p.validate().is_err());
 }

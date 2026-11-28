@@ -1,9 +1,9 @@
 use collagene_core::{
-    analysis::{self, Enzyme},
-    restriction_inspection::{
-        self as inspection, InspectionOptions, InspectionSite, ReferenceSpan, SiteDiagnostic,
+    cloning::restriction::{
+        inspection::{self, InspectionOptions, InspectionSite, ReferenceSpan, SiteDiagnostic},
+        selection::{self, Basis::*, MAX_REGION_SPANS, Region, Relation::*},
     },
-    restriction_selection::{self as selection, Basis::*, MAX_REGION_SPANS, Region, Relation::*},
+    sequence::analysis::{self, Enzyme},
 };
 use collagene_model::{Location, Molecule, Topology};
 

@@ -1,5 +1,6 @@
 use collagene_core::{
-    protein_liabilities as native, protein_liability_annotation,
+    protein::liability_annotation as protein_liability_annotation,
+    protein_liabilities as native,
     protocol::{
         self,
         request::Request,

@@ -1,18 +1,18 @@
 use collagene_core::{
-    protocol::{
-        self,
-        request::Request,
-        response::Response,
-        schema::{AnalysisJob, AnalysisResult},
-    },
-    structure_view::{
+    documents::workspace::{self, Workspace},
+    protein::structure::{
         self as native,
         coordinates::{
             Format,
             scene::{Alternates, Chains, Selection},
         },
     },
-    workspace::{self, Workspace},
+    protocol::{
+        self,
+        request::Request,
+        response::Response,
+        schema::{AnalysisJob, AnalysisResult},
+    },
 };
 use collagene_model::{Molecule, Topology};
 const PDB:&[u8]=b"ATOM      1  CA AALA A  -2B     11.104  13.207   2.100  0.60 20.00           C  \nHETATM    2 CA    CA Z  17      12.000  13.000   2.000  1.00 10.00          CA2+\nCONECT    1    2\nEND\n";

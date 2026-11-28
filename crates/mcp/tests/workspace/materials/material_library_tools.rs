@@ -1,8 +1,8 @@
 #[path = "../../../../core/tests/common/material_library.rs"]
 mod material_library;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::workspace;
-use collagene_mcp::CollageneServer;
+use collagene_core::documents::workspace;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

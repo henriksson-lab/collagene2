@@ -1,18 +1,24 @@
 //! Literal saved materials are freshly replayed; displayed chemistry is never recovered from metadata.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
-    chemistry::{EndTreatment, FivePrime, Terminus},
-    cloning_outputs::{self, Options},
-    digest_cut_selection::{self, Boundary, Choice},
-    methylation::MethylationState,
-    modified_duplex::GenerationAssumptions,
-    restriction_inspection::InspectionOptions,
-    run_catalog_digest as d,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Capsule, Selection},
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
-    workspace::Workspace,
+    chemistry::{
+        EndTreatment, FivePrime, Terminus, methylation::MethylationState,
+        tracked_duplex::GenerationAssumptions,
+    },
+    cloning::restriction::{
+        catalog as catalog_digest,
+        cut_selection::{self as digest_cut_selection, Boundary, Choice},
+        inspection::InspectionOptions,
+        run_digest as d,
+    },
+    documents::workspace::Workspace,
+    material::{
+        capsule::Capsule,
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Options},
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn binding(w: &Workspace, i: usize) -> EventBinding {
@@ -44,7 +50,7 @@ fn saved(sources: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (Mo
     docs.push(target);
     let w = Workspace::from_documents("Source and intent", docs, n).unwrap();
     let expected = &w.revisions[&w.documents[n].head];
-    let reconstruction = collagene_core::verification::verify(&plan, expected);
+    let reconstruction = collagene_core::verification::engine::verify(&plan, expected);
     assert_eq!(
         reconstruction.products.len(),
         plan.steps.len(),
@@ -53,7 +59,7 @@ fn saved(sources: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (Mo
     );
     assert!(
         reconstruction.products.last().is_some_and(|product| {
-            collagene_core::verification::plan_target_matches(&plan, product, expected)
+            collagene_core::verification::engine::plan_target_matches(&plan, product, expected)
         }),
         "Origin differs from its independent literal target: {:?}",
         reconstruction.findings
@@ -78,7 +84,7 @@ fn saved(sources: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (Mo
     .unwrap();
     let event = commit.receipt.construct;
     let source = commit.workspace.revisions[&event.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -239,7 +245,7 @@ fn inherited_cpg_positions_survive_conditional_not_i_cleavage_without_claiming_p
             },
             Operation::CheckedDigest {
                 selection: checked_selection(vec!["NotI".into()]),
-                options: collagene_core::modified_duplex::checked_inspection_options(),
+                options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),
                 fragment_index: 0,
             },
@@ -463,8 +469,10 @@ fn saved_staggered_source_uses_actual_bottom_free_ends_for_both_cut_paths() {
     assert!(tampered.validate_binding(&report.context_revision).is_err());
 }
 
-fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+fn checked_selection(
+    names: Vec<String>,
+) -> collagene_core::cloning::restriction::catalog::CatalogSelection {
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let ids = names
         .iter()
         .map(|name| {
@@ -478,5 +486,5 @@ fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::Cata
                 .clone()
         })
         .collect::<Vec<_>>();
-    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
+    collagene_core::cloning::restriction::catalog::select(&catalog, &ids).unwrap()
 }

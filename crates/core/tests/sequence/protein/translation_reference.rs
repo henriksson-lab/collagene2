@@ -1,4 +1,4 @@
-use collagene_core::{
+use collagene_core::sequence::{
     translation::{InitiationPolicy, TranslationOptions},
     translation_reference::{self as reference, Request, Selection},
 };
@@ -186,7 +186,7 @@ fn region_annotation_keeps_literal_initiation_policy_without_inventing_partial_c
             .iter()
             .any(|(key, _)| key == "partial" || key == "translation")
     );
-    assert!(collagene_core::translation::translate_cds(&r.source, &proposed).is_err());
+    assert!(collagene_core::sequence::translation::translate_cds(&r.source, &proposed).is_err());
 }
 
 #[test]

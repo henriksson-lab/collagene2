@@ -1,5 +1,5 @@
 //! Real SDK over memory pipes; no network, browser, external aligner or filesystem.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -75,7 +75,7 @@ async fn immutable_subject_discovery_retains_bounds_and_never_installs_documents
         evidence["report"]["engine_version"],
         "sequence-similarity-2"
     );
-    let options = collagene_core::sequence_similarity::Options {
+    let options = collagene_core::sequence::similarity::Options {
         max_work: 1,
         ..Default::default()
     };

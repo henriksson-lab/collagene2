@@ -1,9 +1,14 @@
 use collagene_core::{
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit::*,
-    assembly_recipe::{self, Preparation},
-    primers::DesignOptions,
-    verification::{self, PlanInput, Status},
+    cloning::{
+        assembly::{
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit::*,
+            recipe::{self as assembly_recipe, Preparation},
+        },
+        pcr::primers::DesignOptions,
+    },
+    planning::plan::PlanInput,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const L: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -299,7 +304,7 @@ fn terminal_literal_is_intent_only_and_not_a_silent_overlap_primer_tail() {
 }
 fn verify(inputs: &[PlanInput], r: &Report) {
     let compiled = assembly_recipe::compile(inputs, &r.intent.target, &r.recipe).unwrap();
-    let report = verification::verify(&compiled.plan, &r.intent.target);
+    let report = verification::engine::verify(&compiled.plan, &r.intent.target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -390,7 +395,10 @@ fn literal_linear_trim_and_insert_updates_independent_intent_and_full_tail_metri
     let plan = assembly_recipe::compile(&inputs, &wrong, &proposed.recipe)
         .unwrap()
         .plan;
-    assert_eq!(verification::verify(&plan, &wrong).status, Status::Invalid);
+    assert_eq!(
+        verification::engine::verify(&plan, &wrong).status,
+        Status::Invalid
+    );
 }
 #[test]
 fn reverse_row_uses_adjusted_original_coordinates_and_original_forward_tail() {

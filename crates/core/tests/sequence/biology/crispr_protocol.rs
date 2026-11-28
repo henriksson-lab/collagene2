@@ -1,13 +1,12 @@
 //! F25 worker bindings and append-only CRISPR computational-design version gates.
 use collagene_core::{
-    crispr::*,
-    edit_template,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
+    sequence::{crispr::*, template as edit_template},
 };
 use collagene_model::{Error, Molecule, Topology};
 const SPACER: &str = "ACGTACGTACGTACGTACGT";
@@ -236,7 +235,7 @@ fn all_four_new_jobs_and_results_require_schema_eighteen_before_body_decode_and_
                 );
             }
             let mut large = prefix;
-            large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+            large.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
             let b = raw(magic, protocol::schema::WORKER_SCHEMA_VERSION, &large);
             let error = if magic == b"CGQ\0" {
                 protocol::execution::process_request(&b).unwrap_err()

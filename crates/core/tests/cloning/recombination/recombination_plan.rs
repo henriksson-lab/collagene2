@@ -1,13 +1,16 @@
 //! Literal reciprocal products and typed graph/native version boundaries.
 use collagene_core::{
-    analysis::Primer,
     chemistry::EndTreatment,
+    cloning::recombination::{self, ProfileSnapshot, Request, Selection, reference},
+    documents::{
+        transfer::{self, Candidate},
+        workspace::{self, Workspace},
+    },
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{self, request::Request as WireRequest, schema::AnalysisJob},
-    recombination::{self, ProfileSnapshot, Request, Selection, reference},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    transfer::{self, Candidate},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn fixture(byproduct: bool) -> (Molecule, DesignPlan) {
@@ -23,7 +26,7 @@ fn fixture(byproduct: bool) -> (Molecule, DesignPlan) {
         qualifiers: vec![("label".into(), Some("payload".into()))],
         needs_review: false,
     });
-    a.original_genbank = Some(collagene_core::formats::export_genbank(&a).unwrap());
+    a.original_genbank = Some(collagene_core::formats::sequence::export_genbank(&a).unwrap());
     let donor = Molecule::dna("donor", &d, Topology::Circular).unwrap();
     // Independent source-boundary oracle; neither sequence comes from a reported product.
     let (sequence, topology) = if byproduct {
@@ -44,7 +47,8 @@ fn fixture(byproduct: bool) -> (Molecule, DesignPlan) {
         ProfileSnapshot::manufacturer_context().unwrap(),
         reference::Reaction::BP,
     );
-    let inputs = verification::recombination_inputs(&sources, [&a, &donor], &request).unwrap();
+    let inputs =
+        verification::sources::recombination_inputs(&sources, [&a, &donor], &request).unwrap();
     let report = reference::recombine(
         &inputs,
         &request.profile.profile,
@@ -107,13 +111,13 @@ fn event(w: &Workspace, i: usize) -> EventBinding {
 fn literal_both_components_match_only_as_reference_models_and_protocols_retain_pins() {
     for byproduct in [false, true] {
         let (target, plan) = fixture(byproduct);
-        let r = verification::verify(&plan, &target);
+        let r = verification::engine::verify(&plan, &target);
         assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
         assert_eq!(r.products.len(), 1);
         assert!(!r.exhaustive_alternative_search);
         assert!(!r.products[0].metadata.contains_key("tracked_modifications"));
         assert!(!r.products[0].metadata.contains_key("duplex_model"));
-        let html = verification::export_protocol_html(&plan, &target);
+        let html = verification::output::export_protocol_html(&plan, &target);
         assert!(
             html.contains("reference")
                 && html.contains("candidate_id")
@@ -121,7 +125,7 @@ fn literal_both_components_match_only_as_reference_models_and_protocols_retain_p
                 && html.contains("raw_sha256")
         );
         assert!(
-            collagene_core::pdf::export_protocol_pdf(&plan, &target)
+            collagene_core::output::pdf::export_protocol_pdf(&plan, &target)
                 .unwrap()
                 .bytes
                 .starts_with(b"%PDF")
@@ -154,16 +158,23 @@ fn stale_source_profile_policy_slot_and_component_never_rebind_by_target() {
             }
         }
         assert_ne!(
-            verification::verify(&p, &target).status,
+            verification::engine::verify(&p, &target).status,
             Status::ConsistentUnderAssumptions
         );
-        assert!(verification::verify(&p, &target).products.is_empty());
+        assert!(
+            verification::engine::verify(&p, &target)
+                .products
+                .is_empty()
+        );
     }
     let mut wrong = target.clone();
     wrong.sequence = collagene_model::Sequence::dna(&"A".repeat(target.sequence.len())).unwrap();
     let mut p = plan.clone();
     p.target_revision = wrong.revision();
-    assert_eq!(verification::verify(&p, &wrong).status, Status::Invalid);
+    assert_eq!(
+        verification::engine::verify(&p, &wrong).status,
+        Status::Invalid
+    );
 }
 #[test]
 fn reference_ancestry_cannot_gain_physical_authority_directly_or_after_overlap() {
@@ -200,7 +211,7 @@ fn reference_ancestry_cannot_gain_physical_authority_directly_or_after_overlap()
                     treatment: EndTreatment::Phosphorylate,
                 },
             });
-            let r = verification::verify(&p, &target);
+            let r = verification::engine::verify(&p, &target);
             assert_eq!(r.status, Status::Incomplete);
             assert!(r.products.len() < p.steps.len());
             assert!(
@@ -225,13 +236,14 @@ fn pinned_custom_profile_replays_without_installed_catalog_lookup() {
         custom.id = "explicit-custom-snapshot".into();
         custom.edition = "independent-edition".into();
         request.profile = ProfileSnapshot::new(custom).unwrap();
-        let inputs = verification::recombination_inputs(sources, molecules, request).unwrap();
+        let inputs =
+            verification::sources::recombination_inputs(sources, molecules, request).unwrap();
         selection.batch_revision = recombination::batch_revision(&inputs, request).unwrap();
     }
     let encoded = transfer::save_candidate(&Candidate::new(p)).unwrap();
     let decoded = transfer::load_candidate(&encoded).unwrap();
     assert_eq!(
-        verification::verify(&decoded.plan, &target).status,
+        verification::engine::verify(&decoded.plan, &target).status,
         Status::Incomplete
     );
 }
@@ -267,7 +279,7 @@ fn native_capture_is_explicitly_incomplete_has_exact_two_parents_and_replays() {
     let run = run_lineage::load_run(&c.workspace, &c.receipt.run_id).unwrap();
     assert_eq!(
         run.plan_schema,
-        collagene_core::workspace::PLAN_SCHEMA_VERSION
+        collagene_core::documents::workspace::PLAN_SCHEMA_VERSION
     );
     assert_eq!(run.assessment.status, Status::Incomplete);
     let pe = c
@@ -344,7 +356,7 @@ fn native_manifest_cannot_downcast_reference_graph_even_with_valid_step_blobs() 
                 let mut manifest: serde_json::Value = serde_json::from_slice(&data).unwrap();
                 assert_eq!(
                     manifest["plan_schema"],
-                    collagene_core::workspace::PLAN_SCHEMA_VERSION
+                    collagene_core::documents::workspace::PLAN_SCHEMA_VERSION
                 );
                 manifest["plan_schema"] = schema.into();
                 data = serde_json::to_vec(&manifest).unwrap();
@@ -364,7 +376,7 @@ fn forged_embedded_snapshot_is_rejected_before_plan_hashing() {
     if let Operation::RecombineReference { request, .. } = &mut plan.steps[0] {
         request.profile.profile.variants[0].sequence = "A".repeat(4097);
     }
-    let r = verification::verify(&plan, &target);
+    let r = verification::engine::verify(&plan, &target);
     assert_eq!(r.status, Status::Invalid);
     assert!(r.products.is_empty());
     assert!(r.plan_revision.is_empty());
@@ -372,9 +384,9 @@ fn forged_embedded_snapshot_is_rejected_before_plan_hashing() {
 
 #[test]
 fn text_roundtrips_keep_annotations_and_unverified_recipe_but_never_chemical_authority() {
-    use collagene_core::{chemistry::Duplex, formats};
+    use collagene_core::{chemistry::Duplex, formats::sequence as formats};
     let (target, plan) = fixture(false);
-    let r = verification::verify(&plan, &target);
+    let r = verification::engine::verify(&plan, &target);
     let mut product = r.products[0].clone();
     product.name = "reference_product".into();
     assert!(product.original_genbank.is_none());
@@ -453,7 +465,7 @@ fn native_source_and_target_trees_are_bounded_before_plan_or_target_hashing() {
         needs_review: false,
     };
     p.inputs[0].molecule.features.push(feature.clone());
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid);
     assert!(r.plan_revision.is_empty());
     let c = Candidate::new(p);
@@ -462,16 +474,18 @@ fn native_source_and_target_trees_are_bounded_before_plan_or_target_hashing() {
     let (_, p) = fixture(false);
     let mut t = target;
     t.features.push(feature);
-    let r = verification::verify(&p, &t);
+    let r = verification::engine::verify(&p, &t);
     assert!(r.plan_revision.is_empty());
     assert!(r.products.is_empty());
 }
 
 #[test]
 fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input() {
-    use collagene_core::{chemistry::AnnealOptions, formats};
+    use collagene_core::{chemistry::AnnealOptions, formats::sequence as formats};
     let (target, plan) = fixture(true);
-    let mut reference = verification::verify(&plan, &target).products.remove(0);
+    let mut reference = verification::engine::verify(&plan, &target)
+        .products
+        .remove(0);
     reference.name = "reference_source".into();
     for format in [formats::TextFormat::GenBank, formats::TextFormat::Embl] {
         let imported = formats::import_text(
@@ -496,8 +510,12 @@ fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input
         )
         .unwrap();
         assert!(
-            verification::simulate_oligo_annealing(&imported, &bottom, &AnnealOptions::default())
-                .is_err()
+            verification::terminal::simulate_oligo_annealing(
+                &imported,
+                &bottom,
+                &AnnealOptions::default()
+            )
+            .is_err()
         );
         let p = DesignPlan {
             name: "attempted import authority wash".into(),
@@ -521,7 +539,7 @@ fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input
                 candidate_index: 0,
             }],
         };
-        let r = verification::verify(&p, &target);
+        let r = verification::engine::verify(&p, &target);
         assert_eq!(r.status, Status::Incomplete);
         assert!(r.products.is_empty());
     }
@@ -531,6 +549,7 @@ fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input
         .insert("genbank.molecule_type".into(), "ss-DNA".into());
     let bottom = Molecule::dna("ordered bottom", "AACCGGTTAACCGGTT", Topology::Linear).unwrap();
     assert!(
-        verification::simulate_oligo_annealing(&top, &bottom, &AnnealOptions::default()).is_ok()
+        verification::terminal::simulate_oligo_annealing(&top, &bottom, &AnnealOptions::default())
+            .is_ok()
     );
 }

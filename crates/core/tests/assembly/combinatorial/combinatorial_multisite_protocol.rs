@@ -1,11 +1,15 @@
 //! Nested method semantics are gated independently of the unchanged plan/report formats.
 use collagene_core::{
-    combinatorial_batch as batch,
-    combinatorial_design::{
-        self as design, Bin, Choice, ChoiceSelection, ConstructOverrides, Design, Method,
-        SelectedConstruct, TargetDeclaration,
+    cloning::recombination::{
+        multisite::{self as adapter, multisite},
+        reference::{Family, Limits, Reaction, SiteVariant, SourceRecord},
     },
-    multisite_recombination::{self as adapter, multisite},
+    documents::workspace::{self, Workspace},
+    material::lineage::EventBinding,
+    planning::combinatorial::{
+        self as design, Bin, Choice, ChoiceSelection, ConstructOverrides, Design, Method,
+        SelectedConstruct, TargetDeclaration, batch,
+    },
     protocol::{
         self,
         request::Request,
@@ -13,9 +17,6 @@ use collagene_core::{
         schema::{AnalysisJob, AnalysisResult},
         session::AnalysisSession,
     },
-    recombination::reference::{Family, Limits, Reaction, SiteVariant, SourceRecord},
-    run_lineage::EventBinding,
-    workspace::{self, Workspace},
 };
 use collagene_model::{Molecule, Topology};
 fn binding(w: &Workspace, index: usize) -> EventBinding {
@@ -83,7 +84,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
                 id: format!("choice-{i}"),
                 label: format!("Original parent {i}"),
                 source: binding(&w, i),
-                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                     start: 0,
                     end: 14,
                     reverse: false,
@@ -108,7 +109,8 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
                     specificities: vec![1],
                     limits: Limits::default(),
                 },
-                annotation_limits: adapter::AnnotationLimits::default(),
+                annotation_limits:
+                    collagene_core::cloning::recombination::AnnotationLimits::default(),
             },
             selection: None,
         },

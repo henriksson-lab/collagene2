@@ -1,11 +1,11 @@
 //! Explicit mismatch policy crosses the actual MCP recipe, verifier and oligo handoff.
 use collagene_core::{
-    analysis::Primer,
-    ligation_recipe,
-    mutagenesis::PcrOptions,
-    verification::{Operation, Status},
+    cloning::{ligation::recipe as ligation_recipe, pcr::mutagenesis::PcrOptions},
+    planning::plan::Operation,
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -79,14 +79,15 @@ async fn explicit_mismatch_recipe_keeps_policy_oligos_independent_target_and_imm
     let mut artifact: Value =
         serde_json::from_str(&text(&client, &proposed["artifact_id"]).await).unwrap();
     // MCP adds separately typed row diagnostics to the unchanged preview fields.
-    let diagnostics: collagene_core::assembly_diagnostics::Report = serde_json::from_value(
-        artifact
-            .as_object_mut()
-            .unwrap()
-            .remove("diagnostics")
-            .unwrap(),
-    )
-    .unwrap();
+    let diagnostics: collagene_core::cloning::assembly::diagnostics::Report =
+        serde_json::from_value(
+            artifact
+                .as_object_mut()
+                .unwrap()
+                .remove("diagnostics")
+                .unwrap(),
+        )
+        .unwrap();
     let preview: ligation_recipe::Preview = serde_json::from_value(artifact).unwrap();
     assert_eq!(diagnostics.context_revision, preview.context_revision);
     preview.validate().unwrap();

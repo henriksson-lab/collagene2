@@ -1,9 +1,5 @@
 //! Bounded genome worker lifecycle, private live authority and global source bindings.
 use collagene_core::{
-    crispr::{GuideOptions, GuideQuery},
-    genome::*,
-    genome_crispr::*,
-    genome_session::*,
     protocol::{
         self,
         request::Request,
@@ -11,6 +7,8 @@ use collagene_core::{
         schema::{AnalysisJob as J, AnalysisResult as R},
         session::AnalysisSession,
     },
+    sequence::crispr::{GuideOptions, GuideQuery},
+    tracks::{crispr::*, genome::*, genome_session::*},
 };
 use collagene_model::{Error, Topology};
 const SPACER: &str = "ACGTACGTACGTACGTACGT";
@@ -492,7 +490,7 @@ fn genome_tags_require_schema_nineteen_and_never_expand_the_ordinary_message_bud
             }
         }
         let mut p = postcard::to_allocvec(&(803u32, "session", start)).unwrap();
-        p.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+        p.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
         let b = raw(magic, protocol::schema::WORKER_SCHEMA_VERSION, &p);
         let e = if magic == b"CGQ\0" {
             AnalysisSession::default().process_request(&b).unwrap_err()
@@ -504,7 +502,7 @@ fn genome_tags_require_schema_nineteen_and_never_expand_the_ordinary_message_bud
 }
 #[test]
 fn reference_links_are_typed_bounded_producer_links_and_require_worker_nineteen() {
-    use collagene_core::workspace::Workspace;
+    use collagene_core::documents::workspace::Workspace;
     let mut s = AnalysisSession::default();
     let (f, _) = ingest(&mut s);
     let link = reference_link(&f, "reference", Some("opaque-browser-cache-key".into())).unwrap();

@@ -1,9 +1,11 @@
 //! Independent literal activated-vector declaration shared by integration fixtures.
+use collagene_core::cloning::topo::physical as p;
 use collagene_core::{
-    run_lineage::EventBinding, topo as t, topo_graph_history as g, workspace::Workspace,
+    cloning::topo::{self as t, graph_history as g},
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
 };
 use collagene_model::{Molecule, Topology};
-use t::physical as p;
 pub const FINAL: &str = "AGGGGCATCCCTTCGAATGA";
 pub fn event(w: &Workspace, i: usize) -> EventBinding {
     let d = &w.documents[i];

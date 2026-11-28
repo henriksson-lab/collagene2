@@ -1,5 +1,5 @@
 //! Actual SDK over memory pipes; no browser, HTTP, user files or scientific process.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -236,7 +236,8 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
         start = chunk["next_start"].as_u64().unwrap();
         assert!(text.len() < 4 * 1024 * 1024);
     }
-    let full: collagene_core::alignment_antibody::Report = serde_json::from_str(&text).unwrap();
+    let full: collagene_core::protein::antibody_alignment::Report =
+        serde_json::from_str(&text).unwrap();
     full.validate_binding(ar["context_revision"].as_str().unwrap())
         .unwrap();
     assert!(full.at_column(0, 0).is_none());

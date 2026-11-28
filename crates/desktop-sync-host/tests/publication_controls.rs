@@ -1,5 +1,5 @@
 //! Actual bounded DSQ/DSR binary controls over SQLite and an injected native server.
-use collagene_core::workspace::{Workspace, WorkspaceAttachment};
+use collagene_core::documents::workspace::{Workspace, WorkspaceAttachment};
 use collagene_desktop_credentials as credentials;
 use collagene_desktop_sync_host::{SyncAdapter, SyncHost};
 use collagene_desktop_sync_protocol as wire;
@@ -473,7 +473,7 @@ fn native_sbol_review_lifetime_and_queue_preserve_private_original_and_publish_o
     let job = queued(call(&mut host, approve(&remote, &current, token.clone())));
     changed(call(&mut host, approve(&remote, &current, token)));
     let private = host.repository().open_document(&doc.id, None).unwrap();
-    let frame = collagene_core::workspace::load_workspace(&private.bytes).unwrap();
+    let frame = collagene_core::documents::workspace::load_workspace(&private.bytes).unwrap();
     assert_eq!(frame.attachments[&original].bytes, raw);
     assert_eq!(host.adapter_mut().calls, 0);
     success(call(&mut host, wire::Command::ResumePush { job: job.job }));
@@ -488,7 +488,7 @@ fn native_sbol_review_lifetime_and_queue_preserve_private_original_and_publish_o
     let rid = store::DocumentId::parse(binding.id.as_str()).unwrap();
     let rev = store::RevisionId::parse(binding.head.id.as_str()).unwrap();
     let public = adapter.db.payload(&adapter.access, &rid, &rev).unwrap();
-    let frame = collagene_core::workspace::load_workspace(&public.bytes).unwrap();
+    let frame = collagene_core::documents::workspace::load_workspace(&public.bytes).unwrap();
     assert!(!frame.attachments.contains_key(&original));
     assert!(
         frame

@@ -1,6 +1,7 @@
 //! Published-source facts and an independent paper-level arithmetic oracle.
-use collagene_core::{
-    golden_gate::GoldenGateEnzyme, ligation_fidelity::UnknownReason, ligation_profiles as profiles,
+use collagene_core::cloning::{
+    golden_gate::GoldenGateEnzyme,
+    ligation::{fidelity::UnknownReason, profiles},
 };
 use std::io::{Cursor, Read, Write};
 fn reference(id: &str) -> profiles::ProfileRef {
@@ -175,7 +176,7 @@ fn independent_paper_fig4_set_reproduces_81_percent_and_92_percent_without_norma
     assert_eq!(report.metadata.model, profiles::MODEL);
     assert_ne!(
         report.metadata.model,
-        collagene_core::ligation_fidelity::MODEL
+        collagene_core::cloning::ligation::fidelity::MODEL
     );
 }
 #[test]

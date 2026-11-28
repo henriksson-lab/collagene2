@@ -1,5 +1,5 @@
 //! Native-local reopen retains exact documentary bytes without public authority.
-use collagene_core::workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment};
+use collagene_core::documents::workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment};
 use collagene_design_exchange as sbol;
 use collagene_library_sharing::{
     self as sharing, Selection,
@@ -85,7 +85,8 @@ fn private_reopen_keeps_exact_original_but_restores_only_selected_native_depende
     let local_id = "independent-current-editor".to_string();
     let local_m = unrelated.revisions[&unrelated.documents[0].head].clone();
     // Rebrand through native history constructor instead of rewriting immutable events.
-    let history = collagene_core::history::DocumentHistory::new(&local_id, local_m).unwrap();
+    let history =
+        collagene_core::documents::history::DocumentHistory::new(&local_id, local_m).unwrap();
     unrelated.documents.clear();
     unrelated.history.clear();
     unrelated.revisions.clear();
@@ -167,10 +168,13 @@ fn private_import_retains_public_collision_head_and_stale_checkout_guards() {
 #[test]
 fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
     use collagene_core::{
-        analysis::Primer,
-        run_lineage::{self, EventBinding, InputEventBinding},
-        run_material,
-        verification::{DesignPlan, Operation, PlanInput, Source, Status},
+        material::{
+            lineage::{self as run_lineage, EventBinding, InputEventBinding},
+            run as run_material,
+        },
+        planning::plan::{DesignPlan, Operation, PlanInput, Source},
+        sequence::analysis::Primer,
+        verification::evidence::Status,
     };
     use collagene_model::Molecule;
     let (mut w, _, original) = fixture();
@@ -247,7 +251,7 @@ fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
     assert_eq!(before.reference(), after.reference());
     assert_eq!(before.tracked(), after.tracked());
     let prepared = reopened.revisions[&material.event.revision].clone();
-    let capsule = run_material::capsule(&reopened, &material).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&reopened, &material).unwrap();
     let downstream = DesignPlan {
         name: "Fresh physical reuse".into(),
         target_revision: target.revision(),
@@ -264,7 +268,7 @@ fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
             pcr(Source::Step(0)),
         ],
     };
-    let verified = collagene_core::verification::verify(&downstream, &target);
+    let verified = collagene_core::verification::engine::verify(&downstream, &target);
     assert_eq!(
         verified.status,
         Status::ConsistentUnderAssumptions,

@@ -1,18 +1,15 @@
 //! Current binary workers preserve target-free mismatch PCR and actual-strand repair.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::EndRepairMethod,
-    material_derivation as native,
-    mutagenesis::PcrOptions,
+    cloning::{pcr::mutagenesis::PcrOptions, restriction::catalog as catalog_digest},
+    documents::workspace::{self, Workspace},
+    material::{derivation as native, lineage::EventBinding, run::MaterialOrigin},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    run_material::MaterialOrigin,
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Error, Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -121,8 +118,8 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
         .is_err()
     );
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event(&w),
             origin: origin,
         }],
@@ -171,8 +168,8 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
         .find(|e| e.name == "EcoRI")
         .unwrap();
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: installed.receipt.product.clone(),
             origin: native::SourceOrigin::Saved(MaterialOrigin::Derived(
                 native::capsule(&pcr, &installed.receipt.product).unwrap(),
@@ -223,8 +220,8 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
     report.context_revision = "0".repeat(64);
     assert!(protocol::response::Response::decode(&wire(b"CGR\0", &forged)).is_err());
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: cut.receipt.product.clone(),
             origin: origin,
         }],
@@ -259,7 +256,7 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
 #[test]
 fn preview_admission_uses_compound_budget_but_map_remains_ordinary() {
     let mut body = postcard::to_allocvec(&(1u32, "context", 175u32)).unwrap();
-    body.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+    body.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
     for selector in [175u32, 176, 174] {
         let prefix = postcard::to_allocvec(&(1u32, "context", selector)).unwrap();
         body[..prefix.len()].copy_from_slice(&prefix);

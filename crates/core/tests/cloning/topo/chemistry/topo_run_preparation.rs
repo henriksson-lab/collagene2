@@ -1,16 +1,16 @@
 //! Literal PCR-copy composition; upstream chemistry remains distinct from new DNA.
+use collagene_core::cloning::topo::physical::{self as p, processing as a, projection};
 use collagene_core::{
-    analysis::Primer,
-    methylation::MethylationState,
-    modified_duplex::GenerationAssumptions,
+    chemistry::{methylation::MethylationState, tracked_duplex::GenerationAssumptions},
+    cloning::topo::{self, actions},
+    documents::workspace::{self, Workspace},
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
     protocol,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    topo, topo_actions as actions,
-    verification::{self as v, DesignPlan, Operation, PlanInput, Source, Status, TopoSource},
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
+    verification::{self as v, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
-use topo::physical::{self as p, processing as a, projection};
 const TARGET: &str = "AAGGGGCATCCCTTCACCATGACG";
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
@@ -196,7 +196,10 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
     };
     (plan, target, inputs)
 }
-use collagene_core::{cloning_outputs, run_material, topo_run_preparation as adapter};
+use collagene_core::{
+    cloning::topo::run_preparation as adapter,
+    material::{outputs as cloning_outputs, run as run_material},
+};
 fn event(w: &Workspace, index: usize) -> EventBinding {
     let d = &w.documents[index];
     EventBinding {
@@ -240,7 +243,7 @@ fn saved(
     let expected = if staggered {
         originplan.steps.push(Operation::Tail3Prime {
             template: Source::Step(0),
-            base: collagene_core::tailing::TailingBase::A,
+            base: collagene_core::cloning::ligation::tailing::TailingBase::A,
         });
         Molecule::dna("Independent staggered top", "CACCATGACGA", Topology::Linear).unwrap()
     } else {
@@ -281,7 +284,7 @@ fn saved(
         event: committed.receipt.construct.clone(),
     };
     let capsule = run_material::MaterialOrigin::Run(
-        run_material::capsule(&committed.workspace, &selection).unwrap(),
+        collagene_core::material::capsule::capsule(&committed.workspace, &selection).unwrap(),
     );
     inputs[2].molecule = committed.workspace.revisions[&selection.event.revision].clone();
     if !staggered {
@@ -333,7 +336,7 @@ fn saved_template_new_pcr_processed_product_finalization_archive_and_second_reus
             .iter()
             .all(|s| matches!(s.source, Source::Input(_)))
     );
-    let checked = v::verify(&plan, &target);
+    let checked = v::engine::verify(&plan, &target);
     assert_eq!(
         checked.status,
         Status::ConsistentUnderAssumptions,
@@ -378,9 +381,9 @@ fn saved_template_new_pcr_processed_product_finalization_archive_and_second_reus
     };
     let fresh = run_material::reconstruct(&loaded, &next).unwrap();
     assert_eq!(fresh.reference().sequence.as_str(), TARGET);
-    assert!(v::export_protocol_html(&plan, &target).contains("saved"));
+    assert!(v::output::export_protocol_html(&plan, &target).contains("saved"));
     assert!(
-        collagene_core::pdf::export_protocol_pdf(&plan, &target)
+        collagene_core::output::pdf::export_protocol_pdf(&plan, &target)
             .unwrap()
             .bytes
             .starts_with(b"%PDF-")
@@ -492,7 +495,10 @@ fn exact_capsule_and_role_pins_vector_prepared_rules_and_staggered_material_reje
         },
     )
     .unwrap();
-    assert_eq!(v::verify(&plan, &wrong_target).status, Status::Invalid);
+    assert_eq!(
+        v::engine::verify(&plan, &wrong_target).status,
+        Status::Invalid
+    );
 }
 fn wire<T: serde::Serialize>(magic: &[u8; 4], version: u16, payload: &T) -> Vec<u8> {
     let payload = postcard::to_allocvec(payload).unwrap();
@@ -562,7 +568,8 @@ fn saved_template_wrapper_pins_inner_bindings_and_changed_declarations() {
     let adapter::Reply::Simulated(inner) = &inspection.reply else {
         panic!("actions")
     };
-    collagene_core::topo_worker::validate_simulation(inner, &inner.batch_revision).unwrap();
+    collagene_core::cloning::topo::worker::validate_simulation(inner, &inner.batch_revision)
+        .unwrap();
     assert_ne!(inner.batch_revision, revision);
 
     assert!(
@@ -714,7 +721,7 @@ fn saved_template_orientation_projection_and_independent_check_share_exact_nativ
 #[test]
 fn embedded_topo_oligos_keep_literal_domains_tails_and_exact_source_without_ordering_prepared_vectors()
  {
-    use collagene_core::plan_oligos::{self, Options};
+    use collagene_core::planning::oligos::{self as plan_oligos, Options};
     let (old, target, inputs) = fixture();
     let Operation::TopoActions { mut request, .. } = old.steps[1].clone() else {
         panic!("actions")
@@ -728,7 +735,7 @@ fn embedded_topo_oligos_keep_literal_domains_tails_and_exact_source_without_orde
     {
         *forward = Primer::new("New literal forward", "CACCA", "GG").unwrap();
         *reverse = Primer::new("New literal reverse", "CGTCA", "TT").unwrap();
-        *tail = Some(collagene_core::tailing::TailingBase::A);
+        *tail = Some(collagene_core::cloning::ligation::tailing::TailingBase::A);
     }
     let sources = inputs
         .iter()
@@ -802,7 +809,7 @@ fn embedded_topo_oligos_keep_literal_domains_tails_and_exact_source_without_orde
 #[test]
 fn saved_template_orders_only_new_pcr_and_unsupported_prepared_or_missing_roles_cannot_be_flattened()
  {
-    use collagene_core::plan_oligos::{self, Options};
+    use collagene_core::planning::oligos::{self as plan_oligos, Options};
     let (_, inputs, target, origin, request) = saved(false);
     let plan = adapter::compile(
         &inputs,
@@ -866,7 +873,9 @@ fn saved_template_orders_only_new_pcr_and_unsupported_prepared_or_missing_roles_
 #[test]
 fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_topo_pcr() {
     use collagene_core::{
-        chemistry::Terminus, homology_assembly, overlap_profiles, verification::OrientedSource,
+        chemistry::Terminus,
+        cloning::overlap::{assembly as homology_assembly, profiles as overlap_profiles},
+        planning::plan::OrientedSource,
     };
     let (_, target, mut inputs) = fixture();
     let left = Molecule::dna(
@@ -931,7 +940,7 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
             },
         ],
     };
-    let report = v::verify(&plan, &assembled);
+    let report = v::engine::verify(&plan, &assembled);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(
         report.products.last().unwrap().sequence.as_str(),
@@ -972,7 +981,7 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
         },
     )
     .unwrap();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &prior.workspace,
         &run_material::Selection {
             run_id: prior.receipt.run.run_id.clone(),
@@ -1022,7 +1031,7 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
         },
     )
     .unwrap();
-    let fresh = v::verify(&newplan, &target);
+    let fresh = v::engine::verify(&newplan, &target);
     assert_eq!(fresh.status, Status::Incomplete, "{:?}", fresh.findings);
     assert_eq!(fresh.products.last().unwrap().sequence.as_str(), TARGET);
     let bindings = vec![
@@ -1069,7 +1078,7 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
 
 #[test]
 fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_independent_target() {
-    use collagene_core::material_derivation as d;
+    use collagene_core::material::derivation as d;
     let (w, mut inputs, target, run_origin, mut request) = saved(false);
     let source = run_origin.event().clone();
     let forward = Primer::new("Derived template F", "CACCA", "").unwrap();
@@ -1088,8 +1097,8 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     let installed = d::prepare_install(
         &w,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: source,
                 origin: declaration,
             }],
@@ -1208,7 +1217,7 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     assert!(
         matches!(&plan.steps[0], Operation::ReconstructMaterial { origin: bound, .. } if bound.product == product)
     );
-    let result = v::verify(&plan, &target);
+    let result = v::engine::verify(&plan, &target);
     assert_eq!(
         result.status,
         Status::ConsistentUnderAssumptions,
@@ -1258,7 +1267,7 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
 
     // Same reference letters are not an attestation of another native event.
     let mut alias_workspace = w.clone();
-    let alias = collagene_core::history::DocumentHistory::new(
+    let alias = collagene_core::documents::history::DocumentHistory::new(
         "equal-dna-alias",
         inputs[2].molecule.clone(),
     )
@@ -1328,14 +1337,14 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     )
     .unwrap();
     assert_eq!(
-        v::verify(&wrong_plan, &wrong_target).status,
+        v::engine::verify(&wrong_plan, &wrong_target).status,
         Status::Invalid
     );
 }
 
 #[test]
 fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr() {
-    use collagene_core::{chemistry::EndTreatment, verification::OrientedSource};
+    use collagene_core::{chemistry::EndTreatment, planning::plan::OrientedSource};
     let (base, _, mut inputs) = fixture();
     let Operation::TopoActions { request, .. } = base.steps[1].clone() else {
         panic!("actions")
@@ -1422,7 +1431,7 @@ fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr()
         revision: p.revision.clone(),
     };
     let origin = run_material::MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &saved.workspace,
             &run_material::Selection {
                 run_id: saved.receipt.run_id,

@@ -2,12 +2,11 @@
 #[path = "../../common/material_library.rs"]
 mod material_library;
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::{FivePrime, Strand},
-    material_derivation as derivation, pcr_digest_inspection as inspection,
-    run_material::MaterialOrigin,
-    workspace,
+    cloning::{pcr::digest as inspection, restriction::catalog as catalog_digest},
+    documents::workspace,
+    material::{derivation, run::MaterialOrigin},
+    sequence::analysis::Primer,
 };
 fn selection(name: &str) -> catalog_digest::CatalogSelection {
     let catalog = catalog_digest::builtin_catalog().unwrap();
@@ -27,8 +26,8 @@ fn fixture() -> (workspace::Workspace, MaterialOrigin, inspection::Request) {
     let prepared = derivation::prepare_install(
         &w,
         &derivation::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event,
                 origin: derivation::SourceOrigin::Saved(origin),
             }],

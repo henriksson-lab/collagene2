@@ -1,6 +1,6 @@
 //! Actual SDK routing and immutable source/candidate evidence for codon design.
-use collagene_core::codon_design::*;
-use collagene_mcp::CollageneServer;
+use collagene_core::sequence::codon_design::*;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

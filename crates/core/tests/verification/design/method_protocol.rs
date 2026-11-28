@@ -1,15 +1,15 @@
 use collagene_core::{
-    analysis::Primer,
-    overlap_profiles::ProfileOptions,
+    cloning::{ligation::tailing::TailingBase, overlap::profiles::ProfileOptions},
+    documents::transfer::Candidate,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    tailing::TailingBase,
-    transfer::Candidate,
-    verification::*,
+    sequence::analysis::Primer,
+    verification::terminal::{TailSubstrate, simulate_tailing},
 };
 use collagene_model::{Molecule, Topology};
 fn envelope(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8> {
@@ -127,16 +127,23 @@ fn newer_operations_cannot_hide_in_old_candidates_verify_pdf_or_workspace_messag
     let m = source();
     let plan = plan(&m);
     let c = Candidate::new(plan.clone());
-    let bytes = collagene_core::transfer::save_candidate(&c).unwrap();
+    let bytes = collagene_core::documents::transfer::save_candidate(&c).unwrap();
     assert_eq!(
         &bytes[4..6],
         &collagene_core::protocol::schema::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     for v in 1..5 {
-        assert!(collagene_core::transfer::load_candidate(&envelope(b"CGP\0", v, &c)).is_err());
+        assert!(
+            collagene_core::documents::transfer::load_candidate(&envelope(b"CGP\0", v, &c))
+                .is_err()
+        );
     }
-    let mut workspace =
-        collagene_core::workspace::Workspace::from_documents("bundle", vec![m.clone()], 0).unwrap();
+    let mut workspace = collagene_core::documents::workspace::Workspace::from_documents(
+        "bundle",
+        vec![m.clone()],
+        0,
+    )
+    .unwrap();
     workspace.candidates.push(c);
     for job in [
         AnalysisJob::Verify {

@@ -1,13 +1,18 @@
 use collagene_core::{
-    assembly_junctions::{self as junctions, Method, Options},
-    golden_gate::{GoldenGateEnzyme, GoldenGateOptions},
-    golden_gate_primer_design as primers, ligation_recipe, prepared_golden_gate,
+    cloning::{
+        assembly::junctions::{self, Method, Options},
+        golden_gate::{
+            GoldenGateEnzyme, GoldenGateOptions, prepared as prepared_golden_gate, primers,
+        },
+        ligation::recipe as ligation_recipe,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
+    verification::evidence::Status,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -40,10 +45,10 @@ fn raw(reverse: bool) -> (DesignPlan, Molecule) {
         steps: vec![
             Operation::DeclareSourceModifications {
                 template: Source::Input("source".into()),
-                assumptions: collagene_core::modified_duplex::GenerationAssumptions {
-                    dam: collagene_core::methylation::MethylationState::Unmodified,
-                    dcm: collagene_core::methylation::MethylationState::Unmodified,
-                    cpg: collagene_core::methylation::MethylationState::Unmodified,
+                assumptions: collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                    dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                    dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                    cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                 },
             },
             Operation::GoldenGate {

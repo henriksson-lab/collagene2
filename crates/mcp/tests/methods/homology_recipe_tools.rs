@@ -1,18 +1,22 @@
 //! MCP previews physical strands explicitly and attests saved material before reuse.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest,
     chemistry::{EndRepairMethod, Terminus},
-    cloning_outputs,
-    homology_assembly::{Options, OuterEndPolicy, Resection},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::PlanInput,
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, RunPreparation},
+        overlap::assembly::{Options, OuterEndPolicy, Resection},
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, Selection},
+    },
+    planning::plan::PlanInput,
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -244,7 +248,7 @@ async fn explicit_physical_recipe_and_attested_saved_product_support_actual_pcr_
         step_index: 2,
         event: commit.receipt.construct,
     };
-    let capsule = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     let frame=call(&client,"import_workspace_archive",json!({"data_base64":STANDARD.encode(workspace::save_workspace(&commit.workspace).unwrap())})).await;
     let wr = json!({"id":frame["workspace"]["id"],"revision":frame["workspace"]["revision"]});
     let saved = json!({"id":selected.event.revision,"revision":selected.event.revision});

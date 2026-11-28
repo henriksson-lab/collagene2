@@ -1,24 +1,34 @@
 //! Whole edited assembly primer proposals bind the independent intent before science.
 use collagene_core::{
-    analysis::Primer,
-    assembly_edit_intent::{self, Edit},
-    assembly_edited_primer_design::{self, Request as DesignRequest},
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit,
-    assembly_recipe::Preparation,
-    assembly_substitution_intent, cloning_outputs,
-    overlap_extension_primer_design::Options,
-    primers::DesignOptions,
+    cloning::{
+        assembly::{
+            edit_intent::{self as assembly_edit_intent, Edit},
+            edited_primers::{self as assembly_edited_primer_design, Request as DesignRequest},
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit as assembly_junction_edit,
+            recipe::Preparation,
+            substitution_intent as assembly_substitution_intent,
+        },
+        overlap::extension::primers::Options,
+        pcr::primers::DesignOptions,
+    },
+    documents::{
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    transfer::{self, Candidate},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -104,7 +114,7 @@ fn fixture() -> (Vec<PlanInput>, DesignRequest) {
                 ..Default::default()
             },
             profile_options: Default::default(),
-            finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+            finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
         },
     )
 }
@@ -225,7 +235,7 @@ fn appended166_158_whole_design_preserves_literal_junction_and_internal_edit_aga
         verification::ENGINE_VERSION
     );
     assert_eq!(
-        verification::verify(&candidate.plan, &report.intent.target).status,
+        verification::engine::verify(&candidate.plan, &report.intent.target).status,
         Status::ConsistentUnderAssumptions
     );
     assert_eq!(serde_json::to_value(&inputs).unwrap(), before);
@@ -361,7 +371,7 @@ fn per_role_saved_origin_is_retained_and_replayed_without_turning_its_metadata_i
         step_index: 0,
         event: commit.receipt.construct,
     };
-    let origin = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     inputs[0] = input(
         "original",
         commit.workspace.revisions[&selected.event.revision].clone(),
@@ -374,7 +384,7 @@ fn per_role_saved_origin_is_retained_and_replayed_without_turning_its_metadata_i
         .push(assembly_intent::MaterialBinding {
             input_id: "original".into(),
             event: origin.selection.event.clone(),
-            origin: collagene_core::run_material::MaterialOrigin::Run(origin.clone()),
+            origin: collagene_core::material::run::MaterialOrigin::Run(origin.clone()),
         });
     let AnalysisResult::EditedOverlapPrimersDesigned(report) =
         execute(inputs, request, Some(commit.workspace)).result

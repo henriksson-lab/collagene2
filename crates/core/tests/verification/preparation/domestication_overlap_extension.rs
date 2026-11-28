@@ -1,12 +1,23 @@
 //! Original-source reciprocal PCR, independently checked literal substitutions,
 //! and actual physical linear/circular products. No recoded template stock.
 use collagene_core::{
-    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
-    overlap_extension_primer_design as oe, pdf, plan_oligos,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    cloning::{
+        golden_gate::domestication::{self as design, preparation as physical},
+        overlap::extension::primers as oe,
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run::{self as run_material, MaterialOrigin},
+    },
+    output::pdf,
+    planning::{
+        oligos as plan_oligos,
+        plan::{Operation, PlanInput, Source},
+    },
+    sequence::codon_design,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGAATTCCAGACCTGTAGATCGTCA";
@@ -110,7 +121,7 @@ fn whole_linear_and_circular_sources_use_four_or_six_actual_steps_and_all_oligos
         let product = report.verification.products.last().unwrap();
         assert_eq!(product.sequence.as_str(), EDITED);
         assert_eq!(product.topology, topology);
-        assert!(verification::plan_target_matches(
+        assert!(verification::engine::plan_target_matches(
             &report.plan,
             product,
             &report.target
@@ -236,7 +247,8 @@ fn source_method_target_and_pair_tampering_do_not_become_checked_preparations() 
     if let Operation::Pcr { template, .. } = &mut changed.plan.steps[1] {
         *template = Source::Step(0);
     }
-    changed.verification.plan_revision = verification::plan_revision(&changed.plan);
+    changed.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&changed.plan);
     assert!(changed.validate_binding(&context).is_err());
     let mut changed = report.clone();
     if let physical::MethodEvidence::OverlapExtension { designs, .. } = &mut changed.method {
@@ -263,7 +275,7 @@ fn saved_native_history_and_protocols_keep_original_source_and_independent_targe
             .iter()
             .map(|d| (d.id.clone(), d.head.clone(), d.head_event.clone()))
             .collect::<Vec<_>>();
-        let html = verification::export_protocol_html(&report.plan, &report.target);
+        let html = verification::output::export_protocol_html(&report.plan, &report.target);
         assert!(html.contains("overlap") || html.contains("Overlap"));
         let pdf = pdf::export_protocol_pdf(&report.plan, &report.target).unwrap();
         assert!(pdf.bytes.starts_with(b"%PDF-"));
@@ -295,7 +307,7 @@ fn saved_native_history_and_protocols_keep_original_source_and_independent_targe
             revision: p.revision.clone(),
         };
         let origin = MaterialOrigin::Run(
-            run_material::capsule(
+            collagene_core::material::capsule::capsule(
                 &w,
                 &run_material::Selection {
                     run_id: saved.receipt.run_id.clone(),
@@ -309,7 +321,7 @@ fn saved_native_history_and_protocols_keep_original_source_and_independent_targe
         assert_eq!(fresh.reference().sequence.as_str(), EDITED);
         assert!(fresh.tracked().duplex.nicks.is_empty());
         assert_eq!(
-            collagene_core::modified_duplex::summary(fresh.tracked())
+            collagene_core::chemistry::tracked_duplex::summary(fresh.tracked())
                 .unwrap()
                 .known_modified,
             0

@@ -1,15 +1,18 @@
 //! Native saved graphs retain actual steps and source calls; no report is stock.
 #[path = "../../../common/topo_graph.rs"]
 mod literal;
+use collagene_core::cloning::topo::physical as p;
 use collagene_core::{
-    cloning_outputs,
-    history::DocumentHistory,
-    plan_oligos, run_lineage, topo as t, topo_graph_history as g, topo_run_preparation as native,
-    verification::{self, DesignPlan, Status},
-    workspace::{self, Workspace, WorkspaceAttachment},
+    cloning::topo::{self as t, graph_history as g, run_preparation as native},
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace, WorkspaceAttachment},
+    },
+    material::{lineage as run_lineage, outputs as cloning_outputs},
+    planning::{oligos as plan_oligos, plan::DesignPlan},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
-use t::physical as p;
 fn reopened(w: &Workspace) -> Workspace {
     workspace::load_workspace(&workspace::save_workspace(w).unwrap()).unwrap()
 }
@@ -287,15 +290,15 @@ fn nested_capture_final_run_and_protocols_keep_all_calls_without_historical_olig
         2
     );
     let (plan, target) = checked(&w, &resume);
-    let verified = verification::verify(&plan, &target);
+    let verified = verification::engine::verify(&plan, &target);
     assert_eq!(verified.status, Status::ConsistentUnderAssumptions);
     let orders = plan_oligos::build(&plan, &target, &Default::default()).unwrap();
     assert!(orders.oligos.records.is_empty());
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(html.contains("retained source steps"));
     assert!(html.contains(literal::FINAL));
     assert!(!html.contains("record_bytes"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF"));
     let before = serde_json::to_vec(&w.documents).unwrap();
     let commit = cloning_outputs::finalize(
@@ -359,7 +362,7 @@ fn large_original_documentary_bytes_never_become_protocol_capsule_json() {
     .unwrap();
     let request = literal::continuation(&partial.workspace, &partial.receipt.selection);
     let (plan, target) = checked(&partial.workspace, &request);
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::ConsistentUnderAssumptions);
     let product = report.step_reports[0].topo.as_ref().unwrap();
     assert!(
@@ -374,11 +377,11 @@ fn large_original_documentary_bytes_never_become_protocol_capsule_json() {
                 .iter()
                 .any(|(_, v)| v.as_deref() == Some("retained vector segment")))
     );
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(!html.contains("PRIVATE_SOURCE_DOCUMENTARY_PAYLOAD"));
     assert!(!html.contains("record_bytes"));
     assert!(html.len() < 100_000);
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert!(pdf.bytes.len() < 1_000_000);
 }
 #[test]
@@ -431,11 +434,14 @@ fn historical_documentary_record_remains_readable_but_fresh_replay_and_wrong_sou
 #[test]
 fn saved_vector_new_pcr_orders_only_current_pair_then_resume_orders_none() {
     use collagene_core::{
-        analysis::Primer,
-        tailing::TailingBase,
-        topo_preparation::{
-            self, ExactPcrDeclaration, PreparationMode, PreparationRequest, PreparationSource,
+        cloning::{
+            ligation::tailing::TailingBase,
+            topo::preparation::{
+                self as topo_preparation, ExactPcrDeclaration, PreparationMode, PreparationRequest,
+                PreparationSource,
+            },
         },
+        sequence::analysis::Primer,
     };
     let first = literal::captured();
     let mut w = first.workspace;
@@ -518,7 +524,7 @@ fn saved_vector_new_pcr_orders_only_current_pair_then_resume_orders_none() {
     let plan = native::compile(&inputs, &target, None, &task).unwrap();
     assert_eq!(plan.inputs[0].revision, template.revision());
     assert_eq!(
-        verification::verify(&plan, &target).status,
+        verification::engine::verify(&plan, &target).status,
         Status::ConsistentUnderAssumptions
     );
     let orders = plan_oligos::build(&plan, &target, &Default::default()).unwrap();
@@ -549,7 +555,7 @@ fn saved_vector_new_pcr_orders_only_current_pair_then_resume_orders_none() {
     let (resume, target) = checked(&partial.workspace, &request);
     assert!(resume.inputs.is_empty());
     assert_eq!(
-        verification::verify(&resume, &target).status,
+        verification::engine::verify(&resume, &target).status,
         Status::ConsistentUnderAssumptions
     );
     assert!(

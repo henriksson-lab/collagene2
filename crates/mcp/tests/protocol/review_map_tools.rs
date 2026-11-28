@@ -1,14 +1,16 @@
 //! Actual SDK routing; no transport mocks, files, network, browser or scientific status adoption.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    history::DocumentHistory,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    transfer,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    documents::{
+        history::DocumentHistory,
+        transfer,
+        workspace::{self, Workspace},
+    },
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -201,7 +203,7 @@ async fn retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped
     );
     let (raw, meta) = artifact(&c, &review["artifact_id"]).await;
     assert_eq!(meta["filename"], "saved-run-review.json");
-    let prepared: collagene_core::run_review::PreparedReview =
+    let prepared: collagene_core::material::review::PreparedReview =
         serde_json::from_slice(&raw).unwrap();
     prepared.validate_for_workspace(&frame).unwrap();
     assert_eq!(prepared.inputs[0].event, input_event);
@@ -231,12 +233,13 @@ async fn retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped
     assert_eq!(svg["warnings_truncated"], false);
     let (svg_bytes, meta) = artifact(&c, &svg["artifact_id"]).await;
     assert_eq!(meta["mime_type"], "image/svg+xml");
-    let expected = collagene_core::svg_export::render(&collagene_core::svg_export::Request {
-        source: source.clone(),
-        source_revision: source.revision(),
-        restriction_sites: None,
-    })
-    .unwrap();
+    let expected =
+        collagene_core::output::svg_export::render(&collagene_core::output::svg_export::Request {
+            source: source.clone(),
+            source_revision: source.revision(),
+            restriction_sites: None,
+        })
+        .unwrap();
     assert_eq!(svg_bytes, expected.svg.as_bytes());
     assert_eq!(svg["warnings"], json!(expected.warnings));
     let text = String::from_utf8(svg_bytes).unwrap();

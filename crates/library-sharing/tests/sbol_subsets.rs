@@ -1,4 +1,4 @@
-use collagene_core::workspace::{self, Workspace, WorkspaceAttachment};
+use collagene_core::documents::workspace::{self, Workspace, WorkspaceAttachment};
 use collagene_design_exchange::{self as sbol, ProjectionPolicy};
 use collagene_library_sharing::{
     self as sharing, Selection,
@@ -163,10 +163,13 @@ fn extra_subset_object_and_overlapping_receipts_fail_closed() {
 #[test]
 fn documentary_projection_preserves_real_native_run_and_fresh_capsule_pcr_reuse() {
     use collagene_core::{
-        analysis::Primer,
-        run_lineage::{self, EventBinding, InputEventBinding},
-        run_material,
-        verification::{DesignPlan, Operation, PlanInput, Source, Status},
+        material::{
+            lineage::{self as run_lineage, EventBinding, InputEventBinding},
+            run as run_material,
+        },
+        planning::plan::{DesignPlan, Operation, PlanInput, Source},
+        sequence::analysis::Primer,
+        verification::evidence::Status,
     };
     use collagene_model::Molecule;
     let (mut w, _, original) = setup();
@@ -246,7 +249,7 @@ fn documentary_projection_preserves_real_native_run_and_fresh_capsule_pcr_reuse(
     assert_eq!(before.reference(), after.reference());
     assert_eq!(before.tracked(), after.tracked());
     let prepared = reopened.revisions[&material.event.revision].clone();
-    let capsule = run_material::capsule(&reopened, &material).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&reopened, &material).unwrap();
     let downstream = DesignPlan {
         name: "Fresh physical reuse".into(),
         target_revision: target.revision(),
@@ -263,7 +266,7 @@ fn documentary_projection_preserves_real_native_run_and_fresh_capsule_pcr_reuse(
             pcr(Source::Step(0)),
         ],
     };
-    let verified = collagene_core::verification::verify(&downstream, &target);
+    let verified = collagene_core::verification::engine::verify(&downstream, &target);
     assert_eq!(
         verified.status,
         Status::ConsistentUnderAssumptions,

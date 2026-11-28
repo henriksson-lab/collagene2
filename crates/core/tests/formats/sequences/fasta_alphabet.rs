@@ -1,4 +1,4 @@
-use collagene_core::formats::{self, TextFormat};
+use collagene_core::formats::sequence::{self as formats, TextFormat};
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn molecule(alphabet: Alphabet, name: &str, calls: &str) -> Molecule {
     let mut m = Molecule::dna(name, "N", Topology::Linear).unwrap();

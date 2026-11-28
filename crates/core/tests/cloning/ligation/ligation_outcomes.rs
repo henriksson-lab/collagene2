@@ -1,10 +1,14 @@
 //! Independent intended/alternative sequences. No intended target drives search.
 use collagene_core::{
-    analysis,
-    chemistry::{self, AnnealOptions, EndTreatment},
-    ligation_outcomes::{self as l, Limit, Operand, Options, Placement, Request},
-    modified_duplex::{self as tracked, TrackedDuplex},
-    tailing::TailingBase,
+    chemistry::{
+        self, AnnealOptions, EndTreatment,
+        tracked_duplex::{self as tracked, TrackedDuplex},
+    },
+    cloning::ligation::{
+        outcomes::{self as l, Limit, Operand, Options, Placement, Request},
+        tailing::TailingBase,
+    },
+    sequence::analysis,
 };
 use collagene_model::{Sequence, Topology};
 fn blunt(text: &str, phosphate: bool) -> TrackedDuplex {

@@ -1,11 +1,13 @@
 use collagene_core::{
-    analysis::Primer,
     chemistry::Terminus,
-    material_derivation as material,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
+    documents::workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
+    material::{
+        derivation as material,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Molecule, Topology};
@@ -80,8 +82,8 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
     // Installation is an explicit operation on the active exact saved PCR
     // document, rather than on the independent target left active by capture.
     run.workspace.active_document = source.document_id.clone();
-    let origin = run_material::capsule(&run.workspace, &material).unwrap();
-    let c = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let origin = collagene_core::material::capsule::capsule(&run.workspace, &material).unwrap();
+    let c = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let eco = c
         .edition()
         .enzymes
@@ -90,7 +92,7 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
         .unwrap()
         .id
         .clone();
-    let selection = collagene_core::catalog_digest::select(&c, &[eco]).unwrap();
+    let selection = collagene_core::cloning::restriction::catalog::select(&c, &[eco]).unwrap();
     let installed = material::prepare_install(
         &run.workspace,
         &material::Request {
@@ -101,7 +103,8 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
             }],
             derivation: material::Derivation::CatalogDigest {
                 selection,
-                options: collagene_core::restriction_inspection::InspectionOptions::default(),
+                options:
+                    collagene_core::cloning::restriction::inspection::InspectionOptions::default(),
                 fragment_index: 0,
             },
             name: "Selected PCR EcoRI fragment".into(),
@@ -269,7 +272,8 @@ fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication
     let forward = Primer::new("F", "AGTCCG", "").unwrap();
     let reverse = Primer::new("R", "CTAGCA", "").unwrap();
     let geometries =
-        collagene_core::analysis::simulate_pcr_geometry(&source, &forward, &reverse).unwrap();
+        collagene_core::sequence::analysis::simulate_pcr_geometry(&source, &forward, &reverse)
+            .unwrap();
     assert_eq!(geometries.len(), 1);
     assert_eq!(geometries[0].product.sequence.as_str(), "AGTCCGATGCTAG");
     assert_eq!(
@@ -350,7 +354,7 @@ fn newest_editable_drafts_are_presentation_only_not_publication_dependencies() {
     w.attachments.insert(
         hash.clone(),
         WorkspaceAttachment {
-            kind: collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.into(),
+            kind: collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND.into(),
             name: "private draft".into(),
             media_type: "application/json".into(),
             bytes,

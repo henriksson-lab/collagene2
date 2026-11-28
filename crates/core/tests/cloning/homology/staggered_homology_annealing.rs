@@ -1,8 +1,10 @@
 use collagene_core::{
     chemistry::{Duplex, FivePrime, Strand, ThreePrime},
-    homology_annealing::{self as annealing, Options, PlannedRescue},
-    overlap_profiles::OverlapMethod,
-    three_prime_resection::Cuts,
+    cloning::overlap::{
+        annealing::{self, Options, PlannedRescue},
+        profiles::OverlapMethod,
+        resection::Cuts,
+    },
 };
 use collagene_model::{Sequence, Topology};
 fn pcr(text: &str) -> Duplex {

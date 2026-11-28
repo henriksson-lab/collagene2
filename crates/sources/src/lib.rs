@@ -1,7 +1,7 @@
 //! URL/source adapters, separate from the network-free scientific core.
 //! Public resolution and provenance attachment also compile for browser WASM.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_core::formats::{self, ImportReport, MAX_IMPORT_BYTES};
+use collagene_core::formats::sequence::{self as formats, ImportReport, MAX_IMPORT_BYTES};
 use collagene_model::Molecule;
 use std::{
     fmt,

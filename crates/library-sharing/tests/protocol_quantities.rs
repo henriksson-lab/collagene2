@@ -1,6 +1,8 @@
 #[path = "../../core/tests/common/protocol_quantities.rs"]
 mod fixture;
-use collagene_core::{protocol_quantities as q, run_lineage, workspace};
+use collagene_core::{
+    documents::workspace, material::lineage as run_lineage, output::quantities as q,
+};
 use collagene_library_sharing::{self as sharing, Selection};
 #[test]
 fn captured_source_bound_quantities_are_omitted_from_ordinary_plasmid_sharing_with_counts() {

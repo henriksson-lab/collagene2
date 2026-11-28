@@ -1,12 +1,17 @@
 //! The ordinary MCP recipe tool mutates a real insert before multipart assembly.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self, FragmentSpec, Preparation, Recipe},
-    overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request as ExtensionRequest},
-    verification::{Operation, Source, Status},
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, Recipe},
+        overlap::extension::{
+            self as overlap_extension,
+            pcr::{PrimerPair, Request as ExtensionRequest},
+        },
+    },
+    planning::plan::{Operation, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -133,14 +138,15 @@ async fn ordinary_recipe_sdk_retains_both_branches_independent_target_diagnostic
     );
     let mut evidence: Value =
         serde_json::from_str(&text(&client, &proposal["artifact_id"]).await).unwrap();
-    let diagnostics: collagene_core::assembly_diagnostics::Report = serde_json::from_value(
-        evidence
-            .as_object_mut()
-            .unwrap()
-            .remove("diagnostics")
-            .unwrap(),
-    )
-    .unwrap();
+    let diagnostics: collagene_core::cloning::assembly::diagnostics::Report =
+        serde_json::from_value(
+            evidence
+                .as_object_mut()
+                .unwrap()
+                .remove("diagnostics")
+                .unwrap(),
+        )
+        .unwrap();
     let preview: assembly_recipe::Preview = serde_json::from_value(evidence).unwrap();
     preview.validate().unwrap();
     assert_eq!(

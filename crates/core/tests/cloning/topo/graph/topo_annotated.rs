@@ -1,6 +1,10 @@
-use collagene_core::{topo as t, verification::*};
+use collagene_core::cloning::topo::physical::{self as p, projection as v};
+use collagene_core::{
+    cloning::topo as t,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+    verification::{engine::verify, evidence::Status, output::export_protocol_html},
+};
 use collagene_model::{Feature, Location, Molecule, Topology};
-use t::physical::{self as p, projection as v};
 fn source(sequence: &str) -> Molecule {
     Molecule::dna("actual source", sequence, Topology::Linear).unwrap()
 }
@@ -95,7 +99,7 @@ fn canonical_product_projects_annotations_and_retains_unmapped_source_evidence()
     let checked = t::check_target(&inputs, &request, &selected, &target, &policy).unwrap();
     assert_eq!(
         checked.batch_revision,
-        collagene_core::topo_worker::target_revision(
+        collagene_core::cloning::topo::worker::target_revision(
             &inputs, &request, &selected, &target, &policy
         )
         .unwrap()
@@ -168,8 +172,10 @@ fn pcr_template_features_require_review_and_unproven_tailed_contours_get_no_anno
             materials: vec![t::MaterialRecipe::ExactPcr {
                 material_id: "new PCR".into(),
                 template_role: "template".into(),
-                forward: collagene_core::analysis::Primer::new("F", "GACTAGTC", "GG").unwrap(),
-                reverse: collagene_core::analysis::Primer::new("R", "TGCATCGG", "CC").unwrap(),
+                forward: collagene_core::sequence::analysis::Primer::new("F", "GACTAGTC", "GG")
+                    .unwrap(),
+                reverse: collagene_core::sequence::analysis::Primer::new("R", "TGCATCGG", "CC")
+                    .unwrap(),
                 tail: None,
             }],
         },
@@ -188,7 +194,7 @@ fn pcr_template_features_require_review_and_unproven_tailed_contours_get_no_anno
             .any(|(key, _)| key == "translation" || key == "codon_start")
     );
     if let t::MaterialRecipe::ExactPcr { tail, .. } = &mut request.recipe.materials[0] {
-        *tail = Some(collagene_core::tailing::TailingBase::A);
+        *tail = Some(collagene_core::cloning::ligation::tailing::TailingBase::A);
     }
     let selected = selection(&inputs, &request);
     let withheld = t::product(&inputs, &request, &selected).unwrap();

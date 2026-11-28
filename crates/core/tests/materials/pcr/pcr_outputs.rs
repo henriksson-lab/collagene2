@@ -1,12 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
-    oligo_formats::{self, Delimiter, TableExportMode},
-    pcr_outputs::{self, Options, Request},
+    cloning::pcr::outputs::{self as pcr_outputs, Options, Request},
+    formats::oligos::{self as oligo_formats, Delimiter, TableExportMode},
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::simulate_pcr_documents,
+    sequence::analysis::Primer,
+    verification::pcr::simulate_pcr_documents,
 };
 use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 fn fixture() -> Request {

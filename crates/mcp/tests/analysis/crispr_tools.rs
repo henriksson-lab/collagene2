@@ -1,9 +1,9 @@
 //! Actual SDK routes for source-bound CRISPR and independent donor checking.
-use collagene_core::{
+use collagene_core::sequence::{
     crispr::*,
-    edit_template::{self, EditTemplateCheck, EditTemplateOptions, EditTemplateReport},
+    template::{self as edit_template, EditTemplateCheck, EditTemplateOptions, EditTemplateReport},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -112,7 +112,7 @@ async fn guide_and_selected_reference_pages_retain_exact_intended_roles_and_all_
     assert_eq!(first["available_profiles"].as_array().unwrap().len(), 2);
     let guides: GuideReport =
         serde_json::from_value(artifact(&c, &first["artifact_id"]).await).unwrap();
-    let molecule = collagene_core::formats::import_text(&guide_text())
+    let molecule = collagene_core::formats::sequence::import_text(&guide_text())
         .unwrap()
         .molecules
         .remove(0);
@@ -248,7 +248,7 @@ async fn editing_donors_are_atomically_installed_only_after_independent_target_c
     assert!(design["donor_document"].is_object());
     let full: EditTemplateReport =
         serde_json::from_value(artifact(&c, &design["artifact_id"]).await).unwrap();
-    let molecules = collagene_core::formats::import_text(EDIT_TEXT)
+    let molecules = collagene_core::formats::sequence::import_text(EDIT_TEXT)
         .unwrap()
         .molecules;
     full.validate_bindings_for(&molecules[0], &molecules[1], &options, None)

@@ -1,10 +1,14 @@
 use collagene_core::{
-    alignment::AlignmentOptions,
-    history::DocumentHistory,
-    pairwise_history::{self, Record},
-    pairwise_review::{self, Options, Report},
-    run_lineage::EventBinding,
-    workspace::{Workspace, WorkspaceAttachment},
+    alignment::{
+        AlignmentOptions,
+        history::{self as pairwise_history, Record},
+        review::{self as pairwise_review, Options, Report},
+    },
+    documents::{
+        history::DocumentHistory,
+        workspace::{Workspace, WorkspaceAttachment},
+    },
+    material::lineage::EventBinding,
 };
 use collagene_model::{Molecule, Topology};
 

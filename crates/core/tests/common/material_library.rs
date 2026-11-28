@@ -1,14 +1,23 @@
 use collagene_core::{
-    assembly_intent::Selector,
-    assembly_recipe::{Preparation, RunPreparation},
-    catalog_digest,
-    chemistry::{AnnealOptions, Strand, Terminus},
-    cloning_outputs, combinatorial_batch as batch, combinatorial_design as library,
-    combinatorial_release as release, modified_duplex,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    chemistry::{AnnealOptions, Strand, Terminus, tracked_duplex as modified_duplex},
+    cloning::{
+        assembly::{
+            intent::Selector,
+            recipe::{Preparation, RunPreparation},
+        },
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::{
+        combinatorial::{self as library, batch, release},
+        plan::{DesignPlan, Operation, PlanInput, Source},
+    },
+    verification::evidence::Status,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 pub const EXPECTED: &str = "AATTCGTAAG";
@@ -100,7 +109,7 @@ pub fn native_source(
     let source = saved.receipt.construct;
     let w =
         workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap()).unwrap();
-    let capsule = run_material::capsule(
+    let capsule = collagene_core::material::capsule::capsule(
         &w,
         &run_material::Selection {
             run_id: saved.receipt.run.run_id,

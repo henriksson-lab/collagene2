@@ -1,14 +1,19 @@
 //! Literal independently ordered 13/17-base strands; no repair or missing DNA.
 use collagene_core::{
-    catalog_digest,
     chemistry::AnnealOptions,
-    cloning_outputs,
-    digest_cut_selection::{Boundary, Choice},
-    material_derivation::{self as native, Derivation, SourceOrigin},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    cloning::restriction::{
+        catalog as catalog_digest,
+        cut_selection::{Boundary, Choice},
+    },
+    documents::workspace::Workspace,
+    material::{
+        derivation::{self as native, Derivation, SourceOrigin},
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, index: usize) -> EventBinding {
@@ -52,7 +57,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     };
     let w = Workspace::from_documents("Actual13/17 source", vec![top, bottom, target.clone()], 2)
         .unwrap();
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.products.len(), 1, "{:?}", report.findings);
     let saved = cloning_outputs::finalize(
         &w,
@@ -76,7 +81,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     .unwrap();
     let original = saved.receipt.construct;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &saved.workspace,
             &run_material::Selection {
                 run_id: saved.receipt.run.run_id,
@@ -96,7 +101,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
         .id
         .clone();
     let selection = catalog_digest::select(&c, &[id]).unwrap();
-    let options = collagene_core::restriction_inspection::InspectionOptions::default();
+    let options = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let source = saved.workspace.revisions[&original.revision].clone();
     let before = source.clone();
     let preview = native::inspect_digest(
@@ -139,8 +144,8 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     let first = native::prepare_install(
         &saved.workspace,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: original,
                 origin: SourceOrigin::Saved(origin),
             }],
@@ -159,8 +164,8 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     let second = native::prepare_install(
         &first.workspace,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: first.receipt.product.clone(),
                 origin: SourceOrigin::Saved(origin),
             }],

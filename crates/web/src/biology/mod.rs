@@ -1,0 +1,27 @@
+//! biology ownership boundary.
+pub(crate) mod antibody;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod biology;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod biology_selection;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod biology_source_view;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod codon_design;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod controller;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod methylation;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod protein_export;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod protein_liability_model;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod protein_liability_view;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod protein_properties;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod rna_model;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod rna_view;
+pub(crate) mod structure;

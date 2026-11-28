@@ -1,6 +1,6 @@
 # Reference gel prediction and diagnostic digests
 
-`collagene_core::gel` independently implements reference-only lane preparation, bounded gel diagrams and diagnostic digest ranking. It invokes no external scientific tool, image processor or observation service. OpenGel formats/integration and predicted-versus-observed comparisons remain deferred.
+`collagene_core::output::gel` independently implements reference-only lane preparation, bounded gel diagrams and diagnostic digest ranking. It invokes no external scientific tool, image processor or observation service. OpenGel formats/integration and predicted-versus-observed comparisons remain deferred.
 
 ## Calibration and physical assumptions
 

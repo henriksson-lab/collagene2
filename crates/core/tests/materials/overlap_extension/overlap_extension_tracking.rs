@@ -1,11 +1,13 @@
 //! Conservation of actual retained strands through reciprocal extension.
 use collagene_core::{
-    chemistry::{FivePrime, Nick, Strand, ThreePrime},
-    modified_duplex::{
-        CallState, Chemical, GenerationAssumptions, GenerationRecord, ModificationSpan,
-        StrandModifications, TrackedDuplex,
+    chemistry::{
+        FivePrime, Nick, Strand, ThreePrime,
+        tracked_duplex::{
+            CallState, Chemical, GenerationAssumptions, GenerationRecord, ModificationSpan,
+            StrandModifications, TrackedDuplex,
+        },
     },
-    overlap_extension::Options,
+    cloning::overlap::extension::Options,
 };
 use collagene_model::{Sequence, Topology};
 

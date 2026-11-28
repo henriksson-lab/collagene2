@@ -1,22 +1,20 @@
 //! Key-bound pool intent cannot masquerade as index-only historical formats.
 use collagene_core::{
-    cloning_outputs, combinatorial_batch as batch,
-    combinatorial_design::{
+    cloning::golden_gate::{GoldenGateOptions, prepared::Selection},
+    documents::workspace::Workspace,
+    material::{lineage::EventBinding, outputs as cloning_outputs},
+    planning::combinatorial::{
         self as design, Bin, Choice, ChoiceSelection, ConstructOverrides, Design, Method,
         PoolSelection, PoolSubstrate, PoolSubstrateKind, SelectedConstruct, TargetDeclaration,
+        batch, export, release,
     },
-    combinatorial_export as export, combinatorial_release as release,
-    golden_gate::GoldenGateOptions,
-    prepared_golden_gate::Selection,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
         session::AnalysisSession,
     },
-    run_lineage::EventBinding,
-    verification::Status,
-    workspace::Workspace,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 use std::io::{Cursor, Read};
@@ -31,11 +29,13 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
     let w = Workspace::from_documents("selected reaction format fixture", vec![source], 0).unwrap();
     let doc = &w.documents[0];
     let choice = Choice {
-        generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
-            dam: collagene_core::methylation::MethylationState::Unmodified,
-            dcm: collagene_core::methylation::MethylationState::Unmodified,
-            cpg: collagene_core::methylation::MethylationState::Unmodified,
-        }),
+        generation: Some(
+            collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+            },
+        ),
         id: "vector-choice".into(),
         label: "literal original contribution".into(),
         source: EventBinding {
@@ -43,7 +43,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             event_id: doc.head_event.clone().unwrap(),
             revision: doc.head.clone(),
         },
-        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+        selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
             start: 11,
             end: 11 + A.len(),
             reverse: false,

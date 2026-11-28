@@ -2,9 +2,9 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
     chemistry::{AnnealOptions, Terminus},
-    verification::DesignPlan,
+    planning::plan::DesignPlan,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -87,7 +87,7 @@ async fn pinned_backbone_and_two_actual_oligos_ligate_and_export_without_source_
     // by the 12bp top oligo. Eight paired insert bases leave literal AATT ends.
     let text=[("backbone","AAAAGAATTCTTTT","circular"),("top","AATTCCGATGCA","linear"),("bottom","AATTTGCATCGG","linear"),("target","AATTCTTTTAAAAGAATTCCGATGCA","circular"),("wrong","AATTCTTTTAAAAGAATTCCGATGCC","circular")].into_iter().map(|(n,d,t)|format!("LOCUS       {n:<20} {} bp DNA {t} SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 {}\n//\n",d.len(),d.to_ascii_lowercase())).collect::<String>();
     let imported = call(&client, "import_document", json!({"text":text})).await;
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let id = catalog
         .edition()
         .enzymes
@@ -96,7 +96,7 @@ async fn pinned_backbone_and_two_actual_oligos_ligate_and_export_without_source_
         .unwrap()
         .id
         .clone();
-    let selection = collagene_core::catalog_digest::select(&catalog, &[id]).unwrap();
+    let selection = collagene_core::cloning::restriction::catalog::select(&catalog, &[id]).unwrap();
     let mut options = AnnealOptions::default();
     options.min_paired_bases = 8;
     options.top_chemistry = Terminus::CLEAVED;
@@ -121,7 +121,7 @@ async fn pinned_backbone_and_two_actual_oligos_ligate_and_export_without_source_
     assert_eq!(plan.inputs.len(), 3);
     assert_eq!(plan.inputs[1].molecule.sequence.as_str(), "AATTCCGATGCA");
     assert_eq!(plan.inputs[2].molecule.sequence.as_str(), "AATTTGCATCGG");
-    assert!(plan.steps.iter().any(|s|matches!(s,collagene_core::verification::Operation::AnnealOligos{top:collagene_core::verification::Source::Input(a),bottom:collagene_core::verification::Source::Input(b),..}if a=="top"&&b=="bottom")));
+    assert!(plan.steps.iter().any(|s|matches!(s,collagene_core::planning::plan::Operation::AnnealOligos{top:collagene_core::planning::plan::Source::Input(a),bottom:collagene_core::planning::plan::Source::Input(b),..}if a=="top"&&b=="bottom")));
     let reference = json!({"plan_revision":result["plan_revision"]});
     assert_eq!(
         call(&client, "verify_plan", reference.clone()).await["status"],

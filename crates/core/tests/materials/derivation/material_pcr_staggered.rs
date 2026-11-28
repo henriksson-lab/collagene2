@@ -1,12 +1,15 @@
 //! Independent literal strand-coverage fixtures for ordinary exact PCR.
 use collagene_core::{
-    analysis::{self, Primer},
     chemistry::{AnnealOptions, EndTreatment},
-    cloning_outputs, material_pcr,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
-    workspace::Workspace,
+    cloning::pcr::material as material_pcr,
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::{self, Primer},
 };
 use collagene_model::{Molecule, Topology};
 fn dna(name: &str, text: &str, topology: Topology) -> Molecule {
@@ -50,7 +53,7 @@ fn saved(docs: Vec<Molecule>, plan: DesignPlan, target: usize) -> (Molecule, Mat
     )
     .unwrap();
     let source = result.workspace.revisions[&result.receipt.construct.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &result.workspace,
         &run_material::Selection {
             run_id: result.receipt.run.run_id,

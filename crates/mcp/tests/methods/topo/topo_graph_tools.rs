@@ -2,8 +2,8 @@
 #[path = "../../../../core/tests/common/topo_graph.rs"]
 mod literal;
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::{topo_graph_history as g, workspace};
-use collagene_mcp::CollageneServer;
+use collagene_core::{cloning::topo::graph_history as g, documents::workspace};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

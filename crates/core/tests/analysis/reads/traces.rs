@@ -1,4 +1,4 @@
-use collagene_core::traces::*;
+use collagene_core::review::reads::traces::*;
 use collagene_model::Error;
 
 #[derive(Clone)]
@@ -512,7 +512,10 @@ fn attachment_size_includes_base64_and_native_document_overhead() {
     let mut bytes = abif_fixture(b"ACGT", true);
     // Unused source padding is legal. A 24 MiB attachment expands to 32 MiB of base64
     // before any called sequence or native metadata/header, so it cannot fit .cg2.
-    bytes.resize(collagene_core::formats::MAX_IMPORT_BYTES / 4 * 3, 0);
+    bytes.resize(
+        collagene_core::formats::sequence::MAX_IMPORT_BYTES / 4 * 3,
+        0,
+    );
     let trace = import_trace(&bytes).unwrap();
     assert!(matches!(trace.attached_molecule(), Err(Error::TooLarge)));
 }

@@ -1,17 +1,24 @@
 //! Independent ordinary-cloning declarations; joined diagnostic DNA never becomes material.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self as recipe, FragmentSpec, Preparation},
     chemistry::{self, EndRepairMethod, FivePrime, Terminus, ThreePrime},
-    homology_annealing::{Options, Report},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    three_prime_resection::Cuts,
-    verification::{
-        self, DesignPlan, Operation, OrientedSource, PhysicalProcessingEvidence, PlanInput, Source,
-        Status,
+    cloning::{
+        assembly::recipe::{self, FragmentSpec, Preparation},
+        overlap::{
+            annealing::{Options, Report},
+            resection::Cuts,
+        },
     },
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{
+        self,
+        evidence::{PhysicalProcessingEvidence, Status},
+    },
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const LEFT: &str = "AGTCCGATGCTACGTAGGAC";
@@ -65,9 +72,9 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
         },
     ];
     let overlaps = if circular { vec![8, 8] } else { vec![8] };
-    let mut profile = collagene_core::overlap_profiles::ProfileOptions::default();
+    let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
-    profile.method = collagene_core::overlap_profiles::OverlapMethod::InFusion;
+    profile.method = collagene_core::cloning::overlap::profiles::OverlapMethod::InFusion;
     let request = recipe::Recipe {
         name: "Declared physical homology route".into(),
         fragments,
@@ -77,7 +84,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
     };
     let policy = Options {
         planned_rescue: Some(
-            collagene_core::homology_annealing::PlannedRescue::EcoliTransformation,
+            collagene_core::cloning::overlap::annealing::PlannedRescue::EcoliTransformation,
         ),
         overlaps,
         topology: if circular {
@@ -154,7 +161,7 @@ fn pcr_hydroxyl_fragments_anneal_to_independent_circle_but_every_bond_stays_unse
     let product = p.verification.products.last().unwrap();
     assert!(chemistry::has_unmapped_physical_evidence(product));
     assert!(chemistry::Duplex::from_molecule(product).is_err());
-    let junctions = collagene_core::assembly_junctions::inspect_plan(
+    let junctions = collagene_core::cloning::assembly::junctions::inspect_plan(
         &p.compiled.plan,
         &target,
         &Default::default(),
@@ -162,7 +169,7 @@ fn pcr_hydroxyl_fragments_anneal_to_independent_circle_but_every_bond_stays_unse
     .unwrap();
     assert!(matches!(
         junctions.method,
-        Some(collagene_core::assembly_junctions::Method::HomologyAnnealing)
+        Some(collagene_core::cloning::assembly::junctions::Method::HomologyAnnealing)
     ));
 }
 #[test]
@@ -243,7 +250,7 @@ fn saved_annealed_reference_cannot_supply_pcr_resection_or_saved_material_recove
     ] {
         let mut plan = p.compiled.plan.clone();
         plan.steps.push(operation);
-        let result = verification::verify(&plan, &target);
+        let result = verification::engine::verify(&plan, &target);
         assert_ne!(result.status, Status::ConsistentUnderAssumptions);
         assert_eq!(result.products.len(), 3);
     }
@@ -291,10 +298,11 @@ fn saved_annealed_reference_cannot_supply_pcr_resection_or_saved_material_recove
     };
     let archive = workspace::save_workspace(&saved.workspace).unwrap();
     let loaded = workspace::load_workspace(&archive).unwrap();
-    assert!(run_material::capsule(&loaded, &selection).is_err());
-    let evidence = collagene_core::physical_run_evidence::load(&loaded, &saved.receipt.run_id)
-        .unwrap()
-        .unwrap();
+    assert!(collagene_core::material::capsule::capsule(&loaded, &selection).is_err());
+    let evidence =
+        collagene_core::material::physical_evidence::load(&loaded, &saved.receipt.run_id)
+            .unwrap()
+            .unwrap();
     assert!(
         evidence
             .steps
@@ -336,7 +344,7 @@ fn resection_plan() -> (DesignPlan, Molecule, Molecule) {
 fn actual_resected_operand_retains_extruded_bottom_and_clips_top_annotation_then_saved_origin_can_be_filled()
  {
     let (plan, source, target) = resection_plan();
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -396,7 +404,7 @@ fn actual_resected_operand_retains_extruded_bottom_and_clips_top_annotation_then
         .unwrap();
     let restored =
         workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap()).unwrap();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &restored,
         &run_material::Selection {
             run_id: saved.receipt.run_id,
@@ -428,7 +436,7 @@ fn actual_resected_operand_retains_extruded_bottom_and_clips_top_annotation_then
             },
         ],
     };
-    let result = verification::verify(&downstream, &independent);
+    let result = verification::engine::verify(&downstream, &independent);
     assert_eq!(
         result.status,
         Status::ConsistentUnderAssumptions,
@@ -445,7 +453,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
         source: Source::Input("stock".into()),
         cuts: Cuts { left: 2, right: 3 },
     }];
-    let report = verification::verify(&unknown, &target);
+    let report = verification::engine::verify(&unknown, &target);
     assert_ne!(report.status, Status::ConsistentUnderAssumptions);
     assert!(report.products.is_empty());
     let mut blocked = plan;
@@ -454,7 +462,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
     };
     left.three_prime = ThreePrime::Blocked;
     assert_ne!(
-        verification::verify(&blocked, &target).status,
+        verification::engine::verify(&blocked, &target).status,
         Status::ConsistentUnderAssumptions
     );
     let mut single = DesignPlan {
@@ -479,7 +487,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
         }],
     };
     assert_eq!(
-        verification::verify(&single, &target).status,
+        verification::engine::verify(&single, &target).status,
         Status::Invalid
     );
     let literal = format!("{}{}", CIRCLE, &CIRCLE[..8]);
@@ -513,7 +521,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
         },
     ];
     assert_eq!(
-        verification::verify(&single, &target).status,
+        verification::engine::verify(&single, &target).status,
         Status::Incomplete
     );
 }
@@ -528,7 +536,7 @@ fn literal_recipe_binding_and_previous_five_prime_route_remain_distinct() {
     wrong.topology = Topology::Linear;
     wrong.overlaps.pop();
     assert!(recipe::compile_annealing(&inputs, &target, &request, &wrong).is_err());
-    let old_policy = collagene_core::homology_assembly::Options {
+    let old_policy = collagene_core::cloning::overlap::assembly::Options {
         overlaps: request.overlaps.clone(),
         ..Default::default()
     };
@@ -540,11 +548,12 @@ fn literal_recipe_binding_and_previous_five_prime_route_remain_distinct() {
     ));
     let (mut plan, _, target) = resection_plan();
     let before = serde_json::to_value(&plan).unwrap();
-    let steps = collagene_core::plan_editing::moved(&["stock".into()], &plan.steps, 1, 1).unwrap();
+    let steps =
+        collagene_core::planning::editing::moved(&["stock".into()], &plan.steps, 1, 1).unwrap();
     plan.steps = steps;
     assert_eq!(serde_json::to_value(&plan).unwrap(), before);
     assert_eq!(
-        verification::verify(&plan, &target).status,
+        verification::engine::verify(&plan, &target).status,
         Status::ConsistentUnderAssumptions
     );
 }
@@ -554,11 +563,11 @@ fn printable_protocols_describe_explicit_cuts_gaps_and_unsealed_joining_bonds() 
     policy.cuts[0].right = 10;
     let target = Molecule::dna("Independent circle40", CIRCLE, Topology::Circular).unwrap();
     let p = recipe::compile_annealing(&inputs, &target, &request, &policy).unwrap();
-    let html = verification::export_protocol_html(&p.plan, &target);
+    let html = verification::output::export_protocol_html(&p.plan, &target);
     assert!(html.contains("exposed5′tail annealing"));
     assert!(html.contains("unfilled gaps"));
     assert!(html.contains("no host repair"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&p.plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&p.plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
     assert_eq!(pdf.status, Status::Incomplete);
 }
@@ -570,7 +579,7 @@ fn infusion_rescue_is_explicit_documentary_and_cannot_change_physical_completion
     policy.planned_rescue = None;
     assert!(recipe::compile_annealing(&inputs, &target, &request, &policy).is_err());
     policy.planned_rescue =
-        Some(collagene_core::homology_annealing::PlannedRescue::EcoliTransformation);
+        Some(collagene_core::cloning::overlap::annealing::PlannedRescue::EcoliTransformation);
     let preview = recipe::preview_annealing(&inputs, &target, &request, &policy).unwrap();
     assert_eq!(preview.verification.status, Status::Incomplete);
     assert_eq!(
@@ -578,21 +587,21 @@ fn infusion_rescue_is_explicit_documentary_and_cannot_change_physical_completion
         policy.planned_rescue
     );
     let mut generic = request.clone();
-    generic.options.method = collagene_core::overlap_profiles::OverlapMethod::HiFi;
+    generic.options.method = collagene_core::cloning::overlap::profiles::OverlapMethod::HiFi;
     policy.planned_rescue = None;
     let no_rescue = recipe::preview_annealing(&inputs, &target, &generic, &policy).unwrap();
     assert_eq!(annealed(&preview).reference, annealed(&no_rescue).reference);
     assert_eq!(annealed(&preview).segments, annealed(&no_rescue).segments);
-    let html = verification::export_protocol_html(&preview.compiled.plan, &target);
+    let html = verification::output::export_protocol_html(&preview.compiled.plan, &target);
     assert!(html.contains("Planned next step"));
     assert!(html.contains("not simulated"));
 }
 
 #[test]
 fn infusion_native_ecori_vector_reverse_insert_and_linker_keep_bottom_extension_calls() {
-    use collagene_core::{
-        homology_annealing::PlannedRescue,
-        overlap_profiles::{OverlapMethod, ProfileOptions},
+    use collagene_core::cloning::overlap::{
+        annealing::PlannedRescue,
+        profiles::{OverlapMethod, ProfileOptions},
     };
     let mut vector = Molecule::dna(
         "EcoRI vector",
@@ -752,10 +761,10 @@ fn infusion_native_ecori_vector_reverse_insert_and_linker_keep_bottom_extension_
     );
     assert_eq!(evidence.preparations[0].product.top.len(), 28);
     assert_eq!(evidence.preparations[0].product.bottom.len(), 28);
-    let html = verification::export_protocol_html(&preview.compiled.plan, &target);
+    let html = verification::output::export_protocol_html(&preview.compiled.plan, &target);
     assert!(html.contains("Planned next step"));
     assert!(
-        collagene_core::pdf::export_protocol_pdf(&preview.compiled.plan, &target)
+        collagene_core::output::pdf::export_protocol_pdf(&preview.compiled.plan, &target)
             .unwrap()
             .bytes
             .starts_with(b"%PDF-")

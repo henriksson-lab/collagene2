@@ -1,7 +1,7 @@
 //! Hand-composed v2 source arrays and independent v3 byte expectations.
 use collagene_core::{
-    scf_export::{self, LossPolicy, Options, SamplePrecision},
-    traces::{self, QualityEvidence, Trace, TraceFormat},
+    formats::scf::{self as scf_export, LossPolicy, Options, SamplePrecision},
+    review::reads::traces::{self, QualityEvidence, Trace, TraceFormat},
 };
 fn word(bytes: &mut [u8], at: usize, value: u32) {
     bytes[at..at + 4].copy_from_slice(&value.to_be_bytes());

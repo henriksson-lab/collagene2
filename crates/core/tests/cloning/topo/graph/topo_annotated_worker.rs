@@ -1,14 +1,14 @@
 //! Current canonical transport; documentary annotations are not replay authority.
+use collagene_core::cloning::topo::physical as p;
 use collagene_core::{
+    cloning::topo::{self as t, worker as w},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob as J, AnalysisResult as R},
     },
-    topo as t, topo_worker as w,
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
-use t::physical as p;
 
 fn fixture() -> (Vec<t::Input>, t::Request, t::Selection) {
     let mut source = Molecule::dna("literal source", "ACGT", Topology::Linear).unwrap();

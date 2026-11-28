@@ -1,6 +1,7 @@
 //! Actual SDK dispatch for bounded source-bound inspection, without imported report authority.
-use collagene_core::{formats, restriction_inspection::*};
-use collagene_mcp::{CollageneServer, RestrictionInspectionEvidence};
+use collagene_core::{cloning::restriction::inspection::*, formats::sequence as formats};
+use collagene_mcp::server::CollageneServer;
+use collagene_mcp::tools::cloning::RestrictionInspectionEvidence;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -208,8 +209,8 @@ async fn inspection_sdk_pages_exact_geometry_and_source_without_creating_product
         .unwrap()
         .molecules
         .remove(0);
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
-    let selection: collagene_core::catalog_digest::CatalogSelection =
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
+    let selection: collagene_core::cloning::restriction::catalog::CatalogSelection =
         serde_json::from_value(first["catalog_pin"].clone()).unwrap();
     let mut selected_names = selection
         .enzymes

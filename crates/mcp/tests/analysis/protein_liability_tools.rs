@@ -1,5 +1,5 @@
 //! Actual SDK over memory pipes; no browser, HTTP, user files or scientific process.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

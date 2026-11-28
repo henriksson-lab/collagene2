@@ -1,8 +1,8 @@
 //! Independent literal coordinate fixtures; no scan/digest algorithm is used to
 //! construct the expected geometry or evidence passed to the vector renderer.
 use collagene_core::{
-    restriction_inspection::{InspectionSite, ReferenceSpan},
-    svg::*,
+    cloning::restriction::inspection::{InspectionSite, ReferenceSpan},
+    output::svg::*,
 };
 use collagene_model::{Error, Molecule, Topology};
 

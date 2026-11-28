@@ -1,5 +1,5 @@
 //! Actual MCP SDK; literal expected arithmetic is independent of library result builders.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{
     RoleClient, ServiceExt,
     model::CallToolRequestParams,

@@ -1,7 +1,7 @@
 //! Literal byte/profile assertions precede reader roundtrips. Our reader alone
 //! cannot establish compatibility with proprietary producer applications.
-use collagene_core::{
-    legacy_formats,
+use collagene_core::formats::original::{
+    self as legacy_formats,
     xdna_export::{self as x, LossKind, Policy},
 };
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
@@ -231,9 +231,9 @@ fn imported_protein_crosslinks_and_nonstandard_residues_cannot_be_omitted() {
         let text = format!(
             "ID   TEST_PROT               Unreviewed;         6 AA.\nAC   P12345;\nFT   {kind:<15} {location}\nFT                   /note=\"retained chemical evidence\"\nSQ   SEQUENCE   6 AA;  0 MW;  69D1B2D37336F000 CRC64;\n     MKWVTF\n//\n"
         );
-        let imported = collagene_core::protein_formats::import_bytes(
+        let imported = collagene_core::formats::protein::import_bytes(
             text.as_bytes(),
-            collagene_core::protein_formats::Profile::UniProt,
+            collagene_core::formats::protein::Profile::UniProt,
         )
         .unwrap();
         let molecule = &imported.molecules[0];
@@ -251,9 +251,9 @@ fn imported_protein_crosslinks_and_nonstandard_residues_cannot_be_omitted() {
                 after: true,
             };
             assert!(
-                collagene_core::snapgene_export::export_snapgene(
+                collagene_core::formats::snapgene::export::export_snapgene(
                     &uncertain,
-                    collagene_core::snapgene_export::Policy::AllowOmissions
+                    collagene_core::formats::snapgene::export::Policy::AllowOmissions
                 )
                 .is_err()
             );

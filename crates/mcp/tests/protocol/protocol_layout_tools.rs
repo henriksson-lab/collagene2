@@ -1,7 +1,7 @@
 #[path = "../../../core/tests/common/protocol_layout.rs"]
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -43,7 +43,7 @@ async fn actual_binary_workspace_preview_capture_exports_and_explicit_projection
         collagene_mcp::CURRENT_TOOL_COUNT
     );
     let (w, r) = fixture::fixture();
-    let original = collagene_core::workspace::save_workspace(&w).unwrap();
+    let original = collagene_core::documents::workspace::save_workspace(&w).unwrap();
     let imported = call(
         &c,
         "import_workspace_archive",
@@ -106,7 +106,7 @@ async fn actual_binary_workspace_preview_capture_exports_and_explicit_projection
     let projected=call(&c,"protocol_layout",json!({"workspace":saved_ref,"task":{"ProjectPublication":{"layout_hash":hash,"expected_scope_revision":review["scope_revision"]}}})).await;
     assert!(projected["workspace"].is_object());
     assert_eq!(
-        collagene_core::workspace::save_workspace(&w).unwrap(),
+        collagene_core::documents::workspace::save_workspace(&w).unwrap(),
         original
     );
     c.cancel().await.unwrap();

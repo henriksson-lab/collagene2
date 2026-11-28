@@ -49,16 +49,18 @@ not remove outstanding features or weaken the final completion requirements.
 
 ## Current execution order — cloning first, 24 November 2026
 
-**28 November priority update: complete the ownership and source-layout refactor
-before further feature expansion.** Follow the current
+**28 November priority update: the ownership and source-layout refactor is
+implemented and locally verified; finish its exact-commit cross-platform CI
+before resuming feature expansion.** Follow the current
 [code organization and refactoring plan](audits/CODE_ORGANIZATION.md), based on
 three parallel audits. Every directory must have at most 20 direct Rust files;
 every Rust file at most 5,000 lines, with an ownership review at 3,000. Colocate
 types and meaningful implementations, prefer natural methods, and move domain
 families into cohesive subtrees. Preserve scientific behavior, test discovery,
 one current internal representation, unfinished work and the full product scope.
-No compatibility facades or forwarding APIs are permitted. The audit records
-actual violations; its existence does not mean the refactor is complete.
+No compatibility facades or forwarding APIs are permitted. The layout gate now reports zero violations or size warnings. Native/WASM
+checks, complete executable discovery and 1,034 focused tests pass; cross-platform
+CI and the remaining product gates remain separate requirements.
 
 This order supersedes the older milestone order and any format-first expansion.
 Keep the full agreed scope, existing feature IDs and scientific architecture;

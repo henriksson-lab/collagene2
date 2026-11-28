@@ -1,6 +1,6 @@
 # EMBL/ENA nucleotide adapter
 
-The independently implemented Rust adapter lives in `crates/core/src/embl.rs`. `import_embl` returns the shared import report; `export_embl` writes nucleotide records. It uses no runtime filesystem, network or external executable.
+The independently implemented Rust adapter lives in `crates/core/src/formats/sequence/embl.rs`. `import_embl` returns the shared import report; `export_embl` writes nucleotide records. It uses no runtime filesystem, network or external executable.
 
 The framing, ID/SQ parsing, counters, header retention, evidence policy and writer are application code. Feature lines are adapted by their fixed columns into the existing `gb-io` standalone parser/writer because EMBL and GenBank share the INSDC feature/location grammar. Generated adapter GenBank text is discarded and never represented as original evidence. No cloning application's code was used.
 

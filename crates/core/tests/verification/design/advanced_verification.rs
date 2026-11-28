@@ -1,19 +1,23 @@
 //! Parent integration audit: external targets, hand-derived products and historical envelopes.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{Duplex, DuplexSummary},
-    golden_gate::GoldenGateOptions,
-    methylation::{MethylationState, Outcome},
-    modified_duplex::GenerationAssumptions,
-    mutagenesis::PcrOptions,
-    primers::BindingOptions,
+    chemistry::{
+        Duplex, DuplexSummary,
+        methylation::{MethylationState, Outcome},
+        tracked_duplex::GenerationAssumptions,
+    },
+    cloning::{
+        golden_gate::GoldenGateOptions,
+        pcr::{mutagenesis::PcrOptions, primers::BindingOptions},
+    },
+    documents::transfer::{self, Candidate},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer::{self, Candidate},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 fn dna(name: &str, s: &str, t: Topology) -> Molecule {
@@ -114,7 +118,7 @@ fn typed_mismatch_reconstruction_changes_both_gene_strands_and_preserves_unchang
             pcr_options(),
         )],
     );
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -180,7 +184,7 @@ fn wrong_independent_target_and_strict_three_prime_policy_do_not_inherit_success
             pcr_options(),
         )],
     );
-    let r = verification::verify(&p, &wrong);
+    let r = verification::engine::verify(&p, &wrong);
     assert_eq!(r.status, Status::Invalid);
     assert_eq!(r.products.len(), 1);
     assert!(r.findings.iter().any(|s| s.contains("does not match")));
@@ -197,7 +201,7 @@ fn wrong_independent_target_and_strict_three_prime_policy_do_not_inherit_success
         vec![("template", source)],
         vec![mismatch_step(Source::Input("template".into()), strict)],
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid, "{:?}", r.findings);
     assert!(r.products.is_empty());
 }
@@ -217,7 +221,7 @@ fn truncated_or_overlapping_mismatch_models_cannot_become_verified_duplexes() {
         vec![("template", source)],
         vec![mismatch_step(Source::Input("template".into()), options)],
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
     let source = dna("overlap", "ACGTAA", Topology::Linear);
     let target = dna("overlap sequence preview", "ATGTAA", Topology::Linear);
@@ -238,7 +242,7 @@ fn truncated_or_overlapping_mismatch_models_cannot_become_verified_duplexes() {
             },
         }],
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
     assert!(r.products.is_empty());
 }
@@ -255,7 +259,7 @@ fn imported_physical_metadata_never_grants_mismatch_pcr_substrate_authority() {
             pcr_options(),
         )],
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete);
     assert!(r.findings.iter().any(|f| f.contains("physical evidence")));
 }
@@ -276,7 +280,7 @@ fn mismatch_pcr_accepts_an_actual_intact_preceding_pcr_intermediate() {
             mismatch_step(Source::Step(0), pcr_options()),
         ],
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -350,7 +354,7 @@ fn golden_gate_selected_candidate_is_reconstructed_with_annotations_and_external
         .push(feature("payload", Location::range(11, 15)));
     let target = gate_target();
     let p = gate_plan(&target, inputs.clone(), gate_options(), 0);
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -378,7 +382,7 @@ fn golden_gate_selected_candidate_is_reconstructed_with_annotations_and_external
     );
     let wrong = dna("wrong gate target", "AATGCCCTGCTTTTTT", Topology::Circular);
     let p = gate_plan(&wrong, inputs, gate_options(), 0);
-    let r = verification::verify(&p, &wrong);
+    let r = verification::engine::verify(&p, &wrong);
     assert_eq!(r.status, Status::Invalid);
     assert_eq!(r.products.len(), 3);
 }
@@ -394,12 +398,12 @@ fn golden_gate_recutting_and_unavailable_candidate_are_conclusive_failures() {
         Topology::Circular,
     );
     let p = gate_plan(&target, inputs, gate_options(), 0);
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid, "{:?}", r.findings);
     assert!(r.findings.iter().any(|s| s.contains("retains recognition")));
     let target = gate_target();
     let p = gate_plan(&target, gate_inputs(), gate_options(), usize::MAX);
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Invalid);
     assert_eq!(
         r.products.len(),
@@ -415,7 +419,7 @@ fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness()
         ..gate_options()
     };
     let p = gate_plan(&target, gate_inputs(), options, 0);
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
     assert_eq!(r.products.len(), 3);
     assert_eq!(r.products[2].sequence, target.sequence);
@@ -433,7 +437,7 @@ fn golden_gate_capped_search_retains_known_product_but_not_verified_uniqueness()
         },
         0,
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete);
     assert_eq!(
         r.products.len(),
@@ -466,7 +470,7 @@ fn golden_gate_accepts_reconstructed_staggered_digest_steps_without_imported_met
             },
         ],
     );
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -480,7 +484,7 @@ fn golden_gate_accepts_reconstructed_staggered_digest_steps_without_imported_met
         .metadata
         .insert("duplex_model".into(), "{}".into());
     let p = gate_plan(&target, imported, gate_options(), 0);
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(r.status, Status::Incomplete);
 }
 fn worker(source: &Molecule, job: AnalysisJob) -> protocol::response::Response {
@@ -653,7 +657,7 @@ fn a_known_selected_product_mismatching_target_is_invalid_even_when_other_paths_
         },
         0,
     );
-    let r = verification::verify(&p, &wrong);
+    let r = verification::engine::verify(&p, &wrong);
     assert_eq!(r.products.len(), 3);
     assert_eq!(r.products[2].sequence.as_str(), "AATGCCCCGCTTTTTT");
     assert_ne!(r.products[2].sequence, wrong.sequence);
@@ -677,7 +681,7 @@ fn physical_template_mismatch_and_partial_step_failure_remain_explicit_not_flatt
     );
     let substrate = Duplex::from_molecule(&wrong).unwrap();
     assert!(
-        collagene_core::mutagenesis::simulate_pcr_reconstructed(
+        collagene_core::cloning::pcr::mutagenesis::simulate_pcr_reconstructed(
             &source,
             &substrate,
             &f,
@@ -688,7 +692,7 @@ fn physical_template_mismatch_and_partial_step_failure_remain_explicit_not_flatt
     );
     let substrate = Duplex::from_molecule(&source).unwrap();
     assert!(
-        collagene_core::mutagenesis::simulate_pcr_reconstructed(
+        collagene_core::cloning::pcr::mutagenesis::simulate_pcr_reconstructed(
             &source,
             &substrate,
             &f,
@@ -711,7 +715,7 @@ fn physical_template_mismatch_and_partial_step_failure_remain_explicit_not_flatt
             mismatch_step(Source::Step(0), pcr_options()),
         ],
     );
-    let report = verification::verify(&p, &target);
+    let report = verification::engine::verify(&p, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(report.products.len(), 1);
     assert_eq!(report.products[0].sequence.as_str(), "AATGCCCC");

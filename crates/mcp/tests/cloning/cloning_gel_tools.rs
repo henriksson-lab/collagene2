@@ -1,14 +1,18 @@
 //! Real SDK JSON-RPC exercises independent Type IIS, mismatch, inverse-PCR and gel fixtures.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    gel::{Calibration, CalibrationPoint, DiagnosticOptions, Preparation},
-    golden_gate::GoldenGateOptions,
-    mutagenesis::{InversePcrOptions, PcrOptions},
-    primers::BindingOptions,
-    transfer::{PlanningWorkspace, save_workspace},
+    cloning::{
+        golden_gate::GoldenGateOptions,
+        pcr::{
+            mutagenesis::{InversePcrOptions, PcrOptions},
+            primers::BindingOptions,
+        },
+    },
+    documents::transfer::{PlanningWorkspace, save_workspace},
+    output::gel::{Calibration, CalibrationPoint, DiagnosticOptions, Preparation},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -569,11 +573,16 @@ async fn gel_json_svg_and_diagnostic_digests_preserve_unknowns_mass_and_source_b
 #[tokio::test]
 async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_sources() {
     use collagene_core::{
-        catalog_digest::{self, InspectionOptions},
-        digest_setups::{CleavageMode, Recipe},
-        history::DocumentHistory,
-        run_lineage::EventBinding,
-        workspace::{self, Workspace},
+        cloning::restriction::{
+            catalog as catalog_digest,
+            inspection::InspectionOptions,
+            setups::{CleavageMode, Recipe},
+        },
+        documents::{
+            history::DocumentHistory,
+            workspace::{self, Workspace},
+        },
+        material::lineage::EventBinding,
     };
     let s = Session::new().await;
     let source = dna("historical AluI source", "TTTAGCTAAA", Topology::Linear);

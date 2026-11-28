@@ -1,17 +1,22 @@
 //! Chemical correspondence cannot upgrade incomplete source history.
 #[path = "../../../common/topo_graph.rs"]
 mod literal;
+use collagene_core::cloning::topo::physical as p;
 use collagene_core::{
-    cloning_outputs,
-    history::DocumentHistory,
-    run_lineage::InputEventBinding,
-    run_material::{self, MaterialOrigin},
-    topo as t, topo_graph_history as g, topo_run_preparation as native,
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{Workspace, WorkspaceAttachment},
+    cloning::topo::{self as t, graph_history as g, run_preparation as native},
+    documents::{
+        history::DocumentHistory,
+        workspace::{Workspace, WorkspaceAttachment},
+    },
+    material::{
+        lineage::InputEventBinding,
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
-use t::physical as p;
 fn check(
     w: &Workspace,
     selection: &g::Selection,
@@ -131,7 +136,7 @@ fn completed_ta_graph_with_blocked_third_transfer_stays_incomplete_despite_targe
         accepted.outcome,
         t::TargetOutcome::AcceptedUnderDeclaredGraph
     ));
-    let verified = verification::verify(&plan, &target);
+    let verified = verification::engine::verify(&plan, &target);
     assert_eq!(verified.products.len(), 1);
     assert_eq!(verified.products[0].sequence.as_str(), literal::FINAL);
     assert_eq!(verified.status, Status::Incomplete);
@@ -145,7 +150,7 @@ fn completed_ta_graph_with_blocked_third_transfer_stays_incomplete_despite_targe
     let (_, task, bad_plan, target) = check(&forged, &selection);
     assert!(native::inspect(&[], None, &task).is_err());
     assert_eq!(
-        verification::verify(&bad_plan, &target).status,
+        verification::engine::verify(&bad_plan, &target).status,
         Status::Invalid,
         "a framed false flag is not chemical source authority"
     );
@@ -153,9 +158,9 @@ fn completed_ta_graph_with_blocked_third_transfer_stays_incomplete_despite_targe
 #[test]
 fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_reuse() {
     use collagene_core::{
-        analysis::Primer,
         chemistry::{AnnealOptions, Terminus},
-        tailing::TailingBase,
+        cloning::ligation::tailing::TailingBase,
+        sequence::analysis::Primer,
     };
     let (mut w, vector) = literal::fixture();
     for (id, m) in [
@@ -195,7 +200,8 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
         bottom_chemistry: Terminus::PCR,
         ..Default::default()
     };
-    let preview = verification::simulate_oligo_annealing(&left, &right, &options).unwrap();
+    let preview =
+        verification::terminal::simulate_oligo_annealing(&left, &right, &options).unwrap();
     assert!(!preview.annealing.complete);
     assert_eq!(preview.annealing.candidates.len(), 1);
     let retained = &preview.annealing.candidates[0];
@@ -226,7 +232,7 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
             candidate_index: 0,
         }],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::Incomplete,
@@ -261,8 +267,9 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
         step_index: 0,
         event: captured.receipt.construct,
     };
-    let origin =
-        MaterialOrigin::Run(run_material::capsule(&captured.workspace, &selection).unwrap());
+    let origin = MaterialOrigin::Run(
+        collagene_core::material::capsule::capsule(&captured.workspace, &selection).unwrap(),
+    );
     let source = &captured.workspace.revisions[&selection.event.revision];
     assert!(origin.replay(source).unwrap().incomplete());
     let mut request = vector;
@@ -327,14 +334,14 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
         t::TargetOutcome::AcceptedUnderDeclaredGraph
     ));
     assert_eq!(
-        verification::verify(&plan, &target).status,
+        verification::engine::verify(&plan, &target).status,
         Status::Incomplete
     );
     let (forged, selection) = forged_false_record(&graph.workspace, &graph.receipt.selection);
     let (_, task, bad_plan, target) = check(&forged, &selection);
     assert!(native::inspect(&[], None, &task).is_err());
     assert_eq!(
-        verification::verify(&bad_plan, &target).status,
+        verification::engine::verify(&bad_plan, &target).status,
         Status::Invalid
     );
 }

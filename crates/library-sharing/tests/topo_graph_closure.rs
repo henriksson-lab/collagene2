@@ -2,12 +2,14 @@
 #[path = "../../core/tests/common/topo_graph.rs"]
 mod literal;
 use collagene_core::{
-    cloning_outputs, topo as t, topo_graph_history as g,
-    verification::{self, DesignPlan, Operation},
-    workspace,
+    cloning::topo::{self as t, graph_history as g},
+    documents::workspace,
+    material::outputs as cloning_outputs,
+    planning::plan::{DesignPlan, Operation},
+    verification,
 };
 use collagene_library_sharing as sharing;
-fn selected(e: &collagene_core::run_lineage::EventBinding) -> sharing::Selection {
+fn selected(e: &collagene_core::material::lineage::EventBinding) -> sharing::Selection {
     sharing::Selection {
         document_id: e.document_id.clone(),
         revision: e.revision.clone(),
@@ -106,8 +108,8 @@ fn graph_consuming_run_closes_both_records_and_exact_sources_then_replays() {
     let inspected = g::inspect(&reopened, &second.receipt.selection).unwrap();
     assert_eq!(inspected.summary.source_bases, 40);
     let target = &reopened.revisions[&plan.target_revision];
-    let replayed = verification::verify(&plan, target);
-    assert!(verification::plan_target_matches(
+    let replayed = verification::engine::verify(&plan, target);
+    assert!(verification::engine::plan_target_matches(
         &plan,
         replayed.products.last().unwrap(),
         target

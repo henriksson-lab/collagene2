@@ -1,5 +1,5 @@
 //! Independent bounded-work regressions from review.
-use collagene_core::search::*;
+use collagene_core::sequence::search::*;
 use collagene_model::{Feature, Location, Molecule, Topology};
 #[test]
 fn empty_qualifier_rows_consume_work_and_cannot_hide_unbounded_scanning() {

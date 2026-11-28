@@ -1,4 +1,4 @@
-use collagene_core::formats;
+use collagene_core::formats::sequence as formats;
 use collagene_model::{Molecule, Topology};
 #[test]
 fn annotated_contig_exports_keep_bounded_producer_claims_without_read_evidence_authority() {

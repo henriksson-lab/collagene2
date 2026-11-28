@@ -1,5 +1,5 @@
 //! Literal full-window source-coordinate and IUPAC oracle; no engine helpers.
-use collagene_core::crispr::*;
+use collagene_core::sequence::crispr::*;
 use collagene_model::{Molecule, Topology};
 fn molecule(s: &str, circle: bool) -> Molecule {
     Molecule::dna(

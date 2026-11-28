@@ -1,11 +1,13 @@
 use collagene_core::{
-    assembly_intent::{self, Contribution, Request as IntentRequest, Selector},
+    cloning::assembly::intent::{
+        self as assembly_intent, Contribution, Request as IntentRequest, Selector,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 #[test]

@@ -1,19 +1,26 @@
 //! Literal source-strand intent is independent of the later physical recipe.
 use collagene_core::{
-    assembly_edit_intent as edit,
-    assembly_intent::{
-        self as intent, Contribution, ContributionPosition, MaterialBinding, Selector,
+    chemistry::{AnnealOptions, Strand, Terminus, tracked_duplex as modified_duplex},
+    cloning::{
+        assembly::{
+            edit_intent as edit,
+            intent::{self, Contribution, ContributionPosition, MaterialBinding, Selector},
+            junction_edit as junction, substitution_intent as substitution,
+        },
+        restriction::catalog as catalog_digest,
     },
-    assembly_junction_edit as junction, assembly_substitution_intent as substitution,
-    catalog_digest,
-    chemistry::{AnnealOptions, Strand, Terminus},
-    cloning_outputs,
-    history::DocumentHistory,
-    material_derivation as derivation, modified_duplex,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::{
+        derivation,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 const TOP: &str = "AATTGCTACGGAATTCTTACG";
@@ -102,7 +109,7 @@ fn annealed(
     .unwrap();
     let pin = commit.receipt.construct;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &commit.workspace,
             &run_material::Selection {
                 run_id: commit.receipt.run.run_id,
@@ -284,7 +291,7 @@ fn independent_actual_bottom_target_verifies_only_after_native_reconstruction_di
             },
         ],
     };
-    let v = verification::verify(&plan, &target);
+    let v = verification::engine::verify(&plan, &target);
     assert_eq!(v.status, Status::ConsistentUnderAssumptions);
     assert_eq!(v.products.last().unwrap().sequence.as_str(), ACTUAL);
     let wrong =
@@ -292,12 +299,12 @@ fn independent_actual_bottom_target_verifies_only_after_native_reconstruction_di
     let mut wrong_plan = plan.clone();
     wrong_plan.target_revision = wrong.revision();
     assert_eq!(
-        verification::verify(&wrong_plan, &wrong).status,
+        verification::engine::verify(&wrong_plan, &wrong).status,
         Status::Invalid
     );
-    assert!(verification::export_protocol_html(&plan, &target).contains("AATTCGTAAG"));
+    assert!(verification::output::export_protocol_html(&plan, &target).contains("AATTCGTAAG"));
     assert!(
-        collagene_core::pdf::export_protocol_pdf(&plan, &target)
+        collagene_core::output::pdf::export_protocol_pdf(&plan, &target)
             .unwrap()
             .bytes
             .starts_with(b"%PDF")
@@ -428,8 +435,8 @@ fn literal_trims_substitutions_and_indels_keep_original_actual_strand_receipt() 
 fn derived_catalog_fragment_uses_actual_new_native_source_domain_after_restart() {
     let (w, pin, origin) = annealed(TOP, BOTTOM, 17, false);
     let requested = derivation::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin,
             origin: derivation::SourceOrigin::Saved(origin),
         }],

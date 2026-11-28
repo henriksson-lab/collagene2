@@ -1,6 +1,6 @@
 //! Real MCP transport: proposals remain advisory until original-source preparation.
-use collagene_core::verification::{DesignPlan, Operation, Source};
-use collagene_mcp::CollageneServer;
+use collagene_core::planning::plan::{DesignPlan, Operation, Source};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

@@ -1,9 +1,8 @@
 //! Catalog identities survive annotated text as bounded producer claims, never chemical authority.
 use collagene_core::{
-    catalog_digest::*,
     chemistry,
-    formats::{self, TextFormat},
-    restriction_inspection::InspectionOptions,
+    cloning::restriction::{catalog::*, inspection::InspectionOptions},
+    formats::sequence::{self as formats, TextFormat},
 };
 use collagene_model::{Molecule, Topology};
 fn product_molecule() -> (Molecule, CatalogSelection) {

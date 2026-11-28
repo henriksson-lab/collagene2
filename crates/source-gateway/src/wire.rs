@@ -1,6 +1,6 @@
 //! Shared native/WASM DTOs. No provider token, signed URL or raw HTTP response is
 //! returned by catalog discovery. Request Debug deliberately omits credentials.
-use collagene_core::formats::ImportReport;
+use collagene_core::formats::sequence::ImportReport;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 pub const VERSION: u16 = 1;

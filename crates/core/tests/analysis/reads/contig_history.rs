@@ -1,9 +1,10 @@
 use collagene_core::{
-    contig::{self, ContigOptions, ReadInput},
-    contig_history::*,
-    history::DocumentHistory,
-    run_lineage::{EventBinding, InputEventBinding},
-    workspace::{self, Workspace},
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::lineage::{EventBinding, InputEventBinding},
+    review::contigs::{self as contig, ContigOptions, ReadInput, history::*},
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Workspace, SavedAssembly, Vec<ReadInput>) {

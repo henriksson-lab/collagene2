@@ -1,9 +1,11 @@
 //! Source-role, native-history and real product integration fixtures for the MVP path.
 use collagene_core::{
-    analysis, chemistry, formats,
-    restriction_history::*,
-    restriction_inspection::InspectionOptions,
-    workspace::{RevisionEvent, Workspace},
+    chemistry,
+    cloning::restriction::{history::*, inspection::InspectionOptions},
+    documents::workspace::{RevisionEvent, Workspace},
+    formats::sequence as formats,
+    material::lineage::EventBinding as SourceBinding,
+    sequence::analysis,
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const GB: &str = "LOCUS       ZZ123456                  12 bp    DNA     circular SYN 01-JAN-2026\nDEFINITION  Independently authored digest workflow.\nACCESSION   ZZ123456\nVERSION     ZZ123456.1\nFEATURES             Location/Qualifiers\n     misc_feature    join(11..12,1..2)\n                     /label=\"origin crossing\"\nORIGIN\n        1 tttgaattca aa\n//\n";
@@ -115,7 +117,7 @@ fn native_roundtrip_keeps_recipe_as_unverified_evidence_and_prepared_binding_is_
     let w = frame();
     let b = binding(&w, 0);
     let mut p = install(&w, &b, &enzyme(), &InspectionOptions::default(), 0).unwrap();
-    let loaded = collagene_core::workspace::load_workspace(&p.archive).unwrap();
+    let loaded = collagene_core::documents::workspace::load_workspace(&p.archive).unwrap();
     p.validate_archive(&loaded).unwrap();
     let product = &loaded.revisions[&p.product_revision];
     assert!(chemistry::has_unmapped_physical_evidence(product));
@@ -127,7 +129,8 @@ fn native_roundtrip_keeps_recipe_as_unverified_evidence_and_prepared_binding_is_
             .any(|k| k.starts_with("restriction_inspection:"))
     );
     assert!(!product.metadata.contains_key("verified"));
-    let mut restored = collagene_core::history::DocumentHistory::restore_all(&loaded).unwrap();
+    let mut restored =
+        collagene_core::documents::history::DocumentHistory::restore_all(&loaded).unwrap();
     let child = restored.iter_mut().find(|d| d.id == p.document_id).unwrap();
     assert_eq!(child.head_event(), p.event_id);
     assert_eq!(child.summaries()[0].parents, vec![b.event_id.clone()]);
@@ -143,12 +146,12 @@ fn capacity_failure_is_atomic_and_never_drops_original_documents() {
     )
     .unwrap();
     let b = binding(&w, 0);
-    let fingerprint = collagene_core::run_lineage::workspace_fingerprint(&w).unwrap();
+    let fingerprint = collagene_core::material::lineage::workspace_fingerprint(&w).unwrap();
     assert!(prepare_install(&w, &b, &enzyme(), &InspectionOptions::default(), 0).is_err());
     assert_eq!(w.documents.len(), 1000);
     assert_eq!(
         fingerprint,
-        collagene_core::run_lineage::workspace_fingerprint(&w).unwrap()
+        collagene_core::material::lineage::workspace_fingerprint(&w).unwrap()
     );
 }
 #[test]

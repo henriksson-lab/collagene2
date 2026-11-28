@@ -1,6 +1,6 @@
 //! Actual SDK routing and immutable source/report/consensus installation.
-use collagene_core::contig::*;
-use collagene_mcp::CollageneServer;
+use collagene_core::review::contigs::*;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -99,7 +99,7 @@ async fn assembly_sdk_preserves_full_evidence_source_binding_pages_and_uncertain
     assert_eq!(first["contigs"][0]["placement_count"], 3);
     let full: ContigReport =
         serde_json::from_value(artifact(&c, &first["artifact_id"]).await).unwrap();
-    let inputs = collagene_core::formats::import_text(READS)
+    let inputs = collagene_core::formats::sequence::import_text(READS)
         .unwrap()
         .molecules
         .into_iter()
@@ -304,7 +304,7 @@ async fn full_artifact_capacity_never_installs_orphan_consensus_documents_or_cac
     .await;
     let protein = doc(&imported, "protein");
     for i in 0..128 {
-        let options = collagene_core::protein_properties::ProteinOptions {
+        let options = collagene_core::protein::properties::ProteinOptions {
             charge_ph: i as f64 / 10.,
             ..Default::default()
         };

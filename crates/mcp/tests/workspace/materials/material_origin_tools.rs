@@ -1,14 +1,16 @@
 //! Explicit exact-workspace origin discovery and documentary capsule preparation.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs::{self, Commit},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit},
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -137,7 +139,7 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
     let mut commit = original();
     let source = commit.receipt.construct.clone();
     commit.workspace.active_document = source.document_id.clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -146,25 +148,27 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
         },
     )
     .unwrap();
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let enzyme = catalog
         .edition()
         .enzymes
         .iter()
         .find(|enzyme| enzyme.name == "SmaI")
         .unwrap();
-    let selection = collagene_core::catalog_digest::select(&catalog, &[enzyme.id.clone()]).unwrap();
-    let installed = collagene_core::material_derivation::prepare_install(
+    let selection =
+        collagene_core::cloning::restriction::catalog::select(&catalog, &[enzyme.id.clone()])
+            .unwrap();
+    let installed = collagene_core::material::derivation::prepare_install(
         &commit.workspace,
-        &collagene_core::material_derivation::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+        &collagene_core::material::derivation::Request {
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: source,
-                origin: collagene_core::material_derivation::SourceOrigin::Saved(
+                origin: collagene_core::material::derivation::SourceOrigin::Saved(
                     run_material::MaterialOrigin::Run(origin),
                 ),
             }],
-            derivation: collagene_core::material_derivation::Derivation::CatalogDigest {
+            derivation: collagene_core::material::derivation::Derivation::CatalogDigest {
                 selection,
                 options: Default::default(),
                 fragment_index: 0,
@@ -221,7 +225,7 @@ async fn actual_saved_pcr_digest_discovery_and_explicit_replay_are_exact_and_rea
         unreachable!()
     };
     let reference = &installed.workspace.revisions[&product.revision];
-    let replay = collagene_core::material_derivation::replay(&capsule, reference).unwrap();
+    let replay = collagene_core::material::derivation::replay(&capsule, reference).unwrap();
     assert_eq!(replay.tracked().duplex.top.as_str(), "ACGACCCC");
     let wrong = event(&installed.workspace, 0);
     reject(&client,"inspect_material_origin",json!({"workspace":wr,"event":product,"selection":run_material::MaterialSelection::Derived(wrong)})).await;

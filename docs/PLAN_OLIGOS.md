@@ -1,6 +1,6 @@
 # Oligo output from exact cloning plans
 
-`collagene_core::plan_oligos` extracts declared order data without running PCR, digestion, annealing, target comparison or another biological algorithm. `build(plan, target, &Options)` binds the exact plan and its separately bound target. `Options { deduplicate: true }` is the default. Borrowed model, scalar/string, original revision and target guards precede model hashing/copying and original-row decoding.
+`collagene_core::planning::oligos` extracts declared order data without running PCR, digestion, annealing, target comparison or another biological algorithm. `build(plan, target, &Options)` binds the exact plan and its separately bound target. `Options { deduplicate: true }` is the default. Borrowed model, scalar/string, original revision and target guards precede model hashing/copying and original-row decoding.
 
 `Report` contains plan/target revisions, options, `complete`, `unavailable`, an existing `oligo_formats::OligoTable`, per-use evidence and warnings. PCR and mismatch-PCR steps contribute their actual forward/reverse names, 5′→3′ annealing domains and tails. Each `OligoUse` keeps step, kind, source, original name, full original `Primer`, mismatch policy when present, and its generated order-row ID. A different domain boundary is never erased merely because ordered DNA is identical. IUPAC remains degenerate sequence, not a concrete oligo.
 

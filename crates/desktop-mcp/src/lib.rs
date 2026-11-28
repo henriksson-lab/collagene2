@@ -1,10 +1,10 @@
 //! Operator-selected, saved native documents in an isolated in-process MCP.
 #![cfg(not(target_arch = "wasm32"))]
-use collagene_core::{protocol, workspace};
+use collagene_core::{documents::workspace, protocol};
 use collagene_desktop_host::open_local_repository;
 use collagene_lab_library::{DocumentId, PayloadKind, RevisionId};
 use collagene_library_sharing::{self as sharing, Inventory};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use std::{collections::BTreeSet, path::Path, str::FromStr};
 
 pub const MAX_SELECTIONS: usize = 32;
@@ -171,5 +171,5 @@ pub fn create_with_storage(
     Ok(Session { server, preloaded })
 }
 pub async fn serve(session: Session) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    collagene_mcp::serve_stdio(session.into_server()).await
+    collagene_mcp::server::serve_stdio(session.into_server()).await
 }

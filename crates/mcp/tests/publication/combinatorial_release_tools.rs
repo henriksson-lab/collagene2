@@ -1,15 +1,15 @@
 //! Atomic bulk release, native lineage and bounded portable ZIP over the SDK.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    combinatorial_design::{
+    cloning::assembly::recipe::Preparation,
+    documents::workspace::{self, Workspace},
+    material::lineage::EventBinding,
+    planning::combinatorial::{
         Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
     },
-    run_lineage::EventBinding,
-    workspace::{self, Workspace},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -131,7 +131,7 @@ fn fixture() -> (Workspace, Value) {
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
                     source: binding(&w, i),
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: 4,
                         reverse: false,

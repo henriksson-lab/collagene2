@@ -1,14 +1,16 @@
 //! Literal contribution edits are independent of primer/product DNA across binary transport.
 use collagene_core::{
-    assembly_edit_intent::{self, Edit, Request as IntentRequest},
-    assembly_intent::{self, Contribution, Selector},
-    assembly_substitution_intent,
+    cloning::assembly::{
+        edit_intent::{self as assembly_edit_intent, Edit, Request as IntentRequest},
+        intent::{self as assembly_intent, Contribution, Selector},
+        substitution_intent as assembly_substitution_intent,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 fn wire(magic: &[u8; 4], version: u16, value: &impl serde::Serialize) -> Vec<u8> {

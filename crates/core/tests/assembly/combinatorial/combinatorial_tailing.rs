@@ -1,21 +1,32 @@
 //! Literal TA/GC source alternatives over the sole tailing recipe compiler.
 use collagene_core::{
-    analysis::Primer,
-    assembly_intent::Selector,
-    assembly_recipe::{Preparation, RunPreparation},
     chemistry::{EndTreatment, Strand},
-    cloning_outputs, combinatorial_batch as batch,
-    combinatorial_design::{
-        self as design, Bin, Choice, ChoiceSelection, Design, LibraryMaterialBinding, Method,
-        SelectedConstruct, TailingAction, TargetDeclaration,
+    cloning::{
+        assembly::{
+            intent::Selector,
+            recipe::{Preparation, RunPreparation},
+        },
+        ligation::{
+            tailing::TailingBase,
+            tailing_recipe::{Action, Profile, ProfileStatus},
+        },
     },
-    combinatorial_release as release, material_derivation as derived,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    tailing::TailingBase,
-    tailing_recipe::{Action, Profile, ProfileStatus},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as derived,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::{
+        combinatorial::{
+            self as design, Bin, Choice, ChoiceSelection, Design, LibraryMaterialBinding, Method,
+            SelectedConstruct, TailingAction, TargetDeclaration, batch, release,
+        },
+        plan::{DesignPlan, Operation, PlanInput, Source},
+    },
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, i: usize) -> EventBinding {
@@ -183,8 +194,9 @@ fn original_ta_and_gc_preserve_literal_scars_and_finite_outcomes() {
             .physical_processing_reports
             .iter()
             .find_map(|step| {
-                if let verification::PhysicalProcessingEvidence::LigationOutcomes(evidence) =
-                    &step.evidence
+                if let verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(
+                    evidence,
+                ) = &step.evidence
                 {
                     Some(&evidence.report)
                 } else {
@@ -240,10 +252,13 @@ fn saved_tailed_vector(w: Workspace) -> (Workspace, LibraryMaterialBinding) {
     let target =
         Molecule::dna("Independent historical T tail", "AAACCCT", Topology::Linear).unwrap();
     let mut w = w;
-    collagene_core::history::DocumentHistory::new("historical-tail-target", target.clone())
-        .unwrap()
-        .contribute(&mut w)
-        .unwrap();
+    collagene_core::documents::history::DocumentHistory::new(
+        "historical-tail-target",
+        target.clone(),
+    )
+    .unwrap()
+    .contribute(&mut w)
+    .unwrap();
     let plan = DesignPlan {
         name: "Actual saved T-tailed vector".into(),
         target_revision: target.revision(),
@@ -283,7 +298,7 @@ fn saved_tailed_vector(w: Workspace) -> (Workspace, LibraryMaterialBinding) {
         revision: p.revision.clone(),
     };
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &commit.workspace,
             &run_material::Selection {
                 run_id: commit.receipt.run_id,
@@ -306,13 +321,13 @@ fn saved_run_keep_and_derived_add_use_exact_owned_material_after_archive_restart
     let stock = &w.revisions[&right.revision];
     let f = Primer::new("Derived F", "GGG", "").unwrap();
     let r = Primer::new("Derived R", "AAA", "").unwrap();
-    let docs = verification::simulate_pcr_documents(stock, &f, &r, Strand::Top).unwrap();
+    let docs = verification::pcr::simulate_pcr_documents(stock, &f, &r, Strand::Top).unwrap();
     assert_eq!(docs.len(), 1);
     let prepared = derived::prepare_install(
         &w,
         &derived::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: right,
                 origin: derived::SourceOrigin::OriginalReference,
             }],
@@ -382,7 +397,7 @@ fn saved_run_keep_and_derived_add_use_exact_owned_material_after_archive_restart
     ));
     let mut alias_workspace = w.clone();
     let same = alias_workspace.revisions[&d.bins[0].choices[0].source.revision].clone();
-    collagene_core::history::DocumentHistory::new("equal-dna-other-owner", same)
+    collagene_core::documents::history::DocumentHistory::new("equal-dna-other-owner", same)
         .unwrap()
         .contribute(&mut alias_workspace)
         .unwrap();
@@ -497,7 +512,7 @@ fn compatible_blunt_ligation_does_not_claim_ta_geometry() {
         Topology::Linear,
     )
     .unwrap();
-    collagene_core::history::DocumentHistory::new("blunt-target", target)
+    collagene_core::documents::history::DocumentHistory::new("blunt-target", target)
         .unwrap()
         .contribute(&mut w)
         .unwrap();

@@ -1,11 +1,14 @@
 //! Literal source-generation declarations change real preparative cleavage, never target intent.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{CleavagePolicy, FragmentSpec, Preparation},
-    catalog_digest, ligation_recipe as l,
-    methylation::MethylationState as M,
-    modified_duplex::GenerationAssumptions,
-    verification::{self, Operation, PlanInput},
+    chemistry::{methylation::MethylationState as M, tracked_duplex::GenerationAssumptions},
+    cloning::{
+        assembly::recipe::{CleavagePolicy, FragmentSpec, Preparation},
+        ligation::recipe as l,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::{Operation, PlanInput},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn generation(state: M) -> GenerationAssumptions {
@@ -79,7 +82,7 @@ fn blocked_original_site_cannot_be_cut_by_a_checked_preparation() {
     assert!(
         matches!(&checked.plan.steps[1],Operation::CheckedDigest{selection,..} if selection.enzymes[0].enzyme.name=="SmaI")
     );
-    let result = verification::verify(&checked.plan, &target);
+    let result = verification::engine::verify(&checked.plan, &target);
     assert_eq!(result.products.len(), 1, "{:?}", result.findings);
     assert!(
         result.findings.iter().any(|s| s.contains("Blocked")),
@@ -92,8 +95,8 @@ fn blocked_original_site_cannot_be_cut_by_a_checked_preparation() {
         Operation::CatalogDigest { .. }
     ));
     assert_ne!(
-        verification::plan_revision(&checked.plan),
-        verification::plan_revision(&assumed.plan)
+        collagene_core::planning::plan::DesignPlan::revision(&checked.plan),
+        collagene_core::planning::plan::DesignPlan::revision(&assumed.plan)
     );
 }
 #[test]
@@ -124,7 +127,7 @@ fn original_modified_template_then_new_pcr_is_unmodified_before_checked_cutting(
         compiled.plan.steps[2],
         Operation::CheckedDigest { .. }
     ));
-    let result = verification::verify(&compiled.plan, &target);
+    let result = verification::engine::verify(&compiled.plan, &target);
     assert_eq!(
         result.products.get(2).map(|m| m.sequence.as_str()),
         Some("GGGGCTACGTA"),

@@ -135,7 +135,7 @@ impl Response {
                     || value
                         .bytes
                         .as_ref()
-                        .is_some_and(|b| b.len() > crate::run_evidence::MAX_BYTES)
+                        .is_some_and(|b| b.len() > crate::material::evidence::MAX_BYTES)
                     || value.bytes.is_none() != (value.step_count == 0)
                 {
                     return Err(Error::Format(
@@ -145,11 +145,11 @@ impl Response {
             }
 
             AnalysisResult::LigationProfiles(items) => {
-                let expected = crate::ligation_profiles::list()?;
+                let expected = crate::cloning::ligation::profiles::list()?;
                 if items.len() != expected.len()
-                    || response.revision != crate::ligation_profiles::catalog_revision()?
-                    || crate::assembly_recipe::hash(items)?
-                        != crate::assembly_recipe::hash(&expected)?
+                    || response.revision != crate::cloning::ligation::profiles::catalog_revision()?
+                    || crate::cloning::assembly::recipe::hash(items)?
+                        != crate::cloning::assembly::recipe::hash(&expected)?
                 {
                     return Err(Error::Format("Published ligation catalog changed".into()));
                 }
@@ -335,7 +335,7 @@ impl Response {
                 validate_verification_report(&report.verification)?;
                 if matches!(
                     report.method,
-                    Some(crate::assembly_junctions::Method::GoldenGate { .. })
+                    Some(crate::cloning::assembly::junctions::Method::GoldenGate { .. })
                 ) {}
                 report.validate_binding(&response.revision)?
             }
@@ -414,16 +414,16 @@ impl Response {
                 }
             }
             AnalysisResult::TopoSimulation(report) => {
-                crate::topo_worker::validate_simulation(report, &response.revision)?
+                crate::cloning::topo::worker::validate_simulation(report, &response.revision)?
             }
             AnalysisResult::TopoOrientations(report) => {
-                crate::topo_worker::validate_orientations(report, &response.revision)?
+                crate::cloning::topo::worker::validate_orientations(report, &response.revision)?
             }
             AnalysisResult::TopoProjection(report) => {
-                crate::topo_worker::validate_projection(report, &response.revision)?
+                crate::cloning::topo::worker::validate_projection(report, &response.revision)?
             }
             AnalysisResult::TopoTarget(report) => {
-                crate::topo_worker::validate_target(report, &response.revision)?
+                crate::cloning::topo::worker::validate_target(report, &response.revision)?
             }
             AnalysisResult::ReadAlignmentsPrepared(report) => {
                 report.validate()?;
@@ -568,7 +568,10 @@ impl Response {
             | AnalysisResult::GenomeSearchPage(_)
             | AnalysisResult::GenomeDisposed(_)
             | AnalysisResult::GenomeIntervalRead(_) => {
-                crate::genome_session::validate_result(&response.result, &response.revision)?
+                crate::tracks::genome_session::validate_result(
+                    &response.result,
+                    &response.revision,
+                )?
             }
             AnalysisResult::InversePcr(report) => {
                 report.validate_binding(&response.revision)?;
@@ -691,7 +694,7 @@ impl Response {
                 document.validate()?;
             }
             AnalysisResult::AlignmentRows(rows) => {
-                if rows.len() > crate::alignment_formats::MAX_ALIGNMENT_ROWS {
+                if rows.len() > crate::formats::alignment::MAX_ALIGNMENT_ROWS {
                     return Err(Error::TooLarge);
                 }
                 for row in rows {
@@ -699,7 +702,7 @@ impl Response {
                 }
             }
             AnalysisResult::AlignmentSaved(archive) => {
-                crate::alignment_formats::load_alignment(archive)?;
+                crate::formats::alignment::load_alignment(archive)?;
 
                 if blake3::hash(archive).to_hex().as_str() != response.revision {
                     return Err(Error::Format(
@@ -708,9 +711,9 @@ impl Response {
                 }
             }
             AnalysisResult::AlignmentExport(report) => {
-                if report.text.len() > crate::alignment_formats::MAX_ALIGNMENT_BYTES
-                    || report.losses.len() > crate::alignment_formats::MAX_ALIGNMENT_ANNOTATIONS
-                    || report.renamings.len() > crate::alignment_formats::MAX_ALIGNMENT_ROWS
+                if report.text.len() > crate::formats::alignment::MAX_ALIGNMENT_BYTES
+                    || report.losses.len() > crate::formats::alignment::MAX_ALIGNMENT_ANNOTATIONS
+                    || report.renamings.len() > crate::formats::alignment::MAX_ALIGNMENT_ROWS
                 {
                     return Err(Error::TooLarge);
                 }
@@ -756,7 +759,7 @@ impl Response {
             | AnalysisResult::PhysicalPreviewDocument(molecule) => molecule.validate()?,
             AnalysisResult::WorkspaceLoaded(workspace) => workspace.validate()?,
             AnalysisResult::WorkspaceSaved(data) => {
-                if data.len() > crate::workspace::MAX_ARCHIVE_BYTES {
+                if data.len() > crate::documents::workspace::MAX_ARCHIVE_BYTES {
                     return Err(Error::TooLarge);
                 }
             }

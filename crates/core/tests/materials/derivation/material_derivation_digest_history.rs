@@ -1,16 +1,24 @@
 //! Literal independent saved-PCR/circle cut products. A derived fragment is not
 //! given a fabricated independent target merely to fit the cloning-run schema.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
-    chemistry::{Duplex, FivePrime},
-    cloning_outputs, homology_assembly, material_derivation as d,
-    methylation::MethylationState,
-    modified_duplex::{self, GenerationAssumptions},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material, transfer,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    chemistry::{
+        Duplex, FivePrime,
+        methylation::MethylationState,
+        tracked_duplex::{self as modified_duplex, GenerationAssumptions},
+    },
+    cloning::{overlap::assembly as homology_assembly, restriction::catalog as catalog_digest},
+    documents::{
+        transfer,
+        workspace::{self, Workspace},
+    },
+    material::{
+        derivation as d,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs, run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -75,14 +83,14 @@ fn finalize(
         step_index: plan.steps.len() - 1,
         event: source.clone(),
     };
-    let origin = run_material::capsule(&commit.workspace, &selection).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selection).unwrap();
     (
         commit.workspace,
         d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: source,
-                origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin: d::SourceOrigin::Saved(collagene_core::material::run::MaterialOrigin::Run(
                     origin,
                 )),
             }],
@@ -154,10 +162,12 @@ fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and
     assert_eq!(prepared.workspace.documents.len(), w.documents.len() + 1);
     assert_eq!(prepared.workspace.candidates.len(), w.candidates.len());
     assert_eq!(
-        collagene_core::run_lineage::list_runs(&prepared.workspace)
+        collagene_core::material::lineage::list_runs(&prepared.workspace)
             .unwrap()
             .len(),
-        collagene_core::run_lineage::list_runs(&w).unwrap().len(),
+        collagene_core::material::lineage::list_runs(&w)
+            .unwrap()
+            .len(),
         "No synthetic target or extra goal-checked cloning run was created"
     );
     let reopened =
@@ -225,7 +235,7 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
         max_candidates: 100,
         ..Default::default()
     };
-    let mut profile = collagene_core::overlap_profiles::ProfileOptions::default();
+    let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
     let plan = DesignPlan {
         name: "Two actual PCRs and physical closure".into(),
@@ -260,7 +270,7 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
             },
         ],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(
         report.products.len(),
@@ -268,7 +278,7 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
         "{:?}",
         report.findings
     );
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &plan,
         report.products.last().unwrap(),
         &target
@@ -380,7 +390,8 @@ fn exact_source_origin_catalog_and_fragment_guards_refuse_changes_without_partia
     origin.candidate = transfer::save_candidate(&transfer::Candidate::new(candidate.plan)).unwrap();
     assert!(d::prepare_install(&w, &bad).is_err());
     let mut changed = w.clone();
-    let mut histories = collagene_core::history::DocumentHistory::restore_all(&changed).unwrap();
+    let mut histories =
+        collagene_core::documents::history::DocumentHistory::restore_all(&changed).unwrap();
     let source = histories
         .iter_mut()
         .find(|history| history.id == request.sources[0].event.document_id)

@@ -2,8 +2,8 @@
 //! The production diagonal screens are checked against dynamic common-substring oracles;
 //! binding evidence is reconstructed in each oligo's own biological orientation.
 use collagene_core::{
-    analysis::{Primer, simulate_pcr},
-    primers::*,
+    cloning::pcr::primers::*,
+    sequence::analysis::{Primer, simulate_pcr},
 };
 use collagene_model::{Error, Molecule, Topology};
 

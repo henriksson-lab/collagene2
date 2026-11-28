@@ -1,12 +1,16 @@
 //! Independent actual13/17 strand oracles. No bottom Molecule replaces the saved stock.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{AnnealOptions, Strand, Terminus},
-    cloning_outputs, material_derivation as d, material_pcr, modified_duplex,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    chemistry::{AnnealOptions, Strand, Terminus, tracked_duplex as modified_duplex},
+    cloning::pcr::material as material_pcr,
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as d,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const TOP: &str = "AGTCCGATGCTAC";
@@ -88,7 +92,7 @@ fn saved_pair(top_dna: &str, bottom_dna: &str) -> (Workspace, EventBinding, Mate
     .unwrap();
     let event = saved.receipt.construct;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &saved.workspace,
             &run_material::Selection {
                 run_id: saved.receipt.run.run_id,
@@ -110,13 +114,13 @@ fn bottom_seventeen_seeds_native_pcr_and_maps_only_real_original_top_annotations
     assert_eq!(fresh.tracked().duplex.top.as_str(), TOP);
     assert_eq!(fresh.tracked().duplex.bottom.as_str(), BOTTOM);
     assert_eq!(fresh.tracked().duplex.bottom_start, 0);
-    let ranked = collagene_core::primers::design_primers_view(
-        collagene_core::analysis::TemplateView {
+    let ranked = collagene_core::cloning::pcr::primers::design_primers_view(
+        collagene_core::sequence::analysis::TemplateView {
             sequence: &fresh.tracked().duplex.bottom,
             topology: Topology::Linear,
             template_strand: Strand::Bottom,
         },
-        &collagene_core::primers::DesignOptions {
+        &collagene_core::cloning::pcr::primers::DesignOptions {
             target_start: 0,
             target_end: 17,
             min_length: 8,
@@ -172,8 +176,8 @@ fn bottom_seventeen_seeds_native_pcr_and_maps_only_real_original_top_annotations
     let prepared = d::prepare_install(
         &reopened,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event.clone(),
                 origin: d::SourceOrigin::Saved(origin.clone()),
             }],
@@ -233,8 +237,8 @@ fn full_native_source_enumerates_both_thirteen_and_seventeen_without_target_sele
         d::prepare_install(
             &w,
             &d::Request {
-                sources: vec![collagene_core::material_derivation::BoundSource {
-                    role: collagene_core::material_derivation::SourceRole::Template,
+                sources: vec![collagene_core::material::derivation::BoundSource {
+                    role: collagene_core::material::derivation::SourceRole::Template,
                     event: event,
                     origin: d::SourceOrigin::Saved(origin.clone())
                 }],
@@ -355,7 +359,8 @@ fn framed_step_pcr_orders_and_saved_collection_retain_bottom_declarations_after_
             },
         ],
     };
-    let report = collagene_core::plan_oligos::build(&plan, &target, &Default::default()).unwrap();
+    let report =
+        collagene_core::planning::oligos::build(&plan, &target, &Default::default()).unwrap();
     assert!(report.complete);
     assert_eq!(report.uses.len(), 2);
     for usage in &report.uses {
@@ -367,7 +372,7 @@ fn framed_step_pcr_orders_and_saved_collection_retain_bottom_declarations_after_
         .as_object_mut()
         .unwrap()
         .remove("template_strand");
-    assert!(serde_json::from_value::<collagene_core::plan_oligos::Report>(missing).is_err());
+    assert!(serde_json::from_value::<collagene_core::planning::oligos::Report>(missing).is_err());
     let mut bad = report.clone();
     bad.uses[0].template_strand = None;
     assert!(bad.validate().is_err());
@@ -391,14 +396,15 @@ fn framed_step_pcr_orders_and_saved_collection_retain_bottom_declarations_after_
         workspace::load_workspace(&workspace::save_workspace(&committed.workspace).unwrap())
             .unwrap();
     let hash = committed.receipt.primer_attachment.as_ref().unwrap();
-    let table: collagene_core::oligo_formats::OligoTable =
+    let table: collagene_core::formats::oligos::OligoTable =
         serde_json::from_slice(&reopened.attachments[hash].bytes).unwrap();
     assert_eq!(table.records.len(), 2);
     for row in &table.records {
         assert_eq!(row.original_fields[7], "Bottom");
     }
     let actual =
-        collagene_core::run_lineage::replay_run(&reopened, &committed.receipt.run.run_id).unwrap();
+        collagene_core::material::lineage::replay_run(&reopened, &committed.receipt.run.run_id)
+            .unwrap();
     assert!(actual.products_match);
     assert!(actual.status_matches);
     assert_eq!(

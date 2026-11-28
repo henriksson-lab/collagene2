@@ -1,13 +1,13 @@
 //! Exact role/source/geometry/options binding across the native and WASM worker seam.
 use collagene_core::{
-    analysis::{self, Enzyme},
+    cloning::restriction::inspection::*,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob as J, AnalysisResult as R},
     },
-    restriction_inspection::*,
+    sequence::analysis::{self, Enzyme},
 };
 use collagene_model::{Error, Molecule, Topology};
 fn fixture() -> (Molecule, Vec<Enzyme>, InspectionOptions) {
@@ -256,7 +256,7 @@ fn appended_tags_require_twenty_before_body_decode_and_inspection_keeps_ordinary
             }
             if matches!(tag, 67 | 68 | 60 | 61) {
                 let mut large = body;
-                large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+                large.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
                 let bytes = raw(magic, protocol::schema::WORKER_SCHEMA_VERSION, &large);
                 let e = if magic == b"CGQ\0" {
                     protocol::execution::process_request(&bytes).unwrap_err()
@@ -279,9 +279,9 @@ fn appended_tags_require_twenty_before_body_decode_and_inspection_keeps_ordinary
 #[test]
 fn native_installation_reconstructs_product_and_preserves_exact_source_event() {
     use collagene_core::{
-        restriction_history as history,
-        run_lineage::EventBinding,
-        workspace::{Workspace, load_workspace},
+        cloning::restriction::history,
+        documents::workspace::{Workspace, load_workspace},
+        material::lineage::EventBinding,
     };
     let (m, es, o) = fixture();
     let w = Workspace::from_documents("source workspace", vec![m], 0).unwrap();

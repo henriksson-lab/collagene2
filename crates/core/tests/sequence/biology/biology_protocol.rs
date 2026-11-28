@@ -8,7 +8,7 @@ use collagene_core::{
         response::Response,
         schema::{AnalysisJob, AnalysisResult, WORKER_SCHEMA_VERSION},
     },
-    translation::{InitiationPolicy, OrfOptions, TranslationOptions},
+    sequence::translation::{InitiationPolicy, OrfOptions, TranslationOptions},
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 

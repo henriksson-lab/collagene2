@@ -1,16 +1,18 @@
 //! Current worker frames bind actual native strand windows, not RC(displayed top).
 use collagene_core::{
-    assembly_intent::{self, Selector},
-    cloning_outputs,
+    cloning::assembly::intent::{self as assembly_intent, Selector},
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::InputEventBinding,
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin, MaterialSelection},
+    },
+    planning::plan::{DesignPlan, Operation, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::InputEventBinding,
-    run_material::{self, MaterialOrigin, MaterialSelection},
-    verification::{DesignPlan, Operation, Source},
-    workspace::{self, Workspace},
 };
 use collagene_model::{Molecule, Topology};
 #[path = "../../common/actual_strand.rs"]
@@ -124,7 +126,7 @@ fn documentary_construction_does_not_replay_or_promote_reference_only_history() 
         step_index: 0,
         event: saved.receipt.construct,
     };
-    let origins = run_material::documentary_origins(
+    let origins = collagene_core::material::capsule::documentary_origins(
         &saved.workspace,
         &[MaterialSelection::Run(selection.clone())],
         &[],
@@ -134,25 +136,32 @@ fn documentary_construction_does_not_replay_or_promote_reference_only_history() 
     assert_eq!(origins.len(), 1);
     let reference = &saved.workspace.revisions[&selection.event.revision];
     assert!(origins[0].replay(reference).is_err());
-    assert!(run_material::capsule(&saved.workspace, &selection).is_err());
+    assert!(collagene_core::material::capsule::capsule(&saved.workspace, &selection).is_err());
     let library_roots = vec![MaterialSelection::Run(selection.clone()); 33];
     assert_eq!(
-        run_material::documentary_origins(&saved.workspace, &library_roots, &[])
-            .unwrap()
-            .materials
-            .len(),
+        collagene_core::material::capsule::documentary_origins(
+            &saved.workspace,
+            &library_roots,
+            &[]
+        )
+        .unwrap()
+        .materials
+        .len(),
         33
     );
-    let roots = vec![MaterialSelection::Run(selection); run_material::MAX_DOCUMENTARY_ORIGINS + 1];
+    let roots = vec![
+        MaterialSelection::Run(selection);
+        collagene_core::material::capsule::MAX_DOCUMENTARY_ORIGINS + 1
+    ];
     assert!(matches!(
-        run_material::documentary_origins(&saved.workspace, &roots, &[]),
+        collagene_core::material::capsule::documentary_origins(&saved.workspace, &roots, &[]),
         Err(collagene_model::Error::TooLarge)
     ));
     assert!(matches!(origins[0], MaterialOrigin::Run(_)));
 }
 #[test]
 fn all_four_workspace_intent_selectors_share_stateless_and_session_large_admission() {
-    let mut payload = vec![0; collagene_core::formats::MAX_IMPORT_BYTES + 1];
+    let mut payload = vec![0; collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1];
     for tag in [96u32, 107, 159, 161, 0] {
         let prefix = postcard::to_allocvec(&(10402u32, "bounded-workspace", tag)).unwrap();
         payload[..64].fill(0);

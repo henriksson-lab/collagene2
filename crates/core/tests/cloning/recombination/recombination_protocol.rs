@@ -1,13 +1,13 @@
 //! Appended worker contracts preserve explicit profiles, reciprocal alternatives and independent target requirements.
 use collagene_core::{
-    formats,
+    cloning::recombination::{self as a, reference},
+    formats::sequence as formats,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob as J, AnalysisResult as R},
     },
-    recombination::{self as a, reference},
 };
 fn fixture() -> (Vec<reference::Input>, a::Request, collagene_model::Molecule) {
     let m = formats::import_genbank(include_str!(

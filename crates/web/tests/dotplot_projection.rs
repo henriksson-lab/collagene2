@@ -1,4 +1,4 @@
-#[path = "../src/dotplot_projection.rs"]
+#[path = "../src/viewer/alignment/dotplot/projection.rs"]
 mod projection;
 use projection::*;
 fn gpu_axis(anchor: usize, camera: Camera, axis: usize) -> f64 {

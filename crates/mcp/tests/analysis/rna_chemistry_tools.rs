@@ -1,5 +1,5 @@
 //! Actual SDK over memory pipes; no browser, HTTP, user files or scientific process.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -107,7 +107,7 @@ async fn rna_profiles_annotation_review_and_native_reanalysis_bind_immutable_doc
     assert_eq!(artifact["done"], true);
     let report: collagene_core::rna_chemistry::Report =
         serde_json::from_str(artifact["text"].as_str().unwrap()).unwrap();
-    let source = collagene_core::formats::import_text(gb)
+    let source = collagene_core::formats::sequence::import_text(gb)
         .unwrap()
         .molecules
         .remove(0);

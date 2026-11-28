@@ -1,9 +1,9 @@
 use collagene_core::{
-    assembly_recipe as a,
-    chemistry::{self, FivePrime, Terminus, ThreePrime},
-    formats, modified_duplex,
-    overlap_profiles::ProfileOptions,
-    verification::{self as v, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
+    chemistry::{self, FivePrime, Terminus, ThreePrime, tracked_duplex as modified_duplex},
+    cloning::{assembly::recipe as a, overlap::profiles::ProfileOptions},
+    formats::sequence as formats,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::{self as v, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn molecule(name: &str, dna: &str) -> Molecule {
@@ -67,7 +67,7 @@ fn declared_phosphate_oh_seals_while_oh_nicks_unknown_and_blocked_remain_explici
     let known = terminus(FivePrime::Phosphate, ThreePrime::Hydroxyl);
     let hydroxyl = terminus(FivePrime::Hydroxyl, ThreePrime::Hydroxyl);
     let (p, t) = plan(known, known, false);
-    let r = v::verify(&p, &t);
+    let r = v::engine::verify(&p, &t);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -79,22 +79,22 @@ fn declared_phosphate_oh_seals_while_oh_nicks_unknown_and_blocked_remain_explici
     assert!(physical.nicks.is_empty());
     assert!(r.findings.iter().any(|s| s.contains("operator hypothesis")));
     let (p, t) = plan(known, hydroxyl, true);
-    let r = v::verify(&p, &t);
+    let r = v::engine::verify(&p, &t);
     assert_eq!(r.status, Status::ConsistentUnderAssumptions);
     let physical: chemistry::DuplexSummary =
         serde_json::from_str(&r.products[2].metadata["duplex_model"]).unwrap();
     assert_eq!(physical.nicks.len(), 1);
     let (p, t) = plan(hydroxyl, hydroxyl, true);
-    assert_eq!(v::verify(&p, &t).status, Status::Invalid);
+    assert_eq!(v::engine::verify(&p, &t).status, Status::Invalid);
     let (p, t) = plan(
         terminus(FivePrime::Phosphate, ThreePrime::Unknown),
         known,
         true,
     );
-    assert_eq!(v::verify(&p, &t).status, Status::Incomplete);
+    assert_eq!(v::engine::verify(&p, &t).status, Status::Incomplete);
     let blocked = terminus(FivePrime::Phosphate, ThreePrime::Blocked);
     let (p, t) = plan(blocked, blocked, true);
-    assert_eq!(v::verify(&p, &t).status, Status::Invalid);
+    assert_eq!(v::engine::verify(&p, &t).status, Status::Invalid);
 }
 #[test]
 fn dna_annotations_citations_and_unknown_modification_state_are_preserved() {
@@ -108,7 +108,7 @@ fn dna_annotations_citations_and_unknown_modification_state_are_preserved() {
         inputs: vec![input("source", m.clone())],
         steps: vec![declaration("source", known)],
     };
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -130,7 +130,7 @@ fn dna_annotations_citations_and_unknown_modification_state_are_preserved() {
     assert_eq!(mods.known_unmodified, 0);
     assert_eq!(mods.known_modified, 0);
     assert!(mods.generation.is_empty());
-    assert!(v::declared_source_termini_preflight(p).is_err());
+    assert!(v::sources::declared_source_termini_preflight(p).is_err());
 }
 #[test]
 fn descendants_circles_and_restrictive_markers_cannot_be_promoted_by_declaration() {
@@ -147,7 +147,7 @@ fn descendants_circles_and_restrictive_markers_cannot_be_promoted_by_declaration
             right: known,
         },
     ];
-    let r = v::verify(&p, &t);
+    let r = v::engine::verify(&p, &t);
     assert_eq!(r.status, Status::Incomplete);
     assert_eq!(r.products.len(), 1);
     for (key, value) in [
@@ -162,14 +162,17 @@ fn descendants_circles_and_restrictive_markers_cannot_be_promoted_by_declaration
     ] {
         let mut m = molecule("untrusted imported source", "AAAA");
         m.metadata.insert(key.into(), value.into());
-        assert!(v::declared_source_termini_preflight(&m).is_err(), "{key}");
+        assert!(
+            v::sources::declared_source_termini_preflight(&m).is_err(),
+            "{key}"
+        );
     }
     let mut circle = molecule("circle", "AAAA");
     circle.topology = Topology::Circular;
-    assert!(v::declared_source_termini_preflight(&circle).is_err());
+    assert!(v::sources::declared_source_termini_preflight(&circle).is_err());
     let mut raw = molecule("raw marker", "AAAA");
     raw.original_genbank=Some("LOCUS       raw 4 bp DNA linear\nCOMMENT     Collagene physical product v1: unverified sequence-only evidence\nORIGIN\n        1 aaaa\n//\n".into());
-    assert!(v::declared_source_termini_preflight(&raw).is_err());
+    assert!(v::sources::declared_source_termini_preflight(&raw).is_err());
 }
 #[test]
 fn preparation_and_operation_are_append_only_and_whole_linear_is_not_upgraded() {

@@ -1,14 +1,14 @@
 //! Retained runs cross the binary boundary as data, with exact workspace bindings.
 use collagene_core::{
+    documents::workspace::*,
+    material::lineage::*,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::*,
-    verification::*,
-    workspace::*,
 };
 use collagene_model::{Error, Molecule, Topology};
 fn fixture() -> (Workspace, DesignPlan, EventBinding, Vec<InputEventBinding>) {

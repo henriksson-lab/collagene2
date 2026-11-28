@@ -5,7 +5,7 @@ use collagene_core::{
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    reference_transfer::{self, Part, RequestCopy, RequestPaste, Selection},
+    sequence::reference_transfer::{self, Part, RequestCopy, RequestPaste, Selection},
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 

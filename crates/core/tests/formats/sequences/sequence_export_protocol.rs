@@ -1,14 +1,18 @@
 //! Current export selectors bind source, profile options and prepared bytes.
 use collagene_core::{
-    gcg_sequence,
+    formats::{
+        scf as scf_export,
+        sequence::{
+            export::{self as sequence_export, Format},
+            gcg as gcg_sequence,
+        },
+    },
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    scf_export,
-    sequence_export::{self, Format},
-    traces,
+    review::reads::traces,
 };
 use collagene_model::{Molecule, Topology};
 

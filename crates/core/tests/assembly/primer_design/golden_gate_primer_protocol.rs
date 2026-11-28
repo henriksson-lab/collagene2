@@ -1,16 +1,20 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation},
-    catalog_digest,
-    golden_gate::GoldenGateEnzyme,
-    golden_gate_primer_design::{self as planner, Fragment, Request as DesignRequest},
-    ligation_recipe,
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation},
+        golden_gate::{
+            GoldenGateEnzyme,
+            primers::{self as planner, Fragment, Request as DesignRequest},
+        },
+        ligation::recipe as ligation_recipe,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn input() -> PlanInput {
@@ -123,14 +127,14 @@ fn new_preparation_cannot_hide_inside_an_old_recipe_envelope() {
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     let job = Request {
         id: 402,
         revision,
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,

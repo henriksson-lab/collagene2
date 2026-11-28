@@ -2,10 +2,12 @@
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
-    history::DocumentHistory, protocol_quantities as q, run_lineage, transfer::Candidate,
-    verification, workspace,
+    documents::{history::DocumentHistory, transfer::Candidate, workspace},
+    material::lineage as run_lineage,
+    output::quantities as q,
+    verification,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -91,7 +93,7 @@ async fn combined_quantity_exports_have_fresh_molecular_receipts_not_arithmetic_
             let mut plan = run.plan;
             plan.target_revision = wrong.revision();
             r.plan_source = q::PlanSource::Candidate;
-            r.plan_revision = verification::plan_revision(&plan);
+            r.plan_revision = collagene_core::planning::plan::DesignPlan::revision(&plan);
             r.target = fixture::pin(&w, w.documents.len() - 1);
             w.candidates.push(Candidate::new(plan));
         }

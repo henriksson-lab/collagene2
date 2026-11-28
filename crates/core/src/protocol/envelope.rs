@@ -1,6 +1,6 @@
 //! Bounded, checksummed current binary envelopes.
 use super::schema::{CANDIDATE_SCHEMA_VERSION, WORKER_SCHEMA_VERSION};
-use crate::formats::MAX_IMPORT_BYTES;
+use crate::formats::sequence::MAX_IMPORT_BYTES;
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 // Current selectors whose accepted payloads can contain complete workspace archives.

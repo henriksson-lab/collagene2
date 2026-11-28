@@ -1,7 +1,7 @@
 use collagene_core::{
-    analysis::Primer,
-    oligo_formats::{self, Delimiter, TableExportMode},
-    oligo_orders,
+    formats::oligos::{self as oligo_formats, Delimiter, TableExportMode},
+    planning::orders as oligo_orders,
+    sequence::analysis::Primer,
 };
 use collagene_model::Error;
 #[test]

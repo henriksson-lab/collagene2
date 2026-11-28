@@ -1,15 +1,15 @@
 //! Actual processed paired contours, conservative material bridge and digest oracle.
+use collagene_core::cloning::topo::physical::{self as p, processing as process, projection};
 use collagene_core::{
-    analysis::Enzyme,
-    chemistry, modified_duplex as tracked,
+    chemistry::{self, tracked_duplex as tracked},
+    cloning::topo::{self, actions as adapter},
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    topo, topo_actions as adapter,
+    sequence::analysis::Enzyme,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
-use topo::physical::{self as p, processing as process, projection};
 fn fixture(directional: bool) -> (Vec<topo::Input>, topo::Request) {
     let dna = if directional {
         [

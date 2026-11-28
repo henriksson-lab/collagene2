@@ -1,9 +1,13 @@
 //! Independent expected products and authority checks for tracked-plan reconstruction.
 use collagene_core::{
-    methylation::MethylationState as M,
-    modified_duplex::{GenerationAssumptions, ModificationSummary},
-    verification::*,
-    *,
+    chemistry::{
+        methylation::MethylationState as M,
+        tracked_duplex::{GenerationAssumptions, ModificationSummary},
+    },
+    formats::sequence as formats,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    protocol,
+    verification::{engine::verify, evidence::Status, output::export_protocol_html},
 };
 use collagene_model::{Molecule, Topology};
 fn source() -> Molecule {
@@ -25,7 +29,7 @@ fn declare(cpg: M) -> Operation {
 fn checked(template: Source, name: &str) -> Operation {
     Operation::CheckedDigest {
         selection: checked_selection(vec![name.into()]),
-        options: collagene_core::modified_duplex::checked_inspection_options(),
+        options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
         template,
         fragment_index: 0,
     }
@@ -263,8 +267,10 @@ fn text_exports_disclose_the_loss_of_positional_state_and_do_not_restore_it() {
     }
 }
 
-fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+fn checked_selection(
+    names: Vec<String>,
+) -> collagene_core::cloning::restriction::catalog::CatalogSelection {
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let ids = names
         .iter()
         .map(|name| {
@@ -278,5 +284,5 @@ fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::Cata
                 .clone()
         })
         .collect::<Vec<_>>();
-    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
+    collagene_core::cloning::restriction::catalog::select(&catalog, &ids).unwrap()
 }

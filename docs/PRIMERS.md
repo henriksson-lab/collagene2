@@ -1,6 +1,6 @@
 # Basic primer tools
 
-`collagene_core::primers` independently implements DNA oligo analysis, reference binding checks and anchored endpoint pair selection. No Primer3 source, port, thermodynamic library or external executable is used. Advanced folding/design engines remain deferred.
+`collagene_core::cloning::pcr::primers` independently implements DNA oligo analysis, reference binding checks and anchored endpoint pair selection. No Primer3 source, port, thermodynamic library or external executable is used. Advanced folding/design engines remain deferred.
 
 ## Calculations and conditions
 

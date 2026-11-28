@@ -1,14 +1,22 @@
 //! Literal actual-strand OE primer proposals from exact native Run/Derived events.
 use collagene_core::{
-    assembly_edit_intent::Edit,
     chemistry::{AnnealOptions, EndRepairMethod, Strand},
-    cloning_outputs, material_derivation,
-    overlap_extension_primer_design::{self as oe, BoundOrigin, Request},
-    overlap_primer_design::Fragment,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::edit_intent::Edit,
+        overlap::{
+            extension::primers::{self as oe, BoundOrigin, Request},
+            primer_design::Fragment,
+        },
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as material_derivation,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const TOP: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -79,7 +87,7 @@ fn saved() -> (Workspace, EventBinding, MaterialOrigin) {
     .unwrap();
     let event = installed.receipt.construct;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &installed.workspace,
             &run_material::Selection {
                 run_id: installed.receipt.run.run_id,
@@ -204,8 +212,8 @@ fn derived_source_remains_a_native_recipe_and_never_becomes_an_original_bottom_s
     let next = material_derivation::prepare_install(
         &w,
         &material_derivation::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event,
                 origin: material_derivation::SourceOrigin::Saved(origin),
             }],

@@ -1,11 +1,13 @@
 //! Stateful batch messages retain one private source frame. Caller-supplied
 //! historical summaries cannot populate that private computation state.
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    combinatorial_batch::{self as batch, RowRequest, RowState},
-    combinatorial_design::{
+    cloning::assembly::recipe::Preparation,
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
+    planning::combinatorial::{
         Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+        batch::{self, RowRequest, RowState},
     },
     protocol::{
         self,
@@ -14,9 +16,7 @@ use collagene_core::{
         schema::{AnalysisJob, AnalysisResult},
         session::AnalysisSession,
     },
-    run_lineage::EventBinding,
-    verification::Status,
-    workspace::Workspace,
+    verification::evidence::Status,
 };
 use collagene_model::{Error, Molecule, Topology};
 
@@ -74,11 +74,12 @@ fn fixture() -> (Workspace, batch::Request) {
                         id: id.into(),
                         label: id.into(),
                         source: binding(&workspace, index),
-                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
-                            start: 0,
-                            end: 4,
-                            reverse: false,
-                        },
+                        selector:
+                            collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
+                                start: 0,
+                                end: 4,
+                                reverse: false,
+                            },
                         preparation_reverse: false,
                         preparation: Some(Preparation::DeclaredDuplex {
                             left: Terminus::CLEAVED,
@@ -409,7 +410,7 @@ fn response_shape_and_source_tokens_are_checked_without_restoring_private_state(
 
 #[test]
 fn ordinary_progress_limits_and_explicit_workspace_budget_whitelist_remain_distinct() {
-    let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
+    let maximum = collagene_core::formats::sequence::MAX_IMPORT_BYTES;
     let mut wire = vec![0; 42 + maximum + 1];
     wire[4..6].copy_from_slice(&protocol::schema::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());

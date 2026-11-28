@@ -1,8 +1,9 @@
 use collagene_core::{
-    assembly_recipe::Preparation,
-    overlap_primer_design as d,
-    primers::DesignOptions,
-    verification::{self as v, PlanInput, Status},
+    cloning::{
+        assembly::recipe::Preparation, overlap::primer_design as d, pcr::primers::DesignOptions,
+    },
+    planning::plan::PlanInput,
+    verification::{self as v, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "ACGATTCGGTACCTAGGCTAACGTTAGCGATC";
@@ -84,8 +85,9 @@ fn literal_linear_and_circular_targets_use_only_next_prefix_and_original_inputs(
         );
         assert_eq!(serde_json::to_value(&inputs).unwrap(), before);
         let compiled =
-            collagene_core::assembly_recipe::compile(&inputs, &target, &report.recipe).unwrap();
-        let verification = v::verify(&compiled.plan, &target);
+            collagene_core::cloning::assembly::recipe::compile(&inputs, &target, &report.recipe)
+                .unwrap();
+        let verification = v::engine::verify(&compiled.plan, &target);
         assert_eq!(
             verification.status,
             Status::ConsistentUnderAssumptions,
@@ -113,8 +115,9 @@ fn reversed_upstream_core_places_tail_on_original_forward_primer() {
     assert_eq!(pair.forward.primer.tail, "CGGTAAGC");
     assert!(pair.reverse.primer.tail.is_empty());
     let compiled =
-        collagene_core::assembly_recipe::compile(&inputs, &target, &report.recipe).unwrap();
-    let verification = v::verify(&compiled.plan, &target);
+        collagene_core::cloning::assembly::recipe::compile(&inputs, &target, &report.recipe)
+            .unwrap();
+    let verification = v::engine::verify(&compiled.plan, &target);
     assert_eq!(
         verification.status,
         Status::ConsistentUnderAssumptions,
@@ -138,8 +141,9 @@ fn actual_circular_source_interval_crosses_origin_without_rotating_source_or_tar
     let original = serde_json::to_value(&inputs[0]).unwrap();
     let report = d::design(&inputs, &target, &request).unwrap();
     let compiled =
-        collagene_core::assembly_recipe::compile(&inputs, &target, &report.recipe).unwrap();
-    let verification = v::verify(&compiled.plan, &target);
+        collagene_core::cloning::assembly::recipe::compile(&inputs, &target, &report.recipe)
+            .unwrap();
+    let verification = v::engine::verify(&compiled.plan, &target);
     assert_eq!(
         verification.status,
         Status::ConsistentUnderAssumptions,
@@ -169,8 +173,12 @@ fn target_mismatch_is_advisory_but_bad_ranges_tails_bounds_and_receipts_are_reje
         serde_json::to_value(&report.recipe).unwrap()
     );
     let compiled =
-        collagene_core::assembly_recipe::compile(&inputs, &wrong, &report.recipe).unwrap();
-    assert_eq!(v::verify(&compiled.plan, &wrong).status, Status::Invalid);
+        collagene_core::cloning::assembly::recipe::compile(&inputs, &wrong, &report.recipe)
+            .unwrap();
+    assert_eq!(
+        v::engine::verify(&compiled.plan, &wrong).status,
+        Status::Invalid
+    );
     let mut bad = request.clone();
     bad.primer_options.forward_tail = "A".into();
     assert!(d::design(&inputs, &target, &bad).is_err());
@@ -232,8 +240,9 @@ fn repeated_pcr_geometries_are_not_promoted_by_a_ranked_pair() {
     let report = d::design(&inputs, &target, &request).unwrap();
     assert!(report.warnings.iter().any(|w| w.contains("unique PCR")));
     let compiled =
-        collagene_core::assembly_recipe::compile(&inputs, &target, &report.recipe).unwrap();
-    let verification = v::verify(&compiled.plan, &target);
+        collagene_core::cloning::assembly::recipe::compile(&inputs, &target, &report.recipe)
+            .unwrap();
+    let verification = v::engine::verify(&compiled.plan, &target);
     assert_ne!(
         verification.status,
         Status::ConsistentUnderAssumptions,

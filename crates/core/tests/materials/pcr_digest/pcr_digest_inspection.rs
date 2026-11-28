@@ -1,9 +1,8 @@
 //! Literal primer-added restriction sites and the chemistry of their actual cuts.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::{FivePrime, ThreePrime},
-    pcr_digest_inspection as p,
+    cloning::{pcr::digest as p, restriction::catalog as catalog_digest},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Molecule, p::Request) {

@@ -1,5 +1,5 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_core::formats;
+use collagene_core::formats::sequence as formats;
 use collagene_model::Topology;
 use collagene_sources::*;
 use url::Url;

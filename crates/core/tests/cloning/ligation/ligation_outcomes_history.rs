@@ -1,16 +1,19 @@
 //! Intended target verification remains separate from retained alternative paths.
 use collagene_core::{
-    analysis::Primer,
     chemistry::{EndTreatment, Terminus},
-    cloning_outputs,
-    ligation_outcomes::{self, Limit},
-    physical_run_evidence,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material,
-    verification::{
-        self, DesignPlan, Operation, OrientedSource, PhysicalProcessingEvidence, PlanInput, Status,
+    cloning::ligation::outcomes::{self as ligation_outcomes, Limit},
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs, physical_evidence as physical_run_evidence,
+        run as run_material,
     },
-    workspace::{self, Workspace},
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput},
+    sequence::analysis::Primer,
+    verification::{
+        self,
+        evidence::{PhysicalProcessingEvidence, Status},
+    },
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const INTENDED: &str = "AGTCCGGACTGA";
@@ -34,33 +37,33 @@ fn fixture(target: &str) -> (Vec<Molecule>, DesignPlan) {
         .collect();
     let steps = vec![
         Operation::Pcr {
-            template: verification::Source::Input("a".into()),
+            template: collagene_core::planning::plan::Source::Input("a".into()),
             forward: Primer::new("Vector F", "AGT", "").unwrap(),
             reverse: Primer::new("Vector R", "CGG", "").unwrap(),
             template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::TreatEnds {
-            template: verification::Source::Step(0),
+            template: collagene_core::planning::plan::Source::Step(0),
             treatment: EndTreatment::Phosphorylate,
         },
         Operation::Pcr {
-            template: verification::Source::Input("b".into()),
+            template: collagene_core::planning::plan::Source::Input("b".into()),
             forward: Primer::new("Insert F", "GAC", "").unwrap(),
             reverse: Primer::new("Insert R", "TCA", "").unwrap(),
             template_strand: collagene_core::chemistry::Strand::Top,
         },
         Operation::TreatEnds {
-            template: verification::Source::Step(2),
+            template: collagene_core::planning::plan::Source::Step(2),
             treatment: EndTreatment::Phosphorylate,
         },
         ligation_outcomes::operation(
             vec![
                 OrientedSource {
-                    source: verification::Source::Step(1),
+                    source: collagene_core::planning::plan::Source::Step(1),
                     reverse: false,
                 },
                 OrientedSource {
-                    source: verification::Source::Step(3),
+                    source: collagene_core::planning::plan::Source::Step(3),
                     reverse: false,
                 },
             ],
@@ -88,7 +91,7 @@ fn event(w: &Workspace, index: usize) -> EventBinding {
 fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_native_replay() {
     let (docs, plan) = fixture(INTENDED);
     let w = Workspace::from_documents("Original sources and independent intent", docs, 2).unwrap();
-    let report = verification::verify(&plan, w.head(&w.documents[2].id).unwrap());
+    let report = verification::engine::verify(&plan, w.head(&w.documents[2].id).unwrap());
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -138,12 +141,12 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
         step_index: 4,
         event: saved.receipt.construct.clone(),
     };
-    let capsule = run_material::capsule(&restored, &selection).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&restored, &selection).unwrap();
     let reference = restored.revisions[&selection.event.revision].clone();
     let forward = Primer::new("Current F", "AGT", "").unwrap();
     let reverse = Primer::new("Current R", "TCA", "").unwrap();
     let origin = run_material::MaterialOrigin::Run(capsule);
-    let revision = collagene_core::material_pcr::revision(
+    let revision = collagene_core::cloning::pcr::material::revision(
         &reference,
         &origin,
         &forward,
@@ -184,7 +187,8 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
     .unwrap();
     assert_eq!(fresh.reference().sequence.as_str(), INTENDED);
     assert!(fresh.tracked().duplex.nicks.is_empty());
-    let html = verification::export_protocol_html(&plan, w.head(&w.documents[2].id).unwrap());
+    let html =
+        verification::output::export_protocol_html(&plan, w.head(&w.documents[2].id).unwrap());
     assert!(
         html.contains(INTENDED)
             && html.contains(ALTERNATIVE)
@@ -219,7 +223,7 @@ fn intended_and_alternative_stay_extractable_after_real_run_capture_reload_and_n
 fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_does_not_block_capture()
  {
     let (docs, plan) = fixture(ALTERNATIVE);
-    let report = verification::verify(&plan, &docs[2]);
+    let report = verification::engine::verify(&plan, &docs[2]);
     assert_eq!(report.status, Status::Invalid);
     assert_eq!(report.products.last().unwrap().sequence.as_str(), INTENDED);
     let PhysicalProcessingEvidence::LigationOutcomes(evidence) =
@@ -238,7 +242,7 @@ fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_do
     options.max_products = 1;
     let w = Workspace::from_documents("Capped alternatives, complete intended material", docs, 2)
         .unwrap();
-    let report = verification::verify(&plan, w.head(&w.documents[2].id).unwrap());
+    let report = verification::engine::verify(&plan, w.head(&w.documents[2].id).unwrap());
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -275,9 +279,9 @@ fn matching_alternative_never_rescues_wrong_intended_target_and_capped_search_do
 }
 #[test]
 fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration() {
-    use collagene_core::{
-        assembly_recipe::{FragmentSpec, Preparation},
-        ligation_recipe,
+    use collagene_core::cloning::{
+        assembly::recipe::{FragmentSpec, Preparation},
+        ligation::recipe as ligation_recipe,
     };
     let original = Molecule::dna("Original stock", "AG", Topology::Linear).unwrap();
     let target = Molecule::dna(
@@ -315,7 +319,7 @@ fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(matches!(
@@ -353,7 +357,7 @@ fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration
         1,
     )
     .unwrap();
-    let captured = collagene_core::run_lineage::record_run(
+    let captured = collagene_core::material::lineage::record_run(
         &workspace,
         &preview.compiled.plan,
         event(&workspace, 1),

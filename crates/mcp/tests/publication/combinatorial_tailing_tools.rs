@@ -1,20 +1,23 @@
 //! In-process SDK acceptance of explicit TA/GC libraries and atomic release.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    assembly_intent::Selector,
-    assembly_recipe::Preparation,
     chemistry::{EndTreatment, Strand},
-    combinatorial_design::{
+    cloning::{
+        assembly::{intent::Selector, recipe::Preparation},
+        ligation::{
+            tailing::TailingBase,
+            tailing_recipe::{Action, Profile},
+        },
+    },
+    documents::workspace::{self, Workspace},
+    material::lineage::EventBinding,
+    planning::combinatorial::{
         Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TailingAction,
         TargetDeclaration,
     },
-    run_lineage::EventBinding,
-    tailing::TailingBase,
-    tailing_recipe::{Action, Profile},
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

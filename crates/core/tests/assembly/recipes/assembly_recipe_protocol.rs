@@ -1,13 +1,15 @@
 //! Fresh preparation/profile preview uses original source roles and an independently supplied target.
 use collagene_core::{
-    assembly_recipe::{self, FragmentSpec, Preparation, Recipe},
-    overlap_profiles::ProfileOptions,
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, Recipe},
+        overlap::profiles::ProfileOptions,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {

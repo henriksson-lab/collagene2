@@ -1,6 +1,7 @@
 use collagene_core::{
-    annotations, chemistry,
-    recombination::{self as adapter, reference, *},
+    chemistry,
+    cloning::recombination::{self as adapter, reference, *},
+    sequence::annotations,
 };
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 fn profile() -> ProfileSnapshot {

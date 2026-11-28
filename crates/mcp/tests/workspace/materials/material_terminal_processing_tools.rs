@@ -1,17 +1,26 @@
 //! Saved terminal chemistry remains native material, with independent ligation intent.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation, RunPreparation},
     chemistry::{FivePrime, Polarity, Strand, ThreePrime},
-    ligation_recipe, material_derivation as native, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request as OePreparation},
-    run_lineage::{self, EventBinding},
-    run_material::{self, MaterialSelection},
-    verification::{DesignPlan, PhysicalProcessingEvidence},
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as ligation_recipe,
+        overlap::extension::{
+            self as overlap_extension,
+            pcr::{PrimerPair, Request as OePreparation},
+        },
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as native,
+        lineage::{self as run_lineage, EventBinding},
+        run::{self as run_material, MaterialSelection},
+    },
+    planning::plan::DesignPlan,
+    sequence::analysis::Primer,
+    verification::evidence::PhysicalProcessingEvidence,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -226,7 +235,7 @@ async fn saved_pcr_tails_and_phosphates_reopen_into_ordinary_ligation_with_extra
     let imported = call(
         &c,
         "import_document",
-        json!({"text":collagene_core::formats::export_genbank(&target).unwrap()}),
+        json!({"text":collagene_core::formats::sequence::export_genbank(&target).unwrap()}),
     )
     .await;
     let row = &imported["documents"][0];
@@ -273,7 +282,7 @@ async fn saved_pcr_tails_and_phosphates_reopen_into_ordinary_ligation_with_extra
     let imported = call(
         &c,
         "import_document",
-        json!({"text":collagene_core::formats::export_genbank(&target).unwrap()}),
+        json!({"text":collagene_core::formats::sequence::export_genbank(&target).unwrap()}),
     )
     .await;
     let row = &imported["documents"][0];
@@ -287,7 +296,7 @@ async fn saved_pcr_tails_and_phosphates_reopen_into_ordinary_ligation_with_extra
     let (text, encoding) = artifact(&c, &result["artifact_id"]).await;
     assert_eq!(encoding, "utf-8");
     let evidence: Value = serde_json::from_str(&text).unwrap();
-    let report: collagene_core::verification::VerificationReport =
+    let report: collagene_core::verification::evidence::VerificationReport =
         serde_json::from_value(evidence["verification"].clone()).unwrap();
     let outcome = report
         .physical_processing_reports
@@ -362,8 +371,8 @@ fn conditional_oe_stock() -> (Workspace, EventBinding) {
     let result = native::prepare_install(
         &w,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: source,
                 origin: origin,
             }],

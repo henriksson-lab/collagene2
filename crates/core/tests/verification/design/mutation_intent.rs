@@ -1,4 +1,4 @@
-use collagene_core::mutation_intent::*;
+use collagene_core::cloning::pcr::mutation_intent::*;
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn request(start: usize, end: usize, inserted: &str) -> Request {
     Request {
@@ -64,7 +64,7 @@ fn circular_wrap_has_explicit_new_origin_and_retained_source_path() {
         Topology::Circular,
     )
     .unwrap();
-    let options = collagene_core::mutagenesis::InversePcrOptions {
+    let options = collagene_core::cloning::pcr::mutagenesis::InversePcrOptions {
         edit_start: 24,
         edit_end: 24,
         inserted: "GGA".into(),
@@ -72,12 +72,13 @@ fn circular_wrap_has_explicit_new_origin_and_retained_source_path() {
         reverse_length: 8,
         reverse_tail_bases: 0,
     };
-    let designed =
-        collagene_core::mutagenesis::design_inverse_pcr(&source24, &target27, None, &options)
-            .unwrap();
+    let designed = collagene_core::cloning::pcr::mutagenesis::design_inverse_pcr(
+        &source24, &target27, None, &options,
+    )
+    .unwrap();
     assert_eq!(
         designed.verification.status,
-        collagene_core::verification::Status::ConsistentUnderAssumptions,
+        collagene_core::verification::evidence::Status::ConsistentUnderAssumptions,
         "{:?}",
         designed.verification.findings
     );

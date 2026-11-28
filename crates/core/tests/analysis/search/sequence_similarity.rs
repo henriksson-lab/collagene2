@@ -1,4 +1,4 @@
-use collagene_core::sequence_similarity::{self as search, Limit, Method, Options, Source, Span};
+use collagene_core::sequence::similarity::{self as search, Limit, Method, Options, Source, Span};
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn source(key: &str, sequence: &str, topology: Topology) -> Source {
     Source {

@@ -2,11 +2,10 @@
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
     chemistry::AnnealOptions,
-    material_derivation as native,
-    run_lineage::EventBinding,
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{derivation as native, lineage::EventBinding},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

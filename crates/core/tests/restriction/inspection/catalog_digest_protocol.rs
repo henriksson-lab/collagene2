@@ -1,15 +1,14 @@
 //! Appended catalog wire jobs bind actual edition/IDs/geometry while legacy layouts stay readable.
 use collagene_core::{
-    catalog_digest::*,
+    cloning::restriction::{catalog::*, inspection::InspectionOptions},
+    documents::workspace::Workspace,
+    material::lineage::EventBinding as SourceBinding,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob as J, AnalysisResult as R},
     },
-    restriction_history::SourceBinding,
-    restriction_inspection::InspectionOptions,
-    workspace::Workspace,
 };
 use collagene_model::{Error, Molecule, Topology};
 fn fixture() -> (
@@ -183,7 +182,8 @@ fn installed_catalog_fragment_has_exact_event_parent_and_native_recipe_pin() {
     else {
         panic!()
     };
-    let decoded = collagene_core::workspace::load_workspace(&p.installed.archive).unwrap();
+    let decoded =
+        collagene_core::documents::workspace::load_workspace(&p.installed.archive).unwrap();
     p.validate_archive_bindings_for(&c, &s, &w, &b, &o, 1, &decoded)
         .unwrap();
     p.validate_archive_for(&c, &s, &w, &b, &o, 1, &decoded)
@@ -243,7 +243,7 @@ fn catalog_tags_require_twenty_one_and_only_installation_extends_workspace_cap()
                 assert!(matches!(e, collagene_model::Error::Unsupported(_)), "{e}");
             }
             let mut large = p;
-            large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+            large.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
             let b = raw(magic, protocol::schema::WORKER_SCHEMA_VERSION, &large);
             let e = if magic == b"CGQ\0" {
                 protocol::execution::process_request(&b).unwrap_err()

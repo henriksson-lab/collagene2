@@ -1,15 +1,19 @@
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest as c,
-    digest_cut_selection::{self as cuts, Boundary, Choice},
-    oligo_formats::Delimiter,
-    plan_oligos,
+    cloning::restriction::{
+        catalog as c,
+        cut_selection::{self as cuts, Boundary, Choice},
+    },
+    formats::oligos::Delimiter,
+    planning::{
+        oligos as plan_oligos,
+        plan::{DesignPlan, Operation, PlanInput, Source},
+    },
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn wire(version: u16, request: &Request) -> Vec<u8> {
@@ -47,7 +51,7 @@ fn two_cut_choice_reconstructs_exact_fragment_and_binds_the_selected_path() {
         Topology::Circular,
     )
     .unwrap();
-    let options = c::InspectionOptions::default();
+    let options = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let batch = c::batch_revision(
         &catalog,
         &selection,
@@ -165,7 +169,7 @@ fn order_sheet_and_html_are_exported_from_the_bound_plan_and_target() {
     assert!(sheet.report.complete);
     assert_eq!(
         sheet.report.plan_revision,
-        verification::plan_revision(&plan)
+        collagene_core::planning::plan::DesignPlan::revision(&plan)
     );
     assert_eq!(sheet.report.oligos.records.len(), 2);
     assert!(sheet.export.text.contains("CGAACCGGTT"));
@@ -183,5 +187,5 @@ fn order_sheet_and_html_are_exported_from_the_bound_plan_and_target() {
         panic!("expected HTML steps")
     };
     assert!(html.contains("CGAACCGGTT"));
-    assert!(html.contains(&verification::plan_revision(&plan)));
+    assert!(html.contains(&collagene_core::planning::plan::DesignPlan::revision(&plan)));
 }

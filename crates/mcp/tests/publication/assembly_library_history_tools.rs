@@ -1,11 +1,11 @@
 //! Immutable recovery bytes exposed through the real SDK, without restore authority.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    assembly_library_history as history,
-    run_lineage::EventBinding,
-    workspace::{self, Workspace, WorkspaceAttachment},
+    cloning::assembly::library_history as history,
+    documents::workspace::{self, Workspace, WorkspaceAttachment},
+    material::lineage::EventBinding,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

@@ -2,9 +2,8 @@
 //! save/load against the same implementation. No filesystem extraction is used.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    transfer::Candidate,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::*,
+    documents::{transfer::Candidate, workspace::*},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 use serde_json::{Value, json};
@@ -342,9 +341,10 @@ fn large_original_attachments_are_stored_once_across_revision_history() {
     let restored = load_workspace(&bytes).unwrap();
     assert_eq!(restored.revisions.len(), 8);
     assert_eq!(restored.documents[0].undo_events.len(), 7);
-    let mut navigation = collagene_core::history::DocumentHistory::restore_all(&restored)
-        .unwrap()
-        .remove(0);
+    let mut navigation =
+        collagene_core::documents::history::DocumentHistory::restore_all(&restored)
+            .unwrap()
+            .remove(0);
     for _ in 0..7 {
         navigation.undo().unwrap();
     }
@@ -636,7 +636,7 @@ fn tailing_candidate_preserves_current_schema_and_literal_operation() {
         }],
         steps: vec![Operation::Tail3Prime {
             template: Source::Input("s".into()),
-            base: collagene_core::tailing::TailingBase::A,
+            base: collagene_core::cloning::ligation::tailing::TailingBase::A,
         }],
     }));
     let b = save_workspace(&w).unwrap();

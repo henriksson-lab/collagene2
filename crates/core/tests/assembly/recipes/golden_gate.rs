@@ -1,5 +1,5 @@
 //! Hand-derived Type IIS strand diagrams and a separate permutation/rotation oracle.
-use collagene_core::{chemistry::Duplex, golden_gate::*};
+use collagene_core::{chemistry::Duplex, cloning::golden_gate::*};
 use collagene_model::{Error, Molecule, Sequence, Topology};
 use std::collections::BTreeSet;
 
@@ -15,9 +15,9 @@ fn generated_unmodified(
     inputs: &[Molecule],
     options: &GoldenGateOptions,
 ) -> Result<GoldenGateReport, Error> {
-    use collagene_core::{
+    use collagene_core::chemistry::{
         methylation::MethylationState,
-        modified_duplex::{CleavageBudget, GenerationAssumptions, TrackedDuplex},
+        tracked_duplex::{CleavageBudget, GenerationAssumptions, TrackedDuplex},
     };
     let assumptions = GenerationAssumptions {
         dam: MethylationState::Unmodified,
@@ -378,8 +378,10 @@ fn factual_enzyme_profiles_and_linear_edge_recognition_are_distinct_from_cleavab
     )
     .unwrap();
     let actual =
-        collagene_core::modified_duplex::TrackedDuplex::annealed_unmodified(&linear).unwrap();
-    let mut budget = collagene_core::modified_duplex::CleavageBudget::new(100_000_000).unwrap();
+        collagene_core::chemistry::tracked_duplex::TrackedDuplex::annealed_unmodified(&linear)
+            .unwrap();
+    let mut budget =
+        collagene_core::chemistry::tracked_duplex::CleavageBudget::new(100_000_000).unwrap();
     let (sites, _) = assess_product(&actual, GoldenGateEnzyme::BsaI, &mut budget).unwrap();
     assert_eq!(sites.len(), 1);
     assert!(sites[0].fully_double_stranded);
@@ -392,7 +394,10 @@ fn graph_reconstructed_pcr_substrates_are_distinct_from_untrusted_imported_chemi
     let originals = [donor("AATG", "CCCC", "GCTT"), donor("GCTT", "TTTT", "AATG")];
     let physical = originals
         .iter()
-        .map(|m| collagene_core::modified_duplex::TrackedDuplex::exact_pcr(&m.sequence).unwrap())
+        .map(|m| {
+            collagene_core::chemistry::tracked_duplex::TrackedDuplex::exact_pcr(&m.sequence)
+                .unwrap()
+        })
         .collect::<Vec<_>>();
     let snapshots = physical
         .iter()
@@ -400,7 +405,8 @@ fn graph_reconstructed_pcr_substrates_are_distinct_from_untrusted_imported_chemi
         .map(|(i, d)| d.molecule(format!("PCR {i}")).unwrap())
         .collect::<Vec<_>>();
     assert!(simulate(&snapshots, &options()).is_err());
-    let mut budget = collagene_core::modified_duplex::CleavageBudget::new(100_000_000).unwrap();
+    let mut budget =
+        collagene_core::chemistry::tracked_duplex::CleavageBudget::new(100_000_000).unwrap();
     let report = simulate_tracked(&snapshots, &physical, &options(), None, &mut budget)
         .unwrap()
         .report;

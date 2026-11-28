@@ -1,19 +1,25 @@
 //! Literal source/target/event fixtures for private atomic output release.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::Preparation,
     chemistry::{EndTreatment, Terminus},
-    cloning_outputs::Options,
-    combinatorial_batch as batch,
-    combinatorial_design::{
-        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+    cloning::assembly::recipe::Preparation,
+    documents::{
+        history::DocumentHistory,
+        transfer::Candidate,
+        workspace::{Workspace, WorkspaceAttachment},
     },
-    combinatorial_release::{self as release, ReleaseSession, Request, Selection},
-    history::DocumentHistory,
-    run_lineage::{self, EventBinding},
-    transfer::Candidate,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{Workspace, WorkspaceAttachment},
+    material::{
+        lineage::{self as run_lineage, EventBinding},
+        outputs::Options,
+    },
+    planning::{
+        combinatorial::{
+            Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+            batch,
+            release::{self, ReleaseSession, Request, Selection},
+        },
+        plan::{DesignPlan, Operation, PlanInput, Source},
+    },
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn binding(w: &Workspace, index: usize) -> EventBinding {
@@ -84,7 +90,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
                     source: binding(&workspace, i),
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: if pcr { 20 } else { 4 },
                         reverse: false,
@@ -279,7 +285,7 @@ fn all_selected_rows_release_atomically_with_source_run_and_primer_links() {
             "TTGCAATCGTCGATGCTAGCATCGTCGATGCTAGCGGTAC"
         );
         let hash = row.output.primer_attachment.unwrap();
-        let table: collagene_core::oligo_formats::OligoTable =
+        let table: collagene_core::formats::oligos::OligoTable =
             serde_json::from_slice(&commit.workspace.attachments[&hash].bytes).unwrap();
         assert_eq!(table.records.len(), 4);
         let event = commit

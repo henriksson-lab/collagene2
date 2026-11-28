@@ -4,7 +4,7 @@ use collagene_core::{
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    sequence_similarity as native,
+    sequence::similarity as native,
 };
 use collagene_model::{Molecule, Topology};
 fn inputs() -> (native::Source, Vec<native::Source>, native::Options) {

@@ -1,10 +1,11 @@
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs::*,
-    history::DocumentHistory,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    documents::{history::DocumentHistory, workspace::Workspace},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs::*,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn binding(w: &Workspace, n: usize) -> EventBinding {
@@ -81,7 +82,7 @@ fn named_output_retains_original_run_events_and_is_idempotent() {
         .attachments
         .get(c.receipt.primer_attachment.as_ref().unwrap())
         .unwrap();
-    let table: collagene_core::oligo_formats::OligoTable =
+    let table: collagene_core::formats::oligos::OligoTable =
         serde_json::from_slice(&a.bytes).unwrap();
     assert_eq!(table.records.len(), 2);
     assert_eq!(
@@ -268,7 +269,7 @@ fn historical_source_binding_survives_source_head_edits_and_context_changes() {
     let bytes = br#"{"version":1,"hidden":["missing-document"]}"#.to_vec();
     broken.attachments.insert(
         blake3::hash(&bytes).to_hex().to_string(),
-        collagene_core::workspace::WorkspaceAttachment {
+        collagene_core::documents::workspace::WorkspaceAttachment {
             kind: VISIBILITY_KIND.into(),
             name: "bad references".into(),
             media_type: "application/json".into(),

@@ -1,12 +1,12 @@
 //! Hand-specified recognition evidence; no product reconstruction is a scan oracle.
 use collagene_core::{
-    analysis::{self, Enzyme},
+    cloning::restriction::inspection::*,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    restriction_inspection::*,
+    sequence::analysis::{self, Enzyme},
 };
 use collagene_model::{Molecule, Topology};
 

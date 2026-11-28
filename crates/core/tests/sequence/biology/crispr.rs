@@ -1,5 +1,5 @@
 //! Literal geometry and independent exhaustive Hamming fixtures.
-use collagene_core::crispr::*;
+use collagene_core::sequence::crispr::*;
 use collagene_model::{Error, Molecule, Topology};
 const GUIDE: &str = "ACGTCAGTACGATCGATCGA";
 fn m(s: &str, t: Topology) -> Molecule {

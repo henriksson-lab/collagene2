@@ -1,9 +1,11 @@
 //! Literal reference edits are source-bound declarations, never primer-derived products.
 use collagene_core::{
-    assembly_edit_intent as e,
-    assembly_intent::{self, Contribution, ContributionPosition, Selector},
-    assembly_junction_edit, assembly_substitution_intent as s,
-    verification::PlanInput,
+    cloning::assembly::{
+        edit_intent as e,
+        intent::{self as assembly_intent, Contribution, ContributionPosition, Selector},
+        junction_edit as assembly_junction_edit, substitution_intent as s,
+    },
+    planning::plan::PlanInput,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn source(dna: &str, topology: Topology) -> Vec<PlanInput> {

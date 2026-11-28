@@ -79,14 +79,14 @@ async fn main() -> ExitCode {
         }
     };
     let server = match root {
-        Some(root) => match collagene_mcp::CollageneServer::with_storage_root(&root) {
+        Some(root) => match collagene_mcp::server::CollageneServer::with_storage_root(&root) {
             Ok(server) => server,
             Err(error) => {
                 diagnostic("storage_configuration", error);
                 return ExitCode::from(2);
             }
         },
-        None => collagene_mcp::CollageneServer::default(),
+        None => collagene_mcp::server::CollageneServer::default(),
     };
     match server.serve(rmcp::transport::stdio()).await {
         Ok(service) => match service.waiting().await {

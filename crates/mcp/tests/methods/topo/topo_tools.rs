@@ -1,7 +1,7 @@
 //! Actual SDK TOPO declarations and independent target checks. The expected TA
 //! contour is a literal, not copied from an imported alleged physical product.
-use collagene_core::{formats, topo as t};
-use collagene_mcp::CollageneServer;
+use collagene_core::{cloning::topo as t, formats::sequence as formats};
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -77,7 +77,7 @@ async fn evidence(c: &Client, id: &Value) -> Value {
     serde_json::from_str(&text).unwrap()
 }
 fn strand(id: &str, n: usize, active: bool) -> t::PreparedStrand {
-    use t::physical::{Enzyme, FivePrime, ThreePrime};
+    use collagene_core::cloning::topo::physical::{Enzyme, FivePrime, ThreePrime};
     t::PreparedStrand {
         id: id.into(),
         segments: vec![t::SourceInterval {
@@ -102,7 +102,7 @@ fn strand(id: &str, n: usize, active: bool) -> t::PreparedStrand {
     }
 }
 async fn fixture(c: &Client) -> (Value, t::Request) {
-    use t::physical::{self as p, projection};
+    use collagene_core::cloning::topo::physical::{self as p, projection};
     let mut sources = vec![];
     for (role, dna) in [
         ("vt", "AGGGGCATCCCTT"),
@@ -392,8 +392,8 @@ async fn topo_sdk_rejects_foreign_claims_stale_sources_and_selection_without_rep
 
 #[tokio::test]
 async fn directional_preparation_compiles_actual_sources_without_inventing_repaired_contour() {
-    use collagene_core::{analysis::Primer, topo_preparation as prep};
-    use t::physical::{self as p, projection};
+    use collagene_core::cloning::topo::physical::{self as p, projection};
+    use collagene_core::{cloning::topo::preparation as prep, sequence::analysis::Primer};
     let (c, s) = setup().await;
     let mut sources = vec![];
     for (role, dna) in [
@@ -544,20 +544,21 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     let full = evidence(&c, &verified["artifact_id"]).await;
     assert_eq!(full["products"].as_array().unwrap().len(), 2);
     assert_eq!(full["physical_processing_reports"][0]["step_index"], 1);
-    let before: collagene_core::modified_duplex::ModificationSummary = serde_json::from_str(
-        full["products"][0]["metadata"]["tracked_modifications"]
-            .as_str()
-            .unwrap(),
-    )
-    .unwrap();
+    let before: collagene_core::chemistry::tracked_duplex::ModificationSummary =
+        serde_json::from_str(
+            full["products"][0]["metadata"]["tracked_modifications"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
     assert!(before.known_modified > 0);
-    let actual: collagene_core::modified_duplex::TrackedDuplex = serde_json::from_value(
+    let actual: collagene_core::chemistry::tracked_duplex::TrackedDuplex = serde_json::from_value(
         full["physical_processing_reports"][0]["evidence"]["TopoActions"]["tracked"].clone(),
     )
     .unwrap();
     assert_eq!(actual.top.as_str(), "AAGGGGCATCCCTTCACCATGACG");
     assert_eq!(
-        collagene_core::modified_duplex::summary(&actual)
+        collagene_core::chemistry::tracked_duplex::summary(&actual)
             .unwrap()
             .known_modified,
         0

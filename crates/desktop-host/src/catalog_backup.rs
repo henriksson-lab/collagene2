@@ -1189,12 +1189,13 @@ mod id {
 mod tests {
     use super::*;
     use collagene_core::{
-        analysis::Primer,
-        cloning_outputs,
-        run_lineage::{EventBinding, InputEventBinding},
-        run_material,
-        verification::{DesignPlan, Operation, PlanInput, Source},
-        workspace::{self, Workspace},
+        documents::workspace::{self, Workspace},
+        material::{
+            lineage::{EventBinding, InputEventBinding},
+            outputs as cloning_outputs, run as run_material,
+        },
+        planning::plan::{DesignPlan, Operation, PlanInput, Source},
+        sequence::analysis::Primer,
     };
     use collagene_model::{Molecule, Topology};
     use std::sync::atomic::{AtomicU64, Ordering};

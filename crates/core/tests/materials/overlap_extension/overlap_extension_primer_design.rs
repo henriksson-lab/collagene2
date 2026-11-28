@@ -1,9 +1,14 @@
 //! Independent literal-edit expectations and source-geometry-selected oligos.
 use collagene_core::{
-    assembly_edit_intent::Edit,
-    overlap_extension_primer_design::{self as design, Options, Report, Request},
-    overlap_primer_design::Fragment,
-    verification::{self, Operation, Source, Status},
+    cloning::{
+        assembly::edit_intent::Edit,
+        overlap::{
+            extension::primers::{self as design, Options, Report, Request},
+            primer_design::Fragment,
+        },
+    },
+    planning::plan::{Operation, Source},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -119,7 +124,7 @@ fn literal_replacement_selects_three_native_calls_and_verifies_actual_four_step_
     let wrong = Molecule::dna("Independent unedited intent", ORIGINAL, Topology::Linear).unwrap();
     let mut wrong_plan = report.plan.clone();
     wrong_plan.target_revision = wrong.revision();
-    let wrong_report = verification::verify(&wrong_plan, &wrong);
+    let wrong_report = verification::engine::verify(&wrong_plan, &wrong);
     assert_eq!(wrong_report.status, Status::Invalid);
     assert_eq!(
         wrong_report.products.last().unwrap().sequence.as_str(),

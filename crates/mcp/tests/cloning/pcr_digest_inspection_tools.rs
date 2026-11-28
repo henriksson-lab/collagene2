@@ -1,9 +1,10 @@
 //! Inspect actual PCR-added catalog sites, with no target/product publication.
 use collagene_core::{
-    analysis::Primer, chemistry::FivePrime, pcr_digest_inspection::Preview,
-    restriction_inspection::InspectionOptions,
+    chemistry::FivePrime,
+    cloning::{pcr::digest::Preview, restriction::inspection::InspectionOptions},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -79,7 +80,7 @@ async fn actual_added_sites_unique_versus_ambiguous_and_stale_originals() {
         json!({"text":">unique\nAAACCCGGGTTT\n>ambiguous\nAAACCCGGGTTTAAACCCGGGTTT\n"}),
     )
     .await;
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let id = catalog
         .edition()
         .enzymes
@@ -88,7 +89,7 @@ async fn actual_added_sites_unique_versus_ambiguous_and_stale_originals() {
         .unwrap()
         .id
         .clone();
-    let selection = collagene_core::catalog_digest::select(&catalog, &[id]).unwrap();
+    let selection = collagene_core::cloning::restriction::catalog::select(&catalog, &[id]).unwrap();
     let request = json!({"template_strand":"Top","source_role":"original","forward":Primer::new("Added forward site","AAA","ATGCGAATTC").unwrap(),"reverse":Primer::new("Added reverse site","AAA","ATGCGAATTC").unwrap(),"selection":selection,"options":InspectionOptions::default()});
     let args = json!({"document":named(&imported,"unique"),"request":request,"fragment_start":0,"max_fragments":2});
     let result = call(&client, "inspect_pcr_digest", args.clone()).await;

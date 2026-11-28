@@ -1,12 +1,22 @@
 //! Native saved-fragment reuse through real PCR and physical overlap assembly.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest, cloning_outputs, homology_assembly, material_derivation as digest, plan_oligos,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
+        overlap::assembly as homology_assembly,
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as digest,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs, run as run_material,
+    },
+    planning::{
+        oligos as plan_oligos,
+        plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    },
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn input(id: &str, m: Molecule) -> PlanInput {
@@ -162,7 +172,8 @@ fn fixture(incomplete: bool) -> Fixture {
             event: event(&w, i),
         })
         .collect();
-    let report = verification::verify(&plan, w.head(&w.documents[original_target].id).unwrap());
+    let report =
+        verification::engine::verify(&plan, w.head(&w.documents[original_target].id).unwrap());
     assert_eq!(
         report.products.len(),
         plan.steps.len(),
@@ -190,7 +201,7 @@ fn fixture(incomplete: bool) -> Fixture {
         },
     )
     .unwrap();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &saved.workspace,
         &run_material::Selection {
             run_id: saved.receipt.run.run_id.clone(),
@@ -211,11 +222,11 @@ fn fixture(incomplete: bool) -> Fixture {
     let derived = digest::prepare_install(
         &saved.workspace,
         &digest::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: saved.receipt.construct,
                 origin: digest::SourceOrigin::Saved(
-                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                    collagene_core::material::run::MaterialOrigin::Run(origin),
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
@@ -310,14 +321,14 @@ fn finish(f: Fixture) {
             ..
         }
     ));
-    let report = verification::verify(&compiled.plan, &target);
+    let report = verification::engine::verify(&compiled.plan, &target);
     assert_eq!(
         report.products.len(),
         compiled.plan.steps.len(),
         "{:?}",
         report.findings
     );
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &compiled.plan,
         report.products.last().unwrap(),
         &target
@@ -416,7 +427,9 @@ fn changed_saved_digest_event_and_revision_cannot_be_recorded_as_matching_input(
 
 #[test]
 fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new_pcr() {
-    use collagene_core::{methylation::MethylationState, modified_duplex::GenerationAssumptions};
+    use collagene_core::chemistry::{
+        methylation::MethylationState, tracked_duplex::GenerationAssumptions,
+    };
     let source = dna(
         "Explicit original methylated circle",
         "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA",
@@ -462,7 +475,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         &Default::default(),
     )
     .unwrap();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &saved.workspace,
         &run_material::Selection {
             run_id: saved.receipt.run.run_id,
@@ -483,11 +496,11 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
     let derived = digest::prepare_install(
         &saved.workspace,
         &digest::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: saved.receipt.construct,
                 origin: digest::SourceOrigin::Saved(
-                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                    collagene_core::material::run::MaterialOrigin::Run(origin),
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
@@ -519,7 +532,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
                 preparation: RunPreparation::WholeLinear,
             },
         }],
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     let plan = DesignPlan {
@@ -528,7 +541,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         inputs: prepared.inputs,
         steps: prepared.steps,
     };
-    let report = verification::verify(&plan, &cut_target);
+    let report = verification::engine::verify(&plan, &cut_target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -536,7 +549,8 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         report.findings
     );
     let evidence = &report.physical_processing_reports[0].evidence;
-    let verification::PhysicalProcessingEvidence::DerivedOrigin(evidence) = evidence else {
+    let verification::evidence::PhysicalProcessingEvidence::DerivedOrigin(evidence) = evidence
+    else {
         panic!("missing actual digest reconstruction evidence")
     };
     assert_eq!(

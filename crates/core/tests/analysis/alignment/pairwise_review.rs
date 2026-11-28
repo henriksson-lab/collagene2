@@ -1,6 +1,8 @@
 use collagene_core::{
-    alignment::{AlignmentMode, AlignmentOptions, ComparisonOptions, DifferenceKind},
-    pairwise_review::{self, Options},
+    alignment::{
+        AlignmentMode, AlignmentOptions, ComparisonOptions, DifferenceKind,
+        review::{self as pairwise_review, Options},
+    },
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},

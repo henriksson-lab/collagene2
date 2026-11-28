@@ -1,7 +1,7 @@
 //! Real SDK routing for immutable retained-run session workflows.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::workspace::{self, Workspace};
-use collagene_mcp::CollageneServer;
+use collagene_core::documents::workspace::{self, Workspace};
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -88,7 +88,8 @@ async fn immutable_run_record_list_replay_artifacts_and_explicit_event_bindings(
     assert_ne!(r["workspace"]["id"], id);
     assert_eq!(r["receipt"]["products"].as_array().unwrap().len(), 1);
     let full = artifact(&c, &r["artifact_id"]).await;
-    let retained: collagene_core::run_lineage::RunCommit = serde_json::from_value(full).unwrap();
+    let retained: collagene_core::material::lineage::RunCommit =
+        serde_json::from_value(full).unwrap();
     retained.validate().unwrap();
     assert_eq!(retained.workspace.documents.len(), 3);
     assert_eq!(retained.workspace.documents[0].head, w.documents[0].head);

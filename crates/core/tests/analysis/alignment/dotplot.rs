@@ -1,4 +1,4 @@
-use collagene_core::dotplot::*;
+use collagene_core::alignment::dotplot::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn dna(s: &str, circular: bool) -> Molecule {
     Molecule::dna(

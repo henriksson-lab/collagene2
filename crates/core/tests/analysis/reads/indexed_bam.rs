@@ -1,7 +1,7 @@
 //! Literal BAI framing plus an independent CIGAR/span oracle.
-use collagene_core::{
+use collagene_core::review::reads::{
     indexed_bam::IndexedBam,
-    read_alignment_store::{Collection, Format, ImportLimits},
+    store::{Collection, Format, ImportLimits},
 };
 use collagene_genomic_index::{Format as IndexFormat, Limits, QueryLimits};
 use collagene_read_alignments::{BamWriter, Limits as ReadLimits, SamReader};
@@ -216,7 +216,7 @@ fn bgzf_csi_uses_exact_transport_hash_and_checked_crc_eof_limits() {
 
 #[test]
 fn fresh_bai_uses_actual_offsets_bins_and_sort_order_not_header_assertions() {
-    use collagene_core::indexed_bam::build_bai;
+    use collagene_core::review::reads::indexed_bam::build_bai;
     let (_, collection) = source();
     let bai = build_bai(&collection, 1024).unwrap();
     // All four placed records are within the first 16kb bin, with contiguous

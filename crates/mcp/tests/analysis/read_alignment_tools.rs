@@ -1,7 +1,7 @@
 //! Real SDK dispatch with independently authored lexical SAM. No aligner,
 //! samtools, reference fetch or imported positive reference-check authority.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

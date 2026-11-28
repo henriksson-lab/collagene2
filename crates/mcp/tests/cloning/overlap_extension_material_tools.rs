@@ -1,17 +1,26 @@
 //! In-process SDK coverage: OE material is reconstructed without an assembly target.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::Strand,
-    cloning_outputs, material_derivation as native, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request as Preparation},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialSelection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    cloning::{
+        overlap::extension::{
+            self as overlap_extension,
+            pcr::{PrimerPair, Request as Preparation},
+        },
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as native,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialSelection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::{CollageneServer, MaterialDerivationOrigin as Origin};
+use collagene_mcp::server::CollageneServer;
+use collagene_mcp::session::references::MaterialDerivationOrigin as Origin;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -170,10 +179,11 @@ fn assert_material(w: &Workspace, receipt: &native::Receipt, incomplete: bool) {
     assert_eq!(material.reference().sequence.as_str(), AMPLICON);
     assert_eq!(material.incomplete(), incomplete);
     assert_eq!(material.tracked().duplex.bottom_start, 0);
-    let modifications = collagene_core::modified_duplex::summary(material.tracked()).unwrap();
+    let modifications =
+        collagene_core::chemistry::tracked_duplex::summary(material.tracked()).unwrap();
     assert_eq!(modifications.known_modified, 0);
     assert_eq!(modifications.unknown_eligible, 0);
-    let table: collagene_core::oligo_formats::OligoTable =
+    let table: collagene_core::formats::oligos::OligoTable =
         serde_json::from_slice(&w.attachments[receipt.primer_attachment.as_ref().unwrap()].bytes)
             .unwrap();
     assert_eq!(table.records.len(), 6);
@@ -281,10 +291,10 @@ async fn original_oe_material_installs_six_new_primers_reopens_and_redigests_wit
     assert_eq!(inspect["origin_available"], true);
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let choice = catalog_digest::select(&catalog, &["ecori".into()]).unwrap();
-    let digest = call(&c, "material_derivation", json!({"workspace":restarted,"task":{"PreviewDigest":{"source":receipt.product,"origin":origin,"selection":choice,"options":collagene_core::restriction_inspection::InspectionOptions::default()}}})).await;
+    let digest = call(&c, "material_derivation", json!({"workspace":restarted,"task":{"PreviewDigest":{"source":receipt.product,"origin":origin,"selection":choice,"options":collagene_core::cloning::restriction::inspection::InspectionOptions::default()}}})).await;
     assert_eq!(digest["products_determined"], true);
     assert_eq!(digest["fragment_count"], 3);
-    let cut = install(&c, &restarted, json!({"sources":[{"role":"template","event":receipt.product,"origin":origin}],"derivation":{"CatalogDigest":{"selection":choice,"options":collagene_core::restriction_inspection::InspectionOptions::default(),"fragment_index":2}},"name":"Literal right EcoRI tail fragment","save_primers":false})).await;
+    let cut = install(&c, &restarted, json!({"sources":[{"role":"template","event":receipt.product,"origin":origin}],"derivation":{"CatalogDigest":{"selection":choice,"options":collagene_core::cloning::restriction::inspection::InspectionOptions::default(),"fragment_index":2}},"name":"Literal right EcoRI tail fragment","save_primers":false})).await;
     let cut_receipt: native::Receipt = serde_json::from_value(cut["receipt"].clone()).unwrap();
     let cut_w = archive(&c, &cut).await;
     let cut_material = native::reconstruct(&cut_w, &cut_receipt.product).unwrap();
@@ -313,8 +323,8 @@ fn saved_source(run: bool) -> (Workspace, EventBinding, Origin) {
         let installed = native::prepare_install(
             &w,
             &native::Request {
-                sources: vec![collagene_core::material_derivation::BoundSource {
-                    role: collagene_core::material_derivation::SourceRole::Template,
+                sources: vec![collagene_core::material::derivation::BoundSource {
+                    role: collagene_core::material::derivation::SourceRole::Template,
                     event: event(&w, 0),
                     origin: native::SourceOrigin::OriginalReference,
                 }],

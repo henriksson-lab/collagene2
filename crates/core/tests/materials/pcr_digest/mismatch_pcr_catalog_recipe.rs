@@ -1,16 +1,21 @@
 //! Intentional mutation and real pinned cleavage, independent literal targets.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest,
     chemistry::{EndRepairMethod, FivePrime, Polarity},
-    cloning_outputs::{self, Options},
-    ligation_recipe as lig,
-    mutagenesis::PcrOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as lig,
+        pcr::mutagenesis::PcrOptions,
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Options},
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn pin() -> catalog_digest::CatalogSelection {
@@ -95,7 +100,7 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
         &inputs,
         &t,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -135,13 +140,13 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
     let (left, right) = amplicon.ends.unwrap();
     assert_eq!(left.chemistry.five_prime, FivePrime::Hydroxyl);
     assert_eq!(right.chemistry.five_prime, FivePrime::Hydroxyl);
-    collagene_core::assembly_diagnostics::ligation(&p).unwrap();
+    collagene_core::cloning::assembly::diagnostics::ligation(&p).unwrap();
     p.validate_binding(
         &lig::preview_revision(
             &inputs,
             &t,
             &r,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
     )
@@ -150,7 +155,7 @@ fn ordinary_mismatch_amplicon_and_two_cuts_keep_real_outer_oh_and_internal_phosp
         &inputs,
         &target("AATTCAAACCCC"),
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
@@ -197,7 +202,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
     )
     .unwrap();
     let event = commit.receipt.construct;
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -230,7 +235,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
         &inputs,
         &t,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -272,7 +277,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
     assert_eq!(left.chemistry.five_prime, FivePrime::Phosphate);
     assert_eq!(right.chemistry.five_prime, FivePrime::Phosphate);
     assert_eq!(
-        collagene_core::assembly_diagnostics::ligation(&p)
+        collagene_core::cloning::assembly::diagnostics::ligation(&p)
             .unwrap()
             .rows[0]
             .total_steps,
@@ -282,7 +287,8 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
     if let Operation::CatalogDigest { template, .. } = &mut bad.compiled.plan.steps[2] {
         *template = Source::Step(0);
     }
-    bad.verification.plan_revision = verification::plan_revision(&bad.compiled.plan);
+    bad.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&bad.compiled.plan);
     assert!(bad.validate().is_err());
 }
 #[test]
@@ -299,7 +305,7 @@ fn incomplete_singleton_stays_conditionally_usable_and_never_becomes_verified_un
         &inputs,
         &target("AATTCAGACCCC"),
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(p.preparation_complete);
@@ -316,12 +322,12 @@ fn incomplete_singleton_stays_conditionally_usable_and_never_becomes_verified_un
             .iter()
             .any(|f| f.contains("incomplete"))
     );
-    collagene_core::assembly_diagnostics::ligation(&p).unwrap();
+    collagene_core::cloning::assembly::diagnostics::ligation(&p).unwrap();
     let wrong = lig::preview(
         &inputs,
         &target("AATTCAAACCCC"),
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
@@ -337,7 +343,7 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
         &inputs,
         &t,
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     let mut changed = r.clone();
@@ -351,7 +357,7 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
             &inputs,
             &t,
             &changed,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .unwrap(),
         p.context_revision
@@ -361,7 +367,7 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
             &inputs,
             &t,
             &changed,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .unwrap()
         .verification
@@ -379,7 +385,7 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
             &inputs,
             &t,
             &changed,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .is_err()
     );
@@ -394,7 +400,8 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
     if let Operation::CatalogDigest { template, .. } = &mut forged.compiled.plan.steps[1] {
         *template = Source::Input("source".into());
     }
-    forged.verification.plan_revision = verification::plan_revision(&forged.compiled.plan);
+    forged.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&forged.compiled.plan);
     assert!(forged.validate().is_err());
     let decoded: lig::Preview = serde_json::from_slice(&serde_json::to_vec(&p).unwrap()).unwrap();
     decoded.validate_binding(&p.context_revision).unwrap();
@@ -402,11 +409,11 @@ fn policy_pins_fragment_indices_and_secondary_operation_tampering_stay_bound() {
 
 #[test]
 fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_replay() {
-    use collagene_core::combinatorial_design::{
+    use collagene_core::cloning::golden_gate::GoldenGateEnzyme;
+    use collagene_core::planning::combinatorial::{
         self as design, Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct,
         TargetDeclaration,
     };
-    use collagene_core::golden_gate::GoldenGateEnzyme;
     const ORIGINAL: &str = "GCTTACCGATGACCTAGTACGGCATTCGAAGC";
     const MUTANT: &str = "ACTTACCGATGACCTAGTACGGCATTCGAAGC";
     // Literal F11 + mutant32 + RC(R15). BsaI cuts off both recognition
@@ -462,7 +469,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
                 id: "mutant".into(),
                 label: "Explicit mismatch and BsaI".into(),
                 source: binding(&w, 0),
-                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                     start: 0,
                     end: 32,
                     reverse: false,
@@ -554,7 +561,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
     )
     .unwrap();
     let event = committed.receipt.construct;
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &committed.workspace,
         &Selection {
             run_id: committed.receipt.run.run_id,
@@ -580,7 +587,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
         &[input(saved)],
         &intended,
         &recipe(existing),
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(

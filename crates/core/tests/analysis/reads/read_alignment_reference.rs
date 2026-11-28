@@ -1,5 +1,5 @@
 //! Independent literal SAM coordinates and calls; no aligner output is an oracle.
-use collagene_core::read_alignment_reference::*;
+use collagene_core::review::reads::reference::*;
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 use collagene_read_alignments::{Header, Limits, Record, SamReader};
 use std::io::Cursor;

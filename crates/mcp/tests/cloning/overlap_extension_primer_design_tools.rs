@@ -1,12 +1,14 @@
 //! Native auto-primers remain a read-only proposal until ordinary recipe verification.
-use collagene_core::{
-    assembly_edit_intent::Edit,
-    overlap_extension_primer_design::{Options, Request},
-    overlap_primer_design::Fragment,
-    overlap_profiles::ProfileOptions,
-    primers::DesignOptions,
+use collagene_core::cloning::{
+    assembly::edit_intent::Edit,
+    overlap::{
+        extension::primers::{Options, Request},
+        primer_design::Fragment,
+        profiles::ProfileOptions,
+    },
+    pcr::primers::DesignOptions,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -144,7 +146,7 @@ async fn six_auto_oligos_keep_original_stock_independent_intent_and_full_recipe_
         && p["ordered_sequence"] == "GCTACGTATTTTCAGACC"));
     let evidence = artifact(&client, &proposal["artifact_id"]).await;
     assert_eq!(evidence["document"], original);
-    let report: collagene_core::overlap_extension_primer_design::Report =
+    let report: collagene_core::cloning::overlap::extension::primers::Report =
         serde_json::from_value(evidence["report"].clone()).unwrap();
     report
         .validate_binding(proposal["context_revision"].as_str().unwrap())

@@ -1,8 +1,8 @@
 #[path = "../../../core/tests/common/inverse_pcr_origin.rs"]
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_core::workspace::{self, Workspace};
-use collagene_mcp::CollageneServer;
+use collagene_core::documents::workspace::{self, Workspace};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

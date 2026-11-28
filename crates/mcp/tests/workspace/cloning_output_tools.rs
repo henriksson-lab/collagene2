@@ -1,12 +1,12 @@
 //! Finalization retains exact native event history and source-bound order evidence.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
     chemistry::AnnealOptions,
-    oligo_formats,
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    formats::oligos as oligo_formats,
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -211,7 +211,7 @@ async fn exact_event_finalization_saved_primers_native_history_and_replay_are_at
         "Reviewed construct"
     );
     let full = artifact(&c, &done["artifact_id"]).await;
-    let commit: collagene_core::cloning_outputs::Commit = serde_json::from_value(full).unwrap();
+    let commit: collagene_core::material::outputs::Commit = serde_json::from_value(full).unwrap();
     commit
         .validate_binding(done["receipt"]["context_revision"].as_str().unwrap())
         .unwrap();

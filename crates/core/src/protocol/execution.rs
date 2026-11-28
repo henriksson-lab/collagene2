@@ -10,7 +10,7 @@ use super::{
     schema::{AnalysisJob, AnalysisResult, AnnotationExportReport, PrimerEvidence},
     validation::validate_verification_report,
 };
-use crate::formats::MAX_IMPORT_BYTES;
+use crate::formats::sequence::MAX_IMPORT_BYTES;
 use collagene_model::Error;
 pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
     let maximum = worker_limit(b"CGQ\0", bytes, WORKSPACE_REQUEST_SELECTORS)?;
@@ -33,7 +33,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         if lanes.iter().any(|lane| {
             matches!(
                 lane.preparation,
-                crate::gel::Preparation::CatalogDigest { .. }
+                crate::output::gel::Preparation::CatalogDigest { .. }
             )
         }) {
             return Err(Error::Format(
@@ -47,7 +47,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             event,
             selection,
         } => {
-            if crate::run_material::material_inspection_revision(workspace, event, selection)?
+            if crate::material::run::material_inspection_revision(workspace, event, selection)?
                 != r.revision
             {
                 return Err(Error::Format("Material source/selection changed".into()));
@@ -61,21 +61,26 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             reverse,
             template_strand,
         } => {
-            if crate::material_pcr::revision(molecule, origin, forward, reverse, *template_strand)?
-                != r.revision
+            if crate::cloning::pcr::material::revision(
+                molecule,
+                origin,
+                forward,
+                reverse,
+                *template_strand,
+            )? != r.revision
             {
                 return Err(Error::Format("Material PCR source/primers changed".into()));
             }
             None
         }
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
-            if crate::material_pcr::outputs_revision(origin, request)? != r.revision {
+            if crate::cloning::pcr::material::outputs_revision(origin, request)? != r.revision {
                 return Err(Error::Format("Material PCR output choices changed".into()));
             }
             None
         }
         AnalysisJob::ReviewSequenceExport { molecule, format } => {
-            if crate::sequence_export::revision(molecule, format)? != r.revision {
+            if crate::formats::sequence::export::revision(molecule, format)? != r.revision {
                 return Err(Error::Format(
                     "Sequence export source/options changed".into(),
                 ));
@@ -89,7 +94,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             ..
         } => {
             if expected_context_revision != &r.revision
-                || crate::sequence_export::revision(molecule, format)? != r.revision
+                || crate::formats::sequence::export::revision(molecule, format)? != r.revision
             {
                 return Err(Error::Format(
                     "Reviewed sequence export context changed".into(),
@@ -98,7 +103,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::ExportScfTrace { trace, options } => {
-            if crate::scf_export::revision(trace, options)? != r.revision {
+            if crate::formats::scf::revision(trace, options)? != r.revision {
                 return Err(Error::Format(
                     "Trace export source/view/options changed".into(),
                 ));
@@ -107,7 +112,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
 
         AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
-            if crate::run_review::request_revision(workspace, run_id)? != r.revision {
+            if crate::material::review::request_revision(workspace, run_id)? != r.revision {
                 return Err(Error::Format(
                     "Saved-run review workspace/run changed".into(),
                 ));
@@ -135,7 +140,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             reverse,
             options,
         } => {
-            if crate::material_derivation::mismatch_pcr_preview_revision(
+            if crate::material::derivation::mismatch_pcr_preview_revision(
                 source, origin, forward, reverse, options,
             )? != r.revision
             {
@@ -152,8 +157,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             options,
         } => {
-            if crate::mutagenesis::inverse_pcr_revision(molecule, target, origin.as_ref(), options)?
-                != r.revision
+            if crate::cloning::pcr::mutagenesis::inverse_pcr_revision(
+                molecule,
+                target,
+                origin.as_ref(),
+                options,
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Inverse PCR source, origin, independent target or edit settings changed"
@@ -167,7 +176,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             method,
         } => {
-            if crate::material_derivation::repair_preview_revision(source, origin, *method)?
+            if crate::material::derivation::repair_preview_revision(source, origin, *method)?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -182,7 +191,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             preparation,
         } => {
-            if crate::material_derivation::overlap_extension_preview_revision(
+            if crate::material::derivation::overlap_extension_preview_revision(
                 workspace,
                 source,
                 origin,
@@ -201,7 +210,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             action,
         } => {
-            if crate::material_derivation::terminal_processing_preview_revision(
+            if crate::material::derivation::terminal_processing_preview_revision(
                 workspace, source, origin, action,
             )? != r.revision
             {
@@ -217,7 +226,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             bottom,
             options,
         } => {
-            if crate::material_derivation::annealed_oligos_preview_revision(
+            if crate::material::derivation::annealed_oligos_preview_revision(
                 workspace, top, bottom, options,
             )? != r.revision
             {
@@ -234,7 +243,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             limits,
             selection,
         } => {
-            if crate::alignment_antibody::request_revision(
+            if crate::protein::antibody_alignment::request_revision(
                 alignment, source, options, limits, selection,
             )? != r.revision
             {
@@ -290,7 +299,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             format,
             selection,
         } => {
-            if crate::structure_view::revision(bytes, *format, selection)? != r.revision {
+            if crate::protein::structure::revision(bytes, *format, selection)? != r.revision {
                 return Err(Error::Format("Structure source/options changed".into()));
             }
             None
@@ -300,7 +309,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             subjects,
             options,
         } => {
-            if crate::sequence_similarity::context_revision(query, subjects, options)? != r.revision
+            if crate::sequence::similarity::context_revision(query, subjects, options)?
+                != r.revision
             {
                 return Err(Error::Format(
                     "Sequence similarity sources/options changed".into(),
@@ -309,7 +319,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
-            if crate::material_derivation::revision(workspace, request)? != r.revision {
+            if crate::material::derivation::revision(workspace, request)? != r.revision {
                 return Err(Error::Format(
                     "Material derivation workspace/source/recipe changed".into(),
                 ));
@@ -323,7 +333,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
             options,
         } => {
-            if crate::material_derivation::digest_inspection_revision(
+            if crate::material::derivation::digest_inspection_revision(
                 source_role,
                 source,
                 origin,
@@ -345,7 +355,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             inputs,
             options,
         } => {
-            if crate::cloning_outputs::finalize_revision(
+            if crate::material::outputs::finalize_revision(
                 workspace,
                 plan,
                 target.clone(),
@@ -367,8 +377,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             expected_batch_revision,
             choice,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            if crate::digest_cut_selection::selection_revision(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            if crate::cloning::restriction::cut_selection::selection_revision(
                 &catalog,
                 selection,
                 source_role,
@@ -390,7 +400,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             delimiter,
         } => {
-            if crate::plan_oligos::export_revision(plan, target, options, *delimiter)? != r.revision
+            if crate::planning::oligos::export_revision(plan, target, options, *delimiter)?
+                != r.revision
             {
                 return Err(Error::Format("Plan oligo export context changed".into()));
             }
@@ -402,7 +413,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::mismatch_pcr_digest_inspection::inspection_revision(
+            if crate::cloning::pcr::mismatch_digest::inspection_revision(
                 molecule,
                 origin.as_ref(),
                 request,
@@ -422,8 +433,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             recipe,
             policy,
         } => {
-            if crate::assembly_recipe::annealing_preview_revision(inputs, target, recipe, policy)?
-                != r.revision
+            if crate::cloning::assembly::recipe::annealing_preview_revision(
+                inputs, target, recipe, policy,
+            )? != r.revision
             {
                 return Err(Error::Format("3-prime resection/annealing recipe source, target, preparation or explicit physical policy changed".into()));
             }
@@ -435,8 +447,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             recipe,
             policy,
         } => {
-            if crate::assembly_recipe::homology_preview_revision(inputs, target, recipe, policy)?
-                != r.revision
+            if crate::cloning::assembly::recipe::homology_preview_revision(
+                inputs, target, recipe, policy,
+            )? != r.revision
             {
                 return Err(Error::Format("Homology recipe source, target, preparation or explicit physical policy changed".into()));
             }
@@ -447,7 +460,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::assembly_edited_primer_design::design_revision(
+            if crate::cloning::assembly::edited_primers::design_revision(
                 inputs,
                 request,
                 workspace.as_ref(),
@@ -466,7 +479,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::overlap_extension_digest_inspection::inspection_revision(
+            if crate::cloning::overlap::extension::digest::inspection_revision(
                 source,
                 origin.as_ref(),
                 request,
@@ -485,7 +498,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::overlap_extension_primer_design::design_revision(
+            if crate::cloning::overlap::extension::primers::design_revision(
                 source,
                 request,
                 workspace.as_ref(),
@@ -502,8 +515,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::assembly_edit_intent::intent_revision(inputs, request, workspace.as_ref())?
-                != r.revision
+            if crate::cloning::assembly::edit_intent::intent_revision(
+                inputs,
+                request,
+                workspace.as_ref(),
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Contribution edit original source/declaration changed".into(),
@@ -516,7 +532,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::assembly_substitution_intent::intent_revision(
+            if crate::cloning::assembly::substitution_intent::intent_revision(
                 inputs,
                 request,
                 workspace.as_ref(),
@@ -533,8 +549,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::assembly_intent::intent_revision(inputs, request, workspace.as_ref())?
-                != r.revision
+            if crate::cloning::assembly::intent::intent_revision(
+                inputs,
+                request,
+                workspace.as_ref(),
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "assembly intent source/region/options changed".into(),
@@ -548,7 +567,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             edits,
             workspace,
         } => {
-            if crate::assembly_junction_edit::intent_revision(
+            if crate::cloning::assembly::junction_edit::intent_revision(
                 inputs,
                 base,
                 edits,
@@ -562,7 +581,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::DesignEditedAssemblyPrimers { inputs, request } => {
-            if crate::assembly_junction_edit::design_revision(inputs, request)? != r.revision {
+            if crate::cloning::assembly::junction_edit::design_revision(inputs, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Edited assembly source/primers changed".into(),
                 ));
@@ -570,7 +591,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::DesignSelectiveAssemblyPrimers { inputs, request } => {
-            if crate::selective_junction_edit::design_revision(inputs, request)? != r.revision {
+            if crate::cloning::assembly::selective_edit::design_revision(inputs, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Selective assembly source/primers changed".into(),
                 ));
@@ -580,7 +603,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
 
         AnalysisJob::PreviewProtocolQuantities { workspace, request }
         | AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
-            if crate::protocol_quantities::preview_revision(workspace, request)? != r.revision {
+            if crate::output::quantities::preview_revision(workspace, request)? != r.revision {
                 return Err(Error::Format(
                     "Reaction quantity source/recipe context changed".into(),
                 ));
@@ -588,13 +611,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::ListTopoGraphs { workspace } => {
-            if crate::topo_graph_history::list_revision(workspace)? != r.revision {
+            if crate::cloning::topo::graph_history::list_revision(workspace)? != r.revision {
                 return Err(Error::Format("TOPO graph listing workspace changed".into()));
             }
             None
         }
         AnalysisJob::CaptureTopoGraph { workspace, request } => {
-            if crate::topo_graph_history::revision(workspace, request)? != r.revision {
+            if crate::cloning::topo::graph_history::revision(workspace, request)? != r.revision {
                 return Err(Error::Format(
                     "TOPO graph capture source/request changed".into(),
                 ));
@@ -605,7 +628,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             workspace,
             selection,
         } => {
-            if crate::topo_graph_history::inspect_revision(workspace, selection)? != r.revision {
+            if crate::cloning::topo::graph_history::inspect_revision(workspace, selection)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "TOPO graph selection/workspace changed".into(),
                 ));
@@ -613,7 +638,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::ListProtocolQuantities { workspace } => {
-            if crate::protocol_quantities::list_revision(workspace)? != r.revision {
+            if crate::output::quantities::list_revision(workspace)? != r.revision {
                 return Err(Error::Format(
                     "Reaction quantity catalog/workspace changed".into(),
                 ));
@@ -624,7 +649,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             workspace,
             quantity_hash,
         } => {
-            if crate::protocol_quantities::open_revision(workspace, quantity_hash)? != r.revision {
+            if crate::output::quantities::open_revision(workspace, quantity_hash)? != r.revision {
                 return Err(Error::Format(
                     "Reaction quantity attachment/workspace changed".into(),
                 ));
@@ -636,7 +661,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             quantity_hash,
             format,
         } => {
-            if crate::protocol_quantities::export_revision(workspace, quantity_hash, *format)?
+            if crate::output::quantities::export_revision(workspace, quantity_hash, *format)?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -647,7 +672,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         }
         AnalysisJob::PreviewProtocolLayout { workspace, request }
         | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
-            if crate::protocol_layout::preview_revision(workspace, request)? != r.revision {
+            if crate::output::layout::preview_revision(workspace, request)? != r.revision {
                 return Err(Error::Format(
                     "Protocol layout source or assignment context changed".into(),
                 ));
@@ -659,7 +684,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             layout_hash,
             format,
         } => {
-            if crate::protocol_layout::export_revision(workspace, layout_hash, *format)?
+            if crate::output::layout::export_revision(workspace, layout_hash, *format)?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -673,20 +698,21 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             request,
         } => {
-            if crate::golden_gate_reaction::inspect_revision(inputs, target, request)? != r.revision
+            if crate::cloning::golden_gate::reaction::inspect_revision(inputs, target, request)?
+                != r.revision
             {
                 return Err(Error::Format("Golden Gate reaction context changed".into()));
             }
             None
         }
         AnalysisJob::PreparePcrOutputs { request } => {
-            if crate::pcr_outputs::revision(request)? != r.revision {
+            if crate::cloning::pcr::outputs::revision(request)? != r.revision {
                 return Err(Error::Format("PCR output selection changed".into()));
             }
             None
         }
         AnalysisJob::CopyReferenceFragment { request } => {
-            if crate::reference_transfer::copy_revision(request)? != r.revision {
+            if crate::sequence::reference_transfer::copy_revision(request)? != r.revision {
                 return Err(Error::Format(
                     "Reference copy source or selection changed".into(),
                 ));
@@ -694,7 +720,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::PasteReferenceFragment { request } => {
-            if crate::reference_transfer::paste_revision(request)? != r.revision {
+            if crate::sequence::reference_transfer::paste_revision(request)? != r.revision {
                 return Err(Error::Format(
                     "Reference paste sources or selection changed".into(),
                 ));
@@ -707,7 +733,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             query,
             translate,
         } => {
-            if crate::pairwise_context::revision(report, reference, query, *translate)?
+            if crate::alignment::context::revision(report, reference, query, *translate)?
                 != r.revision
             {
                 return Err(Error::Format("Pairwise annotation context changed.".into()));
@@ -719,7 +745,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             pattern,
             options,
         } => {
-            if crate::pairwise_search::revision(report, pattern, options)? != r.revision {
+            if crate::alignment::search::revision(report, pattern, options)? != r.revision {
                 return Err(Error::Format("Pairwise search context changed.".into()));
             }
             None
@@ -731,7 +757,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             fresh,
             format,
         } => {
-            if crate::pairwise_export::revision(
+            if crate::alignment::export::revision(
                 record,
                 reference_name,
                 query_name,
@@ -753,7 +779,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             calibration.validate()?;
             molecule.validate()?;
-            let catalog = crate::catalog_digest::builtin_catalog()?;
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
             let mut bases = 0usize;
             for lane in lanes {
                 lane.molecule.validate()?;
@@ -761,7 +787,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                     .checked_add(lane.molecule.sequence.len())
                     .filter(|n| *n <= MAX_IMPORT_BYTES)
                     .ok_or(Error::TooLarge)?;
-                if let crate::gel::Preparation::CatalogDigest { recipe } = &lane.preparation {
+                if let crate::output::gel::Preparation::CatalogDigest { recipe } = &lane.preparation
+                {
                     collagene_model::bounds::model_preflight(&[&lane.molecule])?;
                     recipe.validate()?;
                     recipe.selection.validate_for(&catalog)?;
@@ -773,7 +800,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             Some(molecule)
         }
         AnalysisJob::TranslateReference { request } => {
-            if crate::translation_reference::inspect_revision(request)? != r.revision {
+            if crate::sequence::translation_reference::inspect_revision(request)? != r.revision {
                 return Err(Error::Format(
                     "Translation source or selection changed".into(),
                 ));
@@ -781,7 +808,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::PrepareTranslatedReference { request, name } => {
-            if crate::translation_reference::output_revision(request, name)? != r.revision {
+            if crate::sequence::translation_reference::output_revision(request, name)? != r.revision
+            {
                 return Err(Error::Format(
                     "Translation source, selection or output name changed".into(),
                 ));
@@ -793,7 +821,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             query,
             options,
         } => {
-            if crate::pairwise_review::revision(reference, query, options)? != r.revision {
+            if crate::alignment::review::revision(reference, query, options)? != r.revision {
                 return Err(Error::Format(
                     "Comparison sources or options changed".into(),
                 ));
@@ -801,7 +829,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::PrepareMismatchPcrOutputs { request } => {
-            if crate::mismatch_pcr_outputs::revision(request)? != r.revision {
+            if crate::cloning::pcr::mismatch_outputs::revision(request)? != r.revision {
                 return Err(Error::Format(
                     "Mismatch-PCR output selection changed".into(),
                 ));
@@ -809,7 +837,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::SelectGoldenGateReaction { report, selection } => {
-            if crate::golden_gate_reaction::selection_revision(report, selection)? != r.revision {
+            if crate::cloning::golden_gate::reaction::selection_revision(report, selection)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Golden Gate reaction selection changed".into(),
                 ));
@@ -821,7 +851,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             template,
             task,
         } => {
-            if crate::topo_run_preparation::revision(inputs, template.as_ref(), task)? != r.revision
+            if crate::cloning::topo::run_preparation::revision(inputs, template.as_ref(), task)?
+                != r.revision
             {
                 return Err(Error::Format(
                     "Saved TOPO source, origin or inspection context changed".into(),
@@ -830,14 +861,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::ProcessTopoActions { inputs, request } => {
-            if crate::topo_actions::revision(inputs, request)? != r.revision {
+            if crate::cloning::topo::actions::revision(inputs, request)? != r.revision {
                 return Err(Error::Format("TOPO actions product context changed".into()));
             }
             None
         }
 
         AnalysisJob::ListLigationProfiles => {
-            if crate::ligation_profiles::catalog_revision()? != r.revision {
+            if crate::cloning::ligation::profiles::catalog_revision()? != r.revision {
                 return Err(Error::Format(
                     "Published ligation catalog context changed".into(),
                 ));
@@ -849,7 +880,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             ends,
             physical_competitors,
         } => {
-            if crate::ligation_profiles::score_revision_with_competitors(
+            if crate::cloning::ligation::profiles::score_revision_with_competitors(
                 profile,
                 ends,
                 physical_competitors,
@@ -866,15 +897,20 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             ends,
             physical_competitors,
         } => {
-            if crate::ligation_fidelity::competition_revision(dataset, ends, physical_competitors)?
-                != r.revision
+            if crate::cloning::ligation::fidelity::competition_revision(
+                dataset,
+                ends,
+                physical_competitors,
+            )? != r.revision
             {
                 return Err(Error::Format("Ligation competition context changed".into()));
             }
             None
         }
         AnalysisJob::RankGoldenGateFusions { inputs, request } => {
-            if crate::golden_gate_fusion_rank::inspect_revision(inputs, request)? != r.revision {
+            if crate::cloning::golden_gate::fusion_rank::inspect_revision(inputs, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Fusion ranking source/profile context changed".into(),
                 ));
@@ -882,7 +918,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::InspectDomestication { source, request } => {
-            if crate::domestication::inspect_revision(source, request)? != r.revision {
+            if crate::cloning::golden_gate::domestication::inspect_revision(source, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Domestication inspection context changed".into(),
                 ));
@@ -890,7 +928,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::ProposeDomestication { source, request } => {
-            if crate::domestication::propose_revision(source, request)? != r.revision {
+            if crate::cloning::golden_gate::domestication::propose_revision(source, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Domestication proposal context changed".into(),
                 ));
@@ -902,7 +942,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             selection,
         } => {
-            if crate::domestication::check_revision(source, request, selection)? != r.revision {
+            if crate::cloning::golden_gate::domestication::check_revision(
+                source, request, selection,
+            )? != r.revision
+            {
                 return Err(Error::Format(
                     "Domestication substitution context changed".into(),
                 ));
@@ -914,8 +957,11 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::domestication_preparation::revision(input, request, workspace.as_ref())?
-                != r.revision
+            if crate::cloning::golden_gate::domestication::preparation::revision(
+                input,
+                request,
+                workspace.as_ref(),
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "Domestication preparation context changed".into(),
@@ -924,7 +970,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::SearchGoldenGateFusions { inputs, request } => {
-            if crate::golden_gate_fusion_design::inspect_revision(inputs, request)? != r.revision {
+            if crate::cloning::golden_gate::fusion_design::inspect_revision(inputs, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Golden Gate fusion search context changed".into(),
                 ));
@@ -936,15 +984,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             selection,
         } => {
-            if crate::golden_gate_fusion_design::materialize_revision(inputs, request, selection)?
-                != r.revision
+            if crate::cloning::golden_gate::fusion_design::materialize_revision(
+                inputs, request, selection,
+            )? != r.revision
             {
                 return Err(Error::Format("Golden Gate fusion selection changed".into()));
             }
             None
         }
         AnalysisJob::ScoreLigationFidelity { dataset, ends } => {
-            if crate::ligation_fidelity::revision(dataset, ends)? != r.revision {
+            if crate::cloning::ligation::fidelity::revision(dataset, ends)? != r.revision {
                 return Err(Error::Format(
                     "Ligation fidelity data or ends changed".into(),
                 ));
@@ -952,7 +1001,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::DesignGoldenGateJunctionPrimers { inputs, request } => {
-            if crate::golden_gate_junction_edit::design_revision(inputs, request)? != r.revision {
+            if crate::cloning::golden_gate::junction_edit::design_revision(inputs, request)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Golden Gate junction source/primers changed".into(),
                 ));
@@ -964,7 +1015,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             request,
         } => {
-            if crate::prepared_golden_gate::inspect_revision(inputs, target, request)? != r.revision
+            if crate::cloning::golden_gate::prepared::inspect_revision(inputs, target, request)?
+                != r.revision
             {
                 return Err(Error::Format(
                     "Prepared Golden Gate pool context changed".into(),
@@ -973,7 +1025,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::SelectPreparedGoldenGateCandidate { report, selection } => {
-            if crate::prepared_golden_gate::selection_revision(report, selection)? != r.revision {
+            if crate::cloning::golden_gate::prepared::selection_revision(report, selection)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "Prepared Golden Gate selection context changed".into(),
                 ));
@@ -981,13 +1035,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::PreviewReadReview { workspace, request } => {
-            if crate::read_review::preview_revision(workspace, request)? != r.revision {
+            if crate::review::reads::review::preview_revision(workspace, request)? != r.revision {
                 return Err(Error::Format("Read review preview context changed".into()));
             }
             None
         }
         AnalysisJob::CommitReadReview { workspace, request } => {
-            if crate::read_review::commit_revision(workspace, request)? != r.revision {
+            if crate::review::reads::review::commit_revision(workspace, request)? != r.revision {
                 return Err(Error::Format("Read review commit context changed".into()));
             }
             None
@@ -998,7 +1052,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             reads,
             options,
         } => {
-            if crate::read_checks::capture_revision(workspace, reference, reads, options)?
+            if crate::review::reads::checks::capture_revision(workspace, reference, reads, options)?
                 != r.revision
             {
                 return Err(Error::Format("Read-check capture context changed".into()));
@@ -1009,13 +1063,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             workspace,
             attachment_hash,
         } => {
-            if crate::read_checks::replay_revision(workspace, attachment_hash)? != r.revision {
+            if crate::review::reads::checks::replay_revision(workspace, attachment_hash)?
+                != r.revision
+            {
                 return Err(Error::Format("Read-check replay context changed".into()));
             }
             None
         }
         AnalysisJob::BuildMutationIntent { molecule, request } => {
-            if crate::mutation_intent::intent_revision(molecule, request)? != r.revision {
+            if crate::cloning::pcr::mutation_intent::intent_revision(molecule, request)?
+                != r.revision
+            {
                 return Err(Error::Format("Mutation intent source/edit changed".into()));
             }
             None
@@ -1025,7 +1083,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             request,
         } => {
-            if crate::golden_gate_primer_design::preview_revision(inputs, target, request)?
+            if crate::cloning::golden_gate::primers::preview_revision(inputs, target, request)?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -1039,7 +1097,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             request,
         } => {
-            if crate::overlap_primer_design::design_revision(inputs, target, request)? != r.revision
+            if crate::cloning::overlap::primer_design::design_revision(inputs, target, request)?
+                != r.revision
             {
                 return Err(Error::Format(
                     "overlap primer sources/target/options changed".into(),
@@ -1052,7 +1111,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             options,
         } => {
-            if crate::assembly_junctions::inspection_revision(plan, target, options)? != r.revision
+            if crate::cloning::assembly::junctions::inspection_revision(plan, target, options)?
+                != r.revision
             {
                 return Err(Error::Format(
                     "assembly junction plan/target/options changed".into(),
@@ -1065,7 +1125,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             event,
             selection,
         } => {
-            if crate::run_material::inspection_revision(workspace, event, selection)? != r.revision
+            if crate::material::run::inspection_revision(workspace, event, selection)? != r.revision
             {
                 return Err(Error::Format(
                     "Run material workspace/event/origin selection changed".into(),
@@ -1080,8 +1140,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
             options,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            if crate::run_catalog_digest::inspection_revision(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            if crate::cloning::restriction::run_digest::inspection_revision(
                 &catalog,
                 selection,
                 source_role,
@@ -1102,7 +1162,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             workspace,
         } => {
-            if crate::pcr_digest_inspection::inspection_revision_from_material(
+            if crate::cloning::pcr::digest::inspection_revision_from_material(
                 molecule, origin, request, workspace,
             )? != r.revision
             {
@@ -1113,7 +1173,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::InspectPcrDigest { molecule, request } => {
-            if crate::pcr_digest_inspection::inspection_revision(molecule, request)? != r.revision {
+            if crate::cloning::pcr::digest::inspection_revision(molecule, request)? != r.revision {
                 return Err(Error::Format(
                     "PCR digest original source, primers or catalog options changed".into(),
                 ));
@@ -1125,7 +1185,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             recipe,
         } => {
-            if crate::tailing_recipe::preview_revision(inputs, target, recipe)? != r.revision {
+            if crate::cloning::ligation::tailing_recipe::preview_revision(inputs, target, recipe)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "tailing preparation source/target/options changed".into(),
                 ));
@@ -1138,7 +1200,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             recipe,
             policy,
         } => {
-            if crate::ligation_recipe::preview_revision(inputs, target, recipe, *policy)?
+            if crate::cloning::ligation::recipe::preview_revision(inputs, target, recipe, *policy)?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -1152,7 +1214,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             recipe,
         } => {
-            if crate::assembly_recipe::preview_revision(inputs, target, recipe)? != r.revision {
+            if crate::cloning::assembly::recipe::preview_revision(inputs, target, recipe)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "overlap preparation source/target/options changed".into(),
                 ));
@@ -1179,7 +1243,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             manifest_hash,
             options,
         } => {
-            if crate::combinatorial_export::revision(workspace, manifest_hash, options)?
+            if crate::planning::combinatorial::export::revision(workspace, manifest_hash, options)?
                 != r.revision
             {
                 return Err(Error::Format("Combinatorial export inputs changed.".into()));
@@ -1197,7 +1261,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             ));
         }
         AnalysisJob::SimulateTopo { inputs, request } => {
-            if crate::topo_worker::simulation_revision(inputs, request)? != r.revision {
+            if crate::cloning::topo::worker::simulation_revision(inputs, request)? != r.revision {
                 return Err(Error::Format("TOPO simulation context changed".into()));
             }
             None
@@ -1209,7 +1273,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             insert,
             directional,
         } => {
-            if crate::topo_worker::orientations_revision(
+            if crate::cloning::topo::worker::orientations_revision(
                 inputs,
                 request,
                 *vector,
@@ -1226,7 +1290,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             selection,
         } => {
-            if crate::topo_worker::projection_revision(inputs, request, selection)? != r.revision {
+            if crate::cloning::topo::worker::projection_revision(inputs, request, selection)?
+                != r.revision
+            {
                 return Err(Error::Format("TOPO projection context changed".into()));
             }
             None
@@ -1238,8 +1304,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             policy,
         } => {
-            if crate::topo_worker::target_revision(inputs, request, selection, target, policy)?
-                != r.revision
+            if crate::cloning::topo::worker::target_revision(
+                inputs, request, selection, target, policy,
+            )? != r.revision
             {
                 return Err(Error::Format("TOPO target/policy context changed".into()));
             }
@@ -1259,7 +1326,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             design,
             construct,
         } => {
-            if crate::combinatorial_design::inspect_multisite_revision(
+            if crate::planning::combinatorial::inspect_multisite_revision(
                 design, construct, workspace,
             )? != r.revision
             {
@@ -1270,7 +1337,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
-            if crate::multisite_recombination::revision(inputs, request)? != r.revision {
+            if crate::cloning::recombination::multisite::revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
                     "multisite sources/profile/options changed".into(),
                 ));
@@ -1282,8 +1349,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             selection,
         } => {
-            if crate::multisite_recombination::product_revision(inputs, request, selection)?
-                != r.revision
+            if crate::cloning::recombination::multisite::product_revision(
+                inputs, request, selection,
+            )? != r.revision
             {
                 return Err(Error::Format("multisite selected component changed".into()));
             }
@@ -1295,8 +1363,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
             target,
         } => {
-            if crate::multisite_recombination::check_revision(inputs, request, selection, target)?
-                != r.revision
+            if crate::cloning::recombination::multisite::check_revision(
+                inputs, request, selection, target,
+            )? != r.revision
             {
                 return Err(Error::Format(
                     "multisite independent target context changed".into(),
@@ -1305,7 +1374,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::InspectRecombination { inputs, request } => {
-            if crate::recombination::batch_revision(inputs, request)? != r.revision {
+            if crate::cloning::recombination::batch_revision(inputs, request)? != r.revision {
                 return Err(Error::Format(
                     "recombination source/profile/options changed".into(),
                 ));
@@ -1318,7 +1387,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             policy,
         } => {
-            if crate::recombination::check_revision(inputs, request, target, policy)? != r.revision
+            if crate::cloning::recombination::check_revision(inputs, request, target, policy)?
+                != r.revision
             {
                 return Err(Error::Format("recombination target binding changed".into()));
             }
@@ -1331,7 +1401,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             policy,
         } => {
-            if crate::recombination::checked_product_revision(
+            if crate::cloning::recombination::checked_product_revision(
                 inputs, request, selection, target, policy,
             )? != r.revision
             {
@@ -1347,8 +1417,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             options,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            if crate::catalog_digest::batch_revision(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            if crate::cloning::restriction::catalog::batch_revision(
                 &catalog,
                 selection,
                 source_role,
@@ -1369,8 +1439,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             fragment_index,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            if crate::catalog_digest::product_revision(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            if crate::cloning::restriction::catalog::product_revision(
                 &catalog,
                 selection,
                 source_role,
@@ -1392,8 +1462,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             fragment_index,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            if crate::catalog_digest::installation_revision(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            if crate::cloning::restriction::catalog::installation_revision(
                 &catalog,
                 selection,
                 workspace,
@@ -1416,7 +1486,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             fragment_index,
         } => {
-            if crate::restriction_history::installation_revision(
+            if crate::cloning::restriction::history::installation_revision(
                 workspace,
                 source,
                 enzymes,
@@ -1442,7 +1512,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             enzymes,
             options,
         } => {
-            if crate::restriction_inspection::batch_revision(
+            if crate::cloning::restriction::inspection::batch_revision(
                 source_role,
                 molecule,
                 enzymes,
@@ -1462,7 +1532,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             fragment_index,
         } => {
-            if crate::restriction_inspection::product_revision(
+            if crate::cloning::restriction::inspection::product_revision(
                 source_role,
                 molecule,
                 enzymes,
@@ -1496,7 +1566,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             guide,
         } => {
-            if crate::edit_template::batch_revision(source, target, options, guide.as_ref())?
+            if crate::sequence::template::batch_revision(source, target, options, guide.as_ref())?
                 != r.revision
             {
                 return Err(Error::Format(
@@ -1512,7 +1582,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             guide,
             donor,
         } => {
-            if crate::edit_template::check_batch_revision(
+            if crate::sequence::template::check_batch_revision(
                 source,
                 target,
                 options,
@@ -1527,7 +1597,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::DesignCrisprGuides { molecule, options } => {
-            if crate::crispr::guide_revision(molecule, options)? != r.revision {
+            if crate::sequence::crispr::guide_revision(molecule, options)? != r.revision {
                 return Err(Error::Format("CRISPR guide source/options changed".into()));
             }
             None
@@ -1537,7 +1607,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             references,
             options,
         } => {
-            if crate::crispr::off_target_revision(query, references, options)? != r.revision {
+            if crate::sequence::crispr::off_target_revision(query, references, options)?
+                != r.revision
+            {
                 return Err(Error::Format(
                     "CRISPR off-target query/references/options changed".into(),
                 ));
@@ -1545,7 +1617,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::AssessMethylation { molecule, options } => {
-            if crate::methylation::batch_revision(molecule, options)? != r.revision {
+            if crate::chemistry::methylation::batch_revision(molecule, options)? != r.revision {
                 return Err(Error::Format(
                     "methylation source/options/profile changed".into(),
                 ));
@@ -1553,7 +1625,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::AssembleContigs { reads, options } => {
-            if crate::contig::batch_revision(reads, options)? != r.revision {
+            if crate::review::contigs::batch_revision(reads, options)? != r.revision {
                 return Err(Error::Format("contig batch source/options changed".into()));
             }
             None
@@ -1561,7 +1633,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         AnalysisJob::RecordCloningRun { workspace, .. }
         | AnalysisJob::ReplayCloningRun { workspace, .. }
         | AnalysisJob::LoadRunEvidence { workspace, .. } => {
-            if crate::run_lineage::workspace_fingerprint(workspace)? != r.revision {
+            if crate::material::lineage::workspace_fingerprint(workspace)? != r.revision {
                 return Err(Error::Format("run request source workspace changed".into()));
             }
             None
@@ -1602,7 +1674,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             query,
             options,
         } => {
-            if crate::dotplot::source_revisions(molecule, query, options)?.0 != r.revision {
+            if crate::alignment::dotplot::source_revisions(molecule, query, options)?.0
+                != r.revision
+            {
                 return Err(Error::Format(
                     "dot plot request source revision mismatch".into(),
                 ));
@@ -1617,7 +1691,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         } => {
             // Bound source evidence and derive the required protein before hashing.
             // These jobs must not take the generic molecule-revision path first.
-            if crate::codon_design::source_revision(molecule, options)? != r.revision {
+            if crate::sequence::codon_design::source_revision(molecule, options)? != r.revision {
                 return Err(Error::Format(
                     "codon request source revision mismatch".into(),
                 ));
@@ -1668,7 +1742,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             None
         }
         AnalysisJob::LoadWorkspace { bytes } => {
-            if bytes.len() > crate::workspace::MAX_ARCHIVE_BYTES {
+            if bytes.len() > crate::documents::workspace::MAX_ARCHIVE_BYTES {
                 return Err(Error::TooLarge);
             }
             if blake3::hash(bytes).to_hex().as_str() != r.revision {
@@ -1690,7 +1764,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             workspace,
             event,
             selection,
-        } => crate::run_material::inspect_material(&workspace, &event, &selection)
+        } => crate::material::run::inspect_material(&workspace, &event, &selection)
             .map(AnalysisResult::MaterialOriginInspection),
         AnalysisJob::MaterialPcrDocuments {
             molecule,
@@ -1698,14 +1772,20 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             forward,
             reverse,
             template_strand,
-        } => crate::material_pcr::simulate(&molecule, &origin, &forward, &reverse, template_strand)
-            .map(AnalysisResult::MaterialPcrDocuments),
+        } => crate::cloning::pcr::material::simulate(
+            &molecule,
+            &origin,
+            &forward,
+            &reverse,
+            template_strand,
+        )
+        .map(AnalysisResult::MaterialPcrDocuments),
         AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
-            crate::material_pcr::prepare_outputs(&origin, &request)
+            crate::cloning::pcr::material::prepare_outputs(&origin, &request)
                 .map(AnalysisResult::MaterialPcrOutputsPrepared)
         }
         AnalysisJob::ReviewSequenceExport { molecule, format } => {
-            crate::sequence_export::review(&molecule, &format)
+            crate::formats::sequence::export::review(&molecule, &format)
                 .map(AnalysisResult::SequenceExportAssessment)
         }
         AnalysisJob::PrepareSequenceExport {
@@ -1713,7 +1793,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             format,
             expected_context_revision,
             allow_omissions,
-        } => crate::sequence_export::prepare(
+        } => crate::formats::sequence::export::prepare(
             &molecule,
             &format,
             &expected_context_revision,
@@ -1721,14 +1801,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         )
         .map(AnalysisResult::SequenceExportPrepared),
         AnalysisJob::ExportScfTrace { trace, options } => {
-            crate::scf_export::export(&trace, &options).map(AnalysisResult::ScfTraceExported)
+            crate::formats::scf::export(&trace, &options).map(AnalysisResult::ScfTraceExported)
         }
         AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
-            crate::run_review::prepare(&workspace, &run_id)
+            crate::material::review::prepare(&workspace, &run_id)
                 .map(AnalysisResult::SavedRunReviewPrepared)
         }
         AnalysisJob::RenderMapSvg { request } => {
-            crate::svg_export::render(&request).map(AnalysisResult::MapSvgExported)
+            crate::output::svg_export::render(&request).map(AnalysisResult::MapSvgExported)
         }
         AnalysisJob::InspectMaterialMismatchPcr {
             source,
@@ -1736,7 +1816,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             forward,
             reverse,
             options,
-        } => crate::material_derivation::preview_mismatch_pcr(
+        } => crate::material::derivation::preview_mismatch_pcr(
             &source, &origin, &forward, &reverse, &options,
         )
         .map(AnalysisResult::MaterialMismatchPcrPreview),
@@ -1744,14 +1824,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             origin,
             method,
-        } => crate::material_derivation::preview_repair(&source, &origin, method)
+        } => crate::material::derivation::preview_repair(&source, &origin, method)
             .map(AnalysisResult::MaterialRepairPreview),
         AnalysisJob::InspectMaterialOverlapExtension {
             workspace,
             source,
             origin,
             preparation,
-        } => crate::material_derivation::preview_overlap_extension(
+        } => crate::material::derivation::preview_overlap_extension(
             &workspace,
             &source,
             &origin,
@@ -1763,7 +1843,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             origin,
             action,
-        } => crate::material_derivation::preview_terminal_processing(
+        } => crate::material::derivation::preview_terminal_processing(
             &workspace, &source, &origin, &action,
         )
         .map(AnalysisResult::MaterialTerminalProcessingPreview),
@@ -1772,17 +1852,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             top,
             bottom,
             options,
-        } => {
-            crate::material_derivation::preview_annealed_oligos(&workspace, &top, &bottom, &options)
-                .map(AnalysisResult::MaterialAnnealedOligosPreview)
-        }
+        } => crate::material::derivation::preview_annealed_oligos(
+            &workspace, &top, &bottom, &options,
+        )
+        .map(AnalysisResult::MaterialAnnealedOligosPreview),
         AnalysisJob::AnalyzeAlignmentAntibody {
             alignment,
             source,
             options,
             limits,
             selection,
-        } => crate::alignment_antibody::analyze(
+        } => crate::protein::antibody_alignment::analyze(
             &alignment,
             &source,
             &options,
@@ -1820,16 +1900,16 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             bytes,
             format,
             selection,
-        } => crate::structure_view::prepare(&bytes, format, selection)
+        } => crate::protein::structure::prepare(&bytes, format, selection)
             .map(AnalysisResult::StructurePrepared),
         AnalysisJob::FindSimilarSequences {
             query,
             subjects,
             options,
-        } => crate::sequence_similarity::search(&query, &subjects, &options, &mut || false)
+        } => crate::sequence::similarity::search(&query, &subjects, &options, &mut || false)
             .map(AnalysisResult::SequenceSimilarity),
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
-            crate::material_derivation::install(&workspace, &request)
+            crate::material::derivation::install(&workspace, &request)
                 .map(AnalysisResult::MaterialDerivationInstalled)
         }
         AnalysisJob::InspectMaterialDigest {
@@ -1838,7 +1918,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             selection,
             options,
-        } => crate::material_derivation::inspect_digest(
+        } => crate::material::derivation::inspect_digest(
             &source_role,
             &source,
             &origin,
@@ -1851,74 +1931,86 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             inputs,
             template,
             task,
-        } => crate::topo_run_preparation::inspect(&inputs, template.as_ref(), &task)
+        } => crate::cloning::topo::run_preparation::inspect(&inputs, template.as_ref(), &task)
             .map(AnalysisResult::TopoRunInspection),
         AnalysisJob::ProcessTopoActions { inputs, request } => {
-            crate::topo_actions::inspect(&inputs, &request).map(AnalysisResult::TopoActionsProduct)
+            crate::cloning::topo::actions::inspect(&inputs, &request)
+                .map(AnalysisResult::TopoActionsProduct)
         }
 
         AnalysisJob::LoadRunEvidence { workspace, run_id } => {
-            crate::run_evidence::download(&workspace, &run_id)
+            crate::material::evidence::download(&workspace, &run_id)
                 .map(AnalysisResult::HistoricalRunEvidence)
         }
 
         AnalysisJob::ListLigationProfiles => {
-            crate::ligation_profiles::list().map(AnalysisResult::LigationProfiles)
+            crate::cloning::ligation::profiles::list().map(AnalysisResult::LigationProfiles)
         }
         AnalysisJob::ScorePublishedLigation {
             profile,
             ends,
             physical_competitors,
-        } => {
-            crate::ligation_profiles::score_with_competitors(&profile, &ends, &physical_competitors)
-                .map(AnalysisResult::PublishedLigationScore)
-        }
+        } => crate::cloning::ligation::profiles::score_with_competitors(
+            &profile,
+            &ends,
+            &physical_competitors,
+        )
+        .map(AnalysisResult::PublishedLigationScore),
         AnalysisJob::ScoreLigationCompetition {
             dataset,
             ends,
             physical_competitors,
-        } => crate::ligation_fidelity::score_competition(&dataset, &ends, &physical_competitors)
-            .map(AnalysisResult::LigationCompetition),
+        } => crate::cloning::ligation::fidelity::score_competition(
+            &dataset,
+            &ends,
+            &physical_competitors,
+        )
+        .map(AnalysisResult::LigationCompetition),
         AnalysisJob::RankGoldenGateFusions { inputs, request } => {
-            crate::golden_gate_fusion_rank::inspect(&inputs, &request)
+            crate::cloning::golden_gate::fusion_rank::inspect(&inputs, &request)
                 .map(AnalysisResult::RankedGoldenGateFusions)
         }
         AnalysisJob::InspectDomestication { source, request } => {
-            crate::domestication::inspect(&source, &request)
+            crate::cloning::golden_gate::domestication::inspect(&source, &request)
                 .map(AnalysisResult::DomesticationInspected)
         }
         AnalysisJob::ProposeDomestication { source, request } => {
-            crate::domestication::propose(&source, &request)
+            crate::cloning::golden_gate::domestication::propose(&source, &request)
                 .map(AnalysisResult::DomesticationProposed)
         }
         AnalysisJob::CheckDomestication {
             source,
             request,
             selection,
-        } => crate::domestication::check(&source, &request, &selection).map(|checked| {
-            AnalysisResult::DomesticationChecked {
+        } => crate::cloning::golden_gate::domestication::check(&source, &request, &selection).map(
+            |checked| AnalysisResult::DomesticationChecked {
                 report: checked.report().clone(),
                 target: checked.target().clone(),
-            }
-        }),
+            },
+        ),
         AnalysisJob::PrepareDomestication {
             input,
             request,
             workspace,
-        } => crate::domestication_preparation::materialize(&input, &request, workspace.as_ref())
-            .map(AnalysisResult::DomesticationPrepared),
+        } => crate::cloning::golden_gate::domestication::preparation::materialize(
+            &input,
+            &request,
+            workspace.as_ref(),
+        )
+        .map(AnalysisResult::DomesticationPrepared),
         AnalysisJob::SearchGoldenGateFusions { inputs, request } => {
-            crate::golden_gate_fusion_design::inspect(&inputs, &request)
+            crate::cloning::golden_gate::fusion_design::inspect(&inputs, &request)
                 .map(AnalysisResult::GoldenGateFusions)
         }
         AnalysisJob::MaterializeGoldenGateFusions {
             inputs,
             request,
             selection,
-        } => crate::golden_gate_fusion_design::materialize(&inputs, &request, &selection)
+        } => crate::cloning::golden_gate::fusion_design::materialize(&inputs, &request, &selection)
             .map(AnalysisResult::GoldenGateFusionMaterialized),
         AnalysisJob::ScoreLigationFidelity { dataset, ends } => {
-            crate::ligation_fidelity::score(&dataset, &ends).map(AnalysisResult::LigationFidelity)
+            crate::cloning::ligation::fidelity::score(&dataset, &ends)
+                .map(AnalysisResult::LigationFidelity)
         }
         AnalysisJob::FinalizeCloningOutputs {
             workspace,
@@ -1926,7 +2018,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             inputs,
             options,
-        } => crate::cloning_outputs::finalize(&workspace, &plan, target, inputs, &options)
+        } => crate::material::outputs::finalize(&workspace, &plan, target, inputs, &options)
             .map(AnalysisResult::CloningOutputsFinalized),
         AnalysisJob::SelectDigestFragment {
             selection,
@@ -1936,8 +2028,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             expected_batch_revision,
             choice,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            crate::digest_cut_selection::preview(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            crate::cloning::restriction::cut_selection::preview(
                 &catalog,
                 &selection,
                 &source_role,
@@ -1953,17 +2045,17 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             options,
             delimiter,
-        } => crate::plan_oligos::export(&plan, &target, &options, delimiter)
+        } => crate::planning::oligos::export(&plan, &target, &options, delimiter)
             .map(AnalysisResult::PlanOligosExported),
         AnalysisJob::ExportProtocolHtml { plan, target } => Ok(AnalysisResult::ProtocolHtml(
-            crate::verification::export_protocol_html(&plan, &target),
+            crate::verification::output::export_protocol_html(&plan, &target),
         )),
         AnalysisJob::InspectMismatchPcrDigest {
             molecule,
             origin,
             request,
             workspace,
-        } => crate::mismatch_pcr_digest_inspection::inspect(
+        } => crate::cloning::pcr::mismatch_digest::inspect(
             &molecule,
             origin.as_ref(),
             &request,
@@ -1975,27 +2067,31 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             recipe,
             policy,
-        } => crate::assembly_recipe::preview_annealing(&inputs, &target, &recipe, &policy)
-            .map(AnalysisResult::OverlapRecipePreview),
+        } => {
+            crate::cloning::assembly::recipe::preview_annealing(&inputs, &target, &recipe, &policy)
+                .map(AnalysisResult::OverlapRecipePreview)
+        }
         AnalysisJob::PreviewHomologyRecipe {
             inputs,
             target,
             recipe,
             policy,
-        } => crate::assembly_recipe::preview_homology(&inputs, &target, &recipe, &policy)
+        } => crate::cloning::assembly::recipe::preview_homology(&inputs, &target, &recipe, &policy)
             .map(AnalysisResult::OverlapRecipePreview),
         AnalysisJob::DesignEditedOverlapPrimers {
             inputs,
             request,
             workspace,
-        } => crate::assembly_edited_primer_design::design(&inputs, &request, workspace.as_ref())
-            .map(AnalysisResult::EditedOverlapPrimersDesigned),
+        } => {
+            crate::cloning::assembly::edited_primers::design(&inputs, &request, workspace.as_ref())
+                .map(AnalysisResult::EditedOverlapPrimersDesigned)
+        }
         AnalysisJob::InspectOverlapExtensionDigest {
             source,
             origin,
             request,
             workspace,
-        } => crate::overlap_extension_digest_inspection::inspect(
+        } => crate::cloning::overlap::extension::digest::inspect(
             &source,
             origin.as_ref(),
             &request,
@@ -2006,110 +2102,123 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             source,
             request,
             workspace,
-        } => crate::overlap_extension_primer_design::design(&source, &request, workspace.as_ref())
-            .map(AnalysisResult::OverlapExtensionPrimersDesigned),
+        } => crate::cloning::overlap::extension::primers::design(
+            &source,
+            &request,
+            workspace.as_ref(),
+        )
+        .map(AnalysisResult::OverlapExtensionPrimersDesigned),
         AnalysisJob::BuildContributionEditIntent {
             inputs,
             request,
             workspace,
-        } => crate::assembly_edit_intent::build(&inputs, &request, workspace.as_ref())
+        } => crate::cloning::assembly::edit_intent::build(&inputs, &request, workspace.as_ref())
             .map(AnalysisResult::ContributionEditIntent),
         AnalysisJob::BuildSubstitutedAssemblyIntent {
             inputs,
             request,
             workspace,
-        } => crate::assembly_substitution_intent::build(&inputs, &request, workspace.as_ref())
-            .map(AnalysisResult::SubstitutedAssemblyIntent),
+        } => crate::cloning::assembly::substitution_intent::build(
+            &inputs,
+            &request,
+            workspace.as_ref(),
+        )
+        .map(AnalysisResult::SubstitutedAssemblyIntent),
         AnalysisJob::BuildAssemblyIntent {
             inputs,
             request,
             workspace,
-        } => crate::assembly_intent::build(&inputs, &request, workspace.as_ref())
+        } => crate::cloning::assembly::intent::build(&inputs, &request, workspace.as_ref())
             .map(AnalysisResult::AssemblyIntent),
         AnalysisJob::BuildEditedAssemblyIntent {
             inputs,
             base,
             edits,
             workspace,
-        } => {
-            crate::assembly_junction_edit::build_intent(&inputs, &base, &edits, workspace.as_ref())
-                .map(AnalysisResult::EditedAssemblyIntent)
-        }
+        } => crate::cloning::assembly::junction_edit::build_intent(
+            &inputs,
+            &base,
+            &edits,
+            workspace.as_ref(),
+        )
+        .map(AnalysisResult::EditedAssemblyIntent),
         AnalysisJob::DesignEditedAssemblyPrimers { inputs, request } => {
-            crate::assembly_junction_edit::design(&inputs, &request)
+            crate::cloning::assembly::junction_edit::design(&inputs, &request)
                 .map(AnalysisResult::EditedAssemblyPrimers)
         }
         AnalysisJob::DesignSelectiveAssemblyPrimers { inputs, request } => {
-            crate::selective_junction_edit::design(&inputs, &request)
+            crate::cloning::assembly::selective_edit::design(&inputs, &request)
                 .map(AnalysisResult::SelectiveAssemblyPrimers)
         }
 
         AnalysisJob::PreviewProtocolQuantities { workspace, request } => {
-            crate::protocol_quantities::preview(&workspace, &request)
+            crate::output::quantities::preview(&workspace, &request)
                 .map(AnalysisResult::ProtocolQuantitiesPreview)
         }
         AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
-            crate::protocol_quantities::capture(&workspace, &request)
+            crate::output::quantities::capture(&workspace, &request)
                 .map(AnalysisResult::ProtocolQuantitiesCaptured)
         }
         AnalysisJob::ListTopoGraphs { workspace } => {
-            crate::topo_graph_history::list(&workspace).map(AnalysisResult::TopoGraphsListed)
+            crate::cloning::topo::graph_history::list(&workspace)
+                .map(AnalysisResult::TopoGraphsListed)
         }
         AnalysisJob::CaptureTopoGraph { workspace, request } => {
-            crate::topo_graph_history::prepare_capture(&workspace, &request)
+            crate::cloning::topo::graph_history::prepare_capture(&workspace, &request)
                 .map(AnalysisResult::TopoGraphCaptured)
         }
         AnalysisJob::InspectTopoGraph {
             workspace,
             selection,
-        } => crate::topo_graph_history::inspect(&workspace, &selection)
+        } => crate::cloning::topo::graph_history::inspect(&workspace, &selection)
             .map(AnalysisResult::TopoGraphInspected),
         AnalysisJob::ListProtocolQuantities { workspace } => {
-            crate::protocol_quantities::list(&workspace)
+            crate::output::quantities::list(&workspace)
                 .map(AnalysisResult::ProtocolQuantitiesListed)
         }
         AnalysisJob::OpenProtocolQuantities {
             workspace,
             quantity_hash,
-        } => crate::protocol_quantities::open(&workspace, &quantity_hash)
+        } => crate::output::quantities::open(&workspace, &quantity_hash)
             .map(AnalysisResult::ProtocolQuantitiesOpened),
         AnalysisJob::ExportProtocolQuantities {
             workspace,
             quantity_hash,
             format,
-        } => crate::protocol_quantities::export(&workspace, &quantity_hash, format)
+        } => crate::output::quantities::export(&workspace, &quantity_hash, format)
             .map(AnalysisResult::ProtocolQuantitiesExported),
         AnalysisJob::PreviewProtocolLayout { workspace, request } => {
-            crate::protocol_layout::preview(&workspace, &request)
+            crate::output::layout::preview(&workspace, &request)
                 .map(AnalysisResult::ProtocolLayoutPreview)
         }
         AnalysisJob::CaptureProtocolLayout { workspace, request } => {
-            crate::protocol_layout::capture(&workspace, &request)
+            crate::output::layout::capture(&workspace, &request)
                 .map(AnalysisResult::ProtocolLayoutCaptured)
         }
         AnalysisJob::ExportProtocolLayout {
             workspace,
             layout_hash,
             format,
-        } => crate::protocol_layout::export(&workspace, &layout_hash, format)
+        } => crate::output::layout::export(&workspace, &layout_hash, format)
             .map(AnalysisResult::ProtocolLayoutExported),
         AnalysisJob::InspectGoldenGateReaction {
             inputs,
             target,
             request,
-        } => crate::golden_gate_reaction::inspect(&inputs, &target, &request)
+        } => crate::cloning::golden_gate::reaction::inspect(&inputs, &target, &request)
             .map(AnalysisResult::GoldenGateReaction),
         AnalysisJob::PreparePcrOutputs { request } => {
-            crate::pcr_outputs::prepare(&request).map(AnalysisResult::PcrOutputs)
+            crate::cloning::pcr::outputs::prepare(&request).map(AnalysisResult::PcrOutputs)
         }
         AnalysisJob::PrepareMismatchPcrOutputs { request } => {
-            crate::mismatch_pcr_outputs::prepare(&request).map(AnalysisResult::MismatchPcrOutputs)
+            crate::cloning::pcr::mismatch_outputs::prepare(&request)
+                .map(AnalysisResult::MismatchPcrOutputs)
         }
         AnalysisJob::CompareSequences {
             reference,
             query,
             options,
-        } => crate::pairwise_review::compare(&reference, &query, &options)
+        } => crate::alignment::review::compare(&reference, &query, &options)
             .map(AnalysisResult::ReviewedComparison),
         AnalysisJob::ExportPairwiseComparison {
             record,
@@ -2117,57 +2226,60 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             query_name,
             fresh,
             format,
-        } => crate::pairwise_export::export(&record, &reference_name, &query_name, fresh, format)
+        } => crate::alignment::export::export(&record, &reference_name, &query_name, fresh, format)
             .map(AnalysisResult::ExportedPairwiseComparison),
         AnalysisJob::SearchPairwiseComparison {
             report,
             pattern,
             options,
-        } => crate::pairwise_search::search(&report, &pattern, options)
+        } => crate::alignment::search::search(&report, &pattern, options)
             .map(AnalysisResult::SearchedPairwiseComparison),
         AnalysisJob::PreparePairwiseContext {
             report,
             reference,
             query,
             translate,
-        } => crate::pairwise_context::prepare(&report, &reference, &query, translate)
+        } => crate::alignment::context::prepare(&report, &reference, &query, translate)
             .map(AnalysisResult::PreparedPairwiseContext),
         AnalysisJob::CopyReferenceFragment { request } => {
-            crate::reference_transfer::copy(&request).map(AnalysisResult::ReferenceFragment)
+            crate::sequence::reference_transfer::copy(&request)
+                .map(AnalysisResult::ReferenceFragment)
         }
         AnalysisJob::PasteReferenceFragment { request } => {
-            crate::reference_transfer::paste(&request).map(AnalysisResult::ReferencePaste)
+            crate::sequence::reference_transfer::paste(&request).map(AnalysisResult::ReferencePaste)
         }
         AnalysisJob::TranslateReference { request } => {
-            crate::translation_reference::inspect(&request).map(AnalysisResult::TranslatedReference)
+            crate::sequence::translation_reference::inspect(&request)
+                .map(AnalysisResult::TranslatedReference)
         }
         AnalysisJob::PrepareTranslatedReference { request, name } => {
-            crate::translation_reference::prepare(&request, &name)
+            crate::sequence::translation_reference::prepare(&request, &name)
                 .map(AnalysisResult::TranslatedOutputs)
         }
         AnalysisJob::SelectGoldenGateReaction { report, selection } => {
-            crate::golden_gate_reaction::select(&report, &selection)
+            crate::cloning::golden_gate::reaction::select(&report, &selection)
                 .map(AnalysisResult::GoldenGateReactionCandidate)
         }
         AnalysisJob::DesignGoldenGateJunctionPrimers { inputs, request } => {
-            crate::golden_gate_junction_edit::design(&inputs, &request)
+            crate::cloning::golden_gate::junction_edit::design(&inputs, &request)
                 .map(AnalysisResult::GoldenGateJunctionPrimers)
         }
         AnalysisJob::InspectPreparedGoldenGatePool {
             inputs,
             target,
             request,
-        } => crate::prepared_golden_gate::inspect(&inputs, &target, &request)
+        } => crate::cloning::golden_gate::prepared::inspect(&inputs, &target, &request)
             .map(AnalysisResult::PreparedGoldenGatePool),
         AnalysisJob::SelectPreparedGoldenGateCandidate { report, selection } => {
-            crate::prepared_golden_gate::select(&report, &selection)
+            crate::cloning::golden_gate::prepared::select(&report, &selection)
                 .map(AnalysisResult::PreparedGoldenGateCandidate)
         }
         AnalysisJob::PreviewReadReview { workspace, request } => {
-            crate::read_review::preview(&workspace, &request).map(AnalysisResult::ReadReviewPreview)
+            crate::review::reads::review::preview(&workspace, &request)
+                .map(AnalysisResult::ReadReviewPreview)
         }
         AnalysisJob::CommitReadReview { workspace, request } => {
-            crate::read_review::commit(&workspace, &request)
+            crate::review::reads::review::commit(&workspace, &request)
                 .map(AnalysisResult::ReadReviewCommitted)
         }
         AnalysisJob::CaptureReadCheck {
@@ -2175,39 +2287,40 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             reference,
             reads,
             options,
-        } => crate::read_checks::capture(&workspace, reference, reads, &options)
+        } => crate::review::reads::checks::capture(&workspace, reference, reads, &options)
             .map(AnalysisResult::ReadCheckCaptured),
         AnalysisJob::ReplayReadCheck {
             workspace,
             attachment_hash,
-        } => crate::read_checks::replay(&workspace, &attachment_hash)
+        } => crate::review::reads::checks::replay(&workspace, &attachment_hash)
             .map(AnalysisResult::ReadCheckReplayed),
         AnalysisJob::BuildMutationIntent { molecule, request } => {
-            crate::mutation_intent::build(&molecule, &request).map(AnalysisResult::MutationIntent)
+            crate::cloning::pcr::mutation_intent::build(&molecule, &request)
+                .map(AnalysisResult::MutationIntent)
         }
         AnalysisJob::DesignGoldenGatePrimers {
             inputs,
             target,
             request,
-        } => crate::golden_gate_primer_design::design(&inputs, &target, &request)
+        } => crate::cloning::golden_gate::primers::design(&inputs, &target, &request)
             .map(AnalysisResult::GoldenGatePrimersDesigned),
         AnalysisJob::DesignOverlapPrimers {
             inputs,
             target,
             request,
-        } => crate::overlap_primer_design::design(&inputs, &target, &request)
+        } => crate::cloning::overlap::primer_design::design(&inputs, &target, &request)
             .map(AnalysisResult::OverlapPrimersDesigned),
         AnalysisJob::InspectAssemblyJunctions {
             plan,
             target,
             options,
-        } => crate::assembly_junctions::inspect_plan(&plan, &target, &options)
+        } => crate::cloning::assembly::junctions::inspect_plan(&plan, &target, &options)
             .map(AnalysisResult::AssemblyJunctionInspection),
         AnalysisJob::InspectRunMaterial {
             workspace,
             event,
             selection,
-        } => crate::run_material::inspect(&workspace, &event, &selection)
+        } => crate::material::run::inspect(&workspace, &event, &selection)
             .map(AnalysisResult::RunMaterialInspection),
         AnalysisJob::InspectRunCatalogRestriction {
             source_role,
@@ -2216,8 +2329,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
             options,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            crate::run_catalog_digest::inspect(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            crate::cloning::restriction::run_digest::inspect(
                 &catalog,
                 &selection,
                 &source_role,
@@ -2232,32 +2345,32 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             origin,
             request,
             workspace,
-        } => crate::pcr_digest_inspection::inspect_from_material(
+        } => crate::cloning::pcr::digest::inspect_from_material(
             &molecule, &origin, &request, &workspace,
         )
         .map(AnalysisResult::MaterialPcrDigestInspection),
         AnalysisJob::InspectPcrDigest { molecule, request } => {
-            crate::pcr_digest_inspection::inspect(&molecule, &request)
+            crate::cloning::pcr::digest::inspect(&molecule, &request)
                 .map(AnalysisResult::PcrDigestInspection)
         }
         AnalysisJob::PreviewTailingRecipe {
             inputs,
             target,
             recipe,
-        } => crate::tailing_recipe::preview(&inputs, &target, &recipe)
+        } => crate::cloning::ligation::tailing_recipe::preview(&inputs, &target, &recipe)
             .map(AnalysisResult::TailingRecipePreview),
         AnalysisJob::PreviewLigationRecipe {
             inputs,
             target,
             recipe,
             policy,
-        } => crate::ligation_recipe::preview(&inputs, &target, &recipe, policy)
+        } => crate::cloning::ligation::recipe::preview(&inputs, &target, &recipe, policy)
             .map(AnalysisResult::LigationRecipePreview),
         AnalysisJob::PreviewOverlapRecipe {
             inputs,
             target,
             recipe,
-        } => crate::assembly_recipe::preview(&inputs, &target, &recipe)
+        } => crate::cloning::assembly::recipe::preview(&inputs, &target, &recipe)
             .map(AnalysisResult::OverlapRecipePreview),
         AnalysisJob::PrepareVariants { .. }
         | AnalysisJob::VariantPage { .. }
@@ -2268,7 +2381,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             "variant operations require a persistent worker session".into(),
         )),
         AnalysisJob::SimulateTopo { inputs, request } => {
-            crate::topo::simulate(&inputs, &request).map(AnalysisResult::TopoSimulation)
+            crate::cloning::topo::simulate(&inputs, &request).map(AnalysisResult::TopoSimulation)
         }
         AnalysisJob::InspectTopoOrientations {
             inputs,
@@ -2276,22 +2389,27 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             vector,
             insert,
             directional,
-        } => crate::topo::inspect_orientations(&inputs, &request, vector, insert, directional)
-            .map(AnalysisResult::TopoOrientations),
+        } => crate::cloning::topo::inspect_orientations(
+            &inputs,
+            &request,
+            vector,
+            insert,
+            directional,
+        )
+        .map(AnalysisResult::TopoOrientations),
         AnalysisJob::ProjectTopoProduct {
             inputs,
             request,
             selection,
-        } => {
-            crate::topo::product(&inputs, &request, &selection).map(AnalysisResult::TopoProjection)
-        }
+        } => crate::cloning::topo::product(&inputs, &request, &selection)
+            .map(AnalysisResult::TopoProjection),
         AnalysisJob::CheckTopoTarget {
             inputs,
             request,
             selection,
             target,
             policy,
-        } => crate::topo::check_target(&inputs, &request, &selection, &target, &policy)
+        } => crate::cloning::topo::check_target(&inputs, &request, &selection, &target, &policy)
             .map(AnalysisResult::TopoTarget),
         AnalysisJob::PrepareReadAlignments { .. }
         | AnalysisJob::ReadAlignmentPage { .. }
@@ -2304,27 +2422,29 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             workspace,
             design,
             construct,
-        } => crate::combinatorial_design::inspect_multisite(&design, &construct, &workspace)
+        } => crate::planning::combinatorial::inspect_multisite(&design, &construct, &workspace)
             .map(AnalysisResult::CombinatorialMultiSiteInspection),
         AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
-            crate::multisite_recombination::simulate(&inputs, &request)
+            crate::cloning::recombination::multisite::simulate(&inputs, &request)
                 .map(AnalysisResult::MultiSiteRecombination)
         }
         AnalysisJob::ProjectMultiSiteRecombination {
             inputs,
             request,
             selection,
-        } => crate::multisite_recombination::product(&inputs, &request, &selection)
+        } => crate::cloning::recombination::multisite::product(&inputs, &request, &selection)
             .map(AnalysisResult::MultiSiteRecombinationProduct),
         AnalysisJob::CheckMultiSiteRecombination {
             inputs,
             request,
             selection,
             target,
-        } => crate::multisite_recombination::check_target(&inputs, &request, &selection, &target)
-            .map(AnalysisResult::MultiSiteRecombinationChecked),
+        } => crate::cloning::recombination::multisite::check_target(
+            &inputs, &request, &selection, &target,
+        )
+        .map(AnalysisResult::MultiSiteRecombinationChecked),
         AnalysisJob::InspectRecombination { inputs, request } => {
-            crate::recombination::simulate(&inputs, &request)
+            crate::cloning::recombination::simulate(&inputs, &request)
                 .map(AnalysisResult::RecombinationInspection)
         }
         AnalysisJob::CheckRecombinationTarget {
@@ -2332,7 +2452,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             request,
             target,
             policy,
-        } => crate::recombination::check_target(&inputs, &request, &target, &policy)
+        } => crate::cloning::recombination::check_target(&inputs, &request, &target, &policy)
             .map(AnalysisResult::RecombinationTargetCheck),
         AnalysisJob::SelectRecombinationComponent {
             inputs,
@@ -2340,17 +2460,25 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             selection,
             target,
             policy,
-        } => crate::recombination::checked_product(&inputs, &request, &selection, &target, &policy)
-            .map(AnalysisResult::RecombinationProduct),
+        } => crate::cloning::recombination::checked_product(
+            &inputs, &request, &selection, &target, &policy,
+        )
+        .map(AnalysisResult::RecombinationProduct),
         AnalysisJob::InspectCatalogRestriction {
             selection,
             source_role,
             molecule,
             options,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            crate::catalog_digest::inspect(&catalog, &selection, &source_role, &molecule, &options)
-                .map(AnalysisResult::CatalogRestrictionInspection)
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            crate::cloning::restriction::catalog::inspect(
+                &catalog,
+                &selection,
+                &source_role,
+                &molecule,
+                &options,
+            )
+            .map(AnalysisResult::CatalogRestrictionInspection)
         }
         AnalysisJob::MaterializeCatalogDigestFragment {
             selection,
@@ -2359,8 +2487,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             fragment_index,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            crate::catalog_digest::product(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            crate::cloning::restriction::catalog::product(
                 &catalog,
                 &selection,
                 &source_role,
@@ -2377,8 +2505,8 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             fragment_index,
         } => {
-            let catalog = crate::catalog_digest::builtin_catalog()?;
-            crate::catalog_digest::install(
+            let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+            crate::cloning::restriction::catalog::install(
                 &catalog,
                 &selection,
                 &workspace,
@@ -2395,7 +2523,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             enzymes,
             options,
             fragment_index,
-        } => crate::restriction_history::install(
+        } => crate::cloning::restriction::history::install(
             &workspace,
             &source,
             &enzymes,
@@ -2408,22 +2536,32 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             enzymes,
             options,
-        } => crate::restriction_inspection::scan(&source_role, &molecule, &enzymes, &options)
-            .map(AnalysisResult::RestrictionInspection),
+        } => crate::cloning::restriction::inspection::scan(
+            &source_role,
+            &molecule,
+            &enzymes,
+            &options,
+        )
+        .map(AnalysisResult::RestrictionInspection),
         AnalysisJob::InspectRestriction {
             source_role,
             molecule,
             enzymes,
             options,
-        } => crate::restriction_inspection::inspect(&source_role, &molecule, &enzymes, &options)
-            .map(AnalysisResult::RestrictionInspection),
+        } => crate::cloning::restriction::inspection::inspect(
+            &source_role,
+            &molecule,
+            &enzymes,
+            &options,
+        )
+        .map(AnalysisResult::RestrictionInspection),
         AnalysisJob::MaterializeDigestFragment {
             source_role,
             molecule,
             enzymes,
             options,
             fragment_index,
-        } => crate::restriction_inspection::product(
+        } => crate::cloning::restriction::inspection::product(
             &source_role,
             &molecule,
             &enzymes,
@@ -2452,7 +2590,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target,
             options,
             guide,
-        } => crate::edit_template::design(&source, &target, &options, guide.as_ref())
+        } => crate::sequence::template::design(&source, &target, &options, guide.as_ref())
             .map(AnalysisResult::EditTemplate),
         AnalysisJob::CheckEditTemplate {
             source,
@@ -2460,36 +2598,40 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             options,
             guide,
             donor,
-        } => crate::edit_template::check(&source, &target, &options, guide.as_ref(), &donor)
+        } => crate::sequence::template::check(&source, &target, &options, guide.as_ref(), &donor)
             .map(AnalysisResult::EditTemplateCheck),
         AnalysisJob::DesignCrisprGuides { molecule, options } => {
-            crate::crispr::design_guides(&molecule, &options).map(AnalysisResult::CrisprGuides)
+            crate::sequence::crispr::design_guides(&molecule, &options)
+                .map(AnalysisResult::CrisprGuides)
         }
         AnalysisJob::SearchCrisprOffTargets {
             query,
             references,
             options,
-        } => crate::crispr::search_off_targets(&query, &references, &options)
+        } => crate::sequence::crispr::search_off_targets(&query, &references, &options)
             .map(AnalysisResult::CrisprOffTargets),
         AnalysisJob::AssessMethylation { molecule, options } => {
-            crate::methylation::assess(&molecule, &options).map(AnalysisResult::Methylation)
+            crate::chemistry::methylation::assess(&molecule, &options)
+                .map(AnalysisResult::Methylation)
         }
         AnalysisJob::AssembleContigs { reads, options } => {
-            crate::contig::assemble(&reads, &options).map(AnalysisResult::Contigs)
+            crate::review::contigs::assemble(&reads, &options).map(AnalysisResult::Contigs)
         }
         AnalysisJob::DotPlot {
             molecule,
             query,
             options,
-        } => crate::dotplot::analyze(&molecule, &query, &options).map(AnalysisResult::DotPlot),
+        } => crate::alignment::dotplot::analyze(&molecule, &query, &options)
+            .map(AnalysisResult::DotPlot),
         AnalysisJob::DesignCodons { molecule, options } => {
-            crate::codon_design::design(&molecule, &options).map(AnalysisResult::CodonDesign)
+            crate::sequence::codon_design::design(&molecule, &options)
+                .map(AnalysisResult::CodonDesign)
         }
         AnalysisJob::CheckCodonDesign {
             source,
             candidate,
             options,
-        } => crate::codon_design::check(&source, &candidate, &options)
+        } => crate::sequence::codon_design::check(&source, &candidate, &options)
             .map(AnalysisResult::CodonCheck),
         AnalysisJob::RecordCloningRun {
             workspace,
@@ -2497,7 +2639,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             target_binding,
             input_bindings,
             allow_incomplete,
-        } => crate::run_lineage::record_run(
+        } => crate::material::lineage::record_run(
             &workspace,
             &plan,
             target_binding,
@@ -2506,13 +2648,13 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
         )
         .map(AnalysisResult::RunCommit),
         AnalysisJob::ReplayCloningRun { workspace, run_id } => {
-            crate::run_lineage::replay_run(&workspace, &run_id).map(AnalysisResult::RunReplay)
+            crate::material::lineage::replay_run(&workspace, &run_id).map(AnalysisResult::RunReplay)
         }
         AnalysisJob::TailPreview {
             molecule,
             recipe,
             base,
-        } => crate::verification::simulate_tailing(&molecule, &recipe, base)
+        } => crate::verification::terminal::simulate_tailing(&molecule, &recipe, base)
             .map(AnalysisResult::TailPreview),
         AnalysisJob::CheckOverlapProfile {
             molecules,
@@ -2520,12 +2662,12 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             overlaps,
             circular,
             options,
-        } => crate::overlap_profiles::check_oriented_fragments(
+        } => crate::cloning::overlap::profiles::check_oriented_fragments(
             &molecules, &reverse, &overlaps, circular, &options,
         )
         .map(AnalysisResult::OverlapProfile),
         AnalysisJob::ProteinProperties { molecule, options } => {
-            crate::protein_properties::analyze_protein(&molecule, &options)
+            crate::protein::properties::analyze_protein(&molecule, &options)
                 .map(AnalysisResult::ProteinProperties)
         }
         AnalysisJob::ImportAlignment {
@@ -2533,20 +2675,20 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             format,
             alphabet,
             name,
-        } => crate::alignment_formats::import_alignment(&bytes, format, alphabet, &name)
+        } => crate::formats::alignment::import_alignment(&bytes, format, alphabet, &name)
             .map(AnalysisResult::AlignmentDocument),
         AnalysisJob::LoadAlignment { bytes } => {
-            crate::alignment_formats::load_alignment(&bytes).map(AnalysisResult::AlignmentDocument)
+            crate::formats::alignment::load_alignment(&bytes).map(AnalysisResult::AlignmentDocument)
         }
         AnalysisJob::ExportAlignment { document, format } => {
-            crate::alignment_formats::export_alignment(&document, format)
+            crate::formats::alignment::export_alignment(&document, format)
                 .map(AnalysisResult::AlignmentExport)
         }
         AnalysisJob::ExtractAlignmentRows { document, row_ids } => document
             .extract_rows(&row_ids)
             .map(AnalysisResult::AlignmentRows),
         AnalysisJob::SaveAlignment { document } => {
-            crate::alignment_formats::save_alignment(&document).map(AnalysisResult::AlignmentSaved)
+            crate::formats::alignment::save_alignment(&document).map(AnalysisResult::AlignmentSaved)
         }
         AnalysisJob::BeginCombinatorialBatch { .. }
         | AnalysisJob::AdvanceCombinatorialBatch { .. }
@@ -2563,7 +2705,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             workspace,
             manifest_hash,
             options,
-        } => crate::combinatorial_export::export(&workspace, &manifest_hash, &options)
+        } => crate::planning::combinatorial::export::export(&workspace, &manifest_hash, &options)
             .map(AnalysisResult::CombinatorialOutputsArchive),
         AnalysisJob::PrepareTracks { .. } | AnalysisJob::CachedViewTracks { .. } => Err(
             Error::Unsupported("cached track jobs require an AnalysisSession".into()),
@@ -2572,48 +2714,62 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             molecule,
             window,
             options,
-        } => crate::view_tracks::view_tracks(&molecule, window, &options)
+        } => crate::tracks::view::view_tracks(&molecule, window, &options)
             .map(AnalysisResult::ViewTracks),
         AnalysisJob::SearchDocument { molecule, options } => {
-            crate::search::search_document(&molecule, &options).map(AnalysisResult::DocumentSearch)
+            crate::sequence::search::search_document(&molecule, &options)
+                .map(AnalysisResult::DocumentSearch)
         }
         AnalysisJob::Search { molecule, query } => {
-            crate::analysis::find_matches(&molecule, &query, true).map(AnalysisResult::Search)
+            crate::sequence::analysis::find_matches(&molecule, &query, true)
+                .map(AnalysisResult::Search)
         }
         AnalysisJob::Restriction { molecule, enzyme } => {
-            crate::analysis::restriction_sites(&molecule, &enzyme).map(AnalysisResult::Restriction)
+            crate::sequence::analysis::restriction_sites(&molecule, &enzyme)
+                .map(AnalysisResult::Restriction)
         }
         AnalysisJob::Pcr {
             molecule,
             forward,
             reverse,
-        } => crate::analysis::simulate_pcr(&molecule, &forward, &reverse).map(AnalysisResult::Pcr),
+        } => crate::sequence::analysis::simulate_pcr(&molecule, &forward, &reverse)
+            .map(AnalysisResult::Pcr),
         AnalysisJob::RepairPreview {
             molecule,
             enzymes,
             fragment_index,
             method,
-        } => crate::verification::simulate_end_repair(&molecule, &enzymes, fragment_index, method)
-            .map(AnalysisResult::RepairPreview),
+        } => crate::verification::terminal::simulate_end_repair(
+            &molecule,
+            &enzymes,
+            fragment_index,
+            method,
+        )
+        .map(AnalysisResult::RepairPreview),
         AnalysisJob::AnnealPreview {
             molecule,
             bottom,
             options,
-        } => crate::verification::simulate_oligo_annealing(&molecule, &bottom, &options)
+        } => crate::verification::terminal::simulate_oligo_annealing(&molecule, &bottom, &options)
             .map(AnalysisResult::AnnealPreview),
         AnalysisJob::AnnealedDocument {
             molecule,
             bottom,
             preview,
             candidate_index,
-        } => crate::verification::annealed_document(&molecule, &bottom, &preview, candidate_index)
-            .map(AnalysisResult::PhysicalPreviewDocument),
+        } => crate::verification::terminal::annealed_document(
+            &molecule,
+            &bottom,
+            &preview,
+            candidate_index,
+        )
+        .map(AnalysisResult::PhysicalPreviewDocument),
         AnalysisJob::PcrDocuments {
             molecule,
             forward,
             reverse,
             template_strand,
-        } => crate::verification::simulate_pcr_documents(
+        } => crate::verification::pcr::simulate_pcr_documents(
             &molecule,
             &forward,
             &reverse,
@@ -2625,52 +2781,68 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             primer,
             conditions,
             binding_options,
-        } => crate::primers::analyze_primer(&primer, &conditions).and_then(|analysis| {
-            crate::primers::find_binding_sites(&molecule, &primer, &binding_options).map(
-                |bindings| AnalysisResult::PrimerEvidence(PrimerEvidence { analysis, bindings }),
-            )
-        }),
+        } => crate::cloning::pcr::primers::analyze_primer(&primer, &conditions).and_then(
+            |analysis| {
+                crate::cloning::pcr::primers::find_binding_sites(
+                    &molecule,
+                    &primer,
+                    &binding_options,
+                )
+                .map(|bindings| {
+                    AnalysisResult::PrimerEvidence(PrimerEvidence { analysis, bindings })
+                })
+            },
+        ),
         AnalysisJob::DesignPrimers { molecule, options } => {
-            crate::primers::design_primers(&molecule, &options).map(AnalysisResult::PrimerDesign)
+            crate::cloning::pcr::primers::design_primers(&molecule, &options)
+                .map(AnalysisResult::PrimerDesign)
         }
         AnalysisJob::ExportProtocolPdf { target, plan } => {
-            crate::pdf::export_protocol_pdf(&plan, &target).map(AnalysisResult::ProtocolPdf)
+            crate::output::pdf::export_protocol_pdf(&plan, &target).map(AnalysisResult::ProtocolPdf)
         }
         AnalysisJob::GoldenGate {
             templates, options, ..
-        } => crate::golden_gate::simulate(&templates, &options).map(AnalysisResult::GoldenGate),
+        } => crate::cloning::golden_gate::simulate(&templates, &options)
+            .map(AnalysisResult::GoldenGate),
         AnalysisJob::MismatchPcr {
             molecule,
             forward,
             reverse,
             options,
-        } => crate::mutagenesis::simulate_pcr(&molecule, &forward, &reverse, &options)
-            .map(AnalysisResult::MismatchPcr),
+        } => {
+            crate::cloning::pcr::mutagenesis::simulate_pcr(&molecule, &forward, &reverse, &options)
+                .map(AnalysisResult::MismatchPcr)
+        }
         AnalysisJob::InversePcr {
             molecule,
             target,
             origin,
             options,
-        } => crate::mutagenesis::design_inverse_pcr(&molecule, &target, origin.as_ref(), &options)
-            .map(AnalysisResult::InversePcr),
+        } => crate::cloning::pcr::mutagenesis::design_inverse_pcr(
+            &molecule,
+            &target,
+            origin.as_ref(),
+            &options,
+        )
+        .map(AnalysisResult::InversePcr),
         AnalysisJob::PredictGel {
             lanes, calibration, ..
-        } => crate::gel::predict_gel(&lanes, &calibration).map(AnalysisResult::Gel),
+        } => crate::output::gel::predict_gel(&lanes, &calibration).map(AnalysisResult::Gel),
         AnalysisJob::PredictPinnedGel {
             lanes, calibration, ..
-        } => crate::gel::predict_gel(&lanes, &calibration).map(AnalysisResult::PinnedGel),
+        } => crate::output::gel::predict_gel(&lanes, &calibration).map(AnalysisResult::PinnedGel),
         AnalysisJob::DiagnosticDigests {
             candidates,
             options,
             ..
-        } => crate::gel::diagnostic_digests(&candidates, &options)
+        } => crate::output::gel::diagnostic_digests(&candidates, &options)
             .map(AnalysisResult::DiagnosticDigest),
         AnalysisJob::MismatchPcrPreview {
             molecule,
             forward,
             reverse,
             options,
-        } => crate::verification::simulate_mutagenesis_preview(
+        } => crate::verification::pcr::simulate_mutagenesis_preview(
             &molecule, &forward, &reverse, &options,
         )
         .map(AnalysisResult::MismatchPcrPreview),
@@ -2680,7 +2852,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                 .map(AnalysisResult::DuplexDigest)
         }
         AnalysisJob::Translate { molecule, options } => {
-            crate::translation::translate(&molecule.sequence, &options)
+            crate::sequence::translation::translate(&molecule.sequence, &options)
                 .map(AnalysisResult::Translation)
         }
         AnalysisJob::TranslateCds {
@@ -2690,10 +2862,10 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             .features
             .get(feature_index)
             .ok_or_else(|| Error::Coordinates("CDS annotation no longer exists".into()))
-            .and_then(|f| crate::translation::translate_cds(&molecule, f))
+            .and_then(|f| crate::sequence::translation::translate_cds(&molecule, f))
             .map(AnalysisResult::CdsTranslation),
         AnalysisJob::FindOrfs { molecule, options } => {
-            crate::translation::find_orfs(&molecule, &options).map(AnalysisResult::Orfs)
+            crate::sequence::translation::find_orfs(&molecule, &options).map(AnalysisResult::Orfs)
         }
         AnalysisJob::Align {
             molecule,
@@ -2704,51 +2876,54 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             .and_then(|_| crate::alignment::align(&molecule.sequence, &query.sequence, &options))
             .map(AnalysisResult::Alignment),
         AnalysisJob::Verify { target, plan } => Ok(AnalysisResult::Verification(
-            crate::verification::verify(&plan, &target),
+            crate::verification::engine::verify(&plan, &target),
         )),
         AnalysisJob::SaveWorkspace { workspace } => {
-            crate::workspace::save_workspace(&workspace).map(AnalysisResult::WorkspaceSaved)
+            crate::documents::workspace::save_workspace(&workspace)
+                .map(AnalysisResult::WorkspaceSaved)
         }
         AnalysisJob::LoadWorkspace { bytes } => {
-            crate::workspace::load_workspace(&bytes).map(AnalysisResult::WorkspaceLoaded)
+            crate::documents::workspace::load_workspace(&bytes).map(AnalysisResult::WorkspaceLoaded)
         }
         AnalysisJob::ValidateTraces {
             molecule,
             reads,
             options,
-        } => crate::trace_validation::validate_reads(&molecule, &reads, &options)
+        } => crate::review::reads::trace_validation::validate_reads(&molecule, &reads, &options)
             .map(AnalysisResult::TraceValidation),
         AnalysisJob::ScanFeatureLibrary {
             molecule,
             library,
             options,
-        } => crate::feature_library::scan(&molecule, &library, &options)
+        } => crate::sequence::annotations::library::scan(&molecule, &library, &options)
             .map(AnalysisResult::FeatureLibraryScan),
         AnalysisJob::ApplyFeatureLibrary {
             molecule,
             library,
             report,
             selected,
-        } => crate::feature_library::apply_selected(&molecule, &library, &report, &selected)
-            .map(AnalysisResult::AnnotatedDocument),
+        } => crate::sequence::annotations::library::apply_selected(
+            &molecule, &library, &report, &selected,
+        )
+        .map(AnalysisResult::AnnotatedDocument),
         AnalysisJob::ImportAnnotations {
             molecule,
             text,
             format,
             seqid,
-        } => crate::annotation_formats::import_annotations(&molecule, &text, format, &seqid)
+        } => crate::formats::annotations::import_annotations(&molecule, &text, format, &seqid)
             .map(AnalysisResult::AnnotationImport),
         AnalysisJob::ApplyAnnotations {
             molecule,
             report,
             selected,
-        } => crate::annotation_formats::apply_annotations(&molecule, &report, &selected)
+        } => crate::formats::annotations::apply_annotations(&molecule, &report, &selected)
             .map(AnalysisResult::AnnotatedDocument),
         AnalysisJob::ExportAnnotations {
             molecule,
             format,
             seqid,
-        } => crate::annotation_formats::export_annotations(&molecule, format, &seqid).map(|r| {
+        } => crate::formats::annotations::export_annotations(&molecule, format, &seqid).map(|r| {
             AnalysisResult::AnnotationExport(AnnotationExportReport {
                 text: r.text,
                 warnings: r.warnings,

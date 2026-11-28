@@ -1,6 +1,6 @@
 //! Actual SDK routing for immutable source-bound methylation assessment evidence.
-use collagene_core::methylation::*;
-use collagene_mcp::CollageneServer;
+use collagene_core::chemistry::methylation::*;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::Molecule;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -106,11 +106,12 @@ async fn assessment_sdk_binds_source_profiles_states_and_full_evidence_pages() {
             .iter()
             .any(|site| site.outcome == Outcome::Unknown)
     );
-    let molecule: Molecule =
-        collagene_core::formats::import_text(">source\nTCTAGATCGAATTCGGATCCCTCGAGGGTCTCCGTCTC\n")
-            .unwrap()
-            .molecules
-            .remove(0);
+    let molecule: Molecule = collagene_core::formats::sequence::import_text(
+        ">source\nTCTAGATCGAATTCGGATCCCTCGAGGGTCTCCGTCTC\n",
+    )
+    .unwrap()
+    .molecules
+    .remove(0);
     report.validate_bindings_for(&molecule, &options).unwrap();
     replay(&molecule, &options, &report).unwrap();
     let next = call(

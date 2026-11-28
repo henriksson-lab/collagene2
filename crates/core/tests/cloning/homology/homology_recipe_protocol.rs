@@ -1,23 +1,32 @@
 //! New physical homology material stays explicit across worker, archive and saved-run boundaries.
 use collagene_core::{
-    analysis::Primer,
-    assembly_junctions::{self, Method},
-    assembly_recipe::{self, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest,
     chemistry::Terminus,
-    cloning_outputs,
-    homology_assembly::{Options, OuterEndPolicy, Resection},
-    ligation_recipe,
+    cloning::{
+        assembly::{
+            junctions::{self as assembly_junctions, Method},
+            recipe::{self as assembly_recipe, FragmentSpec, Preparation, RunPreparation},
+        },
+        ligation::recipe as ligation_recipe,
+        overlap::assembly::{Options, OuterEndPolicy, Resection},
+        restriction::catalog as catalog_digest,
+    },
+    documents::{
+        transfer::{self, Candidate},
+        workspace::{self, Workspace},
+    },
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    transfer::{self, Candidate},
-    verification::{self, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "AGTCCGATGCTA";
@@ -253,16 +262,16 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         workspace::load_workspace(&workspace::save_workspace(&commit.workspace).unwrap()).unwrap();
     assert!(run_lineage::load_run(&roundtrip, &record.run_id).is_ok());
     let mut missing = roundtrip.clone();
-    missing
-        .attachments
-        .retain(|_, attachment| attachment.kind != collagene_core::physical_run_evidence::KIND);
+    missing.attachments.retain(|_, attachment| {
+        attachment.kind != collagene_core::material::physical_evidence::KIND
+    });
     assert!(missing.validate().is_err());
     let selection = Selection {
         run_id: record.run_id,
         step_index: 2,
         event: commit.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&roundtrip, &selection).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&roundtrip, &selection).unwrap();
     let source = roundtrip.revisions[&selection.event.revision].clone();
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let id = catalog
@@ -327,11 +336,11 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
                 &inputs,
                 &target,
                 &recipe,
-                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+                collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             )
             .unwrap(),
             job: AnalysisJob::PreviewLigationRecipe {
-                policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+                policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
                 inputs,
                 target,
                 recipe,
@@ -378,7 +387,7 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         reverse: Primer::new("R", "GAATTCGA", "").unwrap(),
         template_strand: collagene_core::chemistry::Strand::Top,
     });
-    let report = verification::verify(&plan, &linear);
+    let report = verification::engine::verify(&plan, &linear);
     assert_ne!(report.status, Status::ConsistentUnderAssumptions);
     assert_eq!(report.products.len(), 3);
 }

@@ -2,15 +2,17 @@
 //! from detached metadata or changes the independently selected target.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs::{self, Commit},
-    material_derivation as native,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as native,
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -111,8 +113,8 @@ fn saved() -> Commit {
     )
     .unwrap()
 }
-fn declared_strand(role: &str, length: usize) -> collagene_core::topo::PreparedStrand {
-    use collagene_core::topo::{
+fn declared_strand(role: &str, length: usize) -> collagene_core::cloning::topo::PreparedStrand {
+    use collagene_core::cloning::topo::{
         self as t,
         physical::{Enzyme, FivePrime, ThreePrime},
     };
@@ -136,14 +138,14 @@ async fn import(client: &Client, name: &str, dna: &str) -> Value {
     let reply = call(
         client,
         "import_document",
-        json!({"text":collagene_core::formats::export_genbank(&molecule).unwrap()}),
+        json!({"text":collagene_core::formats::sequence::export_genbank(&molecule).unwrap()}),
     )
     .await;
     json!({"id":reply["documents"][0]["id"],"revision":reply["documents"][0]["revision"]})
 }
 #[tokio::test]
 async fn actual_saved_template_inspection_attests_origin_and_preserves_independent_check_target() {
-    use collagene_core::{topo as t, topo_preparation as prep, topo_run_preparation as saved};
+    use collagene_core::cloning::topo::{self as t, preparation as prep, run_preparation as saved};
     let (client, server) = setup().await;
     assert!(
         client
@@ -160,7 +162,8 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
         step_index: 0,
         event: commit.receipt.construct.clone(),
     };
-    let run_origin = run_material::capsule(&commit.workspace, &run_selection).unwrap();
+    let run_origin =
+        collagene_core::material::capsule::capsule(&commit.workspace, &run_selection).unwrap();
     let source = &commit.workspace.revisions[&run_selection.event.revision];
     let origin = native::SourceOrigin::Saved(run_material::MaterialOrigin::Run(run_origin));
     let forward = Primer::new("New derived F", "CACCA", "").unwrap();
@@ -177,8 +180,8 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
     let derived = native::prepare_install(
         &commit.workspace,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: run_selection.event.clone(),
                 origin: origin,
             }],

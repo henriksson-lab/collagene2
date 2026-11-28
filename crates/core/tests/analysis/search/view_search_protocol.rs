@@ -6,8 +6,8 @@ use collagene_core::{
         schema::{AnalysisJob, AnalysisResult, WORKER_SCHEMA_VERSION},
         session::AnalysisSession,
     },
-    search::*,
-    view_tracks::*,
+    sequence::search::*,
+    tracks::view::*,
 };
 use collagene_model::{Molecule, Topology};
 fn source() -> Molecule {

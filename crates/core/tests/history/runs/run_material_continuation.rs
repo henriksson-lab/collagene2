@@ -1,20 +1,28 @@
 //! Durable continuation reexecutes original declarations; saved molecule metadata
 //! and documentary replay evidence are never deserialized into physical stock.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{EndTreatment, Strand, Terminus},
-    cloning_outputs::{self, Commit, Options},
-    history::DocumentHistory,
-    methylation::MethylationState,
-    modified_duplex::{self, CallState, Chemical, GenerationAssumptions},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, Capsule, Selection},
-    transfer::{self, Candidate},
-    verification::{
-        self, DesignPlan, Operation, OrientedSource, PhysicalProcessingEvidence, PlanInput, Source,
-        Status,
+    chemistry::{
+        EndTreatment, Strand, Terminus,
+        methylation::MethylationState,
+        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
     },
-    workspace::Workspace,
+    documents::{
+        history::DocumentHistory,
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    material::{
+        capsule::Capsule,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit, Options},
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{
+        self,
+        evidence::{PhysicalProcessingEvidence, Status},
+    },
 };
 use collagene_model::{Molecule, Topology};
 
@@ -105,7 +113,7 @@ fn modified_circle() -> Commit {
             },
             Operation::CheckedDigest {
                 selection: checked_selection(vec!["NotI".into()]),
-                options: collagene_core::modified_duplex::checked_inspection_options(),
+                options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),
                 fragment_index: 0,
             },
@@ -170,7 +178,9 @@ fn continuation(
     target: Molecule,
     next: Operation,
 ) -> (Workspace, DesignPlan, EventBinding) {
-    let origin = run_material::capsule(&commit.workspace, &selection(commit, step)).unwrap();
+    let origin =
+        collagene_core::material::capsule::capsule(&commit.workspace, &selection(commit, step))
+            .unwrap();
     origin.validate_documentary().unwrap();
     let saved = commit
         .workspace
@@ -214,7 +224,9 @@ fn origin_mut(plan: &mut DesignPlan) -> &mut Capsule {
         _ => panic!("missing replay step"),
     }
 }
-fn evidence(report: &verification::VerificationReport) -> &run_material::ReplayEvidence {
+fn evidence(
+    report: &verification::evidence::VerificationReport,
+) -> &collagene_core::material::capsule::ReplayEvidence {
     report
         .physical_processing_reports
         .iter()
@@ -244,7 +256,7 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
     let encoded = transfer::save_candidate(&candidate).unwrap();
     let decoded = transfer::load_candidate(&encoded).unwrap();
     assert_eq!(decoded.plan_revision, candidate.plan_revision);
-    let report = verification::verify(&decoded.plan, w.head(&target.document_id).unwrap());
+    let report = verification::engine::verify(&decoded.plan, w.head(&target.document_id).unwrap());
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -253,11 +265,13 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
     );
     assert_eq!(report.products.len(), 2);
     assert_eq!(report.products[1].sequence.as_str(), "ACGACCCCGGGGTAAC");
-    let html =
-        verification::export_protocol_html(&decoded.plan, w.head(&target.document_id).unwrap());
+    let html = verification::output::export_protocol_html(
+        &decoded.plan,
+        w.head(&target.document_id).unwrap(),
+    );
     assert!(html.contains("Use saved material"));
     assert!(html.contains(&original.receipt.run.run_id));
-    let pdf = collagene_core::pdf::export_protocol_pdf(
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(
         &decoded.plan,
         w.head(&target.document_id).unwrap(),
     )
@@ -267,7 +281,7 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
         .collect::<Vec<_>>()
         .join(" ");
     assert!(printed.contains("Reconstruct already-prepared saved material"));
-    let oligos = collagene_core::plan_oligos::build(
+    let oligos = collagene_core::planning::oligos::build(
         &decoded.plan,
         w.head(&target.document_id).unwrap(),
         &Default::default(),
@@ -298,9 +312,10 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
     .unwrap();
     let run = run_lineage::load_run(&committed.workspace, &committed.receipt.run.run_id).unwrap();
     assert_eq!(run.inputs[0].event, original.receipt.construct);
-    let historical = collagene_core::physical_run_evidence::load(&committed.workspace, &run.run_id)
-        .unwrap()
-        .unwrap();
+    let historical =
+        collagene_core::material::physical_evidence::load(&committed.workspace, &run.run_id)
+            .unwrap()
+            .unwrap();
     let saved_evidence = historical
         .steps
         .iter()
@@ -320,8 +335,9 @@ fn saved_pcr_can_seed_new_pcr_after_binary_roundtrip_and_outer_run_finalization(
     assert_eq!(fresh.tracked().duplex.left, Terminus::PCR);
     assert!(fresh.tracked().duplex.nicks.is_empty() && fresh.tracked().generation.is_empty());
     assert!(serde_json::to_value(&saved_evidence.origin).unwrap()["candidate"].is_string());
-    let archive = collagene_core::workspace::save_workspace(&committed.workspace).unwrap();
-    let loaded = collagene_core::workspace::load_workspace(&archive).unwrap();
+    let archive =
+        collagene_core::documents::workspace::save_workspace(&committed.workspace).unwrap();
+    let loaded = collagene_core::documents::workspace::load_workspace(&archive).unwrap();
     let restored = run_material::reconstruct(&loaded, &selection(&committed, 1)).unwrap();
     assert_eq!(restored.reference().sequence.as_str(), "ACGACCCCGGGGTAAC");
     assert_eq!(restored.tracked().duplex.left, Terminus::PCR);
@@ -349,12 +365,12 @@ fn saved_modified_circle_remains_noti_blocked_in_durable_checked_digest() {
         .unwrap(),
         Operation::CheckedDigest {
             selection: checked_selection(vec!["NotI".into()]),
-            options: collagene_core::modified_duplex::checked_inspection_options(),
+            options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
             template: Source::Step(0),
             fragment_index: 0,
         },
     );
-    let report = verification::verify(&plan, w.head(&target.document_id).unwrap());
+    let report = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -427,7 +443,7 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
     );
     let before = run_lineage::workspace_fingerprint(&w).unwrap();
     let digest = plan.steps.pop().unwrap();
-    let report = verification::verify(&plan, w.head(&target.document_id).unwrap());
+    let report = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert_eq!(report.products.len(), 1);
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
     let committed = cloning_outputs::finalize(
@@ -465,7 +481,7 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
             .any(|nick| nick.strand == Strand::Bottom && nick.position == 0)
     );
     plan.steps.push(digest);
-    let withheld_digest = verification::verify(&plan, w.head(&target.document_id).unwrap());
+    let withheld_digest = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert_eq!(withheld_digest.status, Status::Incomplete);
     assert_eq!(withheld_digest.products.len(), 1);
     assert!(
@@ -480,7 +496,7 @@ fn saved_nicked_circle_cannot_become_an_intact_pcr_template_or_lose_nicks() {
         reverse: Primer::new("Reverse", "GTACCGCT", "").unwrap(),
         template_strand: collagene_core::chemistry::Strand::Top,
     };
-    let rejected = verification::verify(&plan, w.head(&target.document_id).unwrap());
+    let rejected = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert!(matches!(
         rejected.status,
         Status::Invalid | Status::Incomplete
@@ -523,7 +539,7 @@ fn capsule_target_source_product_checksum_and_schema_tampering_are_rejected() {
     for mutate in mutations {
         let mut changed = plan.clone();
         mutate(origin_mut(&mut changed));
-        let result = verification::verify(&changed, w.head(&target.document_id).unwrap());
+        let result = verification::engine::verify(&changed, w.head(&target.document_id).unwrap());
         assert!(
             matches!(result.status, Status::Invalid | Status::Incomplete),
             "{:?}",
@@ -568,7 +584,7 @@ fn equal_reference_alias_is_not_the_capsules_exact_saved_source_event() {
     // Reconstruction alone checks chemistry; durable adoption also attests the
     // exact source event chosen by the host, without equal-DNA substitution.
     assert_ne!(
-        verification::verify(&plan, w.head(&target.document_id).unwrap()).status,
+        verification::engine::verify(&plan, w.head(&target.document_id).unwrap()).status,
         Status::Invalid
     );
     assert!(
@@ -650,7 +666,9 @@ fn saved_material_operation_and_report_require_candidate17_and_worker73() {
 #[test]
 fn capsule_nesting_and_advertised_oversize_fail_before_unbounded_decoding() {
     let original = pcr();
-    let mut current = run_material::capsule(&original.workspace, &selection(&original, 0)).unwrap();
+    let mut current =
+        collagene_core::material::capsule::capsule(&original.workspace, &selection(&original, 0))
+            .unwrap();
     let saved = original
         .workspace
         .head(&original.receipt.construct.document_id)
@@ -697,7 +715,8 @@ fn capsule_nesting_and_advertised_oversize_fail_before_unbounded_decoding() {
     // An attacker can advertise an enormous nested CGP payload in a tiny
     // envelope; rejecting it must not require allocating that advertised body.
     let mut malformed =
-        run_material::capsule(&original.workspace, &selection(&original, 0)).unwrap();
+        collagene_core::material::capsule::capsule(&original.workspace, &selection(&original, 0))
+            .unwrap();
     malformed.candidate[6..10].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(malformed.candidate.len() < 64 * 1024);
     assert!(malformed.validate_documentary().is_err());
@@ -705,8 +724,8 @@ fn capsule_nesting_and_advertised_oversize_fail_before_unbounded_decoding() {
 
 #[test]
 fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_its_projection() {
-    use collagene_core::{topo, topo_actions as processed};
-    use topo::physical::{self as physical, processing, projection};
+    use collagene_core::cloning::topo::physical::{self, processing, projection};
+    use collagene_core::cloning::topo::{self, actions as processed};
     let dna = ["AGGGGCATCCCTT", "AGGGATGCCCCTT", "CGAATGA", "CATTCGA"];
     let originals = dna
         .iter()
@@ -800,7 +819,7 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
         target,
         vec![Operation::TopoActions {
             sources: (0..4)
-                .map(|i| verification::TopoSource {
+                .map(|i| collagene_core::planning::plan::TopoSource {
                     role: format!("src{i}"),
                     source: Source::Input(format!("src{i}")),
                 })
@@ -826,13 +845,13 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
         },
     );
     let before = run_lineage::workspace_fingerprint(&w).unwrap();
-    let report = verification::verify(&plan, w.head(&target.document_id).unwrap());
+    let report = verification::engine::verify(&plan, w.head(&target.document_id).unwrap());
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
     assert_eq!(report.products.len(), 2);
     assert_eq!(report.products[1].sequence.as_str(), "AGGGGCATCCCTTCGAATGA");
     let original_report = evidence(&report).decode_report().unwrap();
     assert_eq!(original_report.physical_processing_reports.len(), 1);
-    let verification::PhysicalProcessingEvidence::TopoActions(original_evidence) =
+    let verification::evidence::PhysicalProcessingEvidence::TopoActions(original_evidence) =
         &original_report.physical_processing_reports[0].evidence
     else {
         panic!("canonical TOPO origin")
@@ -847,7 +866,8 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
         reverse: Primer::new("TOPO reverse", "TCATTCGA", "").unwrap(),
         template_strand: collagene_core::chemistry::Strand::Top,
     }];
-    let detached_report = verification::verify(&detached, w.head(&target.document_id).unwrap());
+    let detached_report =
+        verification::engine::verify(&detached, w.head(&target.document_id).unwrap());
     assert!(matches!(
         detached_report.status,
         Status::Invalid | Status::Incomplete
@@ -861,7 +881,8 @@ fn context_pinned_processed_topo_origin_replays_before_pcr_instead_of_trusting_i
     request.selection.source_batch_revision = "0".repeat(64);
     if let Ok(bytes) = transfer::save_candidate(&Candidate::new(originating.plan)) {
         origin_mut(&mut changed).candidate = bytes;
-        let changed_report = verification::verify(&changed, w.head(&target.document_id).unwrap());
+        let changed_report =
+            verification::engine::verify(&changed, w.head(&target.document_id).unwrap());
         assert!(matches!(
             changed_report.status,
             Status::Invalid | Status::Incomplete
@@ -1011,8 +1032,10 @@ fn pdf_text(bytes: &[u8]) -> String {
     out
 }
 
-fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+fn checked_selection(
+    names: Vec<String>,
+) -> collagene_core::cloning::restriction::catalog::CatalogSelection {
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let ids = names
         .iter()
         .map(|name| {
@@ -1026,5 +1049,5 @@ fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::Cata
                 .clone()
         })
         .collect::<Vec<_>>();
-    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
+    collagene_core::cloning::restriction::catalog::select(&catalog, &ids).unwrap()
 }

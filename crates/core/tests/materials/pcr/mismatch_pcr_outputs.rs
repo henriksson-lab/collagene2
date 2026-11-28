@@ -1,15 +1,17 @@
 use collagene_core::{
-    analysis::Primer,
-    mismatch_pcr_outputs::{self, Request},
-    mutagenesis::PcrOptions,
-    oligo_formats::{self, Delimiter, TableExportMode},
-    pcr_outputs::Options,
-    primers::BindingOptions,
+    cloning::pcr::{
+        mismatch_outputs::{self as mismatch_pcr_outputs, Request},
+        mutagenesis::PcrOptions,
+        outputs::Options,
+        primers::BindingOptions,
+    },
+    formats::oligos::{self as oligo_formats, Delimiter, TableExportMode},
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::simulate_mutagenesis_preview,
+    sequence::analysis::Primer,
+    verification::pcr::simulate_mutagenesis_preview,
 };
 use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 fn fixture() -> Request {

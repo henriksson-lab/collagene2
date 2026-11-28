@@ -1,13 +1,14 @@
 #[path = "../../common/domestication_oe.rs"]
 mod fixture;
 use collagene_core::{
-    domestication, domestication_preparation as physical,
+    cloning::golden_gate::domestication::{self, preparation as physical},
+    planning::plan::Operation,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, Operation, Status},
+    verification::{self, evidence::Status},
 };
 use collagene_model::Topology;
 #[test]
@@ -69,12 +70,12 @@ fn whole_linear_and_circular_oe_materialize_the_frozen_literal_target_through_cu
             p.verification.products.last().unwrap().sequence.as_str(),
             fixture::INTENDED
         );
-        assert!(verification::plan_target_matches(
+        assert!(verification::engine::plan_target_matches(
             &p.plan,
             p.verification.products.last().unwrap(),
             &target
         ));
-        let wrong = verification::verify(&p.plan, &source_before);
+        let wrong = verification::engine::verify(&p.plan, &source_before);
         assert_eq!(wrong.status, Status::Invalid);
         let mut changed = q.clone();
         if let AnalysisJob::PrepareDomestication {

@@ -1,4 +1,4 @@
-use collagene_core::annotation_formats::{self as a, AnnotationFormat as F};
+use collagene_core::formats::annotations::{self as a, AnnotationFormat as F};
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn reference() -> Molecule {
     Molecule::dna(
@@ -344,9 +344,9 @@ fn source_record_export_guard_blocks_stale_edit_reverse_origin_and_forged_geomet
     );
     let shifted = annotated.replace(0, 0, "AAA").unwrap();
     assert!(a::export_annotations(&shifted, F::Gff3, "external_chr").is_err());
-    let reverse = collagene_core::annotations::reverse_complement(&annotated).unwrap();
+    let reverse = collagene_core::sequence::annotations::reverse_complement(&annotated).unwrap();
     assert!(a::export_annotations(&reverse, F::Gff3, "external_chr").is_err());
-    let rotated = collagene_core::annotations::rotate_origin(&annotated, 4).unwrap();
+    let rotated = collagene_core::sequence::annotations::rotate_origin(&annotated, 4).unwrap();
     assert!(a::export_annotations(&rotated, F::Gff3, "external_chr").is_err());
     let mut forged = annotated.clone();
     let raw = forged.features[0]
@@ -532,7 +532,7 @@ fn generic_types_do_not_invent_ontology_equivalence_and_directives_are_bounded()
 
 #[test]
 fn gff_single_base_intervals_and_insertion_boundaries_are_distinct() {
-    use collagene_core::annotation_formats::{
+    use collagene_core::formats::annotations::{
         AnnotationFormat, apply_annotations, export_annotations, import_annotations,
     };
     let reference = Molecule::dna("onebase", "ACGT", Topology::Linear).unwrap();

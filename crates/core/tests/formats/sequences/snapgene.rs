@@ -1,6 +1,8 @@
 //! Independently authored packets and XML, not outputs of another cloning program.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_core::snapgene::{ORIGINAL_BASE64_KEY, import_snapgene, original_snapgene_bytes};
+use collagene_core::formats::snapgene::{
+    ORIGINAL_BASE64_KEY, import_snapgene, original_snapgene_bytes,
+};
 use collagene_model::{Location, Topology};
 
 fn packet(kind: u8, data: &[u8]) -> Vec<u8> {

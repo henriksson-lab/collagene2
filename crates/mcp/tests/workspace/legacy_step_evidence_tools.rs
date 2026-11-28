@@ -1,12 +1,17 @@
 //! A current TOPO graph-only failure remains downloadable without publishing invented DNA.
+use collagene_core::cloning::topo::physical::{self as p, projection};
 use collagene_core::{
-    formats, topo as t,
-    verification::{self, Operation, Source, Status, TopoSource, VerificationReport},
+    cloning::topo as t,
+    formats::sequence as formats,
+    planning::plan::{Operation, Source, TopoSource},
+    verification::{
+        self,
+        evidence::{Status, VerificationReport},
+    },
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
-use t::physical::{self as p, projection};
 type Client = RunningService<RoleClient, ()>;
 async fn call(c: &Client, n: &str, a: Value) -> Value {
     let r = c
@@ -95,7 +100,7 @@ async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plai
         .collect::<Vec<_>>();
     let request=t::Request{recipe:t::GenerationRecipe{schema_version:1,materials:vec![t::MaterialRecipe::Prepared{declaration_id:"Explicit directional source strands".into(),assumption:"Declared source intervals, pairing and activation; no kit or repair is inferred".into(),strands:vec![strand("vt",14,true),strand("vb",18,true),strand("it",10,false),strand("ib",10,false)],pairing:vec![p::PairSpan{strand_a:0,start_a:0,strand_b:1,start_b:4,length:14},p::PairSpan{strand_a:2,start_a:0,strand_b:3,start_b:0,length:10}]}]},steps:vec![p::Step::Transfer(p::Transfer{donor:p::Call{strand:0,index:13},acceptor:p::Call{strand:2,index:0},geometry:p::Geometry::DirectionalCacc}),p::Step::Transfer(p::Transfer{donor:p::Call{strand:1,index:17},acceptor:p::Call{strand:3,index:0},geometry:p::Geometry::Flush})],engine_limits:p::Limits::default(),projection_options:projection::Options::default()};
     let models = local[..4].iter().collect::<Vec<_>>();
-    let native = verification::topo_inputs(&sources, &models, &request).unwrap();
+    let native = verification::sources::topo_inputs(&sources, &models, &request).unwrap();
     let selection = t::Selection {
         batch_revision: t::batch_revision(&native, &request).unwrap(),
         component: 0,

@@ -1,8 +1,14 @@
 use collagene_core::{
-    chemistry::{Duplex, FivePrime, Polarity, Strand, ThreePrime},
-    homology_annealing::{self, Options},
-    modified_duplex::{self, CallState, Chemical, ModificationSpan, TrackedDuplex},
-    three_prime_resection::{self, Cuts},
+    chemistry::{
+        Duplex, FivePrime, Polarity, Strand, ThreePrime,
+        tracked_duplex::{
+            self as modified_duplex, CallState, Chemical, ModificationSpan, TrackedDuplex,
+        },
+    },
+    cloning::overlap::{
+        annealing::{self as homology_annealing, Options},
+        resection::{self as three_prime_resection, Cuts},
+    },
 };
 use collagene_model::{Sequence, Topology};
 const A: &str = "AGTCCGATGCTA";

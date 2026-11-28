@@ -1,11 +1,13 @@
 use collagene_core::{
-    analysis::Primer,
-    history::DocumentHistory,
-    protocol_quantities::{self as q, units as u, *},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    transfer::Candidate,
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    documents::{
+        history::DocumentHistory,
+        transfer::Candidate,
+        workspace::{self, Workspace},
+    },
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    output::quantities::{self as q, units as u, *},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn v(n: u64, d: u64) -> u::Volume {
@@ -49,7 +51,7 @@ fn fixture() -> (Workspace, DesignPlan, Request) {
     let request = Request {
         name: "Explicit20uL planning".into(),
         plan_source: PlanSource::Candidate,
-        plan_revision: verification::plan_revision(&plan),
+        plan_revision: collagene_core::planning::plan::DesignPlan::revision(&plan),
         target: event(&w, 1),
         inputs: vec![InputEventBinding {
             input_id: "stock".into(),

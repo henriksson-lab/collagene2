@@ -1,6 +1,6 @@
 #[path = "../../core/tests/common/material_library.rs"]
 mod material_library;
-use collagene_core::{protocol_layout as layout, run_lineage, workspace};
+use collagene_core::{documents::workspace, material::lineage as run_lineage, output::layout};
 use collagene_library_sharing::{self as sharing, Selection};
 #[test]
 fn released_actual_bottom_closure_retains_native_origin_and_omits_unrelated_private_catalog() {
@@ -23,7 +23,7 @@ fn released_actual_bottom_closure_retains_native_origin_and_omits_unrelated_priv
             .workspace
             .attachments
             .values()
-            .any(|a| a.kind == collagene_core::combinatorial_batch::KIND)
+            .any(|a| a.kind == collagene_core::planning::combinatorial::batch::KIND)
     );
     let restarted =
         workspace::load_workspace(&workspace::save_workspace(&projected.workspace).unwrap())
@@ -65,13 +65,15 @@ fn explicit_layout_closes_indivisible_material_binding_and_native_source_depende
     let projected =
         sharing::project_protocol_layout_closure(&layout.workspace, &layout.attachment_hash)
             .unwrap();
-    let record =
-        collagene_core::combinatorial_batch::load(&projected.workspace, &saved.attachment_hash)
-            .unwrap();
+    let record = collagene_core::planning::combinatorial::batch::load(
+        &projected.workspace,
+        &saved.attachment_hash,
+    )
+    .unwrap();
     record
         .validate_source_closure(&projected.workspace)
         .unwrap();
-    let replay = collagene_core::combinatorial_batch::replay(
+    let replay = collagene_core::planning::combinatorial::batch::replay(
         &projected.workspace,
         &saved.attachment_hash,
         0,
@@ -79,7 +81,7 @@ fn explicit_layout_closes_indivisible_material_binding_and_native_source_depende
     .unwrap();
     assert_eq!(
         replay.current.status,
-        Some(collagene_core::verification::Status::ConsistentUnderAssumptions)
+        Some(collagene_core::verification::evidence::Status::ConsistentUnderAssumptions)
     );
     assert!(
         !projected

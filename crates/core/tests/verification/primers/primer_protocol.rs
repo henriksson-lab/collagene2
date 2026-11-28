@@ -1,12 +1,13 @@
 use collagene_core::{
-    analysis::Primer,
-    primers::{BindingOptions, DesignOptions, ThermoConditions},
+    cloning::pcr::primers::{BindingOptions, DesignOptions, ThermoConditions},
+    planning::plan::DesignPlan,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{DesignPlan, Status},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Error, Location, Molecule, Topology};
 fn run(source: &Molecule, job: AnalysisJob) -> AnalysisResult {

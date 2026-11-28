@@ -1,16 +1,22 @@
 //! Advisory auto-primer proposals bind original DNA and independent edit intent.
 use collagene_core::{
-    assembly_edit_intent::Edit,
-    overlap_extension_primer_design::{self, Options, Request as DesignRequest},
-    overlap_primer_design::Fragment,
-    primers::DesignOptions,
+    cloning::{
+        assembly::edit_intent::Edit,
+        overlap::{
+            extension::primers::{
+                self as overlap_extension_primer_design, Options, Request as DesignRequest,
+            },
+            primer_design::Fragment,
+        },
+        pcr::primers::DesignOptions,
+    },
+    documents::transfer::{self, Candidate},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer::{self, Candidate},
-    verification::{self, Status},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -130,7 +136,7 @@ fn appended164_156_proposal_roundtrip_keeps_independent_expected_and_original_st
         &protocol::schema::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
     assert!(transfer::load_candidate(&encoded_candidate).is_ok());
-    let verified = verification::verify(&candidate.plan, &report.expected);
+    let verified = verification::engine::verify(&candidate.plan, &report.expected);
     assert_eq!(verified.status, Status::ConsistentUnderAssumptions);
     assert_eq!(
         verified.products.last().unwrap().sequence.as_str(),

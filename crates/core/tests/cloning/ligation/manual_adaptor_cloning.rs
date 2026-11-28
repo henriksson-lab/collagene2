@@ -1,11 +1,16 @@
 //! A hand-specified adaptor/backbone construct, built through manual graph edits.
 use collagene_core::{
     chemistry::{self, AnnealOptions, Terminus},
-    plan_editing as edit,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    transfer::Candidate,
-    verification::{self as v, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    documents::{
+        transfer::Candidate,
+        workspace::{self, Workspace},
+    },
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    planning::{
+        editing as edit,
+        plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    },
+    verification::{self as v, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const BACKBONE: &str = "GGAATTCTTACG";
@@ -91,7 +96,7 @@ fn literal_adaptor_annealing_and_actual_backbone_digest_form_the_frozen_circle()
     let (plan, target) = fixture();
     let candidate = Candidate::new(plan.clone());
     candidate.validate().unwrap();
-    let r = v::verify(&plan, &target);
+    let r = v::engine::verify(&plan, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -121,7 +126,7 @@ fn literal_adaptor_annealing_and_actual_backbone_digest_form_the_frozen_circle()
     assert_eq!(right.overhang, "AATT");
     let restriction = chemistry::digest(
         &chemistry::Duplex::from_molecule(&plan.inputs[2].molecule).unwrap(),
-        &[collagene_core::analysis::Enzyme {
+        &[collagene_core::sequence::analysis::Enzyme {
             name: "Literal EcoRI".into(),
             recognition: "GAATTC".into(),
             top_cut: 1,
@@ -141,11 +146,11 @@ fn literal_adaptor_annealing_and_actual_backbone_digest_form_the_frozen_circle()
         serde_json::from_str(&r.products[2].metadata["duplex_model"]).unwrap();
     assert_eq!(summary.topology, Topology::Circular);
     assert!(summary.nicks.is_empty());
-    let html = v::export_protocol_html(&plan, &target);
+    let html = v::output::export_protocol_html(&plan, &target);
     assert!(html.contains(TOP));
     assert!(html.contains(BOTTOM));
     assert!(html.contains("EcoRI"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert_eq!(pdf.status, Status::ConsistentUnderAssumptions);
     assert!(pdf.bytes.starts_with(b"%PDF-"));
 }
@@ -158,7 +163,7 @@ fn dependency_preserving_edits_reverify_while_invalid_order_or_target_never_inhe
     assert!(edit::moved(&ids, &plan.steps, 0, 2).is_err());
     assert_eq!(serde_json::to_vec(&plan.steps).unwrap(), before);
     plan.steps = edit::moved(&ids, &plan.steps, 1, 0).unwrap();
-    let r = v::verify(&plan, &target);
+    let r = v::engine::verify(&plan, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -173,13 +178,13 @@ fn dependency_preserving_edits_reverify_while_invalid_order_or_target_never_inhe
     )
     .unwrap();
     plan.target_revision = wrong.revision();
-    assert_eq!(v::verify(&plan, &wrong).status, Status::Invalid);
+    assert_eq!(v::engine::verify(&plan, &wrong).status, Status::Invalid);
     plan.target_revision = target.revision();
     if let Operation::Digest { enzymes, .. } = &mut plan.steps[0] {
         *enzymes = vec!["HindIII".into()];
     }
     assert_ne!(
-        v::verify(&plan, &target).status,
+        v::engine::verify(&plan, &target).status,
         Status::ConsistentUnderAssumptions
     );
 }
@@ -195,8 +200,8 @@ fn event(w: &Workspace, i: usize) -> EventBinding {
 fn edited_candidate_roundtrip_and_retained_run_preserve_all_original_source_events() {
     let (plan, target) = fixture();
     let value = Candidate::new(plan.clone());
-    let bytes = collagene_core::transfer::save_candidate(&value).unwrap();
-    let read = collagene_core::transfer::load_candidate(&bytes).unwrap();
+    let bytes = collagene_core::documents::transfer::save_candidate(&value).unwrap();
+    let read = collagene_core::documents::transfer::load_candidate(&bytes).unwrap();
     assert_eq!(read.plan_revision, value.plan_revision);
     let mut docs = plan
         .inputs

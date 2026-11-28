@@ -1,6 +1,6 @@
 # Primer-encoded mutations and inverse PCR
 
-`collagene_core::mutagenesis` is independently implemented Rust. It invokes no external scientific executable, Primer3, alignment engine or proprietary design service. The module separates declared primer-binding compatibility, final oligo-encoded sequence, and the physical steps required to close an inverse-PCR product.
+`collagene_core::cloning::pcr::mutagenesis` is independently implemented Rust. It invokes no external scientific executable, Primer3, alignment engine or proprietary design service. The module separates declared primer-binding compatibility, final oligo-encoded sequence, and the physical steps required to close an inverse-PCR product.
 
 ## Conditional mismatch PCR
 

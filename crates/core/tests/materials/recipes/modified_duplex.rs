@@ -1,10 +1,12 @@
 //! Independently specified strand-state conservation and synthesis fixtures.
 use collagene_core::{
-    analysis,
-    chemistry::{self, EndRepairMethod, EndTreatment, Strand},
-    methylation::{MethylationState, Outcome},
-    modified_duplex::*,
-    tailing::TailingBase,
+    chemistry::{
+        self, EndRepairMethod, EndTreatment, Strand,
+        methylation::{MethylationState, Outcome},
+        tracked_duplex::*,
+    },
+    cloning::ligation::tailing::TailingBase,
+    sequence::analysis,
 };
 use collagene_model::{Error, Molecule, Sequence, Topology};
 fn full() -> GenerationAssumptions {

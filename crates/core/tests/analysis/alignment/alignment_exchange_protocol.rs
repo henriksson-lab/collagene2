@@ -1,11 +1,11 @@
 use collagene_core::{
-    alignment_formats::{self as alignment, AlignmentFormat},
+    documents::workspace::{self, Workspace, WorkspaceAttachment},
+    formats::alignment::{self, AlignmentFormat},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    workspace::{self, Workspace, WorkspaceAttachment},
 };
 use collagene_model::{Alphabet, Molecule, Topology};
 

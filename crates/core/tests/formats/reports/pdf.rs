@@ -1,7 +1,8 @@
 use collagene_core::{
-    analysis::Primer,
-    pdf,
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
+    output::pdf,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 #[path = "../../common/pdf.rs"]
@@ -57,7 +58,10 @@ fn verified_embedded_pdf_has_unicode_font_vector_map_and_independent_cross_refer
     }
     assert_eq!(output.status, Status::ConsistentUnderAssumptions);
     assert!(output.pages >= 2);
-    assert_eq!(output.plan_revision, verification::plan_revision(&plan));
+    assert_eq!(
+        output.plan_revision,
+        collagene_core::planning::plan::DesignPlan::revision(&plan)
+    );
     assert_eq!(output.target_revision, target.revision());
     assert_eq!(output.engine_version, verification::ENGINE_VERSION);
     assert!(output.warnings.is_empty(), "{:?}", output.warnings);

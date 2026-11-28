@@ -1,5 +1,5 @@
 //! Independent source conservation, vote and exhaustive affine-boundary oracles.
-use collagene_core::{contig::*, oligo_formats};
+use collagene_core::{formats::oligos as oligo_formats, review::contigs::*};
 use collagene_model::{Molecule, Topology};
 use std::collections::{BTreeMap, BTreeSet};
 const REFERENCE: &str = "AACCGTAGTCTGACGATGCCTAGGTCATCA";
@@ -203,7 +203,7 @@ fn a_high_quality_substitution_conflicts_but_a_low_quality_call_cannot_outvote_s
 fn display_reversal_preserves_original_strand_support_and_original_call_indices() {
     let a = fastq("a", &REFERENCE[..20], None);
     let mut b = fastq("b", &REFERENCE[9..], None);
-    b.molecule = collagene_core::annotations::reverse_complement(&b.molecule).unwrap();
+    b.molecule = collagene_core::sequence::annotations::reverse_complement(&b.molecule).unwrap();
     let mut o = options();
     o.both_strands = true;
     o.require_both_strands = true;

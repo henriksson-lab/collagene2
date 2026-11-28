@@ -1,15 +1,16 @@
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    combinatorial_batch as batch,
-    combinatorial_design::{
-        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+    cloning::assembly::recipe::Preparation,
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
     },
-    combinatorial_release as release,
-    history::DocumentHistory,
-    protocol_layout as p,
-    run_lineage::{self, EventBinding},
-    workspace::{self, Workspace},
+    material::lineage::{self as run_lineage, EventBinding},
+    output::layout as p,
+    planning::combinatorial::{
+        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration, batch,
+        release,
+    },
 };
 use collagene_model::{Molecule, Topology};
 #[path = "../../common/pdf.rs"]
@@ -44,7 +45,7 @@ fn fixture() -> (Workspace, String) {
         id: id.into(),
         label: id.into(),
         source: event(&w, index),
-        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+        selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
             start: 0,
             end: 4,
             reverse: false,
@@ -112,7 +113,7 @@ fn fixture() -> (Workspace, String) {
         let step = session.advance(&context, i).unwrap();
         assert_eq!(
             step.row.unwrap().status,
-            Some(collagene_core::verification::Status::ConsistentUnderAssumptions)
+            Some(collagene_core::verification::evidence::Status::ConsistentUnderAssumptions)
         );
     }
     let commit = session.into_capture(&context).unwrap();
@@ -158,7 +159,7 @@ fn released(w: &Workspace, h: &str) -> (Workspace, String) {
             .into_iter()
             .map(|id| release::Selection {
                 construct_id: id.into(),
-                options: collagene_core::cloning_outputs::Options {
+                options: collagene_core::material::outputs::Options {
                     name: format!("Released {id}"),
                     show_prepared: false,
                     save_primers: false,
@@ -448,7 +449,7 @@ fn planning_an_invalid_recorded_construct_does_not_approve_or_release_it() {
     let c = p::capture(&saved.workspace, &request).unwrap();
     assert_eq!(
         c.layout.resolved[0].recorded_status,
-        Some(collagene_core::verification::Status::Invalid)
+        Some(collagene_core::verification::evidence::Status::Invalid)
     );
     assert!(c.layout.resolved[0].run_id.is_none() && c.layout.resolved[0].product.is_none());
     assert_eq!(

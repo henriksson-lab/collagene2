@@ -1,6 +1,6 @@
 # Portable SVG sequence maps
 
-`crates/core/src/svg.rs` provides `layout_map(&Molecule) -> Result<MapScene, Error>` and `render_map(&Molecule) -> Result<String, Error>`. These are portable Rust functions with no new dependencies, filesystem, network, subprocess, browser or graphics-runtime requirement. The standalone SVG can be downloaded directly or embedded into an HTML protocol; rasterization is a separate export boundary.
+`crates/core/src/output/svg.rs` provides `layout_map(&Molecule) -> Result<MapScene, Error>` and `render_map(&Molecule) -> Result<String, Error>`. These are portable Rust functions with no new dependencies, filesystem, network, subprocess, browser or graphics-runtime requirement. The standalone SVG can be downloaded directly or embedded into an HTML protocol; rasterization is a separate export boundary.
 
 ## Scientific coordinate scene
 

@@ -1,10 +1,13 @@
 //! Literal adaptor construction: the target is declared independently of annealing/digest output.
 use collagene_core::{
-    assembly_recipe::{self, FragmentSpec, Preparation},
-    catalog_digest,
     chemistry::{AnnealOptions, EndTreatment, Terminus},
-    ligation_recipe as lig,
-    verification::{Operation, PlanInput, Source, Status},
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation},
+        ligation::recipe as lig,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::{Operation, PlanInput, Source},
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const TARGET: &str = "AATTCTTACGGGAATTGCTACG";
@@ -85,7 +88,7 @@ fn original_catalog_backbone_and_actual_annealed_pair_ligate_to_literal_intent()
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     preview
@@ -94,7 +97,7 @@ fn original_catalog_backbone_and_actual_annealed_pair_ligate_to_literal_intent()
                 &inputs,
                 &target,
                 &recipe,
-                collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+                collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             )
             .unwrap(),
         )
@@ -146,7 +149,7 @@ fn stale_secondary_binding_and_row_source_substitution_are_rejected() {
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     inputs[2].molecule.sequence = collagene_model::Sequence::dna("AATTCGTAGG").unwrap();
@@ -155,7 +158,7 @@ fn stale_secondary_binding_and_row_source_substitution_are_rejected() {
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .is_err()
     );
@@ -164,7 +167,7 @@ fn stale_secondary_binding_and_row_source_substitution_are_rejected() {
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .is_err()
     );
@@ -175,14 +178,14 @@ fn stale_secondary_binding_and_row_source_substitution_are_rejected() {
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     if let Operation::AnnealOligos { top, .. } = &mut preview.compiled.plan.steps[1] {
         *top = Source::Input("bottom".into());
     }
     preview.verification.plan_revision =
-        collagene_core::verification::plan_revision(&preview.compiled.plan);
+        collagene_core::planning::plan::DesignPlan::revision(&preview.compiled.plan);
     assert!(preview.validate().is_err());
 }
 #[test]
@@ -192,7 +195,7 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     if let Preparation::AnnealedOligos {
@@ -207,7 +210,7 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .unwrap()
     );
@@ -215,7 +218,7 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(!unavailable.preparation_complete);
@@ -234,7 +237,7 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_ne!(
@@ -249,7 +252,7 @@ fn candidate_and_chemistry_changes_require_fresh_search_and_never_reuse_stock() 
             &inputs,
             &wrong,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .unwrap()
         .verification
@@ -306,7 +309,7 @@ fn shared_overlap_compiler_retains_the_real_secondary_input_and_operation() {
         &target,
         "Shared native preparation",
         &rows,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(prepared.inputs.len(), 3);
@@ -323,13 +326,13 @@ fn shared_overlap_compiler_retains_the_real_secondary_input_and_operation() {
 
 #[test]
 fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() {
-    use collagene_core::assembly_diagnostics::{self as diagnostics, RowState, Stage};
+    use collagene_core::cloning::assembly::diagnostics::{self, RowState, Stage};
     let (inputs, target, mut recipe) = fixture();
     let preview = lig::preview(
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     let located = diagnostics::ligation(&preview).unwrap();
@@ -358,7 +361,7 @@ fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() 
             *bottom = forged.1;
         }
         changed.verification.plan_revision =
-            collagene_core::verification::plan_revision(&changed.compiled.plan);
+            collagene_core::planning::plan::DesignPlan::revision(&changed.compiled.plan);
         assert!(diagnostics::ligation(&changed).is_err());
     }
     if let Preparation::AnnealedOligos {
@@ -371,7 +374,7 @@ fn diagnostics_locate_two_original_annealing_without_accepting_forged_sources() 
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     let located = diagnostics::ligation(&missing).unwrap();

@@ -1,15 +1,17 @@
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    combinatorial_batch::{self as batch, Request, RowRequest, RowState, Session},
-    combinatorial_design::{
+    cloning::assembly::recipe::Preparation,
+    documents::{
+        history::DocumentHistory,
+        workspace::{Workspace, WorkspaceAttachment},
+    },
+    material::lineage::EventBinding,
+    planning::combinatorial::{
         Bin, Choice, ChoiceSelection, ConstructOverrides, Design, Method, PreparationOverride,
         SelectedConstruct, TargetDeclaration,
+        batch::{self, Request, RowRequest, RowState, Session},
     },
-    history::DocumentHistory,
-    run_lineage::EventBinding,
-    verification::Status,
-    workspace::{Workspace, WorkspaceAttachment},
+    verification::evidence::Status,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn binding(w: &Workspace, index: usize) -> EventBinding {
@@ -52,7 +54,7 @@ fn fixture() -> (Workspace, Request) {
                     id: "left-choice".into(),
                     label: "Left choice".into(),
                     source: binding(&w, 0),
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: 4,
                         reverse: false,
@@ -70,7 +72,7 @@ fn fixture() -> (Workspace, Request) {
                     id: "right-choice".into(),
                     label: "Right choice".into(),
                     source: binding(&w, 1),
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: 4,
                         reverse: false,
@@ -317,7 +319,7 @@ fn identical_choices_keep_per_construct_topology_and_method_overrides() {
     overlap.overrides = Some(ConstructOverrides {
         preparations: vec![],
         method: Some(Method::Overlap {
-            finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+            finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
             overlaps: vec![1],
             options: Default::default(),
         }),
@@ -396,9 +398,10 @@ fn all_draft_errors_and_aggregate_budget_exhaustion_remain_explicit() {
         row.overrides = Some(ConstructOverrides {
             preparations: vec![],
             method: Some(Method::Overlap {
-                finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+                finishing:
+                    collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
                 overlaps: vec![1],
-                options: collagene_core::overlap_profiles::ProfileOptions {
+                options: collagene_core::cloning::overlap::profiles::ProfileOptions {
                     max_comparisons: 50_000_000,
                     ..Default::default()
                 },

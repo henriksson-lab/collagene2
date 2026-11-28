@@ -52,7 +52,7 @@ HTTPS certificate verification remains enabled. The native transport disables en
 
 ```rust,no_run
 # use collagene_sources::{parse_source, annotate_import};
-# use collagene_core::formats;
+# use collagene_core::formats::sequence as formats;
 # fn example(raw: &[u8]) -> Result<(), Box<dyn std::error::Error>> {
 let source = parse_source("NC_001422.1")?;
 let transient_fetch_url = source.download_url()?; // never save/log signed query parameters

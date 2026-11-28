@@ -1,7 +1,7 @@
 //! Actual prepared strand pools retain backgrounds and require fresh selected-plan verification.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::{formats, transfer};
-use collagene_mcp::CollageneServer;
+use collagene_core::{documents::transfer, formats::sequence as formats};
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

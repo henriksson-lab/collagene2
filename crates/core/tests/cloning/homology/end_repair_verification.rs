@@ -1,6 +1,7 @@
 use collagene_core::{
     chemistry::{self, AnnealOptions, EndRepairMethod, EndTreatment},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn input(id: &str, m: Molecule) -> PlanInput {
@@ -49,7 +50,7 @@ fn independent_five_prime_fill_and_three_prime_trim_targets_reconstruct_both_str
         ("CTGCAGAAAA", "PstI", "GAAAAC", 6),
     ] {
         let (plan, target) = one_source(sequence, enzyme, expected);
-        let report = verification::verify(&plan, &target);
+        let report = verification::engine::verify(&plan, &target);
         assert_eq!(
             report.status,
             Status::ConsistentUnderAssumptions,
@@ -67,13 +68,13 @@ fn independent_five_prime_fill_and_three_prime_trim_targets_reconstruct_both_str
         let mut wrong_plan = plan.clone();
         wrong_plan.target_revision = wrong.revision();
         assert_eq!(
-            verification::verify(&wrong_plan, &wrong).status,
+            verification::engine::verify(&wrong_plan, &wrong).status,
             Status::Invalid
         );
-        let html = verification::export_protocol_html(&plan, &target);
+        let html = verification::output::export_protocol_html(&plan, &target);
         assert!(html.contains("End repair"));
         assert!(
-            collagene_core::pdf::export_protocol_pdf(&plan, &target)
+            collagene_core::output::pdf::export_protocol_pdf(&plan, &target)
                 .unwrap()
                 .bytes
                 .starts_with(b"%PDF-")
@@ -103,9 +104,13 @@ fn repair_preview_reconstructs_digest_and_keeps_clipped_features_as_review_evide
         qualifiers: vec![("label".into(), Some("unmapped ancestral annotation".into()))],
         needs_review: true,
     });
-    let preview =
-        verification::simulate_end_repair(&source, &["PstI".into()], 0, EndRepairMethod::Blunt)
-            .unwrap();
+    let preview = verification::terminal::simulate_end_repair(
+        &source,
+        &["PstI".into()],
+        0,
+        EndRepairMethod::Blunt,
+    )
+    .unwrap();
     assert_eq!(preview.molecule.sequence.as_str(), "GAAAAC");
     assert_eq!(preview.source_revision, source.revision());
     assert_eq!(
@@ -132,14 +137,22 @@ fn repair_preview_reconstructs_digest_and_keeps_clipped_features_as_review_evide
             .keys()
             .any(|k| k.starts_with("annotation_mapping:unmapped:"))
     );
-    assert!(verification::simulate_end_repair(&source, &[], 0, EndRepairMethod::Blunt).is_err());
+    assert!(
+        verification::terminal::simulate_end_repair(&source, &[], 0, EndRepairMethod::Blunt)
+            .is_err()
+    );
     let mut forged = source.clone();
     forged
         .metadata
         .insert("duplex_model".into(), "{\"phosphorylated\":true}".into());
     assert!(
-        verification::simulate_end_repair(&forged, &["PstI".into()], 0, EndRepairMethod::Blunt)
-            .is_err()
+        verification::terminal::simulate_end_repair(
+            &forged,
+            &["PstI".into()],
+            0,
+            EndRepairMethod::Blunt
+        )
+        .is_err()
     );
 }
 fn anneal_plan(options: AnnealOptions, phosphorylate: bool) -> (DesignPlan, Molecule) {
@@ -184,7 +197,7 @@ fn declared_oligos_need_explicit_phosphorylation_before_they_can_be_covalently_c
         ..Default::default()
     };
     let (plan, target) = anneal_plan(options.clone(), true);
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -200,7 +213,7 @@ fn declared_oligos_need_explicit_phosphorylation_before_they_can_be_covalently_c
     );
     let (no_phosphate, target) = anneal_plan(options, false);
     assert_eq!(
-        verification::verify(&no_phosphate, &target).status,
+        verification::engine::verify(&no_phosphate, &target).status,
         Status::Invalid
     );
     let mut imported = plan.clone();
@@ -210,10 +223,10 @@ fn declared_oligos_need_explicit_phosphorylation_before_they_can_be_covalently_c
         .insert("duplex_model".into(), "{}".into());
     imported.inputs[0].revision = imported.inputs[0].molecule.revision();
     assert_eq!(
-        verification::verify(&imported, &target).status,
+        verification::engine::verify(&imported, &target).status,
         Status::Incomplete
     );
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(html.contains("Anneal declared"));
     assert!(html.contains("<code>ACGTCG</code>"));
     assert!(html.contains("<code>CGACGT</code>"));
@@ -233,9 +246,10 @@ fn anneal_annotations_use_bottom_strand_coordinates_and_report_tampering_is_reje
         min_paired_bases: 4,
         ..Default::default()
     };
-    let preview = verification::simulate_oligo_annealing(&top, &bottom, &options).unwrap();
+    let preview =
+        verification::terminal::simulate_oligo_annealing(&top, &bottom, &options).unwrap();
     assert!(preview.annealing.unique);
-    let product = verification::annealed_document(&top, &bottom, &preview, 0).unwrap();
+    let product = verification::terminal::annealed_document(&top, &bottom, &preview, 0).unwrap();
     assert_eq!(
         product.features[0].location,
         Location::Complement(Box::new(Location::range(2, 5)))
@@ -249,14 +263,14 @@ fn anneal_annotations_use_bottom_strand_coordinates_and_report_tampering_is_reje
     );
     let mut forged = preview.clone();
     forged.annealing.candidates[0].duplex.bottom_start = 1;
-    assert!(verification::annealed_document(&top, &bottom, &forged, 0).is_err());
+    assert!(verification::terminal::annealed_document(&top, &bottom, &forged, 0).is_err());
     let mut ds = bottom.clone();
     ds.metadata
         .insert("genbank.molecule_type".into(), "ds-DNA".into());
-    assert!(verification::simulate_oligo_annealing(&top, &ds, &options).is_err());
+    assert!(verification::terminal::simulate_oligo_annealing(&top, &ds, &options).is_err());
     let mut raw = bottom;
     raw.original_genbank = Some("LOCUS       explicit 6 bp ds-DNA linear\n".into());
-    assert!(verification::simulate_oligo_annealing(&top, &raw, &options).is_err());
+    assert!(verification::terminal::simulate_oligo_annealing(&top, &raw, &options).is_err());
 }
 #[test]
 fn repeated_or_capped_annealing_cannot_claim_unique_physical_verification() {
@@ -279,15 +293,18 @@ fn repeated_or_capped_annealing_cannot_claim_unique_physical_verification() {
     );
     let repeated = Molecule::dna("repeated target", "AAAAAA", Topology::Linear).unwrap();
     plan.target_revision = repeated.revision();
-    let report = verification::verify(&plan, &repeated);
+    let report = verification::engine::verify(&plan, &repeated);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     if let Operation::AnnealOligos { options, .. } = &mut plan.steps[0] {
         options.max_candidates = 1;
     }
-    let report = verification::verify(&plan, &repeated);
+    let report = verification::engine::verify(&plan, &repeated);
     assert_eq!(report.status, Status::Incomplete);
     let wrong = Molecule::dna("known wrong", "CCCCCC", Topology::Linear).unwrap();
     plan.target_revision = wrong.revision();
-    assert_eq!(verification::verify(&plan, &wrong).status, Status::Invalid);
+    assert_eq!(
+        verification::engine::verify(&plan, &wrong).status,
+        Status::Invalid
+    );
     let _ = target;
 }

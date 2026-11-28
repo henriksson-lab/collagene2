@@ -1,14 +1,18 @@
 //! Independently declared base changes preserve original source bindings across the worker.
 use collagene_core::{
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit::Edit,
-    assembly_substitution_intent::{self, Request as IntentRequest, Substitution},
+    cloning::assembly::{
+        intent::{self as assembly_intent, Contribution, Selector},
+        junction_edit::Edit,
+        substitution_intent::{
+            self as assembly_substitution_intent, Request as IntentRequest, Substitution,
+        },
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 fn wire(magic: &[u8; 4], v: u16, value: &impl serde::Serialize) -> Vec<u8> {
@@ -109,7 +113,7 @@ fn substituted_intent_161_153_roundtrips_forward_reverse_and_origin_with_literal
         assert_eq!(report.applied.len(), 1);
         assert_eq!(
             report.applied[0].source_position,
-            collagene_core::assembly_intent::ContributionPosition::Reference {
+            collagene_core::cloning::assembly::intent::ContributionPosition::Reference {
                 position: source_position,
                 reverse
             }
@@ -192,7 +196,7 @@ fn trims_and_literal_inserts_precede_retained_core_substitution_and_expected_bas
     assert_eq!(report.target.sequence.as_str(), "ATCAAAGTT");
     assert_eq!(
         report.applied[0].source_position,
-        collagene_core::assembly_intent::ContributionPosition::Reference {
+        collagene_core::cloning::assembly::intent::ContributionPosition::Reference {
             position: 1,
             reverse: false
         }

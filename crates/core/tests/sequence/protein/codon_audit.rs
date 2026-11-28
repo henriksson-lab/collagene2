@@ -1,6 +1,6 @@
 //! Independent finite-space oracle: literal NCBI assignments, exhaustive products,
 //! integer inequalities and direct string scans; no optimizer helpers are used.
-use collagene_core::codon_design::*;
+use collagene_core::sequence::codon_design::*;
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn protein(s: &str) -> Molecule {
     Molecule {

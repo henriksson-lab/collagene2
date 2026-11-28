@@ -1,5 +1,5 @@
 //! Literal INSDC T-encoded RNA fixtures, separate from native U sequence state.
-use collagene_core::{formats::*, protocol};
+use collagene_core::{formats::sequence::*, protocol};
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 const RNA: &str = "LOCUS       rna_fixture               12 bp    mRNA    linear   SYN 26-NOV-2026\nDEFINITION  Independently constructed RNA encoding fixture.\nACCESSION   ZZ000001\nVERSION     ZZ000001.1\nREFERENCE   1  (bases 3 to 8; 10 to 12)\n  AUTHORS   Example,A.\n  TITLE     Synthetic fixture citation\n  JOURNAL   Unpublished\nFEATURES             Location/Qualifiers\n     misc_feature    complement(join(1..3,7..9))\n                     /label=\"literal reverse RNA\"\nORIGIN\n        1 atggcttaan ry\n//\n";
 fn import(text: &str) -> Molecule {

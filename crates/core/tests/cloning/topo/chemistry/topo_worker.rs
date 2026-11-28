@@ -1,13 +1,13 @@
+use collagene_core::cloning::topo::physical::{self as p, projection as v};
 use collagene_core::{
+    cloning::topo::{self as t, worker as w},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob as J, AnalysisResult as R},
     },
-    topo as t, topo_worker as w,
 };
 use collagene_model::{Molecule, Topology};
-use t::physical::{self as p, projection as v};
 fn fixture(four: bool) -> (Vec<t::Input>, t::Request) {
     let inputs = vec![t::Input {
         role: "explicit".into(),

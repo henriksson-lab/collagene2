@@ -1,13 +1,13 @@
 //! Codon design is a separate source-bound model, never a physical cloning operation.
 use collagene_core::{
-    codon_design::*,
-    formats,
+    formats::sequence as formats,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
+    sequence::codon_design::*,
 };
 use collagene_model::{Molecule, Topology};
 fn source() -> Molecule {

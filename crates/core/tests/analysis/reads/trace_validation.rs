@@ -1,5 +1,5 @@
 //! Independently authored SCF2 fixtures and hand-specified reference/read evidence.
-use collagene_core::{trace_validation::*, traces};
+use collagene_core::review::reads::{trace_validation::*, traces};
 use collagene_model::{Molecule, Topology};
 fn scf(calls: &str, scores: &[u8], name: &str) -> Vec<u8> {
     assert_eq!(calls.len(), scores.len());
@@ -295,7 +295,7 @@ fn support_and_strand_requirements_apply_to_indels_as_well_as_base_calls() {
 
 #[test]
 fn explicit_fastq_encodings_support_calls_without_inventing_chromatogram_coordinates() {
-    use collagene_core::oligo_formats::{self, QualityEncoding};
+    use collagene_core::formats::oligos::{self as oligo_formats, QualityEncoding};
     let reference = refseq("TTTCGATACGGG", false);
     for (encoding, quality, kind) in [
         (
@@ -323,7 +323,7 @@ fn explicit_fastq_encodings_support_calls_without_inventing_chromatogram_coordin
         assert!(read.columns.iter().all(|c| c.sample_index.is_none()
             && c.stored_sample_index.is_none()
             && c.raw_confidence == Some(40)));
-        let reverse = collagene_core::annotations::reverse_complement(&source).unwrap();
+        let reverse = collagene_core::sequence::annotations::reverse_complement(&source).unwrap();
         let transformed = validate_reads(&reference, &[reverse], &options()).unwrap();
         assert_eq!(transformed.consensus, report.consensus);
         assert!(transformed.reads[0].query_reversed);
@@ -338,7 +338,7 @@ fn explicit_fastq_encodings_support_calls_without_inventing_chromatogram_coordin
 
 #[test]
 fn trimmed_fastq_coordinates_remain_in_original_forward_record_after_reversal() {
-    use collagene_core::oligo_formats::{self, QualityEncoding};
+    use collagene_core::formats::oligos::{self as oligo_formats, QualityEncoding};
     let source = oligo_formats::import_fastq(
         b"@asymmetric\nAACGATACG\n+\nIIIIIIIII\n",
         QualityEncoding::Phred33,
@@ -347,7 +347,7 @@ fn trimmed_fastq_coordinates_remain_in_original_forward_record_after_reversal() 
     .molecules
     .remove(0);
     let trimmed = oligo_formats::trim_fastq(&source, 2, 8).unwrap();
-    let reversed = collagene_core::annotations::reverse_complement(&trimmed).unwrap();
+    let reversed = collagene_core::sequence::annotations::reverse_complement(&trimmed).unwrap();
     for read in [trimmed, reversed] {
         let report = validate_reads(&refseq("TTTCGATACGGG", false), &[read], &options()).unwrap();
         let evidence = &report.reads[0];

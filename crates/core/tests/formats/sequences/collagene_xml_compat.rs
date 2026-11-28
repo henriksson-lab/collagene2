@@ -2,8 +2,11 @@
 //! execution or chemistry reconstructed from a serialized single strand.
 use collagene_core::{
     chemistry::Duplex,
-    collagene_xml_compat::{self as compat, ReferencePolicy as Policy},
-    legacy_formats as legacy, protocol,
+    formats::original::{
+        self as legacy,
+        collagene_lower_strand::{self as compat, ReferencePolicy as Policy},
+    },
+    protocol,
 };
 use collagene_model::{Location, Topology};
 fn record(upper: &str, lower: &str, circular: bool, children: &str) -> String {

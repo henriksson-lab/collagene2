@@ -5,7 +5,8 @@
 ## Portable API
 
 ```rust,no_run
-use collagene_core::{Sequence, alignment::*};
+use collagene_model::Sequence;
+use collagene_core::alignment::*;
 # fn example() -> Result<(), collagene_core::Error> {
 let reference = Sequence::dna("TTTACGTGGG")?;
 let query = Sequence::dna("ACGT")?;

@@ -1,8 +1,7 @@
 //! Independent literal/oriented-window oracle; no Molecule is built for large contigs.
 use collagene_core::{
-    crispr::{self, GuideOptions, GuideQuery},
-    genome::*,
-    genome_crispr::*,
+    sequence::crispr::{self, GuideOptions, GuideQuery},
+    tracks::{crispr::*, genome::*},
 };
 use collagene_model::Topology;
 const G: &str = "ACGTCAGTACGATCGATCGA";

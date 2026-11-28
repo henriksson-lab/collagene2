@@ -1,5 +1,5 @@
 //! Real offline IPC/repository restart for private archives, never an HTTP path.
-use collagene_core::workspace::{self, Workspace, WorkspaceAttachment};
+use collagene_core::documents::workspace::{self, Workspace, WorkspaceAttachment};
 use collagene_desktop_host::{DesktopHost, WindowAccess};
 use collagene_desktop_protocol as wire;
 use collagene_model::{Molecule, Topology};

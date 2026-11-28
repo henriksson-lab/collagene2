@@ -1,6 +1,10 @@
 //! Actual SDK lookup/evidence and complete catalog-bound inspection artifacts.
-use collagene_core::{catalog_digest::*, formats, restriction_inspection::InspectionOptions};
-use collagene_mcp::{CollageneServer, RestrictionInspectionEvidence};
+use collagene_core::{
+    cloning::restriction::{catalog::*, inspection::InspectionOptions},
+    formats::sequence as formats,
+};
+use collagene_mcp::server::CollageneServer;
+use collagene_mcp::tools::cloning::RestrictionInspectionEvidence;
 use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, ReadResourceRequestParams},
@@ -243,7 +247,7 @@ async fn single_catalog_artifact_refuses_full_session_without_partial_publicatio
     let d = import(&c, "capacity", "AAGGCCTT").await;
     let before = call(&c, "list_documents", json!({})).await;
     for work in 1..=128 {
-        let mut o = collagene_core::methylation::MethylationOptions::default();
+        let mut o = collagene_core::chemistry::methylation::MethylationOptions::default();
         o.max_comparisons = work;
         call(&c, "assess_methylation", json!({"document":d,"options":o})).await;
     }
@@ -278,7 +282,7 @@ async fn single_catalog_artifact_refuses_full_session_without_partial_publicatio
     )
     .await;
     // Refusing one new item must not invalidate any already published item.
-    let mut o = collagene_core::methylation::MethylationOptions::default();
+    let mut o = collagene_core::chemistry::methylation::MethylationOptions::default();
     o.max_comparisons = 128;
     call(&c, "assess_methylation", json!({"document":d,"options":o})).await;
     assert_eq!(call(&c, "list_documents", json!({})).await, before);

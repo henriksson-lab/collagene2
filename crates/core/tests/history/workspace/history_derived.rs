@@ -1,4 +1,4 @@
-use collagene_core::{history::DocumentHistory, workspace::Workspace};
+use collagene_core::documents::{history::DocumentHistory, workspace::Workspace};
 use collagene_model::{Molecule, Topology};
 #[test]
 fn transformed_document_retains_exact_source_event_and_survives_archive_roundtrip() {
@@ -47,8 +47,8 @@ fn transformed_document_retains_exact_source_event_and_survives_archive_roundtri
     other.contribute(&mut frame).unwrap();
     frame.active_document = derived.id.clone();
     frame.validate().unwrap();
-    let bytes = collagene_core::workspace::save_workspace(&frame).unwrap();
-    let loaded = collagene_core::workspace::load_workspace(&bytes).unwrap();
+    let bytes = collagene_core::documents::workspace::save_workspace(&frame).unwrap();
+    let loaded = collagene_core::documents::workspace::load_workspace(&bytes).unwrap();
     let restored = DocumentHistory::restore_all(&loaded).unwrap();
     let result = restored.iter().find(|d| d.id == "derived").unwrap();
     assert_eq!(result.summaries()[0].parents, vec![event]);

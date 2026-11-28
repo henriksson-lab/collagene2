@@ -2,10 +2,11 @@
 #[path = "../../core/tests/common/actual_strand.rs"]
 mod fixture;
 use collagene_core::{
-    assembly_intent,
-    history::DocumentHistory,
-    run_material,
-    workspace::{self, RevisionEvent, Workspace, WorkspaceDocument},
+    cloning::assembly::intent as assembly_intent,
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, RevisionEvent, Workspace, WorkspaceDocument},
+    },
 };
 use collagene_library_sharing::{self as sharing, Selection};
 fn adopt(w: &mut Workspace, target: collagene_model::Molecule, parents: Vec<String>) -> Selection {
@@ -76,9 +77,13 @@ fn actual_material_target_requires_existing_exact_parents_and_replays_their_owne
         );
         let bytes = workspace::save_workspace(&projection.workspace).unwrap();
         let loaded = workspace::load_workspace(&bytes).unwrap();
-        let origins = run_material::documentary_origins(&loaded, &[selected.clone()], &[])
-            .unwrap()
-            .materials;
+        let origins = collagene_core::material::capsule::documentary_origins(
+            &loaded,
+            &[selected.clone()],
+            &[],
+        )
+        .unwrap()
+        .materials;
         origins[0]
             .replay(&loaded.revisions[&selected.event().revision])
             .unwrap();
@@ -112,7 +117,7 @@ fn forged_unkeyed_descriptor_cannot_publish_private_event_or_claim_another_run()
         .unwrap(),
     )
     .unwrap();
-    let foreign = collagene_core::run_lineage::EventBinding {
+    let foreign = collagene_core::material::lineage::EventBinding {
         document_id: private.id.clone(),
         event_id: private.head_event().into(),
         revision: private.head_revision().into(),
@@ -124,7 +129,7 @@ fn forged_unkeyed_descriptor_cannot_publish_private_event_or_claim_another_run()
         let mut forged = report.target.clone();
         let mut descriptors = assembly_intent::material_source_descriptors(&forged).unwrap();
         let descriptor = &mut descriptors[0];
-        let collagene_core::run_material::MaterialSelection::Run(choice) =
+        let collagene_core::material::run::MaterialSelection::Run(choice) =
             &mut descriptor.selection
         else {
             panic!("actual run fixture");

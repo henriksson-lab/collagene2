@@ -1,17 +1,30 @@
 //! Actual OE-PCR, exact catalog digest and optional repair remain one owned graph.
 use collagene_core::{
-    analysis::Primer,
-    assembly_diagnostics,
-    assembly_recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest,
     chemistry::EndRepairMethod,
-    cloning_outputs, ligation_recipe as lig, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request},
-    overlap_profiles::ProfileOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::{
+            diagnostics as assembly_diagnostics,
+            recipe::{self as a, FragmentSpec, Preparation, RunPreparation},
+        },
+        ligation::recipe as lig,
+        overlap::{
+            extension::{
+                self as overlap_extension,
+                pcr::{PrimerPair, Request},
+            },
+            profiles::ProfileOptions,
+        },
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -94,7 +107,7 @@ fn outer_actual_pcr_is_cut_under_exact_catalog_pin_and_closes_real_sticky_ends()
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -215,7 +228,7 @@ fn exact_saved_origin_precedes_all_seven_preparation_steps_without_retargeting()
     )
     .unwrap();
     let event = commit.receipt.construct.clone();
-    let capsule = run_material::capsule(
+    let capsule = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id.clone(),
@@ -320,7 +333,8 @@ fn stale_catalog_missing_fragments_and_broken_suffix_ownership_are_rejected() {
             2 => bad.compiled.rows[0].repair_step = Some(4),
             _ => bad.compiled.rows[0].prepared_source = Source::Step(3),
         }
-        bad.verification.plan_revision = verification::plan_revision(&bad.compiled.plan);
+        bad.verification.plan_revision =
+            collagene_core::planning::plan::DesignPlan::revision(&bad.compiled.plan);
         assert!(bad.validate().is_err(), "broken suffix{kind}");
     }
 }

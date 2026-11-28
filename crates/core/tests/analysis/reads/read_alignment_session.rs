@@ -5,8 +5,7 @@ use collagene_core::{
         schema::{AnalysisJob as Job, AnalysisResult as ResultValue},
         session::AnalysisSession,
     },
-    read_alignment_reference::Options,
-    read_alignment_session::*,
+    review::reads::{reference::Options, session::*},
 };
 use collagene_model::{Molecule, Topology};
 const SAM: &str = "@SQ\tSN:ref\tLN:8\nr1\t0\tref\t1\t30\t4M\t*\t0\t0\tACGT\t!III\tNM:i:0\nr2\t4\t*\t0\t0\t*\t*\t0\t0\t*\t*\n";

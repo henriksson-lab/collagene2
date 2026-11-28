@@ -1,6 +1,9 @@
 //! Selective junction proposals preserve retained manual PCR and catalog digest rows exactly.
-use collagene_core::{analysis::Primer, catalog_digest, primers::DesignOptions};
-use collagene_mcp::CollageneServer;
+use collagene_core::{
+    cloning::{pcr::primers::DesignOptions, restriction::catalog as catalog_digest},
+    sequence::analysis::Primer,
+};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

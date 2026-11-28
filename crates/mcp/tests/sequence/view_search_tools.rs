@@ -1,10 +1,10 @@
 //! Unified search and browser tracks use the real MCP SDK and immutable refs.
 use collagene_core::{
-    formats,
-    search::{SearchMode, SearchOptions},
-    view_tracks::{TrackOptions, TrackWindow},
+    formats::sequence as formats,
+    sequence::search::{SearchMode, SearchOptions},
+    tracks::view::{TrackOptions, TrackWindow},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

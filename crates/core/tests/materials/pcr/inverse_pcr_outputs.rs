@@ -1,14 +1,18 @@
 //! End-to-end inverse-PCR outputs against a separately declared literal target.
 use collagene_core::{
-    analysis,
-    cloning_outputs::{self, Options},
-    history::DocumentHistory,
-    mutagenesis::{self, InversePcrOptions},
-    oligo_formats::{Delimiter, OligoTable},
-    plan_oligos,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    verification::{DesignPlan, Operation, Status},
-    workspace::Workspace,
+    cloning::pcr::mutagenesis::{self, InversePcrOptions},
+    documents::{history::DocumentHistory, workspace::Workspace},
+    formats::oligos::{Delimiter, OligoTable},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Options},
+    },
+    planning::{
+        oligos as plan_oligos,
+        plan::{DesignPlan, Operation},
+    },
+    sequence::analysis,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 

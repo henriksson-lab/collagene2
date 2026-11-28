@@ -1,14 +1,19 @@
 //! AI inspects the actual OE amplicon and reuses its catalog choice in ordinary cloning.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation},
-    catalog_digest,
     chemistry::EndRepairMethod,
-    ligation_recipe, overlap_extension,
-    overlap_extension_digest_inspection::{Preview, Request},
-    overlap_extension_pcr::{PrimerPair, Request as Extension},
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation},
+        ligation::recipe as ligation_recipe,
+        overlap::extension::{
+            self as overlap_extension,
+            digest::{Preview, Request},
+            pcr::{PrimerPair, Request as Extension},
+        },
+        restriction::catalog as catalog_digest,
+    },
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

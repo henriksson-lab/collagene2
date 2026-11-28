@@ -1,17 +1,19 @@
 //! Real SDK routing, immutable workspace commits and exact source identities.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    combinatorial_design::{
+    cloning::assembly::recipe::Preparation,
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::lineage::EventBinding,
+    planning::combinatorial::{
         self as design, Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct,
         TargetDeclaration,
     },
-    history::DocumentHistory,
-    run_lineage::EventBinding,
-    workspace::{self, Workspace},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -121,7 +123,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         id: id.into(),
         label: id.into(),
         source: binding(&original, index),
-        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+        selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
             start: 0,
             end: 4,
             reverse: false,
@@ -442,7 +444,7 @@ async fn fresh_selected_batches_save_historical_records_and_replay_exact_rows_wi
 
 #[tokio::test]
 async fn internal_library_declarations_are_row_local_and_never_rewrite_preparations() {
-    use collagene_core::{assembly_edit_intent::Edit, assembly_substitution_intent::Substitution};
+    use collagene_core::cloning::assembly::{edit_intent::Edit, substitution_intent::Substitution};
     let (c, server) = setup().await;
     let (w, d, ordinary) = fixture();
     let imported = upload(&c, &w).await;

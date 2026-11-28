@@ -1,6 +1,6 @@
 //! SDK transports do not confer end chemistry or empirical profile compatibility.
-use collagene_core::formats;
-use collagene_mcp::CollageneServer;
+use collagene_core::formats::sequence as formats;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

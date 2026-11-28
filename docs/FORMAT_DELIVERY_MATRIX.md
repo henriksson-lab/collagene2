@@ -39,20 +39,20 @@ ELN/inventory, external alignment engines, OpenGel or further BAM/index work.
 | gzip/ZIP | Adapter/container-specific bounded support | Native ZIP/workflow-specific outputs | Native workspace ZIP paths | Dedicated format/session artifacts | No universal archive importer or arbitrary nested decompression is implied |
 | SAM/BAM/VCF/BCF/reference datasets | Existing bounded modules/workflows | Existing selected/profile outputs | Existing sessions | Existing typed tools | Frozen/deferred area for this work; NO further BAM/BAI/CSI/CRAM/index tasks are proposed |
 
-Core evidence: [generic sequence dispatch](../crates/core/src/formats.rs),
-[legacy XML/XDNA](../crates/core/src/legacy_formats.rs),
-[SnapGene](../crates/core/src/snapgene.rs), [traces](../crates/core/src/traces.rs),
-[EMBL](../crates/core/src/embl.rs), [protein](../crates/core/src/protein_formats.rs),
-[GCG](../crates/core/src/gcg_sequence.rs),
-[SnapGene writer](../crates/core/src/snapgene_export.rs),
-[alignment dispatch](../crates/core/src/alignment_formats.rs),
-[extra alignment profiles](../crates/core/src/alignment_exchange_more.rs),
-[annotations](../crates/core/src/annotation_formats.rs),
-[oligos/FASTQ](../crates/core/src/oligo_formats.rs),
+Core evidence: [generic sequence dispatch](../crates/core/src/formats/sequence/mod.rs),
+[legacy XML/XDNA](../crates/core/src/formats/original/mod.rs),
+[SnapGene](../crates/core/src/formats/snapgene/mod.rs), [traces](../crates/core/src/review/reads/traces.rs),
+[EMBL](../crates/core/src/formats/sequence/embl.rs), [protein](../crates/core/src/formats/protein.rs),
+[GCG](../crates/core/src/formats/sequence/gcg.rs),
+[SnapGene writer](../crates/core/src/formats/snapgene/export.rs),
+[alignment dispatch](../crates/core/src/formats/alignment/mod.rs),
+[extra alignment profiles](../crates/core/src/formats/alignment/pir_gde_selex.rs),
+[annotations](../crates/core/src/formats/annotations/mod.rs),
+[oligos/FASTQ](../crates/core/src/formats/oligos.rs),
 [SBOL](../crates/design-exchange/src/lib.rs).
-Surface evidence: [App File/import flows](../crates/web/src/app.rs),
-[alignment UI](../crates/web/src/alignment_view.rs),
-[SBOL dialog](../crates/web/src/sbol_exchange.rs),
+Surface evidence: [App File/import flows](../crates/web/src/app/mod.rs),
+[alignment UI](../crates/web/src/viewer/alignment/alignment_view/mod.rs),
+[SBOL dialog](../crates/web/src/io/sbol_exchange.rs),
 [MCP tool implementations](../crates/mcp/src/lib.rs).
 
 ## Practical cloning migration order

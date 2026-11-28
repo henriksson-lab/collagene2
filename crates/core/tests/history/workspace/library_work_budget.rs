@@ -1,15 +1,23 @@
 //! The batch ledger reserves the same declared PCR/OE work as native recipes.
 //! Oversized declarations are rejected by preflight; no costly PCR is executed.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{Preparation, RunPreparation},
     chemistry::Terminus,
-    cloning_outputs, combinatorial_batch as batch, combinatorial_design as library,
-    material_derivation as derivation, overlap_extension, overlap_extension_pcr,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material,
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    cloning::{
+        assembly::recipe::{Preparation, RunPreparation},
+        overlap::extension::{self as overlap_extension, pcr as overlap_extension_pcr},
+    },
+    documents::workspace::Workspace,
+    material::{
+        derivation,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs, run as run_material,
+    },
+    planning::{
+        combinatorial::{self as library, batch},
+        plan::{DesignPlan, Operation, PlanInput, Source},
+    },
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, index: usize) -> EventBinding {
@@ -92,7 +100,7 @@ fn source(family: usize) -> (Workspace, EventBinding, Preparation) {
             )
             .unwrap();
             let pin = commit.receipt.construct;
-            let origin = run_material::capsule(
+            let origin = collagene_core::material::capsule::capsule(
                 &commit.workspace,
                 &run_material::Selection {
                     run_id: commit.receipt.run.run_id,
@@ -113,7 +121,7 @@ fn source(family: usize) -> (Workspace, EventBinding, Preparation) {
         2 => {
             let forward = Primer::new("Unique F", "AGTCCGAT", "").unwrap();
             let reverse = Primer::new("Unique R", "TGACGATC", "").unwrap();
-            let previews = verification::simulate_pcr_documents(
+            let previews = verification::pcr::simulate_pcr_documents(
                 &m,
                 &forward,
                 &reverse,
@@ -122,8 +130,8 @@ fn source(family: usize) -> (Workspace, EventBinding, Preparation) {
             .unwrap();
             assert_eq!(previews.len(), 1);
             let request = derivation::Request {
-                sources: vec![collagene_core::material_derivation::BoundSource {
-                    role: collagene_core::material_derivation::SourceRole::Template,
+                sources: vec![collagene_core::material::derivation::BoundSource {
+                    role: collagene_core::material::derivation::SourceRole::Template,
                     event: event(&w, 0),
                     origin: derivation::SourceOrigin::OriginalReference,
                 }],
@@ -188,11 +196,12 @@ fn original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unres
                         id: "large-choice".into(),
                         label: "Explicit oversized OE".into(),
                         source: pin,
-                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
-                            start: 0,
-                            end: 4000,
-                            reverse: false,
-                        },
+                        selector:
+                            collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
+                                start: 0,
+                                end: 4000,
+                                reverse: false,
+                            },
                         preparation_reverse: false,
                         generation: None,
                         treatment: None,
@@ -206,11 +215,12 @@ fn original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unres
                         id: "small-choice".into(),
                         label: "Other".into(),
                         source: event(&w, 2),
-                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
-                            start: 0,
-                            end: 4,
-                            reverse: false,
-                        },
+                        selector:
+                            collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
+                                start: 0,
+                                end: 4,
+                                reverse: false,
+                            },
                         preparation_reverse: false,
                         generation: None,
                         treatment: None,

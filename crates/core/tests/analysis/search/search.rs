@@ -1,4 +1,4 @@
-use collagene_core::search::*;
+use collagene_core::sequence::search::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn options(query: &str, mode: SearchMode) -> SearchOptions {
     SearchOptions {

@@ -1,12 +1,12 @@
 //! Real binary worker execution, selector/version gates and request binding.
 use collagene_core::{
-    golden_gate_fusion_design as fusion,
+    cloning::golden_gate::fusion_design as fusion,
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 use serde_json::json;
@@ -120,7 +120,7 @@ fn signed_search_and_explicit_preparation_use_new_append_only_worker_selectors()
 
 #[test]
 fn empirical_scores_are_condition_bound_and_keep_missing_counts_unknown_over_binary() {
-    use collagene_core::ligation_fidelity as fidelity;
+    use collagene_core::cloning::ligation::fidelity;
     let mut dataset: fidelity::Dataset = serde_json::from_value(json!({
         "schema_version":1,"overhang_length":3,"content_revision":"",
         "conditions":{"ligase":"synthetic","buffer":"synthetic","temperature_protocol":"not measured","incubation":"not measured","restriction_enzymes":[],"substrate_context":"independent artificial fixture"},
@@ -167,7 +167,7 @@ fn empirical_scores_are_condition_bound_and_keep_missing_counts_unknown_over_bin
 
 #[test]
 fn published_catalog_score_and_ranking_use_version62_and_preserve_selection_context() {
-    use collagene_core::{golden_gate_fusion_rank as rank, ligation_profiles as profiles};
+    use collagene_core::cloning::{golden_gate::fusion_rank as rank, ligation::profiles};
     fn exchange62(job: AnalysisJob, revision: String, jt: u32, rt: u32) -> AnalysisResult {
         let bytes = protocol::request::Request::encode(&Request {
             id: 620,

@@ -1,17 +1,20 @@
 //! In-process actual SDK flow, with no HTTP, filesystem or host-catalog writes.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, material_derivation as native,
-    run_lineage::EventBinding,
-    run_material::{self, MaterialOrigin},
-    workspace::{self, Workspace},
+    cloning::restriction::catalog as catalog_digest,
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as native,
+        lineage::EventBinding,
+        run::{self as run_material, MaterialOrigin},
+    },
+    sequence::analysis::Primer,
 };
-use collagene_mcp::{
-    CollageneServer, MaterialDerivationInstallRequest as InstallRequest,
-    MaterialDerivationOperation as Derivation, MaterialDerivationOrigin as Origin,
-    MaterialPcrChoice,
-};
+use collagene_mcp::server::CollageneServer;
+use collagene_mcp::session::references::MaterialDerivationOrigin as Origin;
+use collagene_mcp::tools::workspace::MaterialDerivationInstallRequest as InstallRequest;
+use collagene_mcp::tools::workspace::MaterialDerivationOperation as Derivation;
+use collagene_mcp::tools::workspace::MaterialPcrChoice;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -172,8 +175,8 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     );
     assert_eq!(preview["previews"][0]["reusable"], true);
     let request = InstallRequest {
-        sources: vec![collagene_mcp::MaterialDerivationSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_mcp::tools::workspace::MaterialDerivationSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin.clone(),
             origin: Origin::OriginalReference,
         }],
@@ -251,7 +254,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     receipt.validate_archive(&w).unwrap();
     assert_eq!(w.documents.len(), 3);
     assert!(
-        collagene_core::run_lineage::list_runs(&w)
+        collagene_core::material::lineage::list_runs(&w)
             .unwrap()
             .is_empty()
     );
@@ -281,7 +284,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
         .find(|e| e.name == "EcoRI")
         .unwrap();
     let selection = catalog_digest::select(&catalog, &[eco.id.clone()]).unwrap();
-    let digest=call(&c,"material_derivation",json!({"workspace":reference(&installed),"task":{"PreviewDigest":{"source":receipt.product,"origin":{"Saved":origin},"selection":selection,"options":collagene_core::restriction_inspection::InspectionOptions::default()}}})).await;
+    let digest=call(&c,"material_derivation",json!({"workspace":reference(&installed),"task":{"PreviewDigest":{"source":receipt.product,"origin":{"Saved":origin},"selection":selection,"options":collagene_core::cloning::restriction::inspection::InspectionOptions::default()}}})).await;
     assert_eq!(digest["products_determined"], true);
     assert_eq!(digest["fragment_count"], 2);
     let full = json_artifact(&c, &digest["artifact_id"]).await;
@@ -291,8 +294,8 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
         .unwrap();
     assert_eq!(report.fragment_modifications.len(), 2);
     let request = InstallRequest {
-        sources: vec![collagene_mcp::MaterialDerivationSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_mcp::tools::workspace::MaterialDerivationSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: receipt.product.clone(),
             origin: Origin::Saved(origin.clone()),
         }],
@@ -336,7 +339,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
 
 #[tokio::test]
 async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_context() {
-    use collagene_core::{chemistry::EndRepairMethod, mutagenesis::PcrOptions};
+    use collagene_core::{chemistry::EndRepairMethod, cloning::pcr::mutagenesis::PcrOptions};
     let (c, server) = setup().await;
     let original = fixture();
     let bytes = workspace::save_workspace(&original).unwrap();
@@ -370,8 +373,8 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
         "CCAGTTCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCACC"
     );
     let request = InstallRequest {
-        sources: vec![collagene_mcp::MaterialDerivationSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_mcp::tools::workspace::MaterialDerivationSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin.clone(),
             origin: Origin::OriginalReference,
         }],
@@ -421,7 +424,7 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
     let w = native_archive(&c, &installed["native_artifact_id"]).await;
     receipt.validate_archive(&w).unwrap();
     assert!(
-        collagene_core::run_lineage::list_runs(&w)
+        collagene_core::material::lineage::list_runs(&w)
             .unwrap()
             .is_empty()
     );
@@ -460,8 +463,8 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
         .find(|e| e.name == "EcoRI")
         .unwrap();
     let request = InstallRequest {
-        sources: vec![collagene_mcp::MaterialDerivationSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_mcp::tools::workspace::MaterialDerivationSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: receipt.product.clone(),
             origin: Origin::Saved(run_material::MaterialSelection::Derived(receipt.product)),
         }],
@@ -494,8 +497,8 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
         .unwrap();
     reject(&c,json!({"workspace":reference(&cut),"task":{"PreviewRepair":{"source":receipt.product,"origin":"OriginalReference","method":"Blunt"}}})).await;
     let request = InstallRequest {
-        sources: vec![collagene_mcp::MaterialDerivationSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_mcp::tools::workspace::MaterialDerivationSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: receipt.product,
             origin: origin,
         }],

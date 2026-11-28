@@ -1,4 +1,4 @@
-use collagene_core::annotation_formats::{self as a, AnnotationFormat as F};
+use collagene_core::formats::annotations::{self as a, AnnotationFormat as F};
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn reference() -> Molecule {
     Molecule::dna(

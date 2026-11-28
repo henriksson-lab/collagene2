@@ -1,6 +1,7 @@
 use collagene_core::{
-    assembly_junctions as j,
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
+    cloning::assembly::junctions as j,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::evidence::Status,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn molecule(name: &str, dna: &str) -> Molecule {

@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::{analysis::Primer, oligo_formats::*};
+use collagene_core::{formats::oligos::*, sequence::analysis::Primer};
 use collagene_model::Location;
 
 fn options() -> OligoImportOptions {
@@ -306,7 +306,7 @@ fn palindromic_reverse_complement_reverses_scores_and_other_identical_coordinate
         .unwrap()
         .molecules
         .remove(0);
-    let mut rc = collagene_core::annotations::reverse_complement(&m).unwrap();
+    let mut rc = collagene_core::sequence::annotations::reverse_complement(&m).unwrap();
     project_fastq_reverse_complement(&m, &mut rc).unwrap();
     assert_eq!(rc.sequence, m.sequence);
     let e = quality_evidence(&rc).unwrap();
@@ -316,14 +316,14 @@ fn palindromic_reverse_complement_reverses_scores_and_other_identical_coordinate
         export_fastq(&rc, QualityEncoding::Phred33).unwrap().text,
         "@palindrome\nACGT\n+\n~I5!\n"
     );
-    let mut back = collagene_core::annotations::reverse_complement(&rc).unwrap();
+    let mut back = collagene_core::sequence::annotations::reverse_complement(&rc).unwrap();
     project_fastq_reverse_complement(&rc, &mut back).unwrap();
     assert_eq!(
         quality_evidence(&back).unwrap().qualities,
         vec![0, 20, 40, 93]
     );
     assert!(quality_evidence(&back).unwrap().current_valid);
-    let extracted = collagene_core::annotations::extract_region(&m, 0, 4).unwrap();
+    let extracted = collagene_core::sequence::annotations::extract_region(&m, 0, 4).unwrap();
     assert_eq!(extracted.sequence, m.sequence);
     assert!(!quality_evidence(&extracted).unwrap().current_valid);
     assert!(export_fastq(&extracted, QualityEncoding::Phred33).is_err());
@@ -342,7 +342,7 @@ fn explicit_quality_trim_and_reversal_keep_actual_original_score_coordinates() {
     assert_eq!(e.called_sequence.as_str(), "ACG");
     assert_eq!(e.qualities, vec![10, 20, 30]);
     assert_eq!((e.retained_start, e.retained_end), (1, 4));
-    let rc = collagene_core::annotations::reverse_complement(&trimmed).unwrap();
+    let rc = collagene_core::sequence::annotations::reverse_complement(&trimmed).unwrap();
     let e = quality_evidence(&rc).unwrap();
     assert!(e.current_valid);
     assert_eq!(e.called_sequence.as_str(), "CGT");
@@ -352,7 +352,7 @@ fn explicit_quality_trim_and_reversal_keep_actual_original_score_coordinates() {
     let e = quality_evidence(&shorter).unwrap();
     assert_eq!(e.called_sequence.as_str(), "G");
     assert_eq!(e.qualities, vec![20]);
-    let back = collagene_core::annotations::reverse_complement(&shorter).unwrap();
+    let back = collagene_core::sequence::annotations::reverse_complement(&shorter).unwrap();
     let e = quality_evidence(&back).unwrap();
     assert!(e.current_valid);
     assert_eq!(e.called_sequence.as_str(), "C");

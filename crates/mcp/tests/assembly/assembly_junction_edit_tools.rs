@@ -1,6 +1,6 @@
 //! Explicit junction DNA intent precedes original-template PCR proposals and verification.
-use collagene_core::primers::DesignOptions;
-use collagene_mcp::CollageneServer;
+use collagene_core::cloning::pcr::primers::DesignOptions;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

@@ -1,10 +1,10 @@
 //! AI proposals use the same freshly reconstructed reciprocal-extension physics.
 use collagene_core::{
-    analysis::Primer,
-    overlap_extension::Options,
-    verification::{Operation, OrientedSource, Source},
+    cloning::overlap::extension::Options,
+    planning::plan::{Operation, OrientedSource, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

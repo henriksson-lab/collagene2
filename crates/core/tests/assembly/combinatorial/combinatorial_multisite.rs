@@ -1,16 +1,24 @@
 //! Whole original-parent reference networks in the existing selected-row compiler.
 use collagene_core::{
-    assembly_recipe, chemistry, cloning_outputs, combinatorial_batch as batch,
-    combinatorial_design::{
-        self as design, Bin, Choice, ChoiceSelection, ConstructOverrides, Design, Method,
-        MultiSiteSelection, PreparationOverride, SelectedConstruct, TargetDeclaration,
+    chemistry,
+    cloning::{
+        assembly::recipe as assembly_recipe,
+        recombination::{
+            multisite::{self as multi, multisite},
+            reference::{Family, Reaction, SiteVariant, SourceRecord},
+        },
     },
-    combinatorial_export as export, combinatorial_release as release,
-    multisite_recombination::{self as multi, multisite},
-    recombination::reference::{Family, Reaction, SiteVariant, SourceRecord},
-    run_lineage::EventBinding,
-    verification::{self, Operation, Source, Status},
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{lineage::EventBinding, outputs as cloning_outputs},
+    planning::{
+        combinatorial::{
+            self as design, Bin, Choice, ChoiceSelection, ConstructOverrides, Design, Method,
+            MultiSiteSelection, PreparationOverride, SelectedConstruct, TargetDeclaration, batch,
+            export, release,
+        },
+        plan::{Operation, Source},
+    },
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const MAIN: &str = concat!(
@@ -104,7 +112,7 @@ fn fixture(existing: bool) -> (Workspace, Design, SelectedConstruct) {
                 id: format!("parent-{i}-choice"),
                 label: format!("Original parent {i} with explicit intended contribution"),
                 source: event(&w, i),
-                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                     start: *start,
                     end: *end,
                     reverse: false,
@@ -174,7 +182,7 @@ fn pin(w: &Workspace, d: &mut Design, row: &SelectedConstruct) -> design::MultiS
         panic!("fixture method")
     };
     *selection = Some(MultiSiteSelection {
-        selection: multi::Selection {
+        selection: collagene_core::cloning::recombination::Selection {
             batch_revision: inspected.batch.batch_revision.clone(),
             candidate_id: 0,
             component_id: component,
@@ -228,7 +236,7 @@ fn original_contribution_intent_is_frozen_before_whole_parent_discovery_and_expl
     assert_eq!(evaluated.verification().products.len(), 1);
     assert_eq!(evaluated.verification().reference_step_reports.len(), 1);
     assert!(chemistry::Duplex::from_molecule(&evaluated.verification().products[0]).is_err());
-    let oligos = collagene_core::plan_oligos::build(
+    let oligos = collagene_core::planning::oligos::build(
         evaluated.plan(),
         &evaluated.resolved.target,
         &Default::default(),
@@ -373,14 +381,14 @@ fn existing_batch_release_and_export_preserve_incomplete_reference_status_and_al
     let manifest = release::load(&committed.workspace, &committed.manifest_hash).unwrap();
     assert_eq!(manifest.rows.len(), 1);
     assert!(manifest.rows[0].options.allow_incomplete);
-    let graphs = collagene_core::reference_run_evidence::load(
+    let graphs = collagene_core::material::reference_evidence::load(
         &committed.workspace,
         &manifest.rows[0].output.run.run_id,
     )
     .unwrap()
     .unwrap();
     assert_eq!(graphs.steps.len(), 1);
-    let verification::ReferenceStepEvidence::MultiSiteRecombination { batch, .. } =
+    let verification::evidence::ReferenceStepEvidence::MultiSiteRecombination { batch, .. } =
         &graphs.steps[0].evidence;
     assert_eq!(batch.documents.len(), 2);
     assert_eq!(

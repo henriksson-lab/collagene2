@@ -1,5 +1,5 @@
 //! Actual SDK over memory pipes; no browser, HTTP, user files or scientific process.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -89,7 +89,7 @@ async fn typed_import_reinspection_original_artifacts_and_source_roles_remain_do
     )
     .await;
     assert_eq!(full["done"], true);
-    let report: collagene_core::structure_view::Prepared =
+    let report: collagene_core::protein::structure::Prepared =
         serde_json::from_str(full["text"].as_str().unwrap()).unwrap();
     report
         .validate_binding(imported["context_revision"].as_str().unwrap())

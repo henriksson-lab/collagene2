@@ -1,6 +1,6 @@
-use collagene_core::topo as t;
+use collagene_core::cloning::topo as t;
+use collagene_core::cloning::topo::physical::{self as p, projection as v};
 use collagene_model::{Molecule, Topology};
-use t::physical::{self as p, projection as v};
 fn input(role: &str, dna: &str) -> t::Input {
     t::Input {
         role: role.into(),
@@ -179,8 +179,8 @@ fn circular_and_reverse_intervals_preserve_correspondence_without_inventing_wast
 #[test]
 fn unique_exact_pcr_and_explicit_tailing_feed_actual_strands_not_metadata() {
     let inputs = vec![input("template", "GACTAGTCATGACCTGATCGTACGAGTCCGATGCA")];
-    let forward = collagene_core::analysis::Primer::new("f", "GACTAGTC", "").unwrap();
-    let reverse = collagene_core::analysis::Primer::new("r", "TGCATCGG", "").unwrap();
+    let forward = collagene_core::sequence::analysis::Primer::new("f", "GACTAGTC", "").unwrap();
+    let reverse = collagene_core::sequence::analysis::Primer::new("r", "TGCATCGG", "").unwrap();
     let request = t::Request {
         recipe: t::GenerationRecipe {
             schema_version: 1,
@@ -189,7 +189,7 @@ fn unique_exact_pcr_and_explicit_tailing_feed_actual_strands_not_metadata() {
                 template_role: "template".into(),
                 forward,
                 reverse,
-                tail: Some(collagene_core::tailing::TailingBase::A),
+                tail: Some(collagene_core::cloning::ligation::tailing::TailingBase::A),
             }],
         },
         steps: vec![],
@@ -232,8 +232,8 @@ fn pcr_search_work_is_reserved_for_all_passes_and_materials_before_scanning() {
     let material = t::MaterialRecipe::ExactPcr {
         material_id: "first PCR".into(),
         template_role: "template".into(),
-        forward: collagene_core::analysis::Primer::new("f", "GACTAGTC", "").unwrap(),
-        reverse: collagene_core::analysis::Primer::new("r", "TGCATCGG", "").unwrap(),
+        forward: collagene_core::sequence::analysis::Primer::new("f", "GACTAGTC", "").unwrap(),
+        reverse: collagene_core::sequence::analysis::Primer::new("r", "TGCATCGG", "").unwrap(),
         tail: None,
     };
     let mut request = t::Request {
@@ -269,8 +269,10 @@ fn pcr_search_work_is_reserved_for_all_passes_and_materials_before_scanning() {
     request.recipe.materials = vec![t::MaterialRecipe::ExactPcr {
         material_id: "large PCR".into(),
         template_role: "template".into(),
-        forward: collagene_core::analysis::Primer::new("f", &("A".repeat(999) + "C"), "").unwrap(),
-        reverse: collagene_core::analysis::Primer::new("r", &("T".repeat(999) + "G"), "").unwrap(),
+        forward: collagene_core::sequence::analysis::Primer::new("f", &("A".repeat(999) + "C"), "")
+            .unwrap(),
+        reverse: collagene_core::sequence::analysis::Primer::new("r", &("T".repeat(999) + "G"), "")
+            .unwrap(),
         tail: None,
     }];
     request.engine_limits.max_work_cells = 128_000_000;

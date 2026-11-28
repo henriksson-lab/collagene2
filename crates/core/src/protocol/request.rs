@@ -3,7 +3,7 @@ use super::{
     envelope::{MAX_WORKSPACE_MESSAGE_BYTES, encode_with_limit},
     schema::AnalysisJob,
 };
-use crate::formats::MAX_IMPORT_BYTES;
+use crate::formats::sequence::MAX_IMPORT_BYTES;
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +22,7 @@ impl Request {
             ..
         } = &self.job
         {
-            crate::pairwise_export::preflight(record, reference_name, query_name)?;
+            crate::alignment::export::preflight(record, reference_name, query_name)?;
         }
         if let AnalysisJob::SearchPairwiseComparison {
             report,
@@ -30,7 +30,7 @@ impl Request {
             options,
         } = &self.job
         {
-            crate::pairwise_search::preflight(report, pattern, options)?;
+            crate::alignment::search::preflight(report, pattern, options)?;
         }
         if let AnalysisJob::PreparePairwiseContext {
             report,
@@ -39,7 +39,7 @@ impl Request {
             translate,
         } = &self.job
         {
-            crate::pairwise_context::preflight(report, reference, query, *translate)?;
+            crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
             AnalysisJob::InversePcr {
@@ -48,7 +48,7 @@ impl Request {
                 origin,
                 options,
             } => {
-                crate::mutagenesis::inverse_pcr_revision(
+                crate::cloning::pcr::mutagenesis::inverse_pcr_revision(
                     molecule,
                     target,
                     origin.as_ref(),
@@ -58,39 +58,39 @@ impl Request {
 
             AnalysisJob::PreviewProtocolLayout { workspace, request }
             | AnalysisJob::CaptureProtocolLayout { workspace, request } => {
-                crate::protocol_layout::preview_revision(workspace, request)?;
+                crate::output::layout::preview_revision(workspace, request)?;
             }
             AnalysisJob::PreviewProtocolQuantities { workspace, request }
             | AnalysisJob::CaptureProtocolQuantities { workspace, request } => {
-                crate::protocol_quantities::preview_revision(workspace, request)?;
+                crate::output::quantities::preview_revision(workspace, request)?;
             }
             AnalysisJob::ListTopoGraphs { workspace } => {
-                crate::topo_graph_history::list_revision(workspace)?;
+                crate::cloning::topo::graph_history::list_revision(workspace)?;
             }
             AnalysisJob::CaptureTopoGraph { workspace, request } => {
-                crate::topo_graph_history::preflight(workspace, request)?;
+                crate::cloning::topo::graph_history::preflight(workspace, request)?;
             }
             AnalysisJob::InspectTopoGraph {
                 workspace,
                 selection,
             } => {
-                crate::topo_graph_history::inspect_revision(workspace, selection)?;
+                crate::cloning::topo::graph_history::inspect_revision(workspace, selection)?;
             }
             AnalysisJob::ListProtocolQuantities { workspace } => {
-                crate::protocol_quantities::list_revision(workspace)?;
+                crate::output::quantities::list_revision(workspace)?;
             }
             AnalysisJob::OpenProtocolQuantities {
                 workspace,
                 quantity_hash,
             } => {
-                crate::protocol_quantities::open_revision(workspace, quantity_hash)?;
+                crate::output::quantities::open_revision(workspace, quantity_hash)?;
             }
             AnalysisJob::ExportProtocolQuantities {
                 workspace,
                 quantity_hash,
                 format,
             } => {
-                crate::protocol_quantities::export_revision(workspace, quantity_hash, *format)?;
+                crate::output::quantities::export_revision(workspace, quantity_hash, *format)?;
             }
 
             AnalysisJob::ExportProtocolLayout {
@@ -98,7 +98,7 @@ impl Request {
                 layout_hash,
                 format,
             } => {
-                crate::protocol_layout::export_revision(workspace, layout_hash, *format)?;
+                crate::output::layout::export_revision(workspace, layout_hash, *format)?;
             }
 
             AnalysisJob::InspectMaterialOrigin {
@@ -106,7 +106,7 @@ impl Request {
                 event,
                 selection,
             } => {
-                crate::run_material::material_inspection_revision(workspace, event, selection)?;
+                crate::material::run::material_inspection_revision(workspace, event, selection)?;
             }
             AnalysisJob::MaterialPcrDocuments {
                 molecule,
@@ -115,7 +115,7 @@ impl Request {
                 reverse,
                 template_strand,
             } => {
-                crate::material_pcr::revision(
+                crate::cloning::pcr::material::revision(
                     molecule,
                     origin,
                     forward,
@@ -124,16 +124,16 @@ impl Request {
                 )?;
             }
             AnalysisJob::PrepareMaterialPcrOutputs { origin, request } => {
-                crate::material_pcr::outputs_revision(origin, request)?;
+                crate::cloning::pcr::material::outputs_revision(origin, request)?;
             }
             AnalysisJob::ReviewSequenceExport { molecule, format }
             | AnalysisJob::PrepareSequenceExport {
                 molecule, format, ..
             } => {
-                crate::sequence_export::revision(molecule, format)?;
+                crate::formats::sequence::export::revision(molecule, format)?;
             }
             AnalysisJob::ExportScfTrace { trace, options } => {
-                crate::scf_export::revision(trace, options)?;
+                crate::formats::scf::revision(trace, options)?;
             }
             AnalysisJob::InspectMaterialMismatchPcr {
                 source,
@@ -142,7 +142,7 @@ impl Request {
                 reverse,
                 options,
             } => {
-                crate::material_derivation::mismatch_pcr_preview_revision(
+                crate::material::derivation::mismatch_pcr_preview_revision(
                     source, origin, forward, reverse, options,
                 )?;
             }
@@ -151,7 +151,7 @@ impl Request {
                 origin,
                 method,
             } => {
-                crate::material_derivation::repair_preview_revision(source, origin, *method)?;
+                crate::material::derivation::repair_preview_revision(source, origin, *method)?;
             }
             AnalysisJob::InspectMaterialOverlapExtension {
                 workspace,
@@ -159,7 +159,7 @@ impl Request {
                 origin,
                 preparation,
             } => {
-                crate::material_derivation::overlap_extension_preview_revision(
+                crate::material::derivation::overlap_extension_preview_revision(
                     workspace,
                     source,
                     origin,
@@ -172,7 +172,7 @@ impl Request {
                 origin,
                 action,
             } => {
-                crate::material_derivation::terminal_processing_preview_revision(
+                crate::material::derivation::terminal_processing_preview_revision(
                     workspace, source, origin, action,
                 )?;
             }
@@ -182,7 +182,7 @@ impl Request {
                 bottom,
                 options,
             } => {
-                crate::material_derivation::annealed_oligos_preview_revision(
+                crate::material::derivation::annealed_oligos_preview_revision(
                     workspace, top, bottom, options,
                 )?;
             }
@@ -193,7 +193,7 @@ impl Request {
                 limits,
                 selection,
             } => {
-                crate::alignment_antibody::request_revision(
+                crate::protein::antibody_alignment::request_revision(
                     alignment, source, options, limits, selection,
                 )?;
             }
@@ -224,20 +224,20 @@ impl Request {
                 format,
                 selection,
             } => {
-                crate::structure_view::revision(bytes, *format, selection)?;
+                crate::protein::structure::revision(bytes, *format, selection)?;
             }
             AnalysisJob::FindSimilarSequences {
                 query,
                 subjects,
                 options,
             } => {
-                crate::sequence_similarity::preflight(query, subjects, options)?;
+                crate::sequence::similarity::preflight(query, subjects, options)?;
             }
             AnalysisJob::InstallMaterialDerivation { workspace, request } => {
-                crate::material_derivation::preflight(workspace, request)?;
+                crate::material::derivation::preflight(workspace, request)?;
             }
             AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
-                crate::run_review::request_revision(workspace, run_id)?;
+                crate::material::review::request_revision(workspace, run_id)?;
             }
             AnalysisJob::RenderMapSvg { request } => request.validate()?,
             AnalysisJob::InspectMaterialDigest {
@@ -247,7 +247,7 @@ impl Request {
                 selection,
                 options,
             } => {
-                crate::material_derivation::digest_inspection_revision(
+                crate::material::derivation::digest_inspection_revision(
                     source_role,
                     source,
                     origin,
@@ -261,7 +261,7 @@ impl Request {
                 template,
                 task,
             } => {
-                crate::topo_run_preparation::preflight(inputs, template.as_ref(), task)?;
+                crate::cloning::topo::run_preparation::preflight(inputs, template.as_ref(), task)?;
             }
             AnalysisJob::PreviewAnnealingRecipe {
                 inputs,
@@ -269,14 +269,14 @@ impl Request {
                 recipe,
                 policy,
             } => {
-                if inputs.len() > crate::assembly_recipe::MAX_ROWS {
+                if inputs.len() > crate::cloning::assembly::recipe::MAX_ROWS {
                     return Err(Error::TooLarge);
                 }
                 let sources = inputs
                     .iter()
                     .map(|input| (input.id.as_str(), &input.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_recipe::annealing_source_preflight(
+                crate::cloning::assembly::recipe::annealing_source_preflight(
                     &sources, target, recipe, policy,
                 )?;
             }
@@ -286,14 +286,14 @@ impl Request {
                 recipe,
                 policy,
             } => {
-                if inputs.len() > crate::assembly_recipe::MAX_ROWS {
+                if inputs.len() > crate::cloning::assembly::recipe::MAX_ROWS {
                     return Err(Error::TooLarge);
                 }
                 let sources = inputs
                     .iter()
                     .map(|input| (input.id.as_str(), &input.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_recipe::homology_source_preflight(
+                crate::cloning::assembly::recipe::homology_source_preflight(
                     &sources, target, recipe, policy,
                 )?;
             }
@@ -309,7 +309,7 @@ impl Request {
                     .iter()
                     .map(|input| (input.id.as_str(), &input.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_edited_primer_design::source_preflight(
+                crate::cloning::assembly::edited_primers::source_preflight(
                     &sources,
                     request,
                     workspace.as_ref(),
@@ -320,7 +320,7 @@ impl Request {
                 request,
                 workspace,
             } => {
-                crate::overlap_extension_primer_design::preflight(
+                crate::cloning::overlap::extension::primers::preflight(
                     source,
                     request,
                     workspace.as_ref(),
@@ -332,7 +332,7 @@ impl Request {
                 request,
                 workspace,
             } => {
-                crate::overlap_extension_digest_inspection::source_preflight(
+                crate::cloning::overlap::extension::digest::source_preflight(
                     source,
                     origin.as_ref(),
                     request,
@@ -345,7 +345,7 @@ impl Request {
                 request,
                 workspace,
             } => {
-                crate::mismatch_pcr_digest_inspection::source_preflight(
+                crate::cloning::pcr::mismatch_digest::source_preflight(
                     molecule,
                     origin.as_ref(),
                     request,
@@ -364,7 +364,7 @@ impl Request {
                     .iter()
                     .map(|i| (i.id.as_str(), &i.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_intent::preflight(&sources, request, workspace.as_ref())?;
+                crate::cloning::assembly::intent::preflight(&sources, request, workspace.as_ref())?;
             }
             AnalysisJob::BuildEditedAssemblyIntent {
                 inputs,
@@ -379,7 +379,7 @@ impl Request {
                     .iter()
                     .map(|i| (i.id.as_str(), &i.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_junction_edit::intent_preflight(
+                crate::cloning::assembly::junction_edit::intent_preflight(
                     &sources,
                     base,
                     edits,
@@ -398,7 +398,7 @@ impl Request {
                     .iter()
                     .map(|i| (i.id.as_str(), &i.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_edit_intent::source_preflight(
+                crate::cloning::assembly::edit_intent::source_preflight(
                     &sources,
                     request,
                     workspace.as_ref(),
@@ -416,7 +416,7 @@ impl Request {
                     .iter()
                     .map(|i| (i.id.as_str(), &i.molecule))
                     .collect::<Vec<_>>();
-                crate::assembly_substitution_intent::source_preflight(
+                crate::cloning::assembly::substitution_intent::source_preflight(
                     &sources,
                     request,
                     workspace.as_ref(),
@@ -429,8 +429,8 @@ impl Request {
                 selection,
                 options,
             } => {
-                let catalog = crate::catalog_digest::builtin_catalog()?;
-                crate::run_catalog_digest::source_preflight(
+                let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+                crate::cloning::restriction::run_digest::source_preflight(
                     &catalog,
                     selection,
                     source_role,
@@ -445,7 +445,7 @@ impl Request {
                 request,
                 workspace,
             } => {
-                crate::pcr_digest_inspection::preflight_from_material(
+                crate::cloning::pcr::digest::preflight_from_material(
                     molecule, origin, request, workspace,
                 )?;
             }
@@ -454,36 +454,38 @@ impl Request {
                 event,
                 selection,
             } => {
-                crate::run_material::inspection_revision(workspace, event, selection)?;
+                crate::material::run::inspection_revision(workspace, event, selection)?;
             }
             AnalysisJob::InspectPcrDigest { molecule, request } => {
-                crate::pcr_digest_inspection::source_preflight(molecule, request)?;
+                crate::cloning::pcr::digest::source_preflight(molecule, request)?;
             }
             AnalysisJob::PreviewTailingRecipe {
                 inputs,
                 target,
                 recipe,
             } => {
-                crate::tailing_recipe::preflight(inputs, target, recipe)?;
+                crate::cloning::ligation::tailing_recipe::preflight(inputs, target, recipe)?;
             }
             AnalysisJob::InspectCombinatorialMultiSite {
                 workspace,
                 design,
                 construct,
             } => {
-                crate::combinatorial_design::inspect_multisite_revision(
+                crate::planning::combinatorial::inspect_multisite_revision(
                     design, construct, workspace,
                 )?;
             }
             AnalysisJob::SimulateMultiSiteRecombination { inputs, request } => {
-                crate::multisite_recombination::preflight(inputs, request)?;
+                crate::cloning::recombination::multisite::preflight(inputs, request)?;
             }
             AnalysisJob::ProjectMultiSiteRecombination {
                 inputs,
                 request,
                 selection,
             } => {
-                crate::multisite_recombination::product_revision(inputs, request, selection)?;
+                crate::cloning::recombination::multisite::product_revision(
+                    inputs, request, selection,
+                )?;
             }
             AnalysisJob::CheckMultiSiteRecombination {
                 inputs,
@@ -491,21 +493,23 @@ impl Request {
                 selection,
                 target,
             } => {
-                crate::multisite_recombination::check_revision(inputs, request, selection, target)?;
+                crate::cloning::recombination::multisite::check_revision(
+                    inputs, request, selection, target,
+                )?;
             }
             AnalysisJob::ProcessTopoActions { inputs, request } => {
-                crate::topo_actions::preflight(inputs, request)?
+                crate::cloning::topo::actions::preflight(inputs, request)?
             }
 
             AnalysisJob::ListLigationProfiles => {
-                crate::ligation_profiles::catalog_revision()?;
+                crate::cloning::ligation::profiles::catalog_revision()?;
             }
             AnalysisJob::ScorePublishedLigation {
                 profile,
                 ends,
                 physical_competitors,
             } => {
-                crate::ligation_profiles::score_revision_with_competitors(
+                crate::cloning::ligation::profiles::score_revision_with_competitors(
                     profile,
                     ends,
                     physical_competitors,
@@ -516,14 +520,14 @@ impl Request {
                 ends,
                 physical_competitors,
             } => {
-                crate::ligation_fidelity::competition_revision(
+                crate::cloning::ligation::fidelity::competition_revision(
                     dataset,
                     ends,
                     physical_competitors,
                 )?;
             }
             AnalysisJob::RankGoldenGateFusions { inputs, request } => {
-                crate::golden_gate_fusion_rank::preflight(
+                crate::cloning::golden_gate::fusion_rank::preflight(
                     &inputs
                         .iter()
                         .map(|i| (i.id.as_str(), &i.molecule))
@@ -536,20 +540,24 @@ impl Request {
             | AnalysisJob::CheckDomestication {
                 source, request, ..
             } => {
-                crate::domestication::preflight(source, request)?;
+                crate::cloning::golden_gate::domestication::preflight(source, request)?;
             }
             AnalysisJob::PrepareDomestication {
                 input,
                 request,
                 workspace,
             } => {
-                crate::domestication_preparation::preflight(input, request, workspace.as_ref())?;
+                crate::cloning::golden_gate::domestication::preparation::preflight(
+                    input,
+                    request,
+                    workspace.as_ref(),
+                )?;
             }
             AnalysisJob::SearchGoldenGateFusions { inputs, request }
             | AnalysisJob::MaterializeGoldenGateFusions {
                 inputs, request, ..
             } => {
-                crate::golden_gate_fusion_design::preflight(
+                crate::cloning::golden_gate::fusion_design::preflight(
                     &inputs
                         .iter()
                         .map(|input| (input.id.as_str(), &input.molecule))
@@ -558,26 +566,33 @@ impl Request {
                 )?;
             }
             AnalysisJob::ScoreLigationFidelity { dataset, ends } => {
-                crate::ligation_fidelity::revision(dataset, ends)?;
+                crate::cloning::ligation::fidelity::revision(dataset, ends)?;
             }
             AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
-                crate::combinatorial_batch::begin_revision(workspace, matrix)?;
+                crate::planning::combinatorial::batch::begin_revision(workspace, matrix)?;
             }
             AnalysisJob::CaptureCombinatorialBatch {
                 workspace,
                 current_context,
             } => {
-                crate::combinatorial_batch::capture_revision(workspace, current_context)?;
+                crate::planning::combinatorial::batch::capture_revision(
+                    workspace,
+                    current_context,
+                )?;
             }
             AnalysisJob::BeginCombinatorialRelease { workspace, request } => {
-                crate::combinatorial_release::preflight(workspace, request)?;
+                crate::planning::combinatorial::release::preflight(workspace, request)?;
             }
             AnalysisJob::ExportCombinatorialOutputs {
                 workspace,
                 manifest_hash,
                 options,
             } => {
-                crate::combinatorial_export::preflight(workspace, manifest_hash, options)?;
+                crate::planning::combinatorial::export::preflight(
+                    workspace,
+                    manifest_hash,
+                    options,
+                )?;
             }
             _ => {}
         }

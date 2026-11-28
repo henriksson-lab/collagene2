@@ -1,14 +1,21 @@
 //! Literal saved PCR → target-free sticky digest → new PCR → saved run. Nested
 //! declarations remain instructions; only fresh replay supplies tracked strands.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, cloning_outputs,
-    history::DocumentHistory,
-    material_derivation as digest,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin, MaterialOriginRef, MaterialSelection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    cloning::restriction::catalog as catalog_digest,
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::{
+        capsule::MaterialOriginRef,
+        derivation as digest,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin, MaterialSelection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -70,7 +77,7 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
         step_index: 0,
         event: saved.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&saved.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&saved.workspace, &selected).unwrap();
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let enzyme = catalog
         .edition()
@@ -83,11 +90,11 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
     let prepared = digest::prepare_install(
         &saved.workspace,
         &digest::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: selected.event,
                 origin: digest::SourceOrigin::Saved(
-                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                    collagene_core::material::run::MaterialOrigin::Run(origin),
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
@@ -151,7 +158,7 @@ fn actual_sticky_fragment_then_new_pcr_survives_native_archive_and_mixed_run_rep
         .validate_binding(&inspected.context_revision)
         .unwrap();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
-    let report = verification::verify(&plan, &w.revisions[&target.revision]);
+    let report = verification::engine::verify(&plan, &w.revisions[&target.revision]);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -186,12 +193,12 @@ fn actual_sticky_fragment_then_new_pcr_survives_native_archive_and_mixed_run_rep
     let fresh = run_material::reconstruct(&reopened, &selection).unwrap();
     assert_eq!(fresh.reference().sequence.as_str(), AMPLICON);
     assert!(fresh.tracked().duplex.nicks.is_empty());
-    let native = run_material::capsule(&reopened, &selection).unwrap();
+    let native = collagene_core::material::capsule::capsule(&reopened, &selection).unwrap();
     MaterialOrigin::Run(native.clone())
         .validate_for_workspace(&reopened, &selection.event)
         .unwrap();
     let mut plans = Vec::new();
-    run_material::visit_candidate_plans(&native.candidate, |candidate| {
+    collagene_core::material::capsule::visit_candidate_plans(&native.candidate, |candidate| {
         plans.push(candidate.plan.name.clone());
         Ok(())
     })
@@ -224,7 +231,7 @@ fn equal_content_alias_and_detached_record_cannot_attest_the_selected_digest_eve
     assert_ne!(alias_pin.event_id, pin.event_id);
     let (plan, _) = prepared_plan(&mut w, &cap, &pin);
     assert!(
-        run_material::validate_input_origins(
+        collagene_core::material::capsule::validate_input_origins(
             &plan,
             &[InputEventBinding {
                 input_id: "fragment".into(),
@@ -264,7 +271,7 @@ fn one_aggregate_ledger_charges_mixed_descendants_instead_of_resetting_each_chil
     else {
         panic!("explicit run parent")
     };
-    run_material::material_capsules_preflight([
+    collagene_core::material::capsule::material_capsules_preflight([
         MaterialOriginRef::Derived(&cap),
         MaterialOriginRef::Run(parent),
     ])
@@ -291,12 +298,12 @@ fn one_aggregate_ledger_charges_mixed_descendants_instead_of_resetting_each_chil
         step_index: 1,
         event: saved.receipt.construct,
     };
-    let native = run_material::capsule(&saved.workspace, &selection).unwrap();
+    let native = collagene_core::material::capsule::capsule(&saved.workspace, &selection).unwrap();
     native.validate_documentary().unwrap();
     // Each root is valid (two outer steps plus one native ancestor step).
     // Four hundred uses must not each obtain their own 1000-step allowance.
     assert!(
-        run_material::material_capsules_preflight(
+        collagene_core::material::capsule::material_capsules_preflight(
             (0..400).map(|_| MaterialOriginRef::Run(&native))
         )
         .is_err()

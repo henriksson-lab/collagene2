@@ -1,7 +1,7 @@
 //! Real SDK boundary, independently fixed synthetic scars, native event ownership and stale selection.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_core::workspace;
-use collagene_mcp::CollageneServer;
+use collagene_core::documents::workspace;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -59,7 +59,7 @@ fn request() -> Value {
             variants.push(json!({"id":id,"family":family,"subtype":i,"sequence":sequence,"overlap_start":4,"source_id":id}));
         }
     }
-    json!({"reaction":{"profile":{"id":"sdk-literal-four-parent","edition":"1","sources":sources,"variants":variants,"limitations":["Synthetic reference fixture; no claimed biological profile or measured specificity"]},"reaction":"LR","specificities":[4,1,2,3],"limits":collagene_core::recombination::reference::Limits::default()},"annotation_limits":collagene_core::recombination::AnnotationLimits::default()})
+    json!({"reaction":{"profile":{"id":"sdk-literal-four-parent","edition":"1","sources":sources,"variants":variants,"limitations":["Synthetic reference fixture; no claimed biological profile or measured specificity"]},"reaction":"LR","specificities":[4,1,2,3],"limits":collagene_core::cloning::recombination::reference::Limits::default()},"annotation_limits":collagene_core::cloning::recombination::AnnotationLimits::default()})
 }
 // These scars and source body strings are declared before calling any simulator.
 const MAIN: &str = concat!(

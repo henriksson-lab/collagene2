@@ -1,4 +1,4 @@
-use collagene_core::protein_properties::*;
+use collagene_core::protein::properties::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn protein(sequence: &str) -> Molecule {
     Molecule {

@@ -1,5 +1,7 @@
 use collagene_core::{
-    rna_chemistry as rna, rna_history, run_lineage::EventBinding, workspace::Workspace,
+    documents::{rna_history, workspace::Workspace},
+    material::lineage::EventBinding,
+    rna_chemistry as rna,
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
@@ -57,7 +59,7 @@ fn only_declarations_on_retained_exact_events_follow_selected_document_sharing()
     assert!(!export.workspace.attachments.contains_key(&hashes[1]));
     assert_eq!(export.workspace.documents.len(), 1);
     assert_eq!(rna_history::list(&export.workspace).unwrap().len(), 1);
-    let loaded = collagene_core::workspace::load_workspace(&export.archive).unwrap();
+    let loaded = collagene_core::documents::workspace::load_workspace(&export.archive).unwrap();
     assert_eq!(
         rna_history::load(&loaded, &hashes[0])
             .unwrap()
@@ -106,7 +108,8 @@ fn ancestor_declarations_follow_a_new_head_without_becoming_a_model_for_that_hea
         },
     };
     let (mut w, hash) = rna_history::capture(&w, &r).unwrap();
-    let mut histories = collagene_core::history::DocumentHistory::restore_all(&w).unwrap();
+    let mut histories =
+        collagene_core::documents::history::DocumentHistory::restore_all(&w).unwrap();
     let mut later = histories[0].molecule.clone();
     later.sequence = Sequence::new(Alphabet::Rna, "AG").unwrap();
     histories[0].commit(later, "Edit RNA sequence").unwrap();

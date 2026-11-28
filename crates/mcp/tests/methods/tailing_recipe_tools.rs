@@ -1,7 +1,7 @@
 //! Actual source-bound tailing recipes with independently declared literal targets.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::{analysis::Primer, verification::DesignPlan};
-use collagene_mcp::CollageneServer;
+use collagene_core::{planning::plan::DesignPlan, sequence::analysis::Primer};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -107,7 +107,7 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
             .iter()
             .filter(|s| matches!(
                 s,
-                collagene_core::verification::Operation::Tail3Prime { .. }
+                collagene_core::planning::plan::Operation::Tail3Prime { .. }
             ))
             .count(),
         2
@@ -178,7 +178,7 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
     let plan: DesignPlan = serde_json::from_value(full["compiled"]["plan"].clone()).unwrap();
     assert!(!plan.steps.iter().any(|step| matches!(
         step,
-        collagene_core::verification::Operation::Tail3Prime { .. }
+        collagene_core::planning::plan::Operation::Tail3Prime { .. }
     )));
     let mut stale = args;
     stale["inputs"][0]["document"]["revision"] = json!("stale");

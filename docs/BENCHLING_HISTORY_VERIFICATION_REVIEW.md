@@ -74,12 +74,12 @@ These are source observations, not claims of browser-validated behavior.
 
 | Previously requested connection | Current implementation |
 | --- | --- |
-| Event-bound reference/read checks | [trace_validation.rs](../crates/web/src/trace_validation.rs) now accepts exact reference/source information and a workspace epoch. Guarded evidence carries reference and ordered read event bindings. Equal-content documents are not substituted merely by DNA revision. |
+| Event-bound reference/read checks | [trace_validation.rs](../crates/web/src/reads/trace_validation.rs) now accepts exact reference/source information and a workspace epoch. Guarded evidence carries reference and ordered read event bindings. Equal-content documents are not substituted merely by DNA revision. |
 | Reference-to-original-read navigation | The same panel has `on_read` and `on_reference` callbacks. Read-column and insertion-call controls navigate pinned reads; insertion boundaries use a reference caret. Current molecule call coordinates remain distinct from original attachment call/sample coordinates. |
 | Reach all reported validation evidence | Uncovered ranges, insertions, reference sites and per-read alignment columns are paged. The old first-200/first-100-only gap does not describe this panel anymore. An option includes supported matches in the reference-site list. |
-| Construct-owned saved checks | [read_checks_view.rs](../crates/web/src/read_checks_view.rs) provides capture, construct-associated listing, exact source events and explicit fresh replay. Capture recomputes evidence from retained originals and commits the workspace durably. Reopening historical checks does not restore a current positive assessment. |
-| Explicit review decisions and derived references | [read_review_view.rs](../crates/web/src/read_review_view.rs), [read_review_capture.rs](../crates/web/src/read_review_capture.rs) and [read_review_history.rs](../crates/web/src/read_review_history.rs) now retain decisions, preview nominated edits and create derived references. Retain, unresolved, observed-base, deletion and insertion choices stay separate; the derived reference requires a new check. |
-| Actual final-product inspection | [assembly_product_view.rs](../crates/web/src/assembly_product_view.rs) exposes the actual reconstructed final step, separately from the independent target. A failed final operation is not represented by its last successful preparation. |
+| Construct-owned saved checks | [read_checks_view.rs](../crates/web/src/reads/read_checks_view.rs) provides capture, construct-associated listing, exact source events and explicit fresh replay. Capture recomputes evidence from retained originals and commits the workspace durably. Reopening historical checks does not restore a current positive assessment. |
+| Explicit review decisions and derived references | [read_review_view.rs](../crates/web/src/reads/read_review_view.rs), [read_review_capture.rs](../crates/web/src/reads/read_review_capture.rs) and [read_review_history.rs](../crates/web/src/reads/read_review_history.rs) now retain decisions, preview nominated edits and create derived references. Retain, unresolved, observed-base, deletion and insertion choices stay separate; the derived reference requires a new check. |
+| Actual final-product inspection | [assembly_product_view.rs](../crates/web/src/assembly/review/assembly_product_view.rs) exposes the actual reconstructed final step, separately from the independent target. A failed final operation is not represented by its last successful preparation. |
 
 Keep these implementations and their authority boundaries. Do not introduce
 another persistence or approval system solely because the earlier research
@@ -92,7 +92,7 @@ claim Benchling implements our exact evidence semantics.
 
 ### 1. Make retained run sources and target actionable
 
-[RunDetailsPanel](../crates/web/src/run_capture.rs) still renders retained input
+[RunDetailsPanel](../crates/web/src/history/run_capture.rs) still renders retained input
 and independent-target document/event/revision identifiers as text. Its host
 contract exposes only `on_open_product`, whose control opens a product document.
 Add an exact-event navigation callback for retained inputs, target and recorded
@@ -108,7 +108,7 @@ should remain visible.
 ### 2. Replace the separate trace/report round trip with connected review
 
 Reference validation now reaches original calls, but its evidence view is tables
-and text, while [trace_view.rs](../crates/web/src/trace_view.rs) renders the raw
+and text, while [trace_view.rs](../crates/web/src/reads/trace_view.rs) renders the raw
 chromatogram separately. A compact reference/aligned-read/trace view would retain
 the selected discrepancy and native quality while moving through supporting
 calls. Start with existing coordinate mappings and the trace painter.
@@ -121,7 +121,7 @@ changing the ordered source bindings used by checks and decisions.
 
 ### 3. Bring ordinary construct comparison into retained review
 
-[compare.rs](../crates/web/src/compare.rs) still limits the displayed alignment
+[compare.rs](../crates/web/src/viewer/alignment/compare.rs) still limits the displayed alignment
 preview to 4,000 columns and differences to 200; full data is JSON-downloadable.
 Its difference button is disabled for an empty reference span, so an insertion
 does not have an equivalent caret-navigation action there. Unlike reference-read

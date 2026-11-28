@@ -1,13 +1,17 @@
 //! Real MCP transport for exact construct/read event capture and fresh replay.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    history::DocumentHistory,
-    oligo_formats::{self, QualityEncoding},
-    read_checks::ATTACHMENT_KIND,
-    trace_validation::{TraceValidationOptions, TrimMode},
-    workspace::{self, Workspace, WorkspaceAttachment},
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace, WorkspaceAttachment},
+    },
+    formats::oligos::{self as oligo_formats, QualityEncoding},
+    review::reads::{
+        checks::ATTACHMENT_KIND,
+        trace_validation::{TraceValidationOptions, TrimMode},
+    },
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -244,7 +248,7 @@ async fn archived_engine_and_user_edited_heads_never_restore_a_current_verdict_o
     let mut archive =
         workspace::load_workspace(&native(&c, &captured["native_artifact_id"]).await).unwrap();
     let hash = captured["receipt"]["attachment_hash"].as_str().unwrap();
-    let mut saved = collagene_core::read_checks::load(&archive, hash).unwrap();
+    let mut saved = collagene_core::review::reads::checks::load(&archive, hash).unwrap();
     saved.report.engine_version = "archived-untrusted-engine".into();
     saved.context_revision = blake3::hash(
         &serde_json::to_vec(&(

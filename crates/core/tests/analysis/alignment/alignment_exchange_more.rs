@@ -1,7 +1,7 @@
-use collagene_core::alignment_exchange_more::{self as exchange, ExportOptions};
-use collagene_core::alignment_formats::{
+use collagene_core::formats::alignment::{
     self as base, AlignmentDocument, AlignmentFormat as Format,
 };
+use collagene_core::formats::alignment::{pir_gde_selex as exchange, profiles::ExportOptions};
 use collagene_model::{Alphabet, Error, Topology};
 fn read(text: &str, format: Format, alphabet: Alphabet) -> AlignmentDocument {
     exchange::import_alignment(

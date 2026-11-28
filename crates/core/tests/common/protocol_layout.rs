@@ -1,13 +1,13 @@
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    combinatorial_batch::{self as batch, RowRequest},
-    combinatorial_design::{
+    cloning::assembly::recipe::Preparation,
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
+    output::layout,
+    planning::combinatorial::{
         Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+        batch::{self, RowRequest},
     },
-    protocol_layout as layout,
-    run_lineage::EventBinding,
-    workspace::Workspace,
 };
 use collagene_model::{Molecule, Topology};
 pub fn fixture() -> (Workspace, layout::Request) {
@@ -42,7 +42,7 @@ pub fn fixture() -> (Workspace, layout::Request) {
                     id: "stock".into(),
                     label: "Stock".into(),
                     source,
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: 8,
                         reverse: false,
@@ -94,7 +94,7 @@ pub fn fixture() -> (Workspace, layout::Request) {
 }
 
 pub fn released_fixture() -> (Workspace, layout::Request) {
-    use collagene_core::{cloning_outputs, combinatorial_release as release};
+    use collagene_core::{material::outputs as cloning_outputs, planning::combinatorial::release};
     let (w, planned) = fixture();
     let batch_hash = match &planned.assignments[0].source {
         layout::Source::Planned { batch_hash, .. } => batch_hash.clone(),

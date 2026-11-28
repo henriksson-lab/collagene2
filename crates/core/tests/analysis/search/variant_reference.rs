@@ -1,4 +1,4 @@
-use collagene_core::variant_reference::{self as v, exchange};
+use collagene_core::review::variants::reference::{self as v, exchange};
 use collagene_model::{Molecule, Topology};
 const SOURCE:&[u8]=b"##fileformat=VCFv4.3\n##contig=<ID=chr1,length=7>\n##INFO=<ID=END,Number=1,Type=Integer,Description=\"Declared end\">\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t3\t.\tCC\tCTC\t.\tPASS\t.\nchr1\t3\t.\tC\t<DEL>\t.\tPASS\tEND=7\n";
 fn options(c: &exchange::Collection, m: &Molecule) -> v::Options {

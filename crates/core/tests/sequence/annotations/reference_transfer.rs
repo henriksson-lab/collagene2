@@ -1,4 +1,4 @@
-use collagene_core::reference_transfer::{
+use collagene_core::sequence::reference_transfer::{
     self as transfer, Part, RequestCopy, RequestPaste, Selection,
 };
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};

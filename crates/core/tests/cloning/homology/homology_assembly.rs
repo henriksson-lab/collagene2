@@ -1,7 +1,13 @@
 use collagene_core::{
-    chemistry::{Duplex, FivePrime, Nick, Strand, ThreePrime},
-    homology_assembly::{self, EndCuts, Options, OuterEndPolicy, Resection},
-    modified_duplex::{self, CallState, Chemical, ModificationSpan, TrackedDuplex},
+    chemistry::{
+        Duplex, FivePrime, Nick, Strand, ThreePrime,
+        tracked_duplex::{
+            self as modified_duplex, CallState, Chemical, ModificationSpan, TrackedDuplex,
+        },
+    },
+    cloning::overlap::assembly::{
+        self as homology_assembly, EndCuts, Options, OuterEndPolicy, Resection,
+    },
 };
 use collagene_model::{Sequence, Topology};
 

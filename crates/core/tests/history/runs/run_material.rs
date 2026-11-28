@@ -1,16 +1,20 @@
 //! Saved reference documents are not stock: material must be reconstructed from
 //! the exact retained run and an uninterrupted name-only descendant path.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{Strand, Terminus},
-    cloning_outputs::{self, Commit, Options},
-    history::DocumentHistory,
-    methylation::MethylationState,
-    modified_duplex::{self, CallState, Chemical, GenerationAssumptions},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    chemistry::{
+        Strand, Terminus,
+        methylation::MethylationState,
+        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+    },
+    documents::{history::DocumentHistory, workspace::Workspace},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit, Options},
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 
@@ -143,7 +147,7 @@ fn named_pcr_reference_reconstructs_actual_hydroxyl_duplex_without_mutating_work
 
 #[test]
 fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
-    use collagene_core::{chemistry::EndTreatment, verification::OrientedSource};
+    use collagene_core::{chemistry::EndTreatment, planning::plan::OrientedSource};
     let left = Molecule::dna("Left original", "TTGCAATCGTCGATGCTAGC", Topology::Linear).unwrap();
     let right = Molecule::dna("Right original", "ATCGTCGATGCTAGCGGTAC", Topology::Linear).unwrap();
     let target = Molecule::dna(
@@ -207,7 +211,7 @@ fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
         2,
     )
     .unwrap();
-    let report = collagene_core::verification::verify(
+    let report = collagene_core::verification::engine::verify(
         &plan,
         workspace.head(&workspace.active_document).unwrap(),
     );
@@ -317,7 +321,7 @@ fn blocked_noti_reconstruction_preserves_four_literal_cpg_positions_and_generati
             },
             Operation::CheckedDigest {
                 selection: checked_selection(vec!["NotI".into()]),
-                options: collagene_core::modified_duplex::checked_inspection_options(),
+                options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),
                 fragment_index: 0,
             },
@@ -512,7 +516,7 @@ fn documentary_origin_and_forged_preview_summary_do_not_promote_reference_only_o
             circular: false,
         }],
     };
-    let report = collagene_core::verification::verify(&plan, &target);
+    let report = collagene_core::verification::engine::verify(&plan, &target);
     assert_eq!(report.products.len(), 1);
     let workspace =
         Workspace::from_documents("Reference-only saved run", vec![source, target], 1).unwrap();
@@ -570,8 +574,10 @@ fn documentary_origin_and_forged_preview_summary_do_not_promote_reference_only_o
     );
 }
 
-fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+fn checked_selection(
+    names: Vec<String>,
+) -> collagene_core::cloning::restriction::catalog::CatalogSelection {
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let ids = names
         .iter()
         .map(|name| {
@@ -585,5 +591,5 @@ fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::Cata
                 .clone()
         })
         .collect::<Vec<_>>();
-    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
+    collagene_core::cloning::restriction::catalog::select(&catalog, &ids).unwrap()
 }

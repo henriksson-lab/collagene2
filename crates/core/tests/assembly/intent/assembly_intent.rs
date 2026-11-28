@@ -1,6 +1,6 @@
 use collagene_core::{
-    assembly_intent::{self as i, Contribution, Selector},
-    verification::PlanInput,
+    cloning::assembly::intent::{self as i, Contribution, Selector},
+    planning::plan::PlanInput,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn input(id: &str, dna: &str) -> PlanInput {

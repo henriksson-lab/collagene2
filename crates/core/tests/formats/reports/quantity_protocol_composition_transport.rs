@@ -3,16 +3,15 @@ mod fixture;
 #[path = "../../common/pdf.rs"]
 mod pdf_readback;
 use collagene_core::{
-    history::DocumentHistory,
+    documents::{history::DocumentHistory, transfer::Candidate, workspace},
+    material::lineage as run_lineage,
+    output::quantities as q,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    protocol_quantities as q, run_lineage,
-    transfer::Candidate,
-    verification::{self, Status},
-    workspace,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn export(w: &workspace::Workspace, hash: &str, format: q::ExportFormat) -> q::Exported {
@@ -147,7 +146,7 @@ fn complete_arithmetic_does_not_rescue_invalid_molecules_and_missing_amounts_do_
     let candidate = Candidate::new(plan.clone());
     w.candidates.push(candidate);
     r.plan_source = q::PlanSource::Candidate;
-    r.plan_revision = verification::plan_revision(&plan);
+    r.plan_revision = collagene_core::planning::plan::DesignPlan::revision(&plan);
     r.target = fixture::pin(&w, w.documents.len() - 1);
     let captured = q::capture(&w, &r).unwrap();
     let exported = export(
@@ -157,7 +156,7 @@ fn complete_arithmetic_does_not_rescue_invalid_molecules_and_missing_amounts_do_
     );
     assert!(exported.arithmetic_complete);
     assert_eq!(exported.molecular.as_ref().unwrap().status, Status::Invalid);
-    let direct = verification::verify(&plan, &wrong);
+    let direct = verification::engine::verify(&plan, &wrong);
     assert_eq!(direct.status, Status::Invalid);
     assert_eq!(
         exported.molecular.as_ref().unwrap().findings_total,

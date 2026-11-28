@@ -1,18 +1,23 @@
 //! Real reciprocal extension stays physical across binary plans and closed origins.
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs,
-    overlap_extension::Options,
+    cloning::overlap::extension::Options,
+    documents::{
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    transfer::{self, Candidate},
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::Workspace,
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -126,8 +131,9 @@ fn real_binary_pcr_extension_outer_pcr_matches_independent_target_and_exports() 
         .iter()
         .find(|step| step.step_index == 2)
         .expect("retained reciprocal-extension evidence");
-    let collagene_core::verification::PhysicalProcessingEvidence::OverlapExtension(geometry) =
-        &extension.evidence
+    let collagene_core::verification::evidence::PhysicalProcessingEvidence::OverlapExtension(
+        geometry,
+    ) = &extension.evidence
     else {
         panic!("extension geometry");
     };
@@ -271,7 +277,7 @@ fn closed_extension_origin_cannot_hide_new_semantics_in_old_worker_envelope() {
     else {
         panic!("archive");
     };
-    let loaded = collagene_core::workspace::load_workspace(&archive).unwrap();
+    let loaded = collagene_core::documents::workspace::load_workspace(&archive).unwrap();
     assert_eq!(loaded.candidates.len(), commit.workspace.candidates.len());
     let load = Request {
         id: 4,
@@ -286,7 +292,7 @@ fn closed_extension_origin_cannot_hide_new_semantics_in_old_worker_envelope() {
     let record = run_lineage::load_run(&commit.workspace, &commit.receipt.run.run_id).unwrap();
     assert_eq!(
         record.plan_schema,
-        collagene_core::workspace::PLAN_SCHEMA_VERSION
+        collagene_core::documents::workspace::PLAN_SCHEMA_VERSION
     );
     assert!(run_lineage::save_run_record(&record).is_ok());
     let mut downgraded = record;
@@ -297,7 +303,7 @@ fn closed_extension_origin_cannot_hide_new_semantics_in_old_worker_envelope() {
         step_index: 3,
         event: commit.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&commit.workspace, &selection).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selection).unwrap();
     let saved = commit.workspace.revisions[&selection.event.revision].clone();
     let continuation = DesignPlan {
         name: "Freshly reconstructed saved extension".into(),
@@ -398,15 +404,16 @@ fn competing_terminal_pairings_remain_incomplete_after_outer_pcr() {
             },
         ],
     };
-    let report = collagene_core::verification::verify(&plan, &target);
+    let report = collagene_core::verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(report.products.len(), 4, "{:?}", report.findings);
     assert_eq!(
         report.products[3].sequence.as_str(),
         target.sequence.as_str()
     );
-    let collagene_core::verification::PhysicalProcessingEvidence::OverlapExtension(geometry) =
-        &report.physical_processing_reports[0].evidence
+    let collagene_core::verification::evidence::PhysicalProcessingEvidence::OverlapExtension(
+        geometry,
+    ) = &report.physical_processing_reports[0].evidence
     else {
         panic!("extension geometry");
     };

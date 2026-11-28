@@ -1,6 +1,6 @@
 # Independent alignment exchange, profile 1
 
-`collagene_core::alignment_formats` exchanges existing multiple alignments. It does not run or implement MAFFT, MUSCLE, Clustal, Primer3, or another aligner. The implementation is independent Rust, with no scientific subprocesses or new dependencies, and is portable to native Windows/macOS/Linux and WASM.
+`collagene_core::formats::alignment` exchanges existing multiple alignments. It does not run or implement MAFFT, MUSCLE, Clustal, Primer3, or another aligner. The implementation is independent Rust, with no scientific subprocesses or new dependencies, and is portable to native Windows/macOS/Linux and WASM.
 
 ## Public entry points
 

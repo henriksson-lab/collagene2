@@ -1,10 +1,12 @@
 //! Independently literal supplied-oligo products, complete source ancestry and restart.
 use collagene_core::{
     chemistry::{AnnealOptions, EndTreatment, FivePrime, Polarity, Terminus},
-    material_derivation::{self as native, BoundSource, Derivation, SourceOrigin, SourceRole},
-    run_lineage::EventBinding,
-    run_material::MaterialOrigin,
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation::{self as native, BoundSource, Derivation, SourceOrigin, SourceRole},
+        lineage::EventBinding,
+        run::MaterialOrigin,
+    },
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn event(w: &Workspace, i: usize) -> EventBinding {
@@ -253,7 +255,8 @@ fn selecting_a_repeated_or_capped_geometry_retains_alternatives_and_incompletene
 fn saved_annealed_adapters_supply_literal_sticky_and_blunt_junctions_to_later_ligation() {
     use collagene_core::{
         chemistry::ThreePrime,
-        verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
+        planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+        verification::{self, evidence::Status},
     };
     let mut w = Workspace::from_documents(
         "Four supplied strands before cloning",
@@ -300,7 +303,7 @@ fn saved_annealed_adapters_supply_literal_sticky_and_blunt_junctions_to_later_li
             origin: native::capsule(&w, e).unwrap(),
         })
         .collect::<Vec<_>>();
-    steps.push(collagene_core::ligation_outcomes::operation(
+    steps.push(collagene_core::cloning::ligation::outcomes::operation(
         vec![
             OrientedSource {
                 source: Source::Step(0),
@@ -326,14 +329,14 @@ fn saved_annealed_adapters_supply_literal_sticky_and_blunt_junctions_to_later_li
         inputs,
         steps,
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
         "{:?}",
         report.findings
     );
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(html.to_lowercase().contains("ligation"));
     let wrong = Molecule::dna(
         "Independently wrong target",
@@ -344,7 +347,7 @@ fn saved_annealed_adapters_supply_literal_sticky_and_blunt_junctions_to_later_li
     let mut wrong_plan = plan;
     wrong_plan.target_revision = wrong.revision();
     assert_eq!(
-        verification::verify(&wrong_plan, &wrong).status,
+        verification::engine::verify(&wrong_plan, &wrong).status,
         Status::Invalid
     );
 }

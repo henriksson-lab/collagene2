@@ -1,6 +1,6 @@
 //! GTF adds a nested format selector, not a new outer job or report layout.
 use collagene_core::{
-    annotation_formats::{self, AnnotationFormat},
+    formats::annotations::{self as annotation_formats, AnnotationFormat},
     protocol::{
         self,
         request::Request,

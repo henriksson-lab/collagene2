@@ -1,6 +1,6 @@
 //! New dot-plot selectors are ordinary bounded scientific messages, not workspaces.
 use collagene_core::{
-    dotplot::*,
+    alignment::dotplot::*,
     protocol::{
         self,
         request::Request,

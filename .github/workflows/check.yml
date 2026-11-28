@@ -37,6 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - run: python3 scripts/check_rust_layout.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown

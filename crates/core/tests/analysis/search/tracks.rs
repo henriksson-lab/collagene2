@@ -97,7 +97,7 @@ fn directional_heads_follow_biological_order_and_unknown_strands_have_no_arrow_i
         assert_eq!(terminal_span(&location), expected);
         let mut molecule = Molecule::dna("direction", "ACGTACGTACGT", Topology::Circular).unwrap();
         molecule.features.push(f("misc_feature", location));
-        let scene = collagene_core::svg::layout_map(&molecule).unwrap();
+        let scene = collagene_core::output::svg::layout_map(&molecule).unwrap();
         let displayed = scene.features[0].terminal_span.map(|index| {
             let span = &scene.features[0].spans[index];
             (span.start, span.end, span.reverse)

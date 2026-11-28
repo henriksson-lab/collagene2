@@ -1,14 +1,16 @@
 //! Direct saved-source catalog inspection keeps exact workspace proof and typed chemistry.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs::{self, Commit},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit},
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -140,15 +142,17 @@ async fn explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_
         step_index: 0,
         event: commit.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     let imported=call(&client,"import_workspace_archive",json!({"data_base64":STANDARD.encode(workspace::save_workspace(&commit.workspace).unwrap())})).await;
     let wr = json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
     let before = call(&client, "list_documents", json!({})).await["total"].clone();
     let mut args = json!({"document":{"id":selected.event.revision,"revision":selected.event.revision},"source_role":"saved","enzymes":["EcoRI"],"max_sites":10,"max_fragments":1});
     let plain = call(&client, "inspect_restriction", args.clone()).await;
-    let full: collagene_mcp::RestrictionInspectionEvidence =
+    let full: collagene_mcp::tools::cloning::RestrictionInspectionEvidence =
         serde_json::from_value(evidence(&client, &plain["artifact_id"]).await).unwrap();
-    let collagene_mcp::RestrictionInspectionEvidence::Original { inspection } = full else {
+    let collagene_mcp::tools::cloning::RestrictionInspectionEvidence::Original { inspection } =
+        full
+    else {
         panic!("unattested source inspection must remain explicitly original-reference evidence");
     };
     let recognition = inspection.inspection;
@@ -174,9 +178,12 @@ async fn explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_
     assert_eq!(result["products_determined"], true);
     assert_eq!(result["fragments"].as_array().unwrap().len(), 1);
     assert_eq!(result["fragments_done"], false);
-    let full: collagene_mcp::RestrictionInspectionEvidence =
+    let full: collagene_mcp::tools::cloning::RestrictionInspectionEvidence =
         serde_json::from_value(evidence(&client, &result["artifact_id"]).await).unwrap();
-    let collagene_mcp::RestrictionInspectionEvidence::SavedRun { inspection: report } = full else {
+    let collagene_mcp::tools::cloning::RestrictionInspectionEvidence::SavedRun {
+        inspection: report,
+    } = full
+    else {
         panic!("saved source inspection must retain full replay evidence");
     };
     report

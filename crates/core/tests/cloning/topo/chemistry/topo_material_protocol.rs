@@ -1,20 +1,19 @@
 //! Generic saved-material TOPO worker input is a fresh replay request, never vector activation authority.
 use collagene_core::{
-    analysis::Primer,
-    material_derivation as native,
+    cloning::topo::{
+        self as t,
+        physical::{Enzyme, FivePrime, ThreePrime},
+        preparation as prep, run_preparation as saved,
+    },
+    documents::workspace::Workspace,
+    material::{derivation as native, lineage::EventBinding, run::MaterialOrigin},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    run_material::MaterialOrigin,
-    topo::{
-        self as t,
-        physical::{Enzyme, FivePrime, ThreePrime},
-    },
-    topo_preparation as prep, topo_run_preparation as saved, verification,
-    workspace::Workspace,
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn strand(role: &str, length: usize) -> t::PreparedStrand {
@@ -45,7 +44,7 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     };
     let forward = Primer::new("F", "CACCA", "").unwrap();
     let reverse = Primer::new("R", "CGTCA", "").unwrap();
-    let preview = verification::simulate_pcr_documents(
+    let preview = verification::pcr::simulate_pcr_documents(
         &source,
         &forward,
         &reverse,
@@ -56,8 +55,8 @@ fn derived_insert_template_crosses_current_binary_worker_and_preserves_explicit_
     let prepared = native::prepare_install(
         &w,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event,
                 origin: native::SourceOrigin::OriginalReference,
             }],

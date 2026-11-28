@@ -1,8 +1,8 @@
 //! Independently specified bytes, XML and biological extraction oracles.
 //! No vendor application implementation or exported fixture is used as oracle.
-use collagene_core::{
-    snapgene,
-    snapgene_export::{self as writer, LossKind, Policy},
+use collagene_core::formats::snapgene::{
+    self,
+    export::{self as writer, LossKind, Policy},
 };
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 fn packets(bytes: &[u8]) -> Vec<(u8, &[u8])> {

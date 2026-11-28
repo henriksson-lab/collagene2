@@ -1,15 +1,16 @@
 //! Actual primer-added sites are inspected without fabricating an independent target.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
-    pcr_digest_inspection::{self, Request as InspectionRequest},
+    cloning::{
+        pcr::digest::{self as pcr_digest_inspection, Request as InspectionRequest},
+        restriction::{catalog as catalog_digest, inspection::InspectionOptions},
+    },
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    restriction_inspection::InspectionOptions,
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Molecule, InspectionRequest) {

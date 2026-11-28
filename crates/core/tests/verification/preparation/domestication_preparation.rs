@@ -1,9 +1,14 @@
 //! Actual original-template materialization, independent literal target oracles,
 //! and explicit refusal of routes that cannot encode every selected change.
 use collagene_core::{
-    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
-    mutagenesis,
-    verification::{self, PlanInput, Status},
+    cloning::{
+        golden_gate::domestication::{self as design, preparation as physical},
+        pcr::mutagenesis,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::PlanInput,
+    sequence::codon_design,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 
@@ -115,7 +120,7 @@ fn a_checked_literal_site_change_is_supplied_by_real_primers_from_original_dna()
         report.verification.findings
     );
     assert_eq!(report.verification.products.len(), 3);
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &report.plan,
         &report.verification.products[2],
         &report.target
@@ -271,10 +276,13 @@ fn independent_target_and_method_evidence_tampering_fail_under_current_compiler(
     if let physical::MethodEvidence::InversePcr { forward, .. } = &mut changed.method {
         forward.tail = "A".into();
     }
-    if let verification::Operation::Pcr { forward, .. } = &mut changed.plan.steps[0] {
+    if let collagene_core::planning::plan::Operation::Pcr { forward, .. } =
+        &mut changed.plan.steps[0]
+    {
         forward.tail = "A".into();
     }
-    changed.verification.plan_revision = verification::plan_revision(&changed.plan);
+    changed.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&changed.plan);
     assert!(changed.validate_binding(&bound).is_err());
     changed = report.clone();
     changed.target = Molecule::dna("Wrong target", "ACGTACGTACGTACGT", Topology::Circular).unwrap();
@@ -289,7 +297,7 @@ fn independent_target_and_method_evidence_tampering_fail_under_current_compiler(
     let wrong =
         mutagenesis::compile_inverse_pcr(&input.molecule, &changed.target, None, options).unwrap();
     assert_eq!(
-        verification::verify(&wrong.plan, &changed.target).status,
+        verification::engine::verify(&wrong.plan, &changed.target).status,
         Status::Invalid
     );
 }

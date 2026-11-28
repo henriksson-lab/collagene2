@@ -1,8 +1,12 @@
 //! Annotation expectations are hand specified from molecular strand diagrams.
 use collagene_core::{
-    analysis::{self, Primer},
     chemistry::EndTreatment,
-    verification::*,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::{self, Primer},
+    verification::{
+        engine::verify,
+        evidence::{Status, VerificationReport},
+    },
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 

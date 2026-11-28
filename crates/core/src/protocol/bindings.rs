@@ -5,7 +5,7 @@ pub(super) fn profile_binding(
     reverse: &[bool],
     overlaps: &[usize],
     circular: bool,
-    options: &crate::overlap_profiles::ProfileOptions,
+    options: &crate::cloning::overlap::profiles::ProfileOptions,
 ) -> Result<String, Error> {
     if revisions.is_empty()
         || revisions.len() > 1000
@@ -25,7 +25,7 @@ pub fn overlap_profile_revision(
     reverse: &[bool],
     overlaps: &[usize],
     circular: bool,
-    options: &crate::overlap_profiles::ProfileOptions,
+    options: &crate::cloning::overlap::profiles::ProfileOptions,
 ) -> Result<String, Error> {
     if molecules.is_empty() || molecules.len() > 1000 {
         return Err(Error::TooLarge);
@@ -41,10 +41,10 @@ pub fn overlap_profile_revision(
 
 /// Exact immutable alignment content identity, including original source evidence.
 pub fn alignment_revision(
-    document: &crate::alignment_formats::AlignmentDocument,
+    document: &crate::formats::alignment::AlignmentDocument,
 ) -> Result<String, Error> {
     Ok(
-        blake3::hash(&crate::alignment_formats::save_alignment(document)?)
+        blake3::hash(&crate::formats::alignment::save_alignment(document)?)
             .to_hex()
             .to_string(),
     )

@@ -1,5 +1,5 @@
 //! Independent fixtures; no provider network access or other application code.
-use collagene_core::{formats, protocol};
+use collagene_core::{formats::sequence as formats, protocol};
 use collagene_sources::*;
 const NOW: &str = "2026-11-24T12:00:00Z";
 const GB: &str = "LOCUS       AB123456                  16 bp    DNA     circular SYN 01-JAN-2026\nACCESSION   AB123456\nVERSION     AB123456.2\nFEATURES             Location/Qualifiers\n     misc_feature    complement(join(13..16,1..4))\n                     /label=\"origin\"\nORIGIN\n        1 aaaaccccgg ggtttt\n//\n";

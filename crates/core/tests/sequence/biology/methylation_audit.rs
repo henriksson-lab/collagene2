@@ -1,5 +1,5 @@
 //! Independent literal context/coordinate checks; no engine matching or span helpers.
-use collagene_core::methylation::*;
+use collagene_core::chemistry::methylation::*;
 use collagene_model::{Molecule, Sequence, Topology};
 fn mol(text: &str, circular: bool) -> Molecule {
     Molecule {

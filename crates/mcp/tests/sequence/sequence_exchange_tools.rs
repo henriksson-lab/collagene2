@@ -1,6 +1,6 @@
 //! Real MCP SDK routing with literal checksums, packet framing and source pins.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -115,7 +115,7 @@ async fn gcg_and_lower_xml_use_explicit_profiles_and_preserve_session_sources() 
     assert_eq!(m.sequence.as_str(), "AGCA");
     assert_eq!(m.metadata["source:legacy:chemistry_unmapped"], "true");
     assert_eq!(
-        collagene_core::legacy_formats::original_legacy_bytes(&m).unwrap(),
+        collagene_core::formats::original::original_legacy_bytes(&m).unwrap(),
         xml.as_bytes()
     );
     reject(
@@ -133,7 +133,7 @@ async fn snapgene_export_requires_loss_review_and_emits_fresh_reference_packets(
     let molecule =
         collagene_model::Molecule::dna("circle", "ACGTTGCA", collagene_model::Topology::Circular)
             .unwrap();
-    let gb = collagene_core::formats::export_genbank(&molecule).unwrap();
+    let gb = collagene_core::formats::sequence::export_genbank(&molecule).unwrap();
     let imported = call(&c, "import_document", json!({"text":gb})).await;
     let d = document(&imported);
     let before = call(&c, "export_document", d.clone()).await;
@@ -152,7 +152,7 @@ async fn snapgene_export_requires_loss_review_and_emits_fresh_reference_packets(
     assert_eq!(raw[0], 9);
     assert_eq!(u32::from_be_bytes(raw[1..5].try_into().unwrap()), 14);
     assert_eq!(&raw[5..13], b"SnapGene");
-    let read = collagene_core::snapgene::import_snapgene(&raw).unwrap();
+    let read = collagene_core::formats::snapgene::import_snapgene(&raw).unwrap();
     assert_eq!(read.molecules[0].sequence.as_str(), "ACGTTGCA");
     assert_eq!(
         read.molecules[0].topology,

@@ -1,18 +1,16 @@
 //! Binary admission and replay for explicit target-free terminal actions.
 use collagene_core::{
-    analysis::Primer,
     chemistry::{EndTreatment, Strand},
-    material_derivation as native,
+    cloning::ligation::tailing::TailingBase,
+    documents::workspace::{self, Workspace},
+    material::{derivation as native, lineage::EventBinding, run::MaterialOrigin},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    run_material::MaterialOrigin,
-    tailing::TailingBase,
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace) -> EventBinding {
@@ -42,8 +40,8 @@ fn actual_pcr() -> (Workspace, EventBinding, native::SourceOrigin) {
     .unwrap()
     .remove(0);
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event(&w),
             origin: native::SourceOrigin::OriginalReference,
         }],
@@ -130,8 +128,8 @@ fn actual_pcr_tail_then_phosphorylation_replay_through_current_binary_without_ta
         assert_eq!(preview.product.sequence.as_str(), "AAACCCT");
         assert!(!preview.incomplete);
         let request = native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: source,
                 origin: origin,
             }],
@@ -219,8 +217,8 @@ fn changed_action_source_and_documentary_hash_refuse_without_any_installation() 
     report.source_sequence_blake3 = "0".repeat(64);
     assert!(protocol::response::Response::decode(&wire(&response)).is_err());
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: source,
             origin: origin,
         }],

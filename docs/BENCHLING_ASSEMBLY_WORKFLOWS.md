@@ -30,10 +30,10 @@ These are our source observations and design decisions, not assertions about
 Benchling internals.
 
 1. **Do not reopen completed preparation engines as missing work.**
-   [assembly_workspace.rs](../crates/web/src/assembly_workspace.rs) already retains
+   [assembly_workspace.rs](../crates/web/src/assembly/draft/assembly_workspace.rs) already retains
    ordered exact-source slots and exposes method/per-slot preparation summaries
    before intended-reference review.
-   [cloning_methods.rs](../crates/web/src/cloning_methods.rs) already connects
+   [cloning_methods.rs](../crates/web/src/cloning/preparation/cloning_methods.rs) already connects
    existing material, PCR, pinned digest, Gibson/HiFi/In-Fusion profiles and
    Type IIS primer proposals with explicit Apply. Whole-source/whole-amplicon
    Golden Gate exploration also exists. The early Golden Gate gap table predates
@@ -45,16 +45,16 @@ Benchling internals.
    computed evidence while retaining unrelated draft settings. The official
    guides do not specify every invalid-junction recovery gesture.
 3. **Keep intended DNA, reconstructed DNA and laboratory validation distinct.**
-   [assembly_product_view.rs](../crates/web/src/assembly_product_view.rs) already
+   [assembly_product_view.rs](../crates/web/src/assembly/review/assembly_product_view.rs) already
    exposes actual-product and fresh junction review, including wrong-target
    diagnostic products. The Benchling preview/check instructions establish a
    review sequence; they do not establish exhaustive mixture enumeration,
    positional chemistry, independent-target verification or experimental success.
    Preserve our stricter contracts in [PROJECT_PLAN.md](PROJECT_PLAN.md).
 4. **Use the same reviewed recipe for outputs and ancestry.** Existing
-   [assembly_finalize.rs](../crates/web/src/assembly_finalize.rs),
-   [assembly_release_view.rs](../crates/web/src/assembly_release_view.rs) and
-   [run_capture.rs](../crates/web/src/run_capture.rs) provide the connected
+   [assembly_finalize.rs](../crates/web/src/assembly/review/assembly_finalize.rs),
+   [assembly_release_view.rs](../crates/web/src/assembly/review/assembly_release_view.rs) and
+   [run_capture.rs](../crates/web/src/history/run_capture.rs) provide the connected
    construct/oligo/preparation choices, immutable run history and exact-event
    navigation. Further presentation work should expose these existing actions,
    not add another output compiler. HTML/PDF remain declared cloning instructions

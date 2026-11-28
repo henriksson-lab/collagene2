@@ -1,11 +1,14 @@
-use collagene_core::formats::*;
+use collagene_core::formats::sequence::*;
 use collagene_model::Alphabet;
 
 #[test]
 fn format_sniffing_preserves_text_record_terminators_and_provenance_exports() {
     let text = "ID   source_fixture; SV 1; linear; genomic DNA; STD; SYN; 4 BP.\nXX\nSQ   Sequence 4 BP; 1 A; 1 C; 1 G; 1 T; 0 other;\n     acgt       4\n//\n";
     let mol = import_bytes(text.as_bytes()).unwrap().molecules.remove(0);
-    assert_eq!(collagene_core::embl::export_embl(&mol).unwrap(), text);
+    assert_eq!(
+        collagene_core::formats::sequence::embl::export_embl(&mol).unwrap(),
+        text
+    );
     let mut current = mol;
     current.metadata.insert(
         "source:canonical_url".into(),

@@ -1,13 +1,18 @@
 //! Target-free reciprocal extension retains literal products and exact ancestry.
 use collagene_core::{
-    analysis::Primer,
     chemistry::{FivePrime, Strand, ThreePrime},
-    material_derivation as native, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request as Preparation},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    cloning::overlap::extension::{
+        self as overlap_extension,
+        pcr::{PrimerPair, Request as Preparation},
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as native,
+        lineage::{EventBinding, InputEventBinding},
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -64,8 +69,8 @@ fn request(
 ) -> native::Request {
     let preview = native::preview_overlap_extension(w, &source, &origin, &preparation).unwrap();
     native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: source,
             origin: origin,
         }],
@@ -148,7 +153,7 @@ fn literal_edited_tailed_outer_product_and_all_six_new_oligos_survive_restart_an
         assert_eq!(terminus.three_prime, ThreePrime::Hydroxyl);
     }
     let asset = &reopened.attachments[installed.receipt.primer_attachment.as_ref().unwrap()];
-    let table: collagene_core::oligo_formats::OligoTable =
+    let table: collagene_core::formats::oligos::OligoTable =
         serde_json::from_slice(&asset.bytes).unwrap();
     assert_eq!(table.records.len(), 6);
     assert!(table.records.iter().all(|r| r.name.starts_with("New ")));
@@ -162,8 +167,9 @@ fn literal_edited_tailed_outer_product_and_all_six_new_oligos_survive_restart_an
             .len(),
         6
     );
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
-    let selected = collagene_core::catalog_digest::select(&catalog, &["ecori".into()]).unwrap();
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
+    let selected =
+        collagene_core::cloning::restriction::catalog::select(&catalog, &["ecori".into()]).unwrap();
     let digest = native::inspect_digest(
         "outer-product",
         fresh.reference(),
@@ -249,11 +255,11 @@ fn saved_run(incomplete: bool) -> (Workspace, EventBinding, MaterialOrigin) {
                 template_strand: Strand::Top,
             },
             Operation::OverlapExtension {
-                left: verification::OrientedSource {
+                left: collagene_core::planning::plan::OrientedSource {
                     source: Source::Step(0),
                     reverse: false,
                 },
-                right: verification::OrientedSource {
+                right: collagene_core::planning::plan::OrientedSource {
                     source: Source::Step(1),
                     reverse: false,
                 },
@@ -287,7 +293,7 @@ fn saved_run(incomplete: bool) -> (Workspace, EventBinding, MaterialOrigin) {
         steps,
     };
     let w = Workspace::from_documents("Exact originating run", vec![source, target], 1).unwrap();
-    let commit = collagene_core::cloning_outputs::finalize(
+    let commit = collagene_core::material::outputs::finalize(
         &w,
         &plan,
         pin(&w, 1),
@@ -295,7 +301,7 @@ fn saved_run(incomplete: bool) -> (Workspace, EventBinding, MaterialOrigin) {
             input_id: "source".into(),
             event: pin(&w, 0),
         }],
-        &collagene_core::cloning_outputs::Options {
+        &collagene_core::material::outputs::Options {
             name: "Source run product".into(),
             show_prepared: false,
             save_primers: true,
@@ -304,7 +310,7 @@ fn saved_run(incomplete: bool) -> (Workspace, EventBinding, MaterialOrigin) {
     )
     .unwrap();
     let event = commit.receipt.construct;
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &run_material::Selection {
             run_id: commit.receipt.run.run_id,
@@ -355,7 +361,7 @@ fn saved_run_and_derived_origins_keep_ownership_and_do_not_reexport_historical_p
         .is_err()
     );
     let first = native::prepare_install(&w, &req).unwrap();
-    let new_table: collagene_core::oligo_formats::OligoTable = serde_json::from_slice(
+    let new_table: collagene_core::formats::oligos::OligoTable = serde_json::from_slice(
         &first.workspace.attachments[first.receipt.primer_attachment.as_ref().unwrap()].bytes,
     )
     .unwrap();

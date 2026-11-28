@@ -1,12 +1,15 @@
 //! Actual native target-free installations exercise mixed material ancestry.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
-    material_derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
-    run_lineage::EventBinding,
-    run_material::{self, MaterialOrigin, MaterialOriginRef, MaterialSelection},
+    cloning::restriction::catalog as catalog_digest,
+    documents::workspace::{self, RevisionEvent, Workspace, WorkspaceDocument},
+    material::{
+        capsule::MaterialOriginRef,
+        derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
+        lineage::EventBinding,
+        run::{self as run_material, MaterialOrigin, MaterialSelection},
+    },
+    sequence::analysis::Primer,
     verification,
-    workspace::{self, RevisionEvent, Workspace, WorkspaceDocument},
 };
 use collagene_model::{Error, Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -30,7 +33,7 @@ fn pcr(w: &Workspace) -> native::PreparedInstallation {
     let source = w.head(&w.documents[0].id).unwrap();
     let forward = Primer::new("Forward", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("Reverse", "TGACGATC", "").unwrap();
-    let mut previews = verification::simulate_pcr_documents(
+    let mut previews = verification::pcr::simulate_pcr_documents(
         source,
         &forward,
         &reverse,
@@ -42,8 +45,8 @@ fn pcr(w: &Workspace) -> native::PreparedInstallation {
     native::prepare_install(
         w,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event(w, 0),
                 origin: SourceOrigin::OriginalReference,
             }],
@@ -74,8 +77,8 @@ fn digest_request(source: EventBinding, origin: MaterialOrigin, index: usize) ->
         .id
         .clone();
     native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: source,
             origin: SourceOrigin::Saved(origin),
         }],
@@ -170,7 +173,7 @@ fn nested_pcr_then_digest_keeps_exact_sources_and_actual_staggered_state_after_a
     let before = source.clone();
     let forward = Primer::new("New forward", "AATTCCGT", "").unwrap();
     let reverse = Primer::new("New reverse", "TGACGATC", "").unwrap();
-    let previews = collagene_core::material_pcr::simulate(
+    let previews = collagene_core::cloning::pcr::material::simulate(
         &source,
         &origin,
         &forward,
@@ -203,16 +206,26 @@ fn one_shared_ledger_limits_all_roots_and_refuses_oversized_opaque_package_befor
     let first = pcr(&original());
     let capsule = native::capsule(&first.workspace, &first.receipt.product).unwrap();
     let origin = MaterialOrigin::Derived(capsule.clone());
-    assert_eq!(run_material::MAX_AGGREGATE_ORIGIN_BYTES, 32 * 1024 * 1024);
-    run_material::material_origins_preflight(std::iter::repeat_n(&origin, 1000)).unwrap();
+    assert_eq!(
+        collagene_core::material::capsule::MAX_AGGREGATE_ORIGIN_BYTES,
+        32 * 1024 * 1024
+    );
+    collagene_core::material::capsule::material_origins_preflight(std::iter::repeat_n(
+        &origin, 1000,
+    ))
+    .unwrap();
     assert!(matches!(
-        run_material::material_origins_preflight(std::iter::repeat_n(&origin, 1001)),
+        collagene_core::material::capsule::material_origins_preflight(std::iter::repeat_n(
+            &origin, 1001
+        )),
         Err(Error::TooLarge)
     ));
     let mut oversized = capsule;
     oversized.record_bytes = vec![0; native::MAX_RECORD_BYTES + 1];
     assert!(matches!(
-        run_material::material_capsules_preflight([MaterialOriginRef::Derived(&oversized)]),
+        collagene_core::material::capsule::material_capsules_preflight([
+            MaterialOriginRef::Derived(&oversized)
+        ]),
         Err(Error::TooLarge)
     ));
 }

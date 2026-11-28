@@ -1,6 +1,6 @@
 use collagene_core::{
-    oligo_formats::{self as o, ColumnMapping, OligoImportOptions},
-    primer_reuse as r,
+    cloning::pcr::reuse as r,
+    formats::oligos::{self as o, ColumnMapping, OligoImportOptions},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn source() -> Molecule {

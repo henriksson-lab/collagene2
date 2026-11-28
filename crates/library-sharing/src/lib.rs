@@ -8,9 +8,9 @@ pub mod sbol_subset;
 pub use sbol_source::KIND as SBOL_SOURCE_ATTACHMENT_KIND;
 
 use collagene_core::{
-    run_lineage::{self, EventBinding, ProductBinding},
-    verification::Operation,
-    workspace::{self, Workspace, WorkspaceDocument},
+    documents::workspace::{self, Workspace, WorkspaceDocument},
+    material::lineage::{self as run_lineage, EventBinding, ProductBinding},
+    planning::plan::Operation,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -83,20 +83,20 @@ pub struct Projection {
 fn workspace_only(kind: &str) -> bool {
     // Coordinates currently have no sequence/event association. Retain them in
     // whole-workspace backups, but never infer plasmid ownership from their bytes.
-    collagene_core::structure_view::source_format(kind).is_some()
-        || kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND
-        || kind == collagene_core::domestication_preparation::REVIEW_EVIDENCE_KIND
-        || kind == collagene_core::protocol_layout::KIND
-        || kind == collagene_core::protocol_quantities::KIND
-        || kind == collagene_core::combinatorial_batch::KIND
-        || kind == collagene_core::combinatorial_release::KIND
+    collagene_core::protein::structure::source_format(kind).is_some()
+        || kind == collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND
+        || kind == collagene_core::cloning::golden_gate::domestication::preparation::REVIEW_EVIDENCE_KIND
+        || kind == collagene_core::output::layout::KIND
+        || kind == collagene_core::output::quantities::KIND
+        || kind == collagene_core::planning::combinatorial::batch::KIND
+        || kind == collagene_core::planning::combinatorial::release::KIND
         || matches!(
             kind,
             "cloning-output-visibility-v1"
             | "oligo-table-v1"
             | "restriction-enzyme-sets-v1"
             | "named-digest-setup-v1"
-            | collagene_core::assembly_library_history::KIND
+            | collagene_core::cloning::assembly::library_history::KIND
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
             | "assembly-design-v1"
@@ -109,7 +109,8 @@ fn workspace_only(kind: &str) -> bool {
 fn run_evidence(kind: &str) -> bool {
     matches!(
         kind,
-        collagene_core::reference_run_evidence::KIND | collagene_core::physical_run_evidence::KIND
+        collagene_core::material::reference_evidence::KIND
+            | collagene_core::material::physical_evidence::KIND
     )
 }
 // Explicit known-schema index projections. The original Workspace::validate
@@ -139,7 +140,7 @@ struct Graph<'a> {
     pending_events: VecDeque<String>,
     pending_runs: VecDeque<String>,
     kept_graphs: BTreeMap<String, String>,
-    pending_graphs: VecDeque<collagene_core::topo_graph_history::Selection>,
+    pending_graphs: VecDeque<collagene_core::cloning::topo::graph_history::Selection>,
     edges: usize,
 }
 impl<'a> Graph<'a> {
@@ -181,15 +182,18 @@ impl<'a> Graph<'a> {
                 }
                 g.run_assets.insert(header.run_id.clone(), hash.clone());
                 g.run_headers.insert(header.run_id);
-            } else if a.kind == collagene_core::material_derivation::WORKSPACE_ATTACHMENT_KIND {
+            } else if a.kind == collagene_core::material::derivation::WORKSPACE_ATTACHMENT_KIND {
                 // Exact typed ownership is indexed in resolve. Merely having
                 // an unrelated derivation never publishes its sources/assets.
-            } else if a.kind == collagene_core::topo_graph_history::WORKSPACE_ATTACHMENT_KIND {
+            } else if a.kind
+                == collagene_core::cloning::topo::graph_history::WORKSPACE_ATTACHMENT_KIND
+            {
                 // Native archive validation owns this current graph contract.
                 // An unrelated graph record never publishes its source scope.
-            } else if a.kind == collagene_core::rna_history::KIND {
-                let record: collagene_core::rna_history::Record = serde_json::from_slice(&a.bytes)
-                    .map_err(|_| Error::Unresolved("RNA declaration source"))?;
+            } else if a.kind == collagene_core::documents::rna_history::KIND {
+                let record: collagene_core::documents::rna_history::Record =
+                    serde_json::from_slice(&a.bytes)
+                        .map_err(|_| Error::Unresolved("RNA declaration source"))?;
                 g.edge()?;
                 g.event_declarations
                     .entry(record.source.event_id)
@@ -257,7 +261,7 @@ impl<'a> Graph<'a> {
     }
     fn topo_graph(
         &mut self,
-        selection: &collagene_core::topo_graph_history::Selection,
+        selection: &collagene_core::cloning::topo::graph_history::Selection,
     ) -> Result<(), Error> {
         self.edge()?;
         if let Some(state) = self.kept_graphs.get(&selection.record_hash) {
@@ -277,7 +281,7 @@ impl<'a> Graph<'a> {
         let material = material_derivation_closure::Index::new(self.source)?;
         material.validate_existing_owners(&self.owners)?;
         let mut selected_run_choices =
-            BTreeMap::<String, Vec<collagene_core::run_material::Selection>>::new();
+            BTreeMap::<String, Vec<collagene_core::material::run::Selection>>::new();
         while !self.pending_events.is_empty()
             || !self.pending_runs.is_empty()
             || !self.pending_graphs.is_empty()
@@ -303,7 +307,9 @@ impl<'a> Graph<'a> {
                     .get(&event.revision)
                     .ok_or(Error::Unresolved("intent source revision"))?;
                 for descriptor in
-                    collagene_core::assembly_intent::material_source_descriptors(molecule)?
+                    collagene_core::cloning::assembly::intent::material_source_descriptors(
+                        molecule,
+                    )?
                 {
                     let binding = &descriptor.event;
                     let mut pending = event.parents.clone();
@@ -337,11 +343,11 @@ impl<'a> Graph<'a> {
                         ));
                     }
                     match &descriptor.selection {
-                        collagene_core::run_material::MaterialSelection::Run(selection) => {
+                        collagene_core::material::run::MaterialSelection::Run(selection) => {
                             if !selected_run_choices.contains_key(&binding.event_id) {
                                 selected_run_choices.insert(
                                     binding.event_id.clone(),
-                                    collagene_core::run_material::originating_products(
+                                    collagene_core::material::run::originating_products(
                                         self.source,
                                         binding,
                                     )?,
@@ -353,7 +359,7 @@ impl<'a> Graph<'a> {
                                 ));
                             }
                         }
-                        collagene_core::run_material::MaterialSelection::Derived(event) => {
+                        collagene_core::material::run::MaterialSelection::Derived(event) => {
                             if event != binding || !material.owns(event) {
                                 return Err(Error::Unresolved(
                                     "intent derived selection is not an actual native owner",
@@ -423,11 +429,12 @@ impl<'a> Graph<'a> {
                     };
                     if let Some(preparation) = preparation {
                         for material in &preparation.recipe.materials {
-                            if let collagene_core::topo::MaterialRecipe::SavedGraph {
-                                origin, ..
+                            if let collagene_core::cloning::topo::MaterialRecipe::SavedGraph {
+                                origin,
+                                ..
                             } = material
                             {
-                                collagene_core::topo_graph_history::validate_capsule_for_workspace(
+                                collagene_core::cloning::topo::graph_history::validate_capsule_for_workspace(
                                     self.source,
                                     origin,
                                 )?;
@@ -456,19 +463,26 @@ impl<'a> Graph<'a> {
                 }
             }
             while let Some(selection) = self.pending_graphs.pop_front() {
-                let record =
-                    collagene_core::topo_graph_history::load(self.source, &selection.record_hash)?;
+                let record = collagene_core::cloning::topo::graph_history::load(
+                    self.source,
+                    &selection.record_hash,
+                )?;
                 if record.state_revision != selection.state_revision {
                     return Err(Error::Unresolved("retained native graph state differs"));
                 }
                 self.kept_assets.insert(selection.record_hash.clone());
-                for binding in collagene_core::topo_graph_history::source_bindings(&record)? {
+                for binding in
+                    collagene_core::cloning::topo::graph_history::source_bindings(&record)?
+                {
                     self.binding(&binding)?;
                 }
-                for run in collagene_core::topo_graph_history::required_run_ids(&record)? {
+                for run in collagene_core::cloning::topo::graph_history::required_run_ids(&record)?
+                {
                     self.run(&run)?;
                 }
-                for graph in collagene_core::topo_graph_history::required_graph_records(&record)? {
+                for graph in
+                    collagene_core::cloning::topo::graph_history::required_graph_records(&record)?
+                {
                     self.topo_graph(&graph)?;
                 }
             }
@@ -688,8 +702,8 @@ pub fn inspect_protocol_layout_closure(
     source: &Workspace,
     layout_hash: &str,
 ) -> Result<ProtocolLayoutInventory, Error> {
-    let layout = collagene_core::protocol_layout::load(source, layout_hash)?;
-    let dependencies = collagene_core::protocol_layout::source_bindings(source, &layout)?;
+    let layout = collagene_core::output::layout::load(source, layout_hash)?;
+    let dependencies = collagene_core::output::layout::source_bindings(source, &layout)?;
     let primary = dependencies.events.first().ok_or(Error::Unresolved(
         "layout has no independently retained source event",
     ))?;
@@ -706,8 +720,8 @@ pub fn inspect_protocol_layout_closure(
             return Err(Error::Unresolved("layout dependency attachment"));
         }
         let asset = &source.attachments[hash];
-        if asset.kind == collagene_core::combinatorial_batch::KIND {
-            let record = collagene_core::combinatorial_batch::load(source, hash)?;
+        if asset.kind == collagene_core::planning::combinatorial::batch::KIND {
+            let record = collagene_core::planning::combinatorial::batch::load(source, hash)?;
             record.validate_source_closure(source)?;
         }
         graph.kept_assets.insert(hash.clone());
@@ -736,7 +750,7 @@ pub fn project_protocol_layout_closure(
         review.inventory.clone(),
     )?;
     // Validate every retained layout reference against the projected exact scope.
-    collagene_core::protocol_layout::load(&projected.workspace, layout_hash)?;
+    collagene_core::output::layout::load(&projected.workspace, layout_hash)?;
     Ok(ProtocolLayoutProjection {
         workspace: projected.workspace,
         review,

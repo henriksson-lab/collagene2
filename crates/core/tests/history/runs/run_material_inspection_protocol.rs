@@ -1,18 +1,22 @@
 //! Origin discovery is documentary; explicit preparation binds one exact retained run.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation, RunPreparation},
-    cloning_outputs::{self, Commit},
-    ligation_recipe,
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as ligation_recipe,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit},
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, i: usize) -> EventBinding {
@@ -146,7 +150,7 @@ fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
         step_index: 0,
         event: binding.clone(),
     };
-    let origin = run_material::capsule(&commit.workspace, &selection).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selection).unwrap();
     let molecule = commit.workspace.revisions[&binding.revision].clone();
     let inputs = vec![PlanInput {
         id: "saved".into(),
@@ -183,11 +187,11 @@ fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target: target.clone(),
             recipe,
@@ -216,10 +220,9 @@ fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
 }
 #[test]
 fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_inspector() {
-    use collagene_core::{
-        catalog_digest,
-        pcr_digest_inspection::{self, Request as DigestRequest},
-        restriction_inspection::InspectionOptions,
+    use collagene_core::cloning::{
+        pcr::digest::{self as pcr_digest_inspection, Request as DigestRequest},
+        restriction::{catalog as catalog_digest, inspection::InspectionOptions},
     };
     let commit = original();
     let selected = Selection {
@@ -227,7 +230,7 @@ fn saved_run_actual_pcr_digest_uses_origin_bound_job159_not_plain_reference_insp
         step_index: 0,
         event: commit.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     let molecule = commit.workspace.revisions[&selected.event.revision].clone();
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let id = catalog

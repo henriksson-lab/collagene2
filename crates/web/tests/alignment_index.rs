@@ -1,7 +1,7 @@
-#[path = "../src/alignment_index.rs"]
+#[path = "../src/viewer/alignment/alignment_view/index.rs"]
 mod alignment_index;
 use alignment_index::PreparedAlignment;
-use collagene_core::alignment_formats::{AlignmentFormat, import_alignment};
+use collagene_core::formats::alignment::{AlignmentFormat, import_alignment};
 use collagene_model::Alphabet;
 #[test]
 fn every_gap_pattern_has_literal_residue_coordinates() {

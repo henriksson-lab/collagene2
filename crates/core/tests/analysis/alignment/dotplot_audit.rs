@@ -1,6 +1,6 @@
 //! Independent literal-grid oracle. Does not use the implementation's index,
 //! matching, span, reverse-complement or coordinate helpers.
-use collagene_core::dotplot::*;
+use collagene_core::alignment::dotplot::*;
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn molecule(alphabet: Alphabet, text: &str, circular: bool) -> Molecule {
     Molecule {

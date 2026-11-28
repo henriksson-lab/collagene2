@@ -1,15 +1,18 @@
 //! Three independently specified PCR fragments, explicit phosphorylation and target.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation},
     chemistry::EndTreatment,
-    ligation_recipe::{self, Fragment, Recipe},
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation},
+        ligation::recipe::{self as ligation_recipe, Fragment, Recipe},
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{PlanInput, Status},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {
@@ -63,14 +66,14 @@ fn request(inputs: Vec<PlanInput>, target: Molecule, recipe: Recipe) -> Vec<u8> 
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     protocol::request::Request::encode(&Request {
         id: 955,
         revision,
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,
@@ -124,7 +127,7 @@ fn treatment_and_target_are_part_of_worker_binding_and_retained_nicks_are_explic
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     recipe.fragments[0].treatment = None;
@@ -133,7 +136,7 @@ fn treatment_and_target_are_part_of_worker_binding_and_retained_nicks_are_explic
         id: 955,
         revision: prior,
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs: inputs.clone(),
             target: target.clone(),
             recipe: recipe.clone(),

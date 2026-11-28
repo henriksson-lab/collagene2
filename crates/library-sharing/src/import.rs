@@ -1,7 +1,7 @@
 //! Atomic native graph import. Never rewrites events, flattens saved products,
 //! treats a remote locator as authority, or replaces unrelated local documents.
 use crate::{Selection, inspect_document_closure};
-use collagene_core::{
+use collagene_core::documents::{
     transfer::Candidate,
     workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
 };

@@ -1,6 +1,6 @@
 use collagene_core::{
     chemistry::{self, Duplex, FivePrime, Nick, Polarity, Strand, Terminus, ThreePrime},
-    tailing::*,
+    cloning::ligation::tailing::*,
 };
 use collagene_model::{Sequence, Topology};
 fn rc(s: &str) -> String {

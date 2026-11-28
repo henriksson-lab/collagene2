@@ -1,14 +1,23 @@
 //! Target-free scientific inspection retains actual OE material and uncertainty.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe, chemistry, cloning_outputs, overlap_extension,
-    overlap_extension_digest_inspection::{self as inspect, Request},
-    overlap_extension_pcr::{PrimerPair, Request as Preparation},
-    restriction_inspection::InspectionOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    chemistry,
+    cloning::{
+        assembly::recipe as assembly_recipe,
+        overlap::extension::{
+            self as overlap_extension,
+            digest::{self as inspect, Request},
+            pcr::{PrimerPair, Request as Preparation},
+        },
+        restriction::inspection::InspectionOptions,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{MaterialOrigin, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -24,7 +33,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
     }
 }
 fn request() -> Request {
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     Request {
         source_role: "insert".into(),
         preparation: Preparation {
@@ -37,7 +46,11 @@ fn request() -> Request {
                 ..Default::default()
             },
         },
-        selection: collagene_core::catalog_digest::select(&catalog, &["ecori".into()]).unwrap(),
+        selection: collagene_core::cloning::restriction::catalog::select(
+            &catalog,
+            &["ecori".into()],
+        )
+        .unwrap(),
         options: InspectionOptions::default(),
     }
 }
@@ -182,11 +195,11 @@ fn saved(incomplete: bool) -> (Molecule, MaterialOrigin, Workspace) {
                 template_strand: collagene_core::chemistry::Strand::Top,
             },
             Operation::OverlapExtension {
-                left: collagene_core::verification::OrientedSource {
+                left: collagene_core::planning::plan::OrientedSource {
                     source: Source::Step(0),
                     reverse: false,
                 },
-                right: collagene_core::verification::OrientedSource {
+                right: collagene_core::planning::plan::OrientedSource {
                     source: Source::Step(1),
                     reverse: false,
                 },
@@ -243,7 +256,7 @@ fn saved(incomplete: bool) -> (Molecule, MaterialOrigin, Workspace) {
     .unwrap();
     let event = commit.receipt.construct.clone();
     let source = commit.workspace.revisions[&event.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -326,13 +339,13 @@ fn documentary_stage_catalog_context_and_source_binding_tampering_is_rejected() 
 
 #[test]
 fn derived_origin_owns_its_exact_event_and_inherits_limits_without_a_target_verdict() {
-    use collagene_core::{material_derivation as d, workspace};
+    use collagene_core::{documents::workspace, material::derivation as d};
     let (_source, origin, w) = saved(true);
     let next = d::prepare_install(
         &w,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: origin.event().clone(),
                 origin: d::SourceOrigin::Saved(origin),
             }],
@@ -372,8 +385,11 @@ fn derived_origin_owns_its_exact_event_and_inherits_limits_without_a_target_verd
 #[test]
 fn bottom_only_source_calls_reach_all_six_oligos_and_real_ecori_ends() {
     use collagene_core::{
-        assembly_edit_intent::Edit, chemistry::Strand, overlap_extension_primer_design as planner,
-        overlap_primer_design::Fragment,
+        chemistry::Strand,
+        cloning::{
+            assembly::edit_intent::Edit,
+            overlap::{extension::primers as planner, primer_design::Fragment},
+        },
     };
     const BOTTOM: &str = "GGGGTGACGATCTACAGGTCTGAAGTCCTACGTAGCATCGGACT";
     let top = source();
@@ -432,7 +448,7 @@ fn bottom_only_source_calls_reach_all_six_oligos_and_real_ecori_ends() {
     .unwrap();
     let event = installed.receipt.construct;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &installed.workspace,
             &Selection {
                 run_id: installed.receipt.run.run_id,
@@ -487,7 +503,8 @@ fn bottom_only_source_calls_reach_all_six_oligos_and_real_ecori_ends() {
         preparation: proposal.preparation,
         ..request()
     };
-    let before = collagene_core::workspace::save_workspace(&installed.workspace).unwrap();
+    let before =
+        collagene_core::documents::workspace::save_workspace(&installed.workspace).unwrap();
     let preview = inspect::inspect(source, Some(&origin), &r, Some(&installed.workspace)).unwrap();
     preview.validate_binding(&preview.context_revision).unwrap();
     assert!(!preview.incomplete, "{:?}", preview.findings);
@@ -540,7 +557,7 @@ fn bottom_only_source_calls_reach_all_six_oligos_and_real_ecori_ends() {
         chemistry::ThreePrime::Hydroxyl
     );
     assert_eq!(
-        collagene_core::workspace::save_workspace(&installed.workspace).unwrap(),
+        collagene_core::documents::workspace::save_workspace(&installed.workspace).unwrap(),
         before
     );
 }

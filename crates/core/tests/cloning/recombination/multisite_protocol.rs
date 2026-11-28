@@ -1,8 +1,11 @@
 //! Current worker dispatch preserves source roles and independent reference intent.
 use collagene_core::{
-    multisite_recombination::{self as adapter, AnnotationLimits, Request, Selection, multisite},
+    cloning::recombination::{
+        AnnotationLimits, Selection,
+        multisite::{self as adapter, Request, multisite},
+        reference::{Family, Input, Limits, Reaction, SiteVariant, SourceRecord},
+    },
     protocol,
-    recombination::reference::{Family, Input, Limits, Reaction, SiteVariant, SourceRecord},
 };
 use collagene_model::{Molecule, Topology};
 use serde::Serialize;

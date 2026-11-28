@@ -99,7 +99,7 @@ fn validate(bytes: &[u8]) -> HostResult<wire::SlotMetadata> {
             "Native workspace archive exceeds its slot bound.",
         ));
     }
-    collagene_core::workspace::load_workspace(bytes)
+    collagene_core::documents::workspace::load_workspace(bytes)
         .map_err(|_| HostError::Invalid("Invalid native workspace archive."))?;
     Ok(wire::SlotMetadata {
         archive_hash: Digest::of(bytes),

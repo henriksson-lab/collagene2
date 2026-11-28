@@ -1,19 +1,31 @@
 //! A branched physical preparation crosses existing recipe jobs without changing operations.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self, FragmentSpec, Preparation, Recipe, RunPreparation},
-    cloning_outputs, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request as ExtensionRequest},
+    cloning::{
+        assembly::recipe::{
+            self as assembly_recipe, FragmentSpec, Preparation, Recipe, RunPreparation,
+        },
+        overlap::extension::{
+            self as overlap_extension,
+            pcr::{PrimerPair, Request as ExtensionRequest},
+        },
+    },
+    documents::{
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    transfer::{self, Candidate},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -281,7 +293,7 @@ fn flat_saved_run_preparation_variant7_cannot_hide_under_old_from_run_envelope()
         step_index: 0,
         event: commit.receipt.construct,
     };
-    let origin = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     inputs[0] = input(
         "insert",
         commit.workspace.revisions[&selected.event.revision].clone(),

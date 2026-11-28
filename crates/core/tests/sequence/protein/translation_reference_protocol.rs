@@ -6,8 +6,10 @@ use collagene_core::{
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    translation::TranslationOptions,
-    translation_reference::{self, Selection},
+    sequence::{
+        translation::TranslationOptions,
+        translation_reference::{self, Selection},
+    },
 };
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Topology};
 fn fixture(cds: bool) -> translation_reference::Request {
@@ -245,7 +247,7 @@ fn translated_response_validation_rejects_wrong_context_and_inconsistent_native_
 }
 #[test]
 fn ordinary_32_mib_caps_apply_to_both_jobs_and_results() {
-    let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
+    let maximum = collagene_core::formats::sequence::MAX_IMPORT_BYTES;
     // One reusable oversized envelope establishes that these selectors cannot
     // claim the separate 128 MiB workspace budget, before checksum/body decode.
     let mut oversized = vec![0; 42 + maximum + 1];

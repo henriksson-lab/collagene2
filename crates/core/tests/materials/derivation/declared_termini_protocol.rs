@@ -1,15 +1,17 @@
 //! Explicit source assumptions cannot hide under old candidate/worker/archive versions.
 use collagene_core::{
     chemistry::Terminus,
+    documents::{
+        transfer::{self, Candidate},
+        workspace::{self, Workspace},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer::{self, Candidate},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (DesignPlan, Molecule) {
@@ -171,7 +173,7 @@ fn archived_plan_eight_cannot_be_relabeled_seven() {
 
 #[test]
 fn declared_preparation_cannot_hide_in_an_old_existing_recipe_job() {
-    use collagene_core::assembly_recipe::{FragmentSpec, Preparation, Recipe};
+    use collagene_core::cloning::assembly::recipe::{FragmentSpec, Preparation, Recipe};
     let (plan, target) = fixture();
     let recipe = Recipe {
         name: "declared overlap source".into(),
@@ -190,7 +192,8 @@ fn declared_preparation_cannot_hide_in_an_old_existing_recipe_job() {
         options: Default::default(),
     };
     let revision =
-        collagene_core::assembly_recipe::preview_revision(&plan.inputs, &target, &recipe).unwrap();
+        collagene_core::cloning::assembly::recipe::preview_revision(&plan.inputs, &target, &recipe)
+            .unwrap();
     let request = Request {
         id: 160,
         revision,

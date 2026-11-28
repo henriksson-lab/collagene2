@@ -1,21 +1,27 @@
 //! Shared mismatch preparation is new; its existing physical operation stays compatible.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self, FragmentSpec, Preparation, RunPreparation},
-    cloning_outputs, ligation_recipe,
-    mutagenesis::PcrOptions,
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, RunPreparation},
+        ligation::{recipe as ligation_recipe, tailing::TailingBase, tailing_recipe},
+        pcr::mutagenesis::PcrOptions,
+    },
+    documents::{
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    tailing::TailingBase,
-    tailing_recipe,
-    transfer::{self, Candidate},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
@@ -102,11 +108,11 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs: inputs.clone(),
             target: target.clone(),
             recipe,
@@ -171,12 +177,12 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
     };
     old_rejected(&request);
     let tail = tailing_recipe::Recipe {
-        profile: collagene_core::tailing_recipe::Profile::Ta,
+        profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: "Mismatch before explicit tailing".into(),
         fragments: vec![tailing_recipe::Fragment {
             source: fragment(preparation()),
-            action: collagene_core::tailing_recipe::Action::AddTail {
+            action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                 base: TailingBase::A,
             },
             treatment: None,
@@ -237,7 +243,7 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
     )
     .unwrap();
     let event = commit.receipt.construct.clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -278,11 +284,11 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,

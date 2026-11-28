@@ -1,8 +1,10 @@
 //! Literal source/CDS/site fixtures, independent of search-produced expectations.
 use collagene_core::{
-    catalog_digest,
-    codon_design::DesignOptions,
-    domestication::{self as d, Limits, Patch, Request, Selection, SourceRange},
+    cloning::{
+        golden_gate::domestication::{self as d, Limits, Patch, Request, Selection, SourceRange},
+        restriction::catalog as catalog_digest,
+    },
+    sequence::codon_design::DesignOptions,
 };
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 const CODING: &str = "ATGGGTCTCGAATAA";

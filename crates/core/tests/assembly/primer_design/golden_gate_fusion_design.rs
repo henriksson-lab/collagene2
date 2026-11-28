@@ -1,12 +1,19 @@
 //! Independent signed partitions and actual PCR/digest/ligation oracles.
 use collagene_core::{
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit::Edit,
-    golden_gate::GoldenGateEnzyme,
-    golden_gate_fusion_design::{self as fusion, Constraints, Limits, Request, Selection, Window},
-    golden_gate_junction_edit::{self as gate, Row},
-    ligation_recipe,
-    verification::{PlanInput, Status},
+    cloning::{
+        assembly::{
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit::Edit,
+        },
+        golden_gate::{
+            GoldenGateEnzyme,
+            fusion_design::{self as fusion, Constraints, Limits, Request, Selection, Window},
+            junction_edit::{self as gate, Row},
+        },
+        ligation::recipe as ligation_recipe,
+    },
+    planning::plan::PlanInput,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -113,7 +120,7 @@ fn physical(inputs: &[PlanInput], m: &fusion::Materialized) {
         inputs,
         &m.original_intent.target,
         &m.recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(

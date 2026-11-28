@@ -1,11 +1,11 @@
 //! Real SDK contracts for immutable annotation/library evidence and explicit new-document application.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    annotation_formats::{AnnotationFormat, AnnotationImportReport},
-    feature_library::{FeatureLibrary, ScanOptions, ScanReport},
+    formats::annotations::{AnnotationFormat, AnnotationImportReport},
     protocol,
+    sequence::annotations::library::{FeatureLibrary, ScanOptions, ScanReport},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::Molecule;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -105,7 +105,8 @@ async fn library_creation_export_scan_and_explicit_apply_keep_original_documents
     )
     .await;
     let bytes = artifact(&client, &exported["artifact_id"]).await;
-    let restored: FeatureLibrary = collagene_core::feature_library::load_library(&bytes).unwrap();
+    let restored: FeatureLibrary =
+        collagene_core::sequence::annotations::library::load_library(&bytes).unwrap();
     assert_eq!(restored.entries[0].sequence.as_str(), "CGATAC");
     assert_eq!(
         restored.entries[0].source.document_revision,
@@ -303,7 +304,7 @@ async fn gff_dataset_original_evidence_and_revision_bound_apply_export_are_expli
     )
     .await;
     let text = String::from_utf8(artifact(&client, &exported["artifact_id"]).await).unwrap();
-    let reopened = collagene_core::annotation_formats::import_annotations(
+    let reopened = collagene_core::formats::annotations::import_annotations(
         &original,
         &text,
         AnnotationFormat::Gff3,
@@ -387,7 +388,7 @@ async fn feature_library_item_capacity_is_atomic_and_existing_refs_still_work() 
     );
     assert_eq!(call(&client, "list_documents", json!({})).await["total"], 1);
     let existing = call(&client, "export_feature_library", json!({"library":first})).await;
-    let library = collagene_core::feature_library::load_library(
+    let library = collagene_core::sequence::annotations::library::load_library(
         &artifact(&client, &existing["artifact_id"]).await,
     )
     .unwrap();
@@ -490,7 +491,7 @@ async fn gtf_quoted_evidence_exact_mapping_and_new_document_roundtrip() {
     .await;
     assert_eq!(chunk["filename"], "annotations.gtf");
     let output = String::from_utf8(artifact(&client, &exported["artifact_id"]).await).unwrap();
-    let reopened = collagene_core::annotation_formats::import_annotations(
+    let reopened = collagene_core::formats::annotations::import_annotations(
         &original,
         &output,
         AnnotationFormat::Gtf,

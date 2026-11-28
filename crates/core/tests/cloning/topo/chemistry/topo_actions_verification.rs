@@ -1,13 +1,17 @@
 //! Independent directional source-call, whole-mixture and final-target oracles.
+use collagene_core::cloning::topo::physical::{self as p, processing as process, projection};
 use collagene_core::{
-    chemistry, modified_duplex, protocol, topo, topo_actions as actions, transfer,
+    chemistry::{self, tracked_duplex as modified_duplex},
+    cloning::topo::{self, actions},
+    documents::transfer,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+    protocol,
     verification::{
-        self as v, DesignPlan, Operation, PhysicalProcessingEvidence, PlanInput, Source, Status,
-        TopoSource,
+        self as v,
+        evidence::{PhysicalProcessingEvidence, Status},
     },
 };
 use collagene_model::{Molecule, Topology};
-use topo::physical::{self as p, processing as process, projection};
 const ORIGINAL_MAIN: &str = "AAGGGGCATCCCTTCACCATGACG";
 const ECO_MAIN: &str = "AAGGGGCATCCCTTCACCGAATTCA";
 const ECO_TARGET: &str = "AATTCAAAGGGGCATCCCTTCACCG";
@@ -154,7 +158,7 @@ fn digest() -> Operation {
         fragment_index: 0,
     }
 }
-fn evidence(report: &v::VerificationReport) -> &actions::Report {
+fn evidence(report: &v::evidence::VerificationReport) -> &actions::Report {
     assert_eq!(report.physical_processing_reports.len(), 1);
     assert_eq!(report.physical_processing_reports[0].step_index, 0);
     let PhysicalProcessingEvidence::TopoActions(evidence) =
@@ -176,7 +180,7 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
     .unwrap();
     let mut p = plan(&inputs, r, &target);
     p.steps.push(digest());
-    let report = v::verify(&p, &target);
+    let report = v::engine::verify(&p, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -229,7 +233,7 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
     );
     let cuts = chemistry::digest(
         e.duplex.as_ref().unwrap(),
-        &[collagene_core::analysis::Enzyme {
+        &[collagene_core::sequence::analysis::Enzyme {
             name: "Independent EcoRI cut geometry".into(),
             recognition: "GAATTC".into(),
             top_cut: 1,
@@ -252,11 +256,11 @@ fn actual54calls_to50paired_plus4free_then_ecori_digest_matches_frozen25bp_targe
     assert!(modifications.unknown_eligible > 0);
     assert_eq!(modifications.known_unmodified, 0);
     assert_eq!(modifications.known_modified, 0);
-    let html = v::export_protocol_html(&p, &target);
+    let html = v::output::export_protocol_html(&p, &target);
     assert!(html.contains("hydrolytic"));
     assert!(html.contains("GGTG") || html.contains("excised"));
     assert!(html.contains("not physical isolation") || html.contains("not isolation"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&p, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&p, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
     assert_eq!(pdf.status, report.status);
     assert_eq!(pdf.plan_revision, report.plan_revision);
@@ -273,7 +277,7 @@ fn original52call_oracle_retains_free_fragment_and_wrong_target_never_selects_ma
     )
     .unwrap();
     let mut p = plan(&inputs, r, &target);
-    let report = v::verify(&p, &target);
+    let report = v::engine::verify(&p, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -298,7 +302,7 @@ fn original52call_oracle_retains_free_fragment_and_wrong_target_never_selects_ma
     )
     .unwrap();
     p.target_revision = wrong.revision();
-    let report = v::verify(&p, &wrong);
+    let report = v::engine::verify(&p, &wrong);
     assert_eq!(report.status, Status::Invalid);
     assert_eq!(report.products[0].sequence.as_str(), ORIGINAL_MAIN);
     assert!(evidence(&report).tracked.is_some());
@@ -315,7 +319,7 @@ fn no_cut_retains_anchored_flap_and_full_generic_typed_evidence_without_product_
         Topology::Circular,
     )
     .unwrap();
-    let report = v::verify(&plan(&inputs, r, &target), &target);
+    let report = v::engine::verify(&plan(&inputs, r, &target), &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(report.products.is_empty());
     let e = evidence(&report);
@@ -345,7 +349,7 @@ fn ordered_and_blocked_actions_preserve_actual_branch_and_never_infer_phosphate(
         Topology::Circular,
     )
     .unwrap();
-    let report = v::verify(&plan(&inputs, r, &target), &target);
+    let report = v::engine::verify(&plan(&inputs, r, &target), &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -365,7 +369,7 @@ fn ordered_and_blocked_actions_preserve_actual_branch_and_never_infer_phosphate(
     let mut r = select(&inputs, r);
     r.options.require_all_requested_steps_applied = false;
     r.options.require_known_terminal_chemistry = false;
-    let report = v::verify(&plan(&inputs, r, &target), &target);
+    let report = v::engine::verify(&plan(&inputs, r, &target), &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(evidence(&report).duplex.is_none());
     assert_eq!(
@@ -419,7 +423,7 @@ fn current_action_encoding_preserves_original_source_context() {
         .molecule
         .metadata
         .insert("different original capture".into(), "true".into());
-    let report = v::verify(&stale, &target);
+    let report = v::engine::verify(&stale, &target);
     assert_eq!(report.status, Status::Invalid);
     assert!(report.products.is_empty());
     let Operation::TopoActions { sources, .. } = &p.steps[0] else {
@@ -439,7 +443,7 @@ fn nick_only_steps_never_cut_directional_flap_or_promote_material() {
         Topology::Circular,
     )
     .unwrap();
-    let report = v::verify(&plan(&inputs, request, &target), &target);
+    let report = v::engine::verify(&plan(&inputs, request, &target), &target);
     let graph = &evidence(&report).projection.physical.product;
     assert!(
         graph
@@ -453,9 +457,11 @@ fn nick_only_steps_never_cut_directional_flap_or_promote_material() {
 #[test]
 fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_historical() {
     use collagene_core::{
-        physical_run_evidence,
-        run_lineage::{self, EventBinding, InputEventBinding},
-        workspace::{self, Workspace},
+        documents::workspace::{self, Workspace},
+        material::{
+            lineage::{self as run_lineage, EventBinding, InputEventBinding},
+            physical_evidence as physical_run_evidence,
+        },
     };
     fn event(w: &Workspace, index: usize) -> EventBinding {
         let d = &w.documents[index];
@@ -613,7 +619,10 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
             fragment_index: 0,
         }],
     };
-    assert_eq!(v::verify(&imported, &target).status, Status::Incomplete);
+    assert_eq!(
+        v::engine::verify(&imported, &target).status,
+        Status::Incomplete
+    );
     // Relabelling the native manifest must not hide a new operation under plan11.
     use std::io::{Cursor, Read, Write};
     let mut input = zip::ZipArchive::new(Cursor::new(&archive)).unwrap();

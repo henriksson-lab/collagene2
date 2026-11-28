@@ -3,10 +3,10 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
     alignment::{AlignmentMode, AlignmentOptions, ComparisonOptions},
-    transfer::{PlanningWorkspace, save_workspace},
-    translation::{IncompletePolicy, OrfOptions, TranslationOptions},
+    documents::transfer::{PlanningWorkspace, save_workspace},
+    sequence::translation::{IncompletePolicy, OrfOptions, TranslationOptions},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Feature, Location, Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

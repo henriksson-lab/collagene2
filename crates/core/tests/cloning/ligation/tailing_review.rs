@@ -1,8 +1,9 @@
 //! Independent verifier review: literal two-strand products and annotation origins.
 use collagene_core::{
     chemistry::{AnnealOptions, DuplexSummary, FivePrime, Nick, Strand, Terminus},
-    tailing::TailingBase,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
+    cloning::ligation::tailing::TailingBase,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn input(id: &str, sequence: &str, label: Option<&str>) -> PlanInput {
@@ -101,7 +102,7 @@ fn forward_and_reversed_ta_targets_keep_original_features_off_the_two_added_base
             reverse,
             false,
         );
-        let r = verification::verify(&p, &t);
+        let r = verification::engine::verify(&p, &t);
         assert_eq!(
             r.status,
             Status::ConsistentUnderAssumptions,
@@ -142,7 +143,10 @@ fn forward_and_reversed_ta_targets_keep_original_features_off_the_two_added_base
         let wrong = Molecule::dna("naive no-tail target", "ACGCGGTA", Topology::Circular).unwrap();
         let mut bad = p.clone();
         bad.target_revision = wrong.revision();
-        assert_eq!(verification::verify(&bad, &wrong).status, Status::Invalid);
+        assert_eq!(
+            verification::engine::verify(&bad, &wrong).status,
+            Status::Invalid
+        );
     }
 }
 #[test]
@@ -156,7 +160,7 @@ fn gc_phosphates_and_nick_acceptance_are_not_inferred_from_tails_or_target_match
         false,
         true,
     );
-    let r = verification::verify(&p, &t);
+    let r = verification::engine::verify(&p, &t);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -184,7 +188,7 @@ fn gc_phosphates_and_nick_acceptance_are_not_inferred_from_tails_or_target_match
         *allow_nicked = false;
     }
     assert_eq!(
-        verification::verify(&sealed_required, &t).status,
+        verification::engine::verify(&sealed_required, &t).status,
         Status::Invalid
     );
     let (p, t) = plan(
@@ -196,7 +200,7 @@ fn gc_phosphates_and_nick_acceptance_are_not_inferred_from_tails_or_target_match
         false,
         true,
     );
-    assert_eq!(verification::verify(&p, &t).status, Status::Invalid);
+    assert_eq!(verification::engine::verify(&p, &t).status, Status::Invalid);
     let mut unknown = Terminus::CLEAVED;
     unknown.five_prime = FivePrime::Unknown;
     let (p, t) = plan(
@@ -208,7 +212,10 @@ fn gc_phosphates_and_nick_acceptance_are_not_inferred_from_tails_or_target_match
         false,
         true,
     );
-    assert_eq!(verification::verify(&p, &t).status, Status::Incomplete);
+    assert_eq!(
+        verification::engine::verify(&p, &t).status,
+        Status::Incomplete
+    );
 }
 #[test]
 fn imported_physical_metadata_cannot_establish_accessible_tailing_ends() {
@@ -235,7 +242,7 @@ fn imported_physical_metadata_cannot_establish_accessible_tailing_ends() {
                 base: TailingBase::A,
             }],
         };
-        let r = verification::verify(&p, &target);
+        let r = verification::engine::verify(&p, &target);
         assert_eq!(r.status, Status::Incomplete);
         assert!(r.products.is_empty());
         assert!(
@@ -281,7 +288,7 @@ fn prior_trusted_linear_ligation_nicks_survive_tailing_with_unchanged_five_prime
             },
         ],
     };
-    let r = verification::verify(&p, &target);
+    let r = verification::engine::verify(&p, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -323,7 +330,7 @@ fn reversed_compound_source_feature_preserves_biological_order_after_either_liga
             needs_review: false,
         });
         p.inputs[2].revision = p.inputs[2].molecule.revision();
-        let r = verification::verify(&p, &t);
+        let r = verification::engine::verify(&p, &t);
         assert_eq!(
             r.status,
             Status::ConsistentUnderAssumptions,

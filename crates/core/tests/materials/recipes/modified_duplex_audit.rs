@@ -1,6 +1,7 @@
 //! Original-coordinate chemical oracle independent of implementation mappings.
 use collagene_core::{
-    analysis::Enzyme, chemistry::Strand, methylation::MethylationState as M, modified_duplex::*,
+    chemistry::{Strand, methylation::MethylationState as M, tracked_duplex::*},
+    sequence::analysis::Enzyme,
 };
 use collagene_model::{Molecule, Topology};
 fn rc(s: &str) -> String {

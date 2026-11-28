@@ -1,4 +1,4 @@
-use collagene_core::embl::*;
+use collagene_core::formats::sequence::embl::*;
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 
 const EMBL: &str = "ID   synthetic; SV 3; circular; genomic DNA; STD; SYN; 16 BP.\nXX\nAC   SYNTHETIC0001;\nDE   Synthetic coordinate fixture,\nDE   not a functional construct.\nXX\nRN   [1]\nRP   1-16\nRA   Independent fixture author;\nRT   \"Synthetic evidence\";\nRL   Unpublished.\nZZ   uninterpreted header evidence\nXX\nFH   Key             Location/Qualifiers\nFH\nFT   CDS             complement(join(13..16,1..4))\nFT                   /label=\"Across origin\"\nFT                   /note=\"first\"\nFT                   /note=\"second line\nFT                   continued\"\nFT                   /pseudo\nFT   misc_feature    <5..>8\nFT                   /note=\"fuzzy ends\"\nXX\nSQ   Sequence 16 BP; 4 A; 4 C; 4 G; 4 T; 0 other;\n     aaaaccccgg ggtttt       16\n//\n";

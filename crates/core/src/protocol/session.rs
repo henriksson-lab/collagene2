@@ -9,18 +9,18 @@ use super::{
     response::Response,
     schema::{AnalysisJob, AnalysisResult},
 };
-use crate::formats::MAX_IMPORT_BYTES;
+use crate::formats::sequence::MAX_IMPORT_BYTES;
 use collagene_model::Error;
 /// A persistent worker retains a validated immutable track source/index. Replacing
 /// it is atomic; viewport jobs carry only options/window and the expected revision.
 #[derive(Default)]
 pub struct AnalysisSession {
-    tracks: Option<crate::view_tracks::PreparedTracks>,
-    genomes: crate::genome_session::GenomeSession,
-    read_alignments: crate::read_alignment_session::Session,
-    variants: crate::variants_session::Session,
-    combinatorial: Option<crate::combinatorial_batch::Session>,
-    release: Option<crate::combinatorial_release::ReleaseSession>,
+    tracks: Option<crate::tracks::view::PreparedTracks>,
+    genomes: crate::tracks::genome_session::GenomeSession,
+    read_alignments: crate::review::reads::session::Session,
+    variants: crate::review::variants::session::Session,
+    combinatorial: Option<crate::planning::combinatorial::batch::Session>,
+    release: Option<crate::planning::combinatorial::release::ReleaseSession>,
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
@@ -37,8 +37,9 @@ impl AnalysisSession {
         let r: Request = decode_with_limit(b"CGQ\0", bytes, maximum)?;
         let result = match r.job {
             AnalysisJob::BeginCombinatorialRelease { workspace, request } => {
-                let pending =
-                    crate::combinatorial_release::ReleaseSession::begin(workspace, request)?;
+                let pending = crate::planning::combinatorial::release::ReleaseSession::begin(
+                    workspace, request,
+                )?;
                 let progress = pending.summary();
                 if progress.context_revision != r.revision {
                     return Err(Error::Format(
@@ -113,7 +114,8 @@ impl AnalysisSession {
                 )
             }
             AnalysisJob::BeginCombinatorialBatch { workspace, matrix } => {
-                let pending = crate::combinatorial_batch::Session::begin(workspace, matrix)?;
+                let pending =
+                    crate::planning::combinatorial::batch::Session::begin(workspace, matrix)?;
                 let progress = pending.summary();
                 if progress.context_revision != r.revision {
                     return Err(Error::Format(
@@ -138,8 +140,10 @@ impl AnalysisSession {
                 workspace,
                 current_context,
             } => {
-                if crate::combinatorial_batch::capture_revision(&workspace, &current_context)?
-                    != r.revision
+                if crate::planning::combinatorial::batch::capture_revision(
+                    &workspace,
+                    &current_context,
+                )? != r.revision
                 {
                     return Err(Error::Format(
                         "Combinatorial batch capture workspace changed.".into(),
@@ -181,7 +185,7 @@ impl AnalysisSession {
             | AnalysisJob::ReadGenomeInterval { .. }) => self.genomes.process(job, &r.revision)?,
             AnalysisJob::PrepareTracks { molecule } => {
                 let prepared =
-                    crate::view_tracks::PreparedTracks::new(std::sync::Arc::new(molecule))?;
+                    crate::tracks::view::PreparedTracks::new(std::sync::Arc::new(molecule))?;
                 if prepared.source_revision() != r.revision {
                     return Err(Error::Format("track preparation revision mismatch".into()));
                 }

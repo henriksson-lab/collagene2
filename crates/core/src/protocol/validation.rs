@@ -1,7 +1,7 @@
 //! Validation shared by inbound reports and execution preflight.
 use collagene_model::Error;
 pub(super) fn validate_verification_report(
-    report: &crate::verification::VerificationReport,
+    report: &crate::verification::evidence::VerificationReport,
 ) -> Result<(), Error> {
     if !report.reference_step_reports.is_empty() {
         if report.reference_step_reports.len() > 64 {
@@ -13,7 +13,7 @@ pub(super) fn validate_verification_report(
                 return Err(Error::Format("Invalid reference step index".into()));
             }
             match &step.evidence {
-                crate::verification::ReferenceStepEvidence::MultiSiteRecombination {
+                crate::verification::evidence::ReferenceStepEvidence::MultiSiteRecombination {
                     selection,
                     batch,
                 } => {
@@ -39,28 +39,34 @@ pub(super) fn validate_verification_report(
                 ));
             }
             match &step.evidence {
-                crate::verification::PhysicalProcessingEvidence::LigationOutcomes(r) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(r) => {
                     r.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::DerivedOrigin(r) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::DerivedOrigin(r) => {
                     r.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::RunProduct(r) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::RunProduct(r) => {
                     r.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::TopoActions(r) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::TopoActions(r) => {
                     r.validate_binding(&r.context_revision)?
                 }
-                crate::verification::PhysicalProcessingEvidence::OverlapExtension(r) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::OverlapExtension(r) => {
                     r.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::ThreePrimeResection(report) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::ThreePrimeResection(
+                    report,
+                ) => {
                     report.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::HomologyAnnealing(report) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::HomologyAnnealing(
+                    report,
+                ) => {
                     report.validate_documentary()?;
                 }
-                crate::verification::PhysicalProcessingEvidence::HomologyAssembly(report) => {
+                crate::verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(
+                    report,
+                ) => {
                     report.validate_documentary()?;
                 }
             }

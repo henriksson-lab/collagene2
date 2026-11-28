@@ -2,10 +2,10 @@
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
+    documents::workspace::{self, Workspace},
     verification,
-    workspace::{self, Workspace},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::Topology;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -127,7 +127,7 @@ async fn real_original_linear_and_circle_oe_keep_checked_target_and_actual_prime
         let (data, encoding) = artifact(&c, &prepared["artifact_id"]).await;
         assert_eq!(encoding, "utf-8");
         let full: Value = serde_json::from_slice(&data).unwrap();
-        let native: collagene_core::domestication_preparation::Prepared =
+        let native: collagene_core::cloning::golden_gate::domestication::preparation::Prepared =
             serde_json::from_value(full["prepared"].clone()).unwrap();
         assert_eq!(native.target.sequence.as_str(), fixture::INTENDED);
         assert!(full["prepared"].get("preparation").is_none());
@@ -159,10 +159,10 @@ async fn real_original_linear_and_circle_oe_keep_checked_target_and_actual_prime
         assert_eq!(oligos["use_count"], 6);
         let candidate = call(&c, "export_candidate", plan).await;
         let (bytes, _) = artifact(&c, &candidate["artifact_id"]).await;
-        let candidate = collagene_core::transfer::load_candidate(&bytes).unwrap();
+        let candidate = collagene_core::documents::transfer::load_candidate(&bytes).unwrap();
         assert_eq!(
-            verification::verify(&candidate.plan, &native.target).status,
-            verification::Status::ConsistentUnderAssumptions
+            verification::engine::verify(&candidate.plan, &native.target).status,
+            verification::evidence::Status::ConsistentUnderAssumptions
         );
         let wrong=call(&c,"propose_plan",json!({"name":"Wrong independent original target","target":source,"inputs":[{"id":"template","document":source}],"steps":native.plan.steps})).await;
         assert_eq!(

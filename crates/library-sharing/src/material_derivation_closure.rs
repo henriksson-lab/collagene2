@@ -2,7 +2,7 @@
 //! into Graph only when the matching native schema/validator is registered.
 //! Indexing an unrelated record never retains its bytes or source documents.
 use super::*;
-use collagene_core::material_derivation::{self as native, Capsule};
+use collagene_core::material::derivation::{self as native, Capsule};
 
 struct Owner {
     attachment: String,

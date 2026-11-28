@@ -1,5 +1,9 @@
 //! Literal independent edited references, supplied-donor mutations and coordinate walks.
-use collagene_core::{crispr, edit_template::*, *};
+use collagene_core::{
+    formats::sequence as formats,
+    protocol,
+    sequence::{crispr, template::*},
+};
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 fn mol(s: &str, circle: bool) -> Molecule {
     Molecule::dna(

@@ -1,10 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
+    documents::workspace::Workspace,
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    sequence::analysis::Primer,
 };
 use collagene_desktop_mcp::{NativeSelection, create};
 use collagene_lab_library::{self as store, mutations as durable};

@@ -1,22 +1,33 @@
 //! The physical OE product, not the original stock, supplies catalog digest cuts.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation, RunPreparation},
-    catalog_digest,
     chemistry::EndRepairMethod,
-    cloning_outputs, ligation_recipe, overlap_extension,
-    overlap_extension_digest_inspection::{self, Request as InspectionRequest},
-    overlap_extension_pcr::{PrimerPair, Request as Extension},
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as ligation_recipe,
+        overlap::extension::{
+            self as overlap_extension,
+            digest::{self as overlap_extension_digest_inspection, Request as InspectionRequest},
+            pcr::{PrimerPair, Request as Extension},
+        },
+        restriction::catalog as catalog_digest,
+    },
+    documents::{
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    transfer::{self, Candidate},
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -125,11 +136,11 @@ fn extension_digest_preparation_preserves_physical_steps_and_current_encoding() 
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target: target.clone(),
             recipe,
@@ -193,7 +204,11 @@ fn binding(w: &Workspace, index: usize) -> EventBinding {
         revision: d.head.clone(),
     }
 }
-fn saved() -> (Molecule, run_material::Capsule, Workspace) {
+fn saved() -> (
+    Molecule,
+    collagene_core::material::capsule::Capsule,
+    Workspace,
+) {
     let source = source();
     let target = Molecule::dna(
         "Original independent saved stock",
@@ -236,7 +251,7 @@ fn saved() -> (Molecule, run_material::Capsule, Workspace) {
         step_index: 0,
         event: event.clone(),
     };
-    let capsule = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     (
         commit.workspace.revisions[&event.revision].clone(),
         capsule,
@@ -270,11 +285,11 @@ fn flat_saved_child8_and_actual_origin_digest_inspection_keep_closed_event_bindi
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target,
             recipe,

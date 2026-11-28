@@ -1,9 +1,11 @@
 use collagene_core::{
-    assembly_recipe as a, catalog_digest as c,
-    chemistry::{self, Duplex, EndRepairMethod, FivePrime, Polarity, ThreePrime},
-    ligation_recipe as l,
-    modified_duplex::{self, GenerationAssumptions, TrackedDuplex},
-    verification::{self as v, DesignPlan, Operation, PlanInput, Source, Status},
+    chemistry::{
+        self, Duplex, EndRepairMethod, FivePrime, Polarity, ThreePrime,
+        tracked_duplex::{self as modified_duplex, GenerationAssumptions, TrackedDuplex},
+    },
+    cloning::{assembly::recipe as a, ligation::recipe as l, restriction::catalog as c},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    verification::{self as v, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn selection() -> c::CatalogSelection {
@@ -43,7 +45,7 @@ fn single(m: Molecule) -> (DesignPlan, Molecule) {
 #[test]
 fn nonstarter_circle_digest_has_literal_both_strands_and_cross_origin_annotation() {
     assert!(
-        !collagene_core::analysis::starter_enzymes()
+        !collagene_core::sequence::analysis::starter_enzymes()
             .iter()
             .any(|e| e.name == "NheI")
     );
@@ -79,7 +81,7 @@ fn nonstarter_circle_digest_has_literal_both_strands_and_cross_origin_annotation
     assert_eq!(left.chemistry.five_prime, FivePrime::Phosphate);
     assert_eq!(right.chemistry.three_prime, ThreePrime::Hydroxyl);
     let (plan, target) = single(source.clone());
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -131,7 +133,7 @@ fn shared_pinned_preparation_feeds_actual_cohesive_ligation_against_independent_
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -208,18 +210,18 @@ fn tampered_catalog_pin_stale_original_and_detached_physical_evidence_are_reject
     if let Operation::CatalogDigest { selection, .. } = &mut plan.steps[0] {
         selection.enzymes[0].enzyme.top_cut = 2;
     }
-    let bad = v::verify(&plan, &target);
+    let bad = v::engine::verify(&plan, &target);
     assert_eq!(bad.status, Status::Invalid);
     assert!(bad.products.is_empty());
     let (mut plan, target) = single(circle("source", "AAAAGCTAGCCCC"));
     plan.inputs[0].revision = "0".repeat(64);
-    assert_eq!(v::verify(&plan, &target).status, Status::Invalid);
+    assert_eq!(v::engine::verify(&plan, &target).status, Status::Invalid);
     let mut source = circle("detached physical source", "AAAAGCTAGCCCC");
     source
         .metadata
         .insert("duplex_model".into(), "forged known ends".into());
     let (plan, target) = single(source);
-    let r = v::verify(&plan, &target);
+    let r = v::engine::verify(&plan, &target);
     assert_eq!(r.status, Status::Incomplete);
     assert!(r.products.is_empty());
 }
@@ -250,7 +252,7 @@ fn catalog_pin_does_not_upgrade_unknown_tracked_methylation_to_complete_cleavage
     if let Operation::CatalogDigest { template, .. } = &mut plan.steps[1] {
         *template = Source::Step(0);
     }
-    let r = v::verify(&plan, &target);
+    let r = v::engine::verify(&plan, &target);
     assert_eq!(r.status, Status::Incomplete, "{:?}", r.findings);
     assert_eq!(r.products.len(), 2);
     assert!(
@@ -296,11 +298,11 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
         &inputs,
         &target,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap()
     .plan;
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -314,7 +316,7 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
         &selection(),
         "a",
         &inputs[0].molecule,
-        &c::InspectionOptions::default(),
+        &collagene_core::cloning::restriction::inspection::InspectionOptions::default(),
     )
     .unwrap();
     let summary = &inspected.inspection.fragments[0];
@@ -336,5 +338,5 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
     )
     .unwrap();
     plan.target_revision = wrong.revision();
-    assert_eq!(v::verify(&plan, &wrong).status, Status::Invalid);
+    assert_eq!(v::engine::verify(&plan, &wrong).status, Status::Invalid);
 }

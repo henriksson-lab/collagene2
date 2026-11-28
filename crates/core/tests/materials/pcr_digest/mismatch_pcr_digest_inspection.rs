@@ -1,8 +1,7 @@
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::{FivePrime, ThreePrime},
-    mismatch_pcr_digest_inspection as m,
+    cloning::{pcr::mismatch_digest as m, restriction::catalog as catalog_digest},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn fixture() -> (Molecule, m::Request) {
@@ -26,7 +25,7 @@ fn fixture() -> (Molecule, m::Request) {
     (
         source,
         m::Request {
-            base: collagene_core::pcr_digest_inspection::Request {
+            base: collagene_core::cloning::pcr::digest::Request {
                 source_role: "original".into(),
                 forward: Primer::new("Mutation F", "ACTACCCC", "CCGAATTC").unwrap(),
                 reverse: Primer::new("Mutation R", "GTTACCCC", "GGGAATTC").unwrap(),
@@ -176,11 +175,12 @@ fn readonly_preview_binding_rejects_source_policy_catalog_document_and_completio
 #[test]
 fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_authority() {
     use collagene_core::{
-        cloning_outputs,
-        run_lineage::{EventBinding, InputEventBinding},
-        run_material,
-        verification::{DesignPlan, Operation, PlanInput, Source},
-        workspace::Workspace,
+        documents::workspace::Workspace,
+        material::{
+            lineage::{EventBinding, InputEventBinding},
+            outputs as cloning_outputs, run as run_material,
+        },
+        planning::plan::{DesignPlan, Operation, PlanInput, Source},
     };
     let (source, request) = fixture();
     let target = Molecule::dna(
@@ -232,7 +232,7 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
         .workspace
         .head(&committed.receipt.construct.document_id)
         .unwrap();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &committed.workspace,
         &run_material::Selection {
             run_id: committed.receipt.run.run_id,
@@ -277,7 +277,7 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
     );
     // A genuine target-free digest derivative is retained and reopened before
     // the same explicit mismatch-PCR operation; it is not cast to a Run.
-    use collagene_core::{material_derivation as d, workspace};
+    use collagene_core::{documents::workspace, material::derivation as d};
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let id = catalog
         .edition()
@@ -290,8 +290,8 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
     let prepared = d::prepare_install(
         &committed.workspace,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: origin.selection.event.clone(),
                 origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
             }],

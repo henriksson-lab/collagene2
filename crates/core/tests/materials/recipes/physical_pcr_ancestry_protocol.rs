@@ -1,13 +1,14 @@
 //! The physical-template semantic fix is versioned; old reports stay documentary.
 use collagene_core::{
-    analysis::Primer,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn wire(version: u16, response: &Response) -> Vec<u8> {

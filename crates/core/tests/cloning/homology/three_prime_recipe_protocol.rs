@@ -1,18 +1,24 @@
 //! New physical homology material stays explicit across worker, archive and saved-run boundaries.
 use collagene_core::{
-    assembly_junctions::{self, Method},
-    assembly_recipe::{self, FragmentSpec, Preparation},
     chemistry::Terminus,
-    homology_annealing::Options,
+    cloning::{
+        assembly::{
+            junctions::{self as assembly_junctions, Method},
+            recipe::{self as assembly_recipe, FragmentSpec, Preparation},
+        },
+        overlap::{annealing::Options, resection::Cuts},
+    },
+    documents::{
+        transfer::{self, Candidate},
+        workspace::{self, Workspace},
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    three_prime_resection::Cuts,
-    transfer::{self, Candidate},
-    verification::{PlanInput, Status},
-    workspace::{self, Workspace},
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "AGTCCGATGCTA";
@@ -194,7 +200,7 @@ fn worker88_job168_operation26_evidence5_and_portable_schemas_bind_annealing_wit
 
 #[test]
 fn standalone_resection_uses_operation25_evidence4_and_never_hides_under_old_frames() {
-    use collagene_core::verification::{DesignPlan, Operation, Source};
+    use collagene_core::planning::plan::{DesignPlan, Operation, Source};
     let target = Molecule::dna("Independent shortened top", "AGTCCGATG", Topology::Linear).unwrap();
     let plan = DesignPlan {
         name: "Declared accessible source then shorten actual strands".into(),
@@ -254,8 +260,9 @@ fn standalone_resection_uses_operation25_evidence4_and_never_hides_under_old_fra
             .0,
         4
     );
-    let collagene_core::verification::PhysicalProcessingEvidence::ThreePrimeResection(evidence) =
-        evidence
+    let collagene_core::verification::evidence::PhysicalProcessingEvidence::ThreePrimeResection(
+        evidence,
+    ) = evidence
     else {
         panic!("actual resection")
     };

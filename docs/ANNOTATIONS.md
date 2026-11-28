@@ -1,6 +1,6 @@
 # Annotation coordinate projection
 
-`collagene_core::annotations` is independently implemented Rust. It uses explicit coordinate maps and invokes no external tool. A `MappingSegment` maps a half-open source interval into a destination interval of equal length, either unchanged or reverse-complemented. Source and destination intervals may not overlap within one call. To place repeated copies of a template, project each copy separately and combine the resulting features deliberately.
+`collagene_core::sequence::annotations` is independently implemented Rust. It uses explicit coordinate maps and invokes no external tool. A `MappingSegment` maps a half-open source interval into a destination interval of equal length, either unchanged or reverse-complemented. Source and destination intervals may not overlap within one call. To place repeated copies of a template, project each copy separately and combine the resulting features deliberately.
 
 `project_features(source, segments, destination_length)` assumes a linear destination. `project_features_with_topology(..., destination_topology)` also supports a circular destination. The caller constructs the destination bases independently; coordinate projection is not evidence that a claimed product sequence was reconstructed correctly. Check that each mapped sequence interval actually matches the chosen orientation.
 

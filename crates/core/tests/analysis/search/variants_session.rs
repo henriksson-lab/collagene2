@@ -5,8 +5,10 @@ use collagene_core::{
         schema::{AnalysisJob as Job, AnalysisResult as Value},
         session::AnalysisSession,
     },
-    variant_reference::{Options, Outcome},
-    variants_session::*,
+    review::variants::{
+        reference::{Options, Outcome},
+        session::*,
+    },
 };
 use collagene_model::{Molecule, Topology};
 const VCF:&[u8]=b"##fileformat=VCFv4.3\n##contig=<ID=chr1,length=7>\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\nchr1\t3\t.\tCC\tCTC\t.\tPASS\t.\n";

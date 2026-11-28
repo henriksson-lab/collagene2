@@ -1,11 +1,14 @@
 use collagene_core::{
-    analysis::Primer,
-    history::DocumentHistory,
-    protocol_quantities::{self as q, units as u, *},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    transfer::Candidate,
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    documents::{
+        history::DocumentHistory,
+        transfer::Candidate,
+        workspace::{self, Workspace},
+    },
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    output::quantities::{self as q, units as u, *},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn v(n: u64, d: u64) -> u::Volume {
@@ -49,7 +52,7 @@ fn base_fixture() -> (Workspace, DesignPlan, Request) {
     let request = Request {
         name: "Explicit20uL planning".into(),
         plan_source: PlanSource::Candidate,
-        plan_revision: verification::plan_revision(&plan),
+        plan_revision: collagene_core::planning::plan::DesignPlan::revision(&plan),
         target: event(&w, 1),
         inputs: vec![InputEventBinding {
             input_id: "stock".into(),
@@ -97,7 +100,7 @@ fn fixture() -> (Workspace, DesignPlan, Request) {
     });
     plan.name = "Retained PCR followed by explicit phosphorylation".into();
     w.candidates = vec![Candidate::new(plan.clone())];
-    r.plan_revision = verification::plan_revision(&plan);
+    r.plan_revision = collagene_core::planning::plan::DesignPlan::revision(&plan);
     r.reactions[0].components[0].label = "DNA <aliquot> & exact".into();
     let mut second = r.reactions[0].clone();
     second.id = "Terminal treatment".into();
@@ -125,10 +128,10 @@ fn saved_pcr_treatment_restart_exports_one_checked_protocol_with_exact_quantity_
     let restored =
         workspace::load_workspace(&workspace::save_workspace(&c.workspace).unwrap()).unwrap();
     let target = restored.revisions.get(&r.target.revision).unwrap();
-    let fresh = verification::verify(&plan, target);
+    let fresh = verification::engine::verify(&plan, target);
     assert_eq!(
         fresh.status,
-        verification::Status::ConsistentUnderAssumptions
+        verification::evidence::Status::ConsistentUnderAssumptions
     );
     for format in [ExportFormat::ProtocolHtml, ExportFormat::ProtocolPdf] {
         let e = q::export(&restored, &c.attachment_hash, format).unwrap();
@@ -138,7 +141,10 @@ fn saved_pcr_treatment_restart_exports_one_checked_protocol_with_exact_quantity_
         assert!(e.arithmetic_complete);
         let m = e.molecular.as_ref().unwrap();
         assert_eq!(m.status, fresh.status);
-        assert_eq!(m.plan_revision, verification::plan_revision(&plan));
+        assert_eq!(
+            m.plan_revision,
+            collagene_core::planning::plan::DesignPlan::revision(&plan)
+        );
         assert_eq!(e.target, r.target);
         assert_eq!(
             e.source_workspace_fingerprint.as_deref(),
@@ -182,11 +188,11 @@ fn saved_pcr_treatment_restart_exports_one_checked_protocol_with_exact_quantity_
     assert_eq!(workspace::save_workspace(&w).unwrap(), original);
     // Standalone molecular exports remain actual useful renderer paths.
     assert!(
-        !verification::export_protocol_html(&plan, target)
+        !verification::output::export_protocol_html(&plan, target)
             .contains("<h2>Declared reaction quantities</h2>")
     );
     assert!(
-        collagene_core::pdf::export_protocol_pdf(&plan, target)
+        collagene_core::output::pdf::export_protocol_pdf(&plan, target)
             .unwrap()
             .bytes
             .starts_with(b"%PDF-")
@@ -201,7 +207,7 @@ fn arithmetic_and_molecular_statuses_are_independent_and_neither_is_restored() {
     assert!(!e.arithmetic_complete);
     assert_eq!(
         e.molecular.as_ref().unwrap().status,
-        verification::Status::ConsistentUnderAssumptions
+        verification::evidence::Status::ConsistentUnderAssumptions
     );
     let (mut invalid, mut plan, mut r) = base_fixture();
     // Independent target is a frozen literal different from the real PCR output.
@@ -223,11 +229,14 @@ fn arithmetic_and_molecular_statuses_are_independent_and_neither_is_restored() {
     r.target = event(&invalid, 1);
     plan.target_revision = r.target.revision.clone();
     invalid.candidates = vec![Candidate::new(plan.clone())];
-    r.plan_revision = verification::plan_revision(&plan);
+    r.plan_revision = collagene_core::planning::plan::DesignPlan::revision(&plan);
     let c = q::capture(&invalid, &r).unwrap();
     let e = q::export(&c.workspace, &c.attachment_hash, ExportFormat::ProtocolPdf).unwrap();
     assert!(e.arithmetic_complete);
-    assert_eq!(e.molecular.unwrap().status, verification::Status::Invalid);
+    assert_eq!(
+        e.molecular.unwrap().status,
+        verification::evidence::Status::Invalid
+    );
     assert!(normalized_pdf(&e.bytes).contains("INVALID"));
 }
 #[test]
@@ -270,10 +279,11 @@ fn historic_exact_pins_survive_heads_while_changed_inputs_plan_or_hash_refuse() 
     let mut wrong = e.clone();
     wrong.quantity_hash = "0".repeat(64);
     assert!(wrong.validate_binding(&e.context_revision).is_err());
-    let mut changed = verification::plan_revision(&later.candidates[0].plan);
+    let mut changed =
+        collagene_core::planning::plan::DesignPlan::revision(&later.candidates[0].plan);
     assert_eq!(changed, r.plan_revision);
     later.candidates[0].plan.steps.reverse();
-    changed = verification::plan_revision(&later.candidates[0].plan);
+    changed = collagene_core::planning::plan::DesignPlan::revision(&later.candidates[0].plan);
     assert_ne!(changed, r.plan_revision);
     assert!(q::export(&later, &c.attachment_hash, ExportFormat::ProtocolHtml).is_err());
     // A changed retained Candidate graph cannot silently replace its original record.

@@ -1,11 +1,8 @@
 //! Independent literal top-call provenance fixtures; no target-guided feature
 //! selection or physical activation is inferred by annotation correspondence.
-use collagene_core::{
-    topo::{
-        self as t,
-        physical::{self as p, projection as v},
-    },
-    topo_annotations,
+use collagene_core::cloning::topo::{
+    self as t, annotations as topo_annotations,
+    physical::{self as p, projection as v},
 };
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 
@@ -257,7 +254,7 @@ fn pcr_template_offsets_exclude_primer_and_new_tails_and_require_review() {
                 length: 1,
                 origin: t::Origin::SynthesizedTail {
                     material: 0,
-                    base: collagene_core::tailing::TailingBase::A,
+                    base: collagene_core::cloning::ligation::tailing::TailingBase::A,
                 },
             });
         }

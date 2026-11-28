@@ -3,11 +3,13 @@
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
-    history::DocumentHistory,
-    run_material::MaterialSelection,
-    workspace::{self, Workspace},
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::run::MaterialSelection,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -83,7 +85,7 @@ async fn all_four_intents_keep_actual_bottom_before_new_preparation_and_reject_a
         h.contribute(&mut w).unwrap();
     }
     let alias = DocumentHistory::new("unrelated-equal-reference", source.molecule.clone()).unwrap();
-    let alias_event = collagene_core::run_lineage::EventBinding {
+    let alias_event = collagene_core::material::lineage::EventBinding {
         document_id: alias.id.clone(),
         event_id: alias.head_event().into(),
         revision: alias.head_revision().into(),

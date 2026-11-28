@@ -1,16 +1,17 @@
 //! Current plan, workspace and worker frames preserve tracked chemistry.
 use collagene_core::{
-    methylation::MethylationState,
-    modified_duplex::GenerationAssumptions,
+    chemistry::{methylation::MethylationState, tracked_duplex::GenerationAssumptions},
+    documents::{
+        transfer::{self, Candidate},
+        workspace::Workspace,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer::{self, Candidate},
-    verification::*,
-    workspace::Workspace,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Molecule, DesignPlan) {
@@ -35,7 +36,7 @@ fn fixture() -> (Molecule, DesignPlan) {
             },
             Operation::CheckedDigest {
                 selection: checked_selection(vec!["EcoRI".into()]),
-                options: collagene_core::modified_duplex::checked_inspection_options(),
+                options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 template: Source::Step(0),
                 fragment_index: 0,
             },
@@ -112,7 +113,7 @@ fn tracked_workspace_payloads_retain_current_plan_and_archive_data() {
     )
     .unwrap();
     workspace.candidates.push(Candidate::new(plan));
-    let archive = collagene_core::workspace::save_workspace(&workspace).unwrap();
+    let archive = collagene_core::documents::workspace::save_workspace(&workspace).unwrap();
     let jobs = [
         AnalysisJob::SaveWorkspace {
             workspace: workspace.clone(),
@@ -184,10 +185,10 @@ fn archive_manifest_rejects_unsupported_plan_schema_even_with_valid_candidate_ha
         Workspace::from_documents("tracked", vec![plan.inputs[0].molecule.clone(), target], 1)
             .unwrap();
     workspace.candidates.push(Candidate::new(plan));
-    let archive = collagene_core::workspace::save_workspace(&workspace).unwrap();
+    let archive = collagene_core::documents::workspace::save_workspace(&workspace).unwrap();
     for schema in [
-        collagene_core::workspace::PLAN_SCHEMA_VERSION - 1,
-        collagene_core::workspace::PLAN_SCHEMA_VERSION + 1,
+        collagene_core::documents::workspace::PLAN_SCHEMA_VERSION - 1,
+        collagene_core::documents::workspace::PLAN_SCHEMA_VERSION + 1,
     ] {
         let mut input = zip::ZipArchive::new(Cursor::new(&archive)).unwrap();
         let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -200,7 +201,7 @@ fn archive_manifest_rejects_unsupported_plan_schema_even_with_valid_candidate_ha
                 let mut manifest: serde_json::Value = serde_json::from_slice(&data).unwrap();
                 assert_eq!(
                     manifest["plan_schema"],
-                    collagene_core::workspace::PLAN_SCHEMA_VERSION
+                    collagene_core::documents::workspace::PLAN_SCHEMA_VERSION
                 );
                 manifest["plan_schema"] = serde_json::json!(schema);
                 data = serde_json::to_vec(&manifest).unwrap();
@@ -211,12 +212,12 @@ fn archive_manifest_rejects_unsupported_plan_schema_even_with_valid_candidate_ha
             output.write_all(&data).unwrap();
         }
         let mislabeled = output.finish().unwrap().into_inner();
-        assert!(collagene_core::workspace::load_workspace(&mislabeled).is_err());
+        assert!(collagene_core::documents::workspace::load_workspace(&mislabeled).is_err());
     }
 }
 #[test]
 fn retained_run_replay_binds_current_plan_and_scientific_assessment() {
-    use collagene_core::run_lineage::*;
+    use collagene_core::material::lineage::*;
     let (target, plan) = fixture();
     let workspace = Workspace::from_documents(
         "retained",
@@ -259,11 +260,11 @@ fn retained_run_replay_binds_current_plan_and_scientific_assessment() {
             .unwrap();
     assert_eq!(
         record.plan_schema,
-        collagene_core::workspace::PLAN_SCHEMA_VERSION
+        collagene_core::documents::workspace::PLAN_SCHEMA_VERSION
     );
     let mut mislabeled = serde_json::to_value(&record).unwrap();
     mislabeled["plan_schema"] =
-        serde_json::json!(collagene_core::workspace::PLAN_SCHEMA_VERSION - 1);
+        serde_json::json!(collagene_core::documents::workspace::PLAN_SCHEMA_VERSION - 1);
     assert!(load_run_record(&serde_json::to_vec(&mislabeled).unwrap()).is_err());
     let replay = replay_run(&commit.workspace, &commit.receipt.run_id).unwrap();
     assert!(replay.products_match);
@@ -328,8 +329,10 @@ fn retained_run_replay_binds_current_plan_and_scientific_assessment() {
     }
 }
 
-fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::CatalogSelection {
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+fn checked_selection(
+    names: Vec<String>,
+) -> collagene_core::cloning::restriction::catalog::CatalogSelection {
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let ids = names
         .iter()
         .map(|name| {
@@ -343,5 +346,5 @@ fn checked_selection(names: Vec<String>) -> collagene_core::catalog_digest::Cata
                 .clone()
         })
         .collect::<Vec<_>>();
-    collagene_core::catalog_digest::select(&catalog, &ids).unwrap()
+    collagene_core::cloning::restriction::catalog::select(&catalog, &ids).unwrap()
 }

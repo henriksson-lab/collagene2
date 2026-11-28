@@ -1,9 +1,9 @@
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    primers::{BindingOptions, DesignOptions, ThermoConditions},
+    cloning::pcr::primers::{BindingOptions, DesignOptions, ThermoConditions},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{ServiceExt, model::CallToolRequestParams};
 use serde_json::{Value, json};
 

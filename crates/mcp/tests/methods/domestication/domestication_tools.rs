@@ -1,7 +1,10 @@
 //! Real SDK route from source features through native checking and portable steps.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::{catalog_digest, codon_design, domestication};
-use collagene_mcp::CollageneServer;
+use collagene_core::{
+    cloning::{golden_gate::domestication, restriction::catalog as catalog_digest},
+    sequence::codon_design,
+};
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Feature, Location, Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -66,9 +69,9 @@ async fn setup() -> (Client, tokio::task::JoinHandle<()>, Value, Value) {
         qualifiers: vec![("gene".into(), Some("source coding feature".into()))],
         needs_review: false,
     });
-    let gb = collagene_core::formats::export_with_report(
+    let gb = collagene_core::formats::sequence::export_with_report(
         &source,
-        collagene_core::formats::TextFormat::GenBank,
+        collagene_core::formats::sequence::TextFormat::GenBank,
     )
     .unwrap()
     .text;

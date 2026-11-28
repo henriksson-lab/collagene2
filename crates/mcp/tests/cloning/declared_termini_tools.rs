@@ -1,6 +1,6 @@
 //! Explicit original duplex declarations do not restore imported physical authority.
-use collagene_core::verification::{DesignPlan, ENGINE_VERSION};
-use collagene_mcp::CollageneServer;
+use collagene_core::{planning::plan::DesignPlan, verification::ENGINE_VERSION};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -175,7 +175,7 @@ async fn explicit_original_source_termini_enable_declared_ligation_without_mutat
     );
     // The direct typed tool exposes the same explicit operation; no recipe-only
     // bypass and no ability to redeclare a prior Step as an intact original.
-    let direct=call(&client,"propose_plan",json!({"name":"Direct terminal declarations","target":target,"inputs":inputs,"steps":[declaration("l"),declaration("r"),{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":false,"allow_nicked":false,"options":collagene_core::ligation_outcomes::Options::default()}}]})).await;
+    let direct=call(&client,"propose_plan",json!({"name":"Direct terminal declarations","target":target,"inputs":inputs,"steps":[declaration("l"),declaration("r"),{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":false,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]})).await;
     assert_eq!(
         call(
             &client,

@@ -1,10 +1,11 @@
 //! Independently extracted PDF text and raw embedded streams, no external tools.
 use collagene_core::{
-    analysis::Primer,
     chemistry::EndTreatment,
-    ligation_outcomes::Options,
-    pdf,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    cloning::ligation::outcomes::Options,
+    output::pdf,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 #[path = "../../common/pdf.rs"]
@@ -93,10 +94,10 @@ fn streams(bytes: &[u8]) -> Vec<&[u8]> {
 #[test]
 fn pdf_prints_both_actual_sequences_and_embeds_full_bound_evidence_and_fasta() {
     let (plan, target) = fixture(Options::default(), false);
-    let fresh = verification::verify(&plan, &target);
+    let fresh = verification::engine::verify(&plan, &target);
     assert_eq!(
         fresh.status,
-        verification::Status::ConsistentUnderAssumptions,
+        verification::evidence::Status::ConsistentUnderAssumptions,
         "{:?}",
         fresh.findings
     );
@@ -105,7 +106,7 @@ fn pdf_prints_both_actual_sequences_and_embeds_full_bound_evidence_and_fasta() {
         .physical_processing_reports
         .iter()
         .find_map(|p| match &p.evidence {
-            verification::PhysicalProcessingEvidence::LigationOutcomes(e) => Some(e),
+            verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(e) => Some(e),
             _ => None,
         })
         .expect("fresh alternative evidence");
@@ -139,7 +140,9 @@ fn pdf_prints_both_actual_sequences_and_embeds_full_bound_evidence_and_fasta() {
     let objects = streams(&output.bytes);
     let embedded = objects
         .iter()
-        .find_map(|s| serde_json::from_slice::<verification::LigationOutcomeEvidence>(s).ok())
+        .find_map(|s| {
+            serde_json::from_slice::<verification::evidence::LigationOutcomeEvidence>(s).ok()
+        })
         .expect("full embedded JSON evidence");
     assert_eq!(
         serde_json::to_value(&embedded).unwrap(),
@@ -167,10 +170,10 @@ fn bounded_enumeration_and_real_nicks_remain_explicit_in_pdf() {
     let mut options = Options::default();
     options.max_products = 1;
     let (plan, target) = fixture(options, true);
-    let fresh = verification::verify(&plan, &target);
+    let fresh = verification::engine::verify(&plan, &target);
     assert_eq!(
         fresh.status,
-        verification::Status::ConsistentUnderAssumptions,
+        verification::evidence::Status::ConsistentUnderAssumptions,
         "{:?}",
         fresh.findings
     );
@@ -179,7 +182,7 @@ fn bounded_enumeration_and_real_nicks_remain_explicit_in_pdf() {
         .physical_processing_reports
         .iter()
         .find_map(|p| match &p.evidence {
-            verification::PhysicalProcessingEvidence::LigationOutcomes(e) => Some(e),
+            verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(e) => Some(e),
             _ => None,
         })
         .unwrap();
@@ -199,7 +202,9 @@ fn bounded_enumeration_and_real_nicks_remain_explicit_in_pdf() {
     assert!(text.contains("not absent alternatives"));
     let embedded = streams(&output.bytes)
         .into_iter()
-        .find_map(|s| serde_json::from_slice::<verification::LigationOutcomeEvidence>(s).ok())
+        .find_map(|s| {
+            serde_json::from_slice::<verification::evidence::LigationOutcomeEvidence>(s).ok()
+        })
         .unwrap();
     assert_eq!(
         embedded.report.intended.duplex.nicks,

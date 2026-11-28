@@ -1,10 +1,15 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_diagnostics::{self as d, JunctionState, RowState, Stage},
-    assembly_recipe::{self as a, FragmentSpec, Preparation},
     chemistry::EndTreatment,
-    ligation_recipe as l,
-    verification::{PlanInput, Status},
+    cloning::{
+        assembly::{
+            diagnostics::{self as d, JunctionState, RowState, Stage},
+            recipe::{self as a, FragmentSpec, Preparation},
+        },
+        ligation::recipe as l,
+    },
+    planning::plan::PlanInput,
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn input(id: &str, seq: &str) -> PlanInput {
@@ -109,7 +114,7 @@ fn raw(mismatch: bool, max_comparisons: usize, scan: bool, wrong_target: bool) -
         ],
         overlaps: vec![4],
         circular: false,
-        options: collagene_core::overlap_profiles::ProfileOptions {
+        options: collagene_core::cloning::overlap::profiles::ProfileOptions {
             scan_repeated_overlaps: scan,
             max_comparisons,
             ..Default::default()
@@ -190,7 +195,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         &inputs,
         &t,
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(p.verification.products.len(), 1);
@@ -230,7 +235,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         &inputs,
         &target("ACGACCCCGGGGTAACTATGAGCTCCAGGTCA"),
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(p.preparation_complete);
@@ -252,7 +257,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
         &inputs,
         &target("ACGACCCCGGGGTAACTATGAGCTCCAGGTCA"),
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -302,7 +307,7 @@ fn forged_source_prepared_mapping_engine_and_context_shape_fail_closed() {
         &inputs[..2],
         &target("ACGACCCCGGGGTAACTATGAGCTCCAGGTCA"),
         &recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     p.compiled.rows[0].preparation.preparation_step = Some(1);

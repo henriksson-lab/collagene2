@@ -1,9 +1,10 @@
 use collagene_core::{
-    analysis::Primer,
-    protocol_quantities as q,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::{RevisionEvent, Workspace},
+    documents::workspace::{RevisionEvent, Workspace},
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    output::quantities as q,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 pub fn pin(w: &Workspace, index: usize) -> EventBinding {
@@ -73,7 +74,7 @@ pub fn fixture() -> (Workspace, q::Request) {
         plan_source: q::PlanSource::SavedRun {
             run_id: saved.receipt.run_id,
         },
-        plan_revision: verification::plan_revision(&plan),
+        plan_revision: collagene_core::planning::plan::DesignPlan::revision(&plan),
         target,
         inputs,
         reactions: vec![q::Reaction {

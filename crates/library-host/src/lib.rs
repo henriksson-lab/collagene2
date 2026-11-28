@@ -1,7 +1,7 @@
 //! Native validation/dispatch only. No listener, login, actor claim or membership
 //! inference. The caller supplies a freshly authenticated server-side LabAccess.
 #![cfg(not(target_arch = "wasm32"))]
-use collagene_core::{protocol, workspace};
+use collagene_core::{documents::workspace, protocol};
 use collagene_lab_library as store;
 use collagene_library_protocol as wire;
 use serde::{Serialize, de::DeserializeOwned};

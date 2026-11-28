@@ -1,18 +1,23 @@
 //! Current mismatch-PCR catalog inspection binds source, policy and actual cut geometry.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation, RunPreparation},
-    catalog_digest, ligation_recipe,
-    mismatch_pcr_digest_inspection::{self, Request as DigestRequest},
-    mutagenesis::PcrOptions,
-    pcr_digest_inspection,
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as ligation_recipe,
+        pcr::{
+            digest as pcr_digest_inspection,
+            mismatch_digest::{self as mismatch_pcr_digest_inspection, Request as DigestRequest},
+            mutagenesis::PcrOptions,
+        },
+        restriction::{catalog as catalog_digest, inspection::InspectionOptions},
+    },
+    planning::plan::{Operation, PlanInput},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    restriction_inspection::InspectionOptions,
-    verification::{Operation, PlanInput, Status},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Molecule, DigestRequest) {
@@ -170,11 +175,11 @@ fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
             &inputs,
             &target,
             &recipe,
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
         )
         .unwrap(),
         job: AnalysisJob::PreviewLigationRecipe {
-            policy: collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+            policy: collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
             inputs,
             target: target.clone(),
             recipe,

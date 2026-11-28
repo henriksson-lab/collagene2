@@ -1,9 +1,13 @@
 use collagene_core::{
     chemistry::EndTreatment,
-    run_lineage::*,
-    verification::*,
-    workspace::{self, RevisionEvent, Workspace},
-    *,
+    documents::workspace::{self, RevisionEvent, Workspace},
+    material::{lineage::*, physical_evidence as physical_run_evidence, run as run_material},
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::{
+        ENGINE_VERSION,
+        engine::verify,
+        evidence::{PhysicalProcessingEvidence, Status},
+    },
 };
 use collagene_model::{Molecule, Topology};
 fn binding(w: &Workspace, n: usize) -> EventBinding {
@@ -234,7 +238,7 @@ fn explicit_tail_operation_is_preserved_and_replayed() {
     p.steps.truncate(1);
     p.steps.push(Operation::Tail3Prime {
         template: Source::Step(0),
-        base: collagene_core::tailing::TailingBase::A,
+        base: collagene_core::cloning::ligation::tailing::TailingBase::A,
     });
     let c = capture(&w, &p);
     let r = replay_run(&c.workspace, &c.receipt.run_id).unwrap();
@@ -567,7 +571,7 @@ fn matched_profile_limit_requires_explicit_incomplete_capture_and_keeps_both_rol
             ],
             overlaps: vec![15],
             circular: false,
-            options: collagene_core::overlap_profiles::ProfileOptions {
+            options: collagene_core::cloning::overlap::profiles::ProfileOptions {
                 max_comparisons: 15,
                 ..Default::default()
             },

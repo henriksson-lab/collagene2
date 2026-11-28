@@ -1,11 +1,12 @@
 //! Actual saved-native PCR publication, opaque acknowledgement and durable retry.
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace, WorkspaceAttachment},
+    documents::workspace::{self, Workspace, WorkspaceAttachment},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs, run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_design_exchange as sbol;
 use collagene_lab_library::{self as store, mutations as durable};

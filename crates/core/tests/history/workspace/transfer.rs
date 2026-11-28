@@ -1,4 +1,8 @@
-use collagene_core::{transfer::*, verification::*};
+use collagene_core::{
+    documents::transfer::*,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    verification::{engine::verify, evidence::Status, output::export_protocol_html},
+};
 use collagene_model::{Molecule, Topology};
 
 fn fixture() -> (PlanningWorkspace, Candidate) {
@@ -37,7 +41,7 @@ fn fixture() -> (PlanningWorkspace, Candidate) {
 
 #[test]
 fn binary_exchange_preserves_exact_document_revisions_and_origin_annotations() {
-    let molecule = collagene_core::formats::import_text(include_str!(
+    let molecule = collagene_core::formats::sequence::import_text(include_str!(
         "../../../../../fixtures/origin-spanning.gb"
     ))
     .unwrap()
@@ -106,7 +110,7 @@ fn packages_reject_rebound_snapshots_and_do_not_promote_bad_science() {
     assert!(save_candidate(&candidate).is_err());
     candidate = Candidate::new(candidate.plan);
     candidate.plan.inputs[0].revision = "stale".into();
-    candidate.plan_revision = plan_revision(&candidate.plan);
+    candidate.plan_revision = collagene_core::planning::plan::DesignPlan::revision(&candidate.plan);
     assert!(save_candidate(&candidate).is_err());
     let (workspace, mut candidate) = fixture();
     candidate.plan.steps[0] = Operation::Overlap {

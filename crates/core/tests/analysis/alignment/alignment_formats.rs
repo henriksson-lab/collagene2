@@ -1,4 +1,4 @@
-use collagene_core::alignment_formats::*;
+use collagene_core::formats::alignment::*;
 use collagene_model::{Alphabet, Topology};
 
 fn import(text: &str, format: AlignmentFormat) -> AlignmentDocument {

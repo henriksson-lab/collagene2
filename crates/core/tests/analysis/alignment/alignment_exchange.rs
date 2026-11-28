@@ -1,5 +1,5 @@
-use collagene_core::alignment_exchange::{self as exchange, ExportOptions};
-use collagene_core::alignment_formats::{self as native, AlignmentDocument, AlignmentFormat as F};
+use collagene_core::formats::alignment::profiles::{self as exchange, ExportOptions};
+use collagene_core::formats::alignment::{self as native, AlignmentDocument, AlignmentFormat as F};
 use collagene_model::{Alphabet, Error};
 
 fn import(s: &str, f: F, a: Alphabet) -> AlignmentDocument {

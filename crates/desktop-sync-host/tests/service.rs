@@ -1,9 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, RevisionEvent, Workspace},
+    documents::workspace::{self, RevisionEvent, Workspace},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_desktop_credentials as creds;
 use collagene_desktop_sync_host::{SyncAdapter, SyncHost};

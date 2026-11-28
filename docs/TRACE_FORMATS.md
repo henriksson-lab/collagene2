@@ -1,6 +1,6 @@
 # Sanger trace import
 
-`collagene_core::traces::import_trace(&[u8])` recognizes ABIF and SCF by their signatures. This independently written MIT implementation uses embedded Rust only. It does not run a basecaller, instrument interface or external converter.
+`collagene_core::review::reads::traces::import_trace(&[u8])` recognizes ABIF and SCF by their signatures. This independently written MIT implementation uses embedded Rust only. It does not run a basecaller, instrument interface or external converter.
 
 The typed `Trace` retains called symbols and normalized DNA, zero-based called-peak sample positions, canonically labeled A/C/G/T signal vectors, typed score evidence, format metadata, warnings and unchanged original bytes with a BLAKE3 hash. Canonical labels do not imply amplitude normalization: ABIF signed short intensities remain signed `i32`; SCF unsigned intensities remain their original magnitudes.
 
@@ -38,6 +38,6 @@ The fixtures are synthetic, not a representative instrument migration corpus. Re
 
 ## Initial web chromatogram component
 
-`crates/web/src/trace_view.rs` provides a Rust Canvas2D view for validated attached traces. The canvas backing store stays viewport-sized; native horizontal scrolling supplies pan, buttons zoom/fit, and precomputed min/max bins retain signal extrema at overview scales. All channels share one amplitude range, including negative ABIF values. Call labels are thinned at overview zoom; an accessible table shows up to 200 visible calls and their original score evidence. Click/shift-click and keyboard navigation update the workspace base selection, and selected calls scroll into view.
+`crates/web/src/reads/trace_view.rs` provides a Rust Canvas2D view for validated attached traces. The canvas backing store stays viewport-sized; native horizontal scrolling supplies pan, buttons zoom/fit, and precomputed min/max bins retain signal extrema at overview scales. All channels share one amplitude range, including negative ABIF values. Call labels are thinned at overview zoom; an accessible table shows up to 200 visible calls and their original score evidence. Click/shift-click and keyboard navigation update the workspace base selection, and selected calls scroll into view.
 
 The component reparses original evidence and refuses stale call mappings after sequence edits. Its WASM compilation is checked. Browser painting, native scroll behavior, accessibility and performance budgets must be verified by the integrating application's browser tests; compilation alone is not a rendered or performance pass. Initial parsing and min/max preparation are bounded but currently run on the browser thread; worker-side preparation is a later improvement.

@@ -1,6 +1,11 @@
 use collagene_core::{
-    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
-    overlap_extension_primer_design, verification::PlanInput,
+    cloning::{
+        golden_gate::domestication::{self as design, preparation as physical},
+        overlap::extension::primers as overlap_extension_primer_design,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::PlanInput,
+    sequence::codon_design,
 };
 use collagene_model::{Molecule, Topology};
 pub const ORIGINAL: &str = "AGTCCGATGCTACGTAGAATTCCAGACCTGTAGATCGTCA";
@@ -32,7 +37,7 @@ pub fn fixture(topology: Topology) -> (PlanInput, physical::Request) {
         patches,
     };
     let options = overlap_extension_primer_design::Options {
-        primer_options: collagene_core::primers::DesignOptions {
+        primer_options: collagene_core::cloning::pcr::primers::DesignOptions {
             min_length: 8,
             max_length: 8,
             min_gc_fraction: 0.,

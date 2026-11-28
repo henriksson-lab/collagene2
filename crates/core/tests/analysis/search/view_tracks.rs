@@ -1,4 +1,4 @@
-use collagene_core::view_tracks::*;
+use collagene_core::tracks::view::*;
 use collagene_model::{Feature, Location, Molecule, Topology};
 use std::sync::Arc;
 fn options() -> TrackOptions {

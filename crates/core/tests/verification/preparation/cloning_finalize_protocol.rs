@@ -1,14 +1,16 @@
 use collagene_core::{
-    analysis::Primer,
-    cloning_outputs::{self, Options},
+    documents::workspace::Workspace,
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Options},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::{self, EventBinding, InputEventBinding},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn request() -> Request {

@@ -1,5 +1,5 @@
 //! Unified search and browser tracks use the real MCP SDK and immutable refs.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -61,7 +61,7 @@ async fn artifact(client: &Client, id: &Value) -> Value {
     serde_json::from_str(&text).unwrap()
 }
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_core::alignment_formats::{self, AlignmentFormat};
+use collagene_core::formats::alignment::{self as alignment_formats, AlignmentFormat};
 use collagene_model::Alphabet;
 async fn import_alignment(c: &Client, data: &[u8]) -> Value {
     call(c,"import_alignment",json!({"data_base64":STANDARD.encode(data),"format":"AlignedFasta","alphabet":"Dna","name":"literal"})).await
@@ -284,7 +284,7 @@ async fn protein_properties_are_revision_bound_typed_estimates() {
     .await;
     let d = &imported["documents"][0];
     let r = reference(d);
-    let options = collagene_core::protein_properties::ProteinOptions::default();
+    let options = collagene_core::protein::properties::ProteinOptions::default();
     let result = call(
         &c,
         "analyze_protein",
@@ -308,7 +308,7 @@ async fn protein_properties_are_revision_bound_typed_estimates() {
 }
 #[tokio::test]
 async fn native_workspace_import_exposes_retained_alignment_collections_and_deduplicates() {
-    use collagene_core::workspace::{self, Workspace, WorkspaceAttachment};
+    use collagene_core::documents::workspace::{self, Workspace, WorkspaceAttachment};
     use collagene_model::{Molecule, Topology};
     let (c, server) = setup().await;
     let doc = alignment_formats::import_alignment(

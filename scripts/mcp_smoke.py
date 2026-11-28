@@ -84,7 +84,7 @@ def main():
         tools = send("tools/list", {})["tools"]
         count_source = (root / "crates/mcp/src/lib.rs").read_text()
         current_tool_count = int(re.search(r"pub const CURRENT_TOOL_COUNT: usize = (\d+);", count_source).group(1))
-        engine_source = (root / "crates/core/src/verification.rs").read_text()
+        engine_source = (root / "crates/core/src/verification/mod.rs").read_text()
         current_engine_suffix = re.search(r'pub const ENGINE_VERSION: &str = concat!\(env!\("CARGO_PKG_VERSION"\), "([^"]+)"\);', engine_source).group(1)
         protocol_source = (root / "crates/core/src/protocol/schema.rs").read_text()
         current_candidate_schema = int(re.search(r"pub const CANDIDATE_SCHEMA_VERSION: u16 = (\d+);", protocol_source).group(1))

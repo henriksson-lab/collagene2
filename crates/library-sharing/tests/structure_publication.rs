@@ -1,6 +1,6 @@
 use collagene_core::{
-    structure_view::{self, coordinates::Format},
-    workspace::{self, Workspace, WorkspaceAttachment},
+    documents::workspace::{self, Workspace, WorkspaceAttachment},
+    protein::structure::{self as structure_view, coordinates::Format},
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Molecule, Topology};

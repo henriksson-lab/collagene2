@@ -1,5 +1,5 @@
 //! Format/source-integrity fixtures independent of genomic analysis.
-use collagene_core::genome::*;
+use collagene_core::tracks::genome::*;
 use collagene_model::Topology;
 fn build(raw: &[u8], info: BuildInfo, step: usize) -> (Vec<EncodedBlock>, FinishedReference) {
     let mut builder = FastaBuilder::begin(info, IngestOptions::default()).unwrap();

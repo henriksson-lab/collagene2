@@ -1,6 +1,6 @@
 # Translation and ORF model
 
-`collagene_core::translation` is independently implemented MIT Rust. It performs no external calls and has no runtime dependency on an installed translator, aligner or design engine. The API is portable to native and browser WASM.
+`collagene_core::sequence::translation` is independently implemented MIT Rust. It performs no external calls and has no runtime dependency on an installed translator, aligner or design engine. The API is portable to native and browser WASM.
 
 ## Audited genetic-code profiles
 

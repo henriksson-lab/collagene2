@@ -1,6 +1,6 @@
 //! Public SDK route: original sources → explicit fusion → real preparation.
-use collagene_core::ligation_fidelity as fidelity;
-use collagene_mcp::CollageneServer;
+use collagene_core::cloning::ligation::fidelity;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

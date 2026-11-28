@@ -1,6 +1,6 @@
 //! Actual SDK routing: independently specified coordinates and immutable artifacts.
-use collagene_core::dotplot::*;
-use collagene_mcp::CollageneServer;
+use collagene_core::alignment::dotplot::*;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -186,7 +186,7 @@ async fn dotplot_json_and_svg_installation_is_atomic_at_artifact_capacity() {
         json!({"id":row["id"],"revision":row["revision"]})
     };
     for n in 0..127 {
-        let options = collagene_core::protein_properties::ProteinOptions {
+        let options = collagene_core::protein::properties::ProteinOptions {
             charge_ph: n as f64 / 10.0,
             ..Default::default()
         };
@@ -210,7 +210,7 @@ async fn dotplot_json_and_svg_installation_is_atomic_at_artifact_capacity() {
     .await;
     // If either dot-plot artifact had leaked before the second failed, this
     // unrelated new report could no longer occupy the final available slot.
-    let options = collagene_core::protein_properties::ProteinOptions {
+    let options = collagene_core::protein::properties::ProteinOptions {
         charge_ph: 13.0,
         ..Default::default()
     };
@@ -220,7 +220,7 @@ async fn dotplot_json_and_svg_installation_is_atomic_at_artifact_capacity() {
         json!({"document":doc("protein"),"options":options}),
     )
     .await;
-    let options = collagene_core::protein_properties::ProteinOptions {
+    let options = collagene_core::protein::properties::ProteinOptions {
         charge_ph: 13.1,
         ..Default::default()
     };

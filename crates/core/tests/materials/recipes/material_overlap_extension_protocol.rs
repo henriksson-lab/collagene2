@@ -1,16 +1,18 @@
 //! One target-free OE derivation through the current binary worker and archive.
 use collagene_core::{
-    analysis::Primer,
-    material_derivation as native, overlap_extension,
-    overlap_extension_pcr::{PrimerPair, Request as Preparation},
+    cloning::overlap::extension::{
+        self as overlap_extension,
+        pcr::{PrimerPair, Request as Preparation},
+    },
+    documents::workspace::{self, Workspace},
+    material::{derivation as native, lineage::EventBinding},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    workspace::{self, Workspace},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 const STOCK: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -105,8 +107,8 @@ fn literal_outer_product_installs_without_a_target_then_replays_from_worker_arch
     assert!(preview.reusable());
     assert_eq!(preview.product.as_ref().unwrap().sequence.as_str(), PRODUCT);
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event,
             origin: origin,
         }],
@@ -187,8 +189,8 @@ fn stale_context_foreign_event_and_forged_reply_are_refused_before_material_inst
     let mut selection = preview.selection().unwrap();
     selection.expected_product_revision = "0".repeat(64);
     let request = native::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event,
             origin: origin,
         }],

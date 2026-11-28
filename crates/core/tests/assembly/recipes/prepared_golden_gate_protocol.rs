@@ -1,12 +1,15 @@
 use collagene_core::{
-    golden_gate::{GoldenGateEnzyme, GoldenGateOptions},
-    golden_gate_primer_design as design, ligation_recipe, prepared_golden_gate as pool,
+    cloning::{
+        golden_gate::{GoldenGateEnzyme, GoldenGateOptions, prepared as pool, primers as design},
+        ligation::recipe as ligation_recipe,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, PlanInput},
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 
@@ -142,8 +145,8 @@ fn prepared_pool_and_unverified_selection_have_append_only_bound_47_messages() {
     };
     selected.validate_binding(&selected_revision).unwrap();
     assert_eq!(
-        verification::verify(&selected.plan, &target).status,
-        verification::Status::ConsistentUnderAssumptions
+        verification::engine::verify(&selected.plan, &target).status,
+        verification::evidence::Status::ConsistentUnderAssumptions
     );
     let mut old = bytes;
     old[4..6].copy_from_slice(&46u16.to_le_bytes());

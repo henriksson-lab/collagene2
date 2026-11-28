@@ -1,6 +1,6 @@
 //! Binary exchange through the real MCP SDK; hand-authored packet/trace sources.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -279,7 +279,7 @@ async fn binary_sequence_profiles_keep_originals_and_export_reviewed_reference_f
             }
         );
         assert_eq!(
-            collagene_core::snapgene::original_snapgene_bytes(&m).unwrap(),
+            collagene_core::formats::snapgene::original_snapgene_bytes(&m).unwrap(),
             raw
         );
         let before = call(&c, "export_document", d.clone()).await;
@@ -305,7 +305,7 @@ async fn binary_sequence_profiles_keep_originals_and_export_reviewed_reference_f
         assert_eq!(r.sequence, m.sequence);
         assert_eq!(r.topology, m.topology);
         assert_eq!(
-            collagene_core::legacy_formats::original_legacy_bytes(&r).unwrap(),
+            collagene_core::formats::original::original_legacy_bytes(&r).unwrap(),
             emitted
         );
         assert_eq!(call(&c, "export_document", d.clone()).await, before);
@@ -324,7 +324,7 @@ async fn scf_exports_preserve_actual_signal_accuracy_and_refuse_stale_calls_or_a
     let d = document(&result);
     let m = molecule(&c, &d).await;
     assert_eq!(
-        collagene_core::traces::original_trace_bytes(&m).unwrap(),
+        collagene_core::review::reads::traces::original_trace_bytes(&m).unwrap(),
         raw
     );
     let before = call(&c, "export_document", d.clone()).await;
@@ -347,8 +347,8 @@ async fn scf_exports_preserve_actual_signal_accuracy_and_refuse_stale_calls_or_a
     let emitted = bytes(&c, &out).await;
     assert_eq!(&emitted[36..40], b"3.00");
     assert_eq!(&emitted[128..136], &[0, 255, 2, 127, 0, 129, 252, 10]);
-    let original = collagene_core::traces::import_trace(&raw).unwrap();
-    let regenerated = collagene_core::traces::import_trace(&emitted).unwrap();
+    let original = collagene_core::review::reads::traces::import_trace(&raw).unwrap();
+    let regenerated = collagene_core::review::reads::traces::import_trace(&emitted).unwrap();
     assert_eq!(original.channels, regenerated.channels);
     assert_eq!(original.qualities, regenerated.qualities);
     assert_eq!(original.peak_positions, regenerated.peak_positions);
@@ -372,7 +372,8 @@ async fn scf_exports_preserve_actual_signal_accuracy_and_refuse_stale_calls_or_a
         json!({"document":rd,"precision":"SixteenBit","accept_omissions":true}),
     )
     .await;
-    let actual = collagene_core::traces::import_trace(&bytes(&c, &out).await).unwrap();
+    let actual =
+        collagene_core::review::reads::traces::import_trace(&bytes(&c, &out).await).unwrap();
     let expected = original.reverse_complement().unwrap();
     assert_eq!(actual.channels, expected.channels);
     assert_eq!(actual.qualities, expected.qualities);
@@ -399,7 +400,7 @@ async fn scf_exports_preserve_actual_signal_accuracy_and_refuse_stale_calls_or_a
     let parsed = molecule(&c, &ad).await;
     assert_eq!(parsed.sequence.as_str(), "ACGT");
     assert_eq!(
-        collagene_core::traces::original_trace_bytes(&parsed).unwrap(),
+        collagene_core::review::reads::traces::original_trace_bytes(&parsed).unwrap(),
         abif
     );
     reject(

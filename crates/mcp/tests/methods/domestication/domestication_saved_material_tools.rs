@@ -2,10 +2,10 @@
 mod fixture;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::{
+    documents::workspace::{self, Workspace},
     verification,
-    workspace::{self, Workspace},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::Topology;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -61,9 +61,11 @@ async fn artifact(c: &Client, id: &Value) -> (Vec<u8>, String) {
 #[tokio::test]
 async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_primers() {
     use collagene_core::{
-        analysis::Primer, chemistry::Strand, domestication as design,
-        domestication_preparation as physical, history::DocumentHistory,
-        material_derivation as derivation, run_lineage::EventBinding, run_material::MaterialOrigin,
+        chemistry::Strand,
+        cloning::golden_gate::domestication::{self as design, preparation as physical},
+        documents::history::DocumentHistory,
+        material::{derivation, lineage::EventBinding, run::MaterialOrigin},
+        sequence::analysis::Primer,
     };
     use collagene_model::{Feature, Location, Sequence};
     let (mut original, mut request) = fixture::fixture(Topology::Linear);
@@ -107,8 +109,8 @@ async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_p
         &w,
         &derivation::Request {
             name: "Actual PCR stock".into(),
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: seed,
                 origin: source_origin.clone(),
             }],
@@ -287,12 +289,12 @@ async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_p
     assert_eq!(native.target.sequence.as_str(), fixture::INTENDED);
     assert_eq!(native.target.sequence, checked.target().sequence);
     assert!(
-        matches!(&native.plan.steps[0],verification::Operation::ReconstructMaterial{template:verification::Source::Input(id),origin:cap} if id==physical::INPUT_ID && cap.product==event)
+        matches!(&native.plan.steps[0],collagene_core::planning::plan::Operation::ReconstructMaterial{template:collagene_core::planning::plan::Source::Input(id),origin:cap} if id==physical::INPUT_ID && cap.product==event)
     );
     native
         .validate_binding(
             &physical::revision(
-                &verification::PlanInput {
+                &collagene_core::planning::plan::PlanInput {
                     id: physical::INPUT_ID.into(),
                     revision: actual.revision(),
                     molecule: actual.clone(),

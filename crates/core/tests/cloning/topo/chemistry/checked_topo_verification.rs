@@ -1,6 +1,14 @@
-use collagene_core::{topo as t, verification::*};
+use collagene_core::cloning::topo::physical::{self as p, projection as v};
+use collagene_core::{
+    cloning::topo as t,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+    verification::{
+        engine::{plan_target_matches, verify},
+        evidence::Status,
+        sources::topo_inputs,
+    },
+};
 use collagene_model::{Molecule, Topology};
-use t::physical::{self as p, projection as v};
 fn molecule(dna: &str) -> Molecule {
     Molecule::dna("same display name", dna, Topology::Linear).unwrap()
 }
@@ -149,7 +157,7 @@ fn explicit_nick_policy_accepts_graph_without_creating_repaired_duplex_authority
         &accepted.products[0]
     ));
     assert_eq!(
-        accepted.products[0].metadata[collagene_core::recombination::REFERENCE_ONLY_KEY],
+        accepted.products[0].metadata[collagene_core::cloning::recombination::REFERENCE_ONLY_KEY],
         "true"
     );
     if let Operation::CheckedTopo { policy, .. } = &mut plan.steps[0] {

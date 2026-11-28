@@ -1,4 +1,4 @@
-use collagene_core::overlap_profiles::*;
+use collagene_core::cloning::overlap::profiles::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 use std::collections::BTreeSet;
 fn dna(name: &str, text: &str) -> Molecule {

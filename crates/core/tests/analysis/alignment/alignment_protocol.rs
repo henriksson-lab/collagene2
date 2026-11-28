@@ -1,6 +1,6 @@
 //! Independently specified exchange wire bindings and legacy-version boundaries.
 use collagene_core::{
-    alignment_formats::{self as formats, AlignmentFormat},
+    formats::alignment::{self as formats, AlignmentFormat},
     protocol::{
         bindings::alignment_revision,
         execution::process_request,
@@ -238,7 +238,7 @@ fn source_integrity_and_extraction_errors_cannot_be_hidden_in_typed_response() {
 }
 #[test]
 fn protein_property_job_and_report_are_bound_and_cannot_claim_older_schema() {
-    use collagene_core::protein_properties::*;
+    use collagene_core::protein::properties::*;
     use collagene_model::{Molecule, Sequence, Topology};
     let mut molecule = Molecule::dna("protein", "ACW", Topology::Linear).unwrap();
     molecule.sequence = Sequence::new(Alphabet::Protein, "ACW").unwrap();

@@ -1,5 +1,5 @@
 //! SDK boundary tests use independently specified GenBank expected products, never a returned product as target.
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, ReadResourceRequestParams},
@@ -59,9 +59,9 @@ async fn prepare(c: &Client) -> (Value, Value, Value) {
     let value = serde_json::to_value(resource).unwrap();
     let profile: Value =
         serde_json::from_str(value["contents"][0]["text"].as_str().unwrap()).unwrap();
-    let request = serde_json::to_value(collagene_core::recombination::Request::new(
+    let request = serde_json::to_value(collagene_core::cloning::recombination::Request::new(
         serde_json::from_value(profile["snapshot"].clone()).unwrap(),
-        collagene_core::recombination::reference::Reaction::BP,
+        collagene_core::cloning::recombination::reference::Reaction::BP,
     ))
     .unwrap();
     let named = |name: &str| {
@@ -200,9 +200,11 @@ async fn capped_search_cannot_prove_absence_and_schema_requires_independent_targ
 async fn typed_plan_role_bridge_records_only_exact_causal_source_events() {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use collagene_core::{
-        history::DocumentHistory,
-        run_lineage::EventBinding,
-        workspace::{Workspace, save_workspace},
+        documents::{
+            history::DocumentHistory,
+            workspace::{Workspace, save_workspace},
+        },
+        material::lineage::EventBinding,
     };
     let (c, s) = setup().await;
     let (sources, request, target) = prepare(&c).await;
@@ -225,7 +227,7 @@ async fn typed_plan_role_bridge_records_only_exact_causal_source_events() {
     )
     .await;
     assert_eq!(verified["status"], "Incomplete");
-    let molecules = collagene_core::formats::import_genbank(include_str!(
+    let molecules = collagene_core::formats::sequence::import_genbank(include_str!(
         "../../../../../fixtures/recombination-bp-demo.gb"
     ))
     .unwrap()

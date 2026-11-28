@@ -1,19 +1,20 @@
 //! Literal whole-reaction substrates over independent source/target declarations.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::Preparation,
-    cloning_outputs, combinatorial_batch as batch,
-    combinatorial_design::{
-        self as design, Bin, Choice, ChoiceSelection, Design, Method, PoolSelection, PoolSubstrate,
-        PoolSubstrateKind, SelectedConstruct, TargetDeclaration,
+    cloning::{
+        assembly::recipe::Preparation,
+        golden_gate::{GoldenGateOptions, prepared::Selection, reaction as golden_gate_reaction},
     },
-    combinatorial_release as release,
-    golden_gate::GoldenGateOptions,
-    golden_gate_reaction,
-    prepared_golden_gate::Selection,
-    run_lineage::EventBinding,
-    verification::{Operation, Status},
-    workspace::Workspace,
+    documents::workspace::Workspace,
+    material::{lineage::EventBinding, outputs as cloning_outputs},
+    planning::{
+        combinatorial::{
+            self as design, Bin, Choice, ChoiceSelection, Design, Method, PoolSelection,
+            PoolSubstrate, PoolSubstrateKind, SelectedConstruct, TargetDeclaration, batch, release,
+        },
+        plan::Operation,
+    },
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -59,15 +60,17 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             id: (*id).into(),
             label: (*id).into(),
             choices: vec![Choice {
-                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
-                    dam: collagene_core::methylation::MethylationState::Unmodified,
-                    dcm: collagene_core::methylation::MethylationState::Unmodified,
-                    cpg: collagene_core::methylation::MethylationState::Unmodified,
-                }),
+                generation: Some(
+                    collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                    },
+                ),
                 id: format!("{id}-choice"),
                 label: (*id).into(),
                 source: binding(&w, i),
-                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                     start: if i == 0 { 11 } else { 0 },
                     end: if i == 0 {
                         11 + A.len()
@@ -308,7 +311,7 @@ fn equal_dna_event_rebinding_and_changed_original_geometry_require_new_consent()
         "equal letters do not authorize a new source event"
     );
     d = original;
-    let collagene_core::assembly_intent::Selector::ReferenceRange { start, .. } =
+    let collagene_core::cloning::assembly::intent::Selector::ReferenceRange { start, .. } =
         &mut d.bins[0].choices[0].selector
     else {
         unreachable!()

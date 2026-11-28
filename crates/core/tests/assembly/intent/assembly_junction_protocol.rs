@@ -1,12 +1,13 @@
 //! The same actual DNA junction has different explicit code-1/code-2 translation.
 use collagene_core::{
-    assembly_junctions::{self, Frame, Options},
+    cloning::assembly::junctions::{self as assembly_junctions, Frame, Options},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (DesignPlan, Molecule) {

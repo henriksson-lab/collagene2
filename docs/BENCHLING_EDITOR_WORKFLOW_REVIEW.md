@@ -24,7 +24,7 @@ These are implementation observations, not claims that appearance, performance o
 
 | Workflow | Current source evidence |
 |---|---|
-| Select and edit bases | `crates/web/src/sequence_view.rs` handles pointer selection, Shift extension, arrows, Select All, typed replacement, Delete/Backspace and Undo/Redo. Carets use boundaries; complex or unresolved selections are protected from accidental contiguous replacement. |
+| Select and edit bases | `crates/web/src/viewer/sequence/sequence_view.rs` handles pointer selection, Shift extension, arrows, Select All, typed replacement, Delete/Backspace and Undo/Redo. Carets use boundaries; complex or unresolved selections are protected from accidental contiguous replacement. |
 | Contextual selection actions | `selection_toolbar.rs` reports coordinates/length/GC and exposes annotation, forward/reverse primer, mutation and base-edit actions. It preserves selected feature parts rather than substituting a bounding interval. |
 | Circular overview | `app.rs` wires select-range versus rotate modes, zoom, annotation and restriction hit navigation into the map. `restriction_map.rs` draws recognition spans and separate strand-cut evidence, including circular coordinates. Visual rotation is separate from document reindexing. |
 | Restriction count filters | `restriction_view.rs` shares a source-bound scan between map, sequence and enzyme picker. Filters include 0, 1, 2, 3+ and uncertain/incomplete sites; incomplete or ambiguous scans do not establish an exact count. Its name/recognition search and count filter affect both picker and displayed overlay. |

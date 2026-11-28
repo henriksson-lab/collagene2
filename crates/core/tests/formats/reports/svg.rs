@@ -1,4 +1,4 @@
-use collagene_core::svg::*;
+use collagene_core::output::svg::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn feature(location: Location) -> Feature {
     Feature {

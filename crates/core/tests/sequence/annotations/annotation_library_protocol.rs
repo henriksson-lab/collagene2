@@ -1,13 +1,13 @@
 //! Revision-bound, versioned worker contracts for user feature and annotation evidence.
 use collagene_core::{
-    annotation_formats::{self, AnnotationFormat},
-    feature_library::{self, FeatureLibrary, ScanOptions},
+    formats::annotations::{self as annotation_formats, AnnotationFormat},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
+    sequence::annotations::library::{self as feature_library, FeatureLibrary, ScanOptions},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn source() -> Molecule {

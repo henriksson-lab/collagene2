@@ -1,6 +1,6 @@
 # Retained cloning runs
 
-`collagene_core::run_lineage::record_run` captures a freshly reconstructed plan as an immutable, versioned `cloning-run-v1` workspace attachment and one new document/history event per operation. The source workspace is borrowed; all additions are staged in a clone and validated before returning `RunCommit`. A capacity failure leaves the original unchanged. Repeating the same capture returns the existing run without adding documents.
+`collagene_core::material::lineage::record_run` captures a freshly reconstructed plan as an immutable, versioned `cloning-run-v1` workspace attachment and one new document/history event per operation. The source workspace is borrowed; all additions are staged in a clone and validated before returning `RunCommit`. A capacity failure leaves the original unchanged. Repeating the same capture returns the existing run without adding documents.
 
 Each plan input requires its own `InputEventBinding { input_id, event: EventBinding { document_id, event_id, revision } }`. Equal content revisions in different documents or events are deliberately distinct choices. The independently bound target uses a separate `EventBinding`. It becomes a product parent only when the operation explicitly uses it through a declared input. Historical retained source events are allowed; navigation stacks, source heads, and the active document stay unchanged.
 

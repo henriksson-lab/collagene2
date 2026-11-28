@@ -1,15 +1,18 @@
 //! A pinned catalog operation cannot hide in historical plan/recipe/archive headers.
 use collagene_core::{
-    catalog_digest::{self, CatalogSelection},
+    cloning::restriction::catalog::{self as catalog_digest, CatalogSelection},
+    documents::{
+        transfer::{self, Candidate},
+        workspace::{self, Workspace},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer::{self, Candidate},
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (DesignPlan, Molecule, CatalogSelection) {
@@ -82,7 +85,7 @@ fn catalog_opcode_and_fresh_report_require_their_own_semantics_version() {
     assert_eq!(report.engine_version, verification::ENGINE_VERSION);
     assert_eq!(
         report.status,
-        verification::Status::ConsistentUnderAssumptions
+        verification::evidence::Status::ConsistentUnderAssumptions
     );
     assert_eq!(report.products[0].sequence.as_str(), "CTAGCCCCAAAAG");
     let response = Response {
@@ -94,7 +97,9 @@ fn catalog_opcode_and_fresh_report_require_their_own_semantics_version() {
 }
 #[test]
 fn catalog_preparation_in_existing_recipe_jobs_cannot_claim_old_headers() {
-    use collagene_core::assembly_recipe::{self, FragmentSpec, Preparation, Recipe};
+    use collagene_core::cloning::assembly::recipe::{
+        self as assembly_recipe, FragmentSpec, Preparation, Recipe,
+    };
     let (plan, target, selection) = fixture();
     let recipe = Recipe {
         name: "one cut overlap input".into(),

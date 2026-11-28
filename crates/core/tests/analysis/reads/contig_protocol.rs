@@ -1,12 +1,12 @@
 //! Source-batch binding and append-only schema gates for de novo assembly.
 use collagene_core::{
-    contig::*,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
+    review::contigs::*,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Vec<ReadInput>, ContigOptions) {
@@ -127,7 +127,7 @@ fn contig_job_and_result_require_schema_fifteen_before_body_deserialization() {
             );
         }
         let mut large = prefix;
-        large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+        large.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
         let bytes = raw(magic, protocol::schema::WORKER_SCHEMA_VERSION, &large);
         let error = if magic == b"CGQ\0" {
             protocol::execution::process_request(&bytes).unwrap_err()
@@ -158,7 +158,7 @@ fn assembly_source_bounds_precede_batch_hashing_and_stale_revision_comparison() 
 
 #[test]
 fn recognized_assembly_evidence_requires_schema_fifteen_in_inline_workspaces() {
-    use collagene_core::workspace::{Workspace, WorkspaceAttachment};
+    use collagene_core::documents::workspace::{Workspace, WorkspaceAttachment};
     let molecule = Molecule::dna("source", "ACGT", Topology::Linear).unwrap();
     let mut workspace =
         Workspace::from_documents("assembly evidence", vec![molecule.clone()], 0).unwrap();

@@ -1,5 +1,5 @@
 //! The user-facing import fixture retains two independent expected components.
-use collagene_core::formats;
+use collagene_core::formats::sequence as formats;
 use collagene_model::Topology;
 use collagene_recombination::{
     Input, Limits, Reaction, TargetPolicy, check_batch_revision, check_target,

@@ -307,7 +307,7 @@ pub async fn serve<B: Backend>(gateway: Gateway<B>, shutdown: Cancellation) -> i
 #[cfg(test)]
 mod tests {
     use super::*;
-    use collagene_core::formats::ImportReport;
+    use collagene_core::formats::sequence::ImportReport;
     use collagene_model::{Molecule, Topology};
     use collagene_sources::{AddgeneCatalog, SourceError};
     use std::sync::atomic::{AtomicUsize, Ordering};

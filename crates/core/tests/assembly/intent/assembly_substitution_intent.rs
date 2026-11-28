@@ -1,10 +1,13 @@
 //! Independent literal source-oriented substitutions, not a target reconstructed from primers.
 use collagene_core::{
-    analysis::Primer,
-    assembly_intent::{self, Contribution, ContributionPosition, Selector},
-    assembly_junction_edit::Edit,
-    assembly_substitution_intent as s,
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
+    cloning::assembly::{
+        intent::{self as assembly_intent, Contribution, ContributionPosition, Selector},
+        junction_edit::Edit,
+        substitution_intent as s,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn input(molecule: Molecule) -> PlanInput {
@@ -257,8 +260,11 @@ fn physical_reconstruction_is_checked_against_predeclared_internal_changes() {
             template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
-    assert_eq!(verification::verify(&plan, &target).status, Status::Invalid);
-    let mut options = collagene_core::mutagenesis::PcrOptions::default();
+    assert_eq!(
+        verification::engine::verify(&plan, &target).status,
+        Status::Invalid
+    );
+    let mut options = collagene_core::cloning::pcr::mutagenesis::PcrOptions::default();
     options.binding.max_mismatches = 1;
     options.binding.min_three_prime_exact = 2;
     plan.steps = vec![Operation::PcrWithMismatches {
@@ -267,7 +273,7 @@ fn physical_reconstruction_is_checked_against_predeclared_internal_changes() {
         reverse: Primer::new("MutantR", "TCCAGGTC", "").unwrap(),
         options,
     }];
-    let checked = verification::verify(&plan, &target);
+    let checked = verification::engine::verify(&plan, &target);
     assert_eq!(
         checked.status,
         Status::ConsistentUnderAssumptions,

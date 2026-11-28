@@ -1,19 +1,28 @@
 //! Literal PCR-copy composition; upstream chemistry remains distinct from new DNA.
+use collagene_core::cloning::topo::physical::{self as p, processing as a, projection};
 use collagene_core::{
-    analysis::Primer,
-    methylation::MethylationState,
-    modified_duplex::{GenerationAssumptions, ModificationSummary},
-    physical_run_evidence, protocol,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    topo, topo_actions as actions, transfer,
-    verification::{
-        self as v, DesignPlan, Operation, PhysicalProcessingEvidence, PlanInput, Source, Status,
-        TopoSource,
+    chemistry::{
+        methylation::MethylationState,
+        tracked_duplex::{GenerationAssumptions, ModificationSummary},
     },
-    workspace::{self, Workspace},
+    cloning::topo::{self, actions},
+    documents::{
+        transfer,
+        workspace::{self, Workspace},
+    },
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        physical_evidence as physical_run_evidence,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+    protocol,
+    sequence::analysis::Primer,
+    verification::{
+        self as v,
+        evidence::{PhysicalProcessingEvidence, Status},
+    },
 };
 use collagene_model::{Molecule, Topology};
-use topo::physical::{self as p, processing as a, projection};
 const TARGET: &str = "AAGGGGCATCCCTTCACCATGACG";
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
@@ -199,7 +208,7 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
     };
     (plan, target, inputs)
 }
-fn evidence(r: &v::VerificationReport) -> &actions::Report {
+fn evidence(r: &v::evidence::VerificationReport) -> &actions::Report {
     assert_eq!(r.physical_processing_reports.len(), 1);
     assert_eq!(r.physical_processing_reports[0].step_index, 1);
     let PhysicalProcessingEvidence::TopoActions(e) = &r.physical_processing_reports[0].evidence
@@ -211,7 +220,7 @@ fn evidence(r: &v::VerificationReport) -> &actions::Report {
 #[test]
 fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_is_not_authority() {
     let (plan, target, mut inputs) = fixture();
-    let r = v::verify(&plan, &target);
+    let r = v::engine::verify(&plan, &target);
     assert_eq!(
         r.status,
         Status::ConsistentUnderAssumptions,
@@ -244,7 +253,7 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
             .any(|s| s.sequence.as_str() == "GGTG")
     );
     let actual = e.tracked.as_ref().unwrap();
-    let after = collagene_core::modified_duplex::summary(actual).unwrap();
+    let after = collagene_core::chemistry::tracked_duplex::summary(actual).unwrap();
     assert_eq!(after.known_modified, 0);
     assert!(after.unknown_eligible > 0);
     assert!(actual.generation.is_empty());
@@ -273,7 +282,7 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
         sources[2].source = Source::Input("template".into());
     }
     assert_ne!(
-        v::verify(&imported, &target).status,
+        v::engine::verify(&imported, &target).status,
         Status::ConsistentUnderAssumptions
     );
     let wrong = Molecule::dna(
@@ -284,10 +293,10 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
     .unwrap();
     let mut p = plan.clone();
     p.target_revision = wrong.revision();
-    assert_eq!(v::verify(&p, &wrong).status, Status::Invalid);
-    assert!(v::export_protocol_html(&plan, &target).contains("PCR"));
+    assert_eq!(v::engine::verify(&p, &wrong).status, Status::Invalid);
+    assert!(v::output::export_protocol_html(&plan, &target).contains("PCR"));
     assert!(
-        collagene_core::pdf::export_protocol_pdf(&plan, &target)
+        collagene_core::output::pdf::export_protocol_pdf(&plan, &target)
             .unwrap()
             .bytes
             .starts_with(b"%PDF-")
@@ -306,7 +315,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
             strands[0].segments[0].length = 10;
         }
     }
-    let r = v::verify(&mixed, &target);
+    let r = v::engine::verify(&mixed, &target);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
     assert!(r.physical_processing_reports.is_empty());
     let mut unused = plan.clone();
@@ -317,7 +326,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
         });
     }
     assert_ne!(
-        v::verify(&unused, &target).status,
+        v::engine::verify(&unused, &target).status,
         Status::ConsistentUnderAssumptions
     );
     let pcr = Operation::Pcr {
@@ -332,13 +341,13 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
         1,
         Operation::Tail3Prime {
             template: Source::Step(0),
-            base: collagene_core::tailing::TailingBase::A,
+            base: collagene_core::cloning::ligation::tailing::TailingBase::A,
         },
     );
     if let Operation::TopoActions { sources, .. } = &mut staggered.steps[2] {
         sources[2].source = Source::Step(1);
     }
-    let r = v::verify(&staggered, &target);
+    let r = v::engine::verify(&staggered, &target);
     assert_eq!(r.products.len(), 2, "{:?}", r.findings);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
     assert!(r.physical_processing_reports.is_empty());
@@ -352,7 +361,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
     nicked.steps.insert(
         1,
         Operation::Ligate {
-            fragments: vec![v::OrientedSource {
+            fragments: vec![collagene_core::planning::plan::OrientedSource {
                 source: Source::Step(0),
                 reverse: false,
             }],
@@ -364,7 +373,7 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
     if let Operation::TopoActions { sources, .. } = &mut nicked.steps[2] {
         sources[2].source = Source::Step(1);
     }
-    let r = v::verify(&nicked, &target);
+    let r = v::engine::verify(&nicked, &target);
     assert_eq!(r.products.len(), 2, "{:?}", r.findings);
     assert_ne!(r.status, Status::ConsistentUnderAssumptions);
     // The successful upstream ligation retains its actual nick/alternative
@@ -373,13 +382,14 @@ fn prepared_correspondence_unused_roles_and_nicked_or_staggered_templates_cannot
     assert_eq!(r.physical_processing_reports.len(), 1);
     let evidence = &r.physical_processing_reports[0];
     assert_eq!(evidence.step_index, 1);
-    let v::PhysicalProcessingEvidence::LigationOutcomes(ligation) = &evidence.evidence else {
+    let v::evidence::PhysicalProcessingEvidence::LigationOutcomes(ligation) = &evidence.evidence
+    else {
         panic!("upstream ligation evidence")
     };
     assert_eq!(ligation.report.intended.duplex.nicks.len(), 1);
     assert!(!r.physical_processing_reports.iter().any(|step| matches!(
         &step.evidence,
-        v::PhysicalProcessingEvidence::TopoActions(_)
+        v::evidence::PhysicalProcessingEvidence::TopoActions(_)
     )));
     assert!(r.findings.iter().any(|f| f.contains("nicked or staggered")));
 }
@@ -485,7 +495,7 @@ fn binary_candidate_and_retained_history_pin_the_exact_upstream_product_event() 
         Status::ConsistentUnderAssumptions
     );
     assert!(replay.products_match);
-    let bytes = collagene_core::run_evidence::download(&loaded, &record.run_id)
+    let bytes = collagene_core::material::evidence::download(&loaded, &record.run_id)
         .unwrap()
         .bytes
         .unwrap();

@@ -1,16 +1,20 @@
 //! Literal intentional substitutions and real saved-strand repair, without targets
 //! for the new derivations. Saved runs only establish their independently declared originals.
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{EndRepairMethod, EndTreatment, FivePrime, Strand, Terminus, ThreePrime},
-    material_derivation as d, material_pcr,
-    methylation::MethylationState,
-    modified_duplex::{self, CallState, Chemical, GenerationAssumptions},
-    mutagenesis::PcrOptions,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
-    workspace::{self, Workspace},
+    chemistry::{
+        EndRepairMethod, EndTreatment, FivePrime, Strand, Terminus, ThreePrime,
+        methylation::MethylationState,
+        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+    },
+    cloning::pcr::{material as material_pcr, mutagenesis::PcrOptions},
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as d,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
@@ -56,8 +60,8 @@ fn mismatch_request(
     let preview = d::preview_mismatch_pcr(m, &origin, &f, &r, &o).unwrap();
     assert!(preview.reusable(), "{:?}", preview.preview.report.warnings);
     d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: source,
             origin: origin,
         }],
@@ -195,8 +199,8 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
     let child = d::prepare_install(
         &saved,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: installed.receipt.product,
                 origin: d::SourceOrigin::Saved(origin),
             }],
@@ -270,11 +274,11 @@ fn saved_staggered() -> (Workspace, EventBinding, MaterialOrigin) {
             },
             Operation::ResectThreePrime {
                 source: Source::Step(1),
-                cuts: collagene_core::three_prime_resection::Cuts { left: 0, right: 4 },
+                cuts: collagene_core::cloning::overlap::resection::Cuts { left: 0, right: 4 },
             },
         ],
     };
-    let reconstruction = collagene_core::verification::verify(&plan, &target);
+    let reconstruction = collagene_core::verification::engine::verify(&plan, &target);
     assert_eq!(
         reconstruction.products.len(),
         plan.steps.len(),
@@ -302,7 +306,7 @@ fn saved_staggered() -> (Workspace, EventBinding, MaterialOrigin) {
         event_id: p.event_id.clone(),
         revision: p.revision.clone(),
     };
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &saved.workspace,
         &run_material::Selection {
             run_id: saved.receipt.run_id,
@@ -361,8 +365,8 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
     let installed = d::prepare_install(
         &w,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event,
                 origin: d::SourceOrigin::Saved(origin),
             }],
@@ -461,8 +465,8 @@ fn capped_singleton_search_remains_conditional_and_competing_products_cannot_be_
     assert!(full.preview.report.products.len() > 1);
     assert!(!full.reusable());
     let forged = d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin(&w, 0),
             origin: d::SourceOrigin::OriginalReference,
         }],
@@ -514,8 +518,8 @@ fn capped_singleton_search_remains_conditional_and_competing_products_cannot_be_
     let repair = d::prepare_install(
         &saved.workspace,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: saved.receipt.product,
                 origin: origin,
             }],
@@ -558,7 +562,8 @@ fn mismatch_selection_policy_source_alias_and_new_primer_order_choices_are_pinne
     assert!(d::preflight(&w, &altered).is_err());
     let mut changed = w.clone();
     let alias =
-        collagene_core::history::DocumentHistory::new("Equal-reference-alias", stock).unwrap();
+        collagene_core::documents::history::DocumentHistory::new("Equal-reference-alias", stock)
+            .unwrap();
     alias.contribute(&mut changed).unwrap();
     let saved = d::prepare_install(&w, &request).unwrap();
     let cap = d::capsule(&saved.workspace, &saved.receipt.product).unwrap();
@@ -571,8 +576,8 @@ fn mismatch_selection_policy_source_alias_and_new_primer_order_choices_are_pinne
             .is_err()
     );
     let repair = d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin(&w, 0),
             origin: d::SourceOrigin::OriginalReference,
         }],
@@ -662,7 +667,7 @@ fn end_repair_preserves_real_internal_nick_and_does_not_enable_unsupported_nicke
         event_id: p.event_id.clone(),
         revision: p.revision.clone(),
     };
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &saved.workspace,
         &run_material::Selection {
             run_id: saved.receipt.run_id,
@@ -683,8 +688,8 @@ fn end_repair_preserves_real_internal_nick_and_does_not_enable_unsupported_nicke
     let repaired = d::prepare_install(
         &saved.workspace,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: event,
                 origin: d::SourceOrigin::Saved(MaterialOrigin::Run(origin)),
             }],

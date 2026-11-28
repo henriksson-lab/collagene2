@@ -1,6 +1,6 @@
 # SnapGene DNA/protein import profiles
 
-`collagene_core::snapgene::import_snapgene` is an independently implemented MIT importer, not a wrapper around another cloning application. `original_snapgene_bytes` recovers an original source attachment; it does **not** serialize the current edited document as SnapGene. No external executable is invoked.
+`collagene_core::formats::snapgene::import_snapgene` is an independently implemented MIT importer, not a wrapper around another cloning application. `original_snapgene_bytes` recovers an original source attachment; it does **not** serialize the current edited document as SnapGene. No external executable is invoked.
 
 ## Mapped data
 

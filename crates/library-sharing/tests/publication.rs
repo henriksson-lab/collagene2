@@ -1,10 +1,15 @@
 use collagene_core::{
-    analysis::Primer,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    transfer::Candidate,
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
+    documents::{
+        transfer::Candidate,
+        workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
+    },
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Molecule, Topology};
@@ -87,7 +92,7 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
             revision: product.revision,
         },
     };
-    let capsule = run_material::capsule(&w, &origin).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&w, &origin).unwrap();
     let prepared = w.revisions[&origin.event.revision].clone();
     let target2 = Molecule::dna(
         "independent downstream PCR reference",
@@ -175,7 +180,7 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
     let ui = WorkspaceAttachment {
         // App's current homology-capable autosave kind (app.rs). Closure treats
         // working bytes opaquely, including unfinished/recovery-only drafts.
-        kind: collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.into(),
+        kind: collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND.into(),
         name: "Private draft".into(),
         media_type: "application/json".into(),
         bytes: br#"{"version":14,"name":"PRIVATE WORKING DRAFT","unpublished_source":"DO NOT PUBLISH"}"#.to_vec(),
@@ -202,11 +207,9 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
     assert!(export.inventory.candidates.is_empty());
     assert!(export.workspace.candidates.is_empty());
     assert!(
-        !export
-            .workspace
-            .attachments
-            .values()
-            .any(|a| a.kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND)
+        !export.workspace.attachments.values().any(
+            |a| a.kind == collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND
+        )
     );
     assert_eq!(export.workspace.name, "Plasmid publication");
     assert_eq!(
@@ -233,7 +236,7 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
     let after = run_material::reconstruct(&loaded, &material).unwrap();
     assert_eq!(before.reference(), after.reference());
     assert_eq!(after.reference().sequence.as_str(), DNA);
-    let fresh = run_material::capsule(&loaded, &material).unwrap();
+    let fresh = collagene_core::material::capsule::capsule(&loaded, &material).unwrap();
     let actual = after.reference().clone();
     let intended =
         Molecule::dna("third independently declared target", DNA, Topology::Linear).unwrap();
@@ -253,7 +256,7 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
             pcr(Source::Step(0)),
         ],
     };
-    let report = verification::verify(&downstream, &intended);
+    let report = verification::engine::verify(&downstream, &intended);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -346,11 +349,12 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
         revision: selected.head.clone(),
         head_event: selected.head_event.clone(),
     };
-    let mut kinds = vec![collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.to_owned()];
+    let mut kinds =
+        vec![collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND.to_owned()];
     kinds.extend(
         [
             "assembly-design-v1",
-            collagene_core::assembly_library_history::KIND,
+            collagene_core::cloning::assembly::library_history::KIND,
             "primer-pair-draft-v2",
             "annotation-display-v1",
             "lab-library-bindings-v1",
@@ -399,7 +403,7 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
 
     let future_draft = format!(
         "assembly-draft-v{}",
-        collagene_core::assembly_library_history::ACTIVE_DRAFT_VERSION + 1
+        collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_VERSION + 1
     );
     for kind in [
         future_draft.as_str(),

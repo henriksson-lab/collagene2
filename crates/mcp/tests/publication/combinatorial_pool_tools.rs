@@ -1,10 +1,10 @@
 //! Real SDK handoff from source-bound reaction discovery to explicit native release.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    golden_gate::GoldenGateOptions,
-    workspace::{self, Workspace},
+    cloning::golden_gate::GoldenGateOptions,
+    documents::workspace::{self, Workspace},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -163,9 +163,9 @@ async fn discovery_explicit_keys_batch_release_and_portable_protocol_keep_one_pa
     let (native, encoding) = artifact(&c, &released["native_artifact_id"]).await;
     assert_eq!(encoding, "base64");
     let retained = workspace::load_workspace(&STANDARD.decode(native).unwrap()).unwrap();
-    let runs = collagene_core::run_lineage::list_runs(&retained).unwrap();
+    let runs = collagene_core::material::lineage::list_runs(&retained).unwrap();
     assert_eq!(runs.len(), 1);
-    let run = collagene_core::run_lineage::load_run(&retained, &runs[0].run_id).unwrap();
+    let run = collagene_core::material::lineage::load_run(&retained, &runs[0].run_id).unwrap();
     let op = serde_json::to_value(run.plan.steps.last().unwrap()).unwrap();
     assert_eq!(
         op["SelectedGoldenGate"]["directed_sequence_key"],

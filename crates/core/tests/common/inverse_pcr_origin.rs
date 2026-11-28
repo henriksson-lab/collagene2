@@ -1,13 +1,15 @@
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::EndTreatment,
-    cloning_outputs, material_derivation as derive,
-    mutagenesis::InversePcrOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
-    workspace::Workspace,
+    cloning::{pcr::mutagenesis::InversePcrOptions, restriction::catalog as catalog_digest},
+    documents::workspace::Workspace,
+    material::{
+        derivation as derive,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 pub const STOCK: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
@@ -89,7 +91,7 @@ pub fn fixture(derived: bool) -> (Workspace, MaterialOrigin, EventBinding, Molec
     let e = saved.receipt.construct;
     let mut w = saved.workspace;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &w,
             &run_material::Selection {
                 run_id: saved.receipt.run.run_id,
@@ -111,14 +113,14 @@ pub fn fixture(derived: bool) -> (Workspace, MaterialOrigin, EventBinding, Molec
             .id
             .clone();
         let r = derive::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: e,
                 origin: derive::SourceOrigin::Saved(origin),
             }],
             derivation: derive::Derivation::CatalogDigest {
                 selection: catalog_digest::select(&catalog, &[id]).unwrap(),
-                options: collagene_core::modified_duplex::checked_inspection_options(),
+                options: collagene_core::chemistry::tracked_duplex::checked_inspection_options(),
                 fragment_index: 0,
             },
             name: "Saved uncut circle".into(),

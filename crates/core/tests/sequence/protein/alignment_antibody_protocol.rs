@@ -1,7 +1,7 @@
 use collagene_core::{
-    alignment_antibody as a,
-    alignment_formats::{self as f, AlignmentDocument, AlignmentFormat},
     antibody_numbering::{self as n, domain_candidates as d},
+    formats::alignment::{self as f, AlignmentDocument, AlignmentFormat},
+    protein::antibody_alignment as a,
     protocol::{
         self,
         request::Request,

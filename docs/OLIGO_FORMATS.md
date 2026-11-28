@@ -1,6 +1,6 @@
 # Oligo tables and FASTQ evidence
 
-`collagene_core::oligo_formats` implements explicit source adapters in Rust. CSV syntax uses the standalone MIT/Unlicense [csv 1.4 library](https://docs.rs/csv/1.4.0/csv/), with an independently implemented strict quoting preflight; no cloning application, external parser executable, ordering service or scientific tool is invoked.
+`collagene_core::formats::oligos` implements explicit source adapters in Rust. CSV syntax uses the standalone MIT/Unlicense [csv 1.4 library](https://docs.rs/csv/1.4.0/csv/), with an independently implemented strict quoting preflight; no cloning application, external parser executable, ordering service or scientific tool is invoked.
 
 ## CSV/TSV oligo collections
 

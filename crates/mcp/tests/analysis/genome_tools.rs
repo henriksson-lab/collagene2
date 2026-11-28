@@ -1,11 +1,10 @@
 //! Actual SDK file-backed reference lifecycle; no arbitrary paths or giant Molecule.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    crispr::{GuideOptions, GuideQuery},
-    genome::*,
-    genome_crispr::*,
+    sequence::crispr::{GuideOptions, GuideQuery},
+    tracks::{crispr::*, genome::*},
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::Topology;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

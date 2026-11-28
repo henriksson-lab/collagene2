@@ -1,14 +1,17 @@
 use collagene_core::{
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit::Edit,
-    golden_gate::GoldenGateEnzyme,
-    golden_gate_junction_edit as edit,
+    cloning::{
+        assembly::{
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit::Edit,
+        },
+        golden_gate::{GoldenGateEnzyme, junction_edit as edit},
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 

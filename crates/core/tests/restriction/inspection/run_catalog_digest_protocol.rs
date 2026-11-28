@@ -1,20 +1,22 @@
 //! Direct saved material uses actual replayed strands rather than source metadata.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::FivePrime,
-    cloning_outputs::{self, Commit},
+    cloning::restriction::{
+        catalog as catalog_digest, inspection::InspectionOptions, run_digest as run_catalog_digest,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs::{self as cloning_outputs, Commit},
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    restriction_inspection::InspectionOptions,
-    run_catalog_digest,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, i: usize) -> EventBinding {
@@ -81,7 +83,7 @@ fn actual_saved_pcr_catalog_inspection_roundtrips160_152_and_rejects_old_headers
     assert!(protocol::schema::WORKER_SCHEMA_VERSION >= 75);
     let commit = original();
     let event = commit.receipt.construct.clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id.clone(),

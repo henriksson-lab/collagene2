@@ -1,6 +1,6 @@
 //! Actual SDK reconstruction of explicitly declared generation and checked digestion plans.
 use base64::{Engine, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -68,7 +68,7 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
     let enzymes = call(&c, "list_enzymes", json!({})).await;
     let profile = enzymes["checked_digest_profile_revision"].clone();
     assert_eq!(profile.as_str().unwrap().len(), 64);
-    let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+    let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let enzyme = catalog
         .edition()
         .enzymes
@@ -77,8 +77,9 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
         .unwrap()
         .id
         .clone();
-    let selection = collagene_core::catalog_digest::select(&catalog, &[enzyme]).unwrap();
-    let options = collagene_core::modified_duplex::checked_inspection_options();
+    let selection =
+        collagene_core::cloning::restriction::catalog::select(&catalog, &[enzyme]).unwrap();
+    let options = collagene_core::chemistry::tracked_duplex::checked_inspection_options();
     let steps = json!([{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":selection,"options":options,"fragment_index":0}}]);
     let propose = |steps: Value| json!({"name":"checked source generation","target":target,"inputs":[{"id":"s","document":source}],"steps":steps});
     let candidate = call(&c, "propose_plan", propose(steps.clone())).await;
@@ -130,7 +131,7 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
         &bytes[4..6],
         &collagene_core::protocol::schema::CANDIDATE_SCHEMA_VERSION.to_le_bytes()
     );
-    collagene_core::transfer::load_candidate(&bytes).unwrap();
+    collagene_core::documents::transfer::load_candidate(&bytes).unwrap();
     let mut wrong_catalog = steps.clone();
     wrong_catalog[1]["CheckedDigest"]["selection"]["catalog_content_hash"] = json!("0".repeat(64));
     let candidate = call(&c, "propose_plan", propose(wrong_catalog)).await;

@@ -1,5 +1,5 @@
 use crate::wire::{self, ErrorCode, Failure, Operation, Output};
-use collagene_core::formats::ImportReport;
+use collagene_core::formats::sequence::ImportReport;
 use collagene_sources::{
     AddgeneCatalog, Config as SourceConfig, Source, SourceClient, SourceError, parse_source,
 };

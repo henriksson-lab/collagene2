@@ -1,4 +1,4 @@
-use collagene_core::formats::*;
+use collagene_core::formats::sequence::*;
 use collagene_model::*;
 
 const SOURCE: &str = "LOCUS       reference                 12 bp    DNA     linear   SYN 01-JAN-2026\nDEFINITION  Literal editing fixture.\nACCESSION   AB123456\nVERSION     AB123456.2\nREFERENCE   1  (bases 3 to 8; 10 to 12)\n  AUTHORS   Example,A.\n  TITLE     Literal citation\n  JOURNAL   Unpublished\nFEATURES             Location/Qualifiers\n     misc_feature    3..8\n                     /label=\"literal feature\"\nORIGIN\n        1 aaaaccccgg gg\n//\n";
@@ -99,7 +99,7 @@ fn boolean_scope_flags_stale_logs_and_changed_original_citations_do_not_bypass_e
 fn transformed_edited_sources_archive_recipe_once_without_claiming_current_citation_coordinates() {
     let edited = source().replace(0, 0, "TT").unwrap();
     let recipe = edited.metadata[GENBANK_EDIT_RECIPE_KEY].clone();
-    let derived = collagene_core::annotations::reverse_complement(&edited).unwrap();
+    let derived = collagene_core::sequence::annotations::reverse_complement(&edited).unwrap();
     assert!(derived.original_genbank.is_none());
     assert!(!derived.metadata.contains_key(GENBANK_EDIT_RECIPE_KEY));
     assert!(!derived.metadata.contains_key("genbank:citation_scope"));
@@ -112,7 +112,7 @@ fn transformed_edited_sources_archive_recipe_once_without_claiming_current_citat
         SOURCE
     );
     assert!(export_genbank(&derived).is_ok());
-    let again = collagene_core::annotations::reverse_complement(&derived).unwrap();
+    let again = collagene_core::sequence::annotations::reverse_complement(&derived).unwrap();
     assert_eq!(
         again.metadata["annotation_mapping:unverified_genbank_edit_recipe"],
         recipe

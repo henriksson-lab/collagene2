@@ -1,9 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{self, Workspace, WorkspaceAttachment},
+    documents::workspace::{self, Workspace, WorkspaceAttachment},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_design_exchange::{self as sbol, ProjectionPolicy};
 use collagene_library_sharing::{self as sharing, Selection};
@@ -167,7 +170,7 @@ fn exact_sbol_original_survives_real_saved_pcr_and_native_capsule_replay() {
         collagene_core::chemistry::Terminus::PCR
     );
     assert!(after.tracked().duplex.nicks.is_empty());
-    let capsule = run_material::capsule(&reopened, &material).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&reopened, &material).unwrap();
     let prepared = reopened.revisions[&material.event.revision].clone();
     let downstream = DesignPlan {
         name: "Fresh use of retained PCR stock".into(),
@@ -185,7 +188,7 @@ fn exact_sbol_original_survives_real_saved_pcr_and_native_capsule_replay() {
             pcr(Source::Step(0)),
         ],
     };
-    let verified = collagene_core::verification::verify(&downstream, &independent);
+    let verified = collagene_core::verification::engine::verify(&downstream, &independent);
     assert_eq!(
         verified.status,
         Status::ConsistentUnderAssumptions,
@@ -368,6 +371,6 @@ fn documentary_source_hash_is_not_a_fresh_sequence_match_or_material_bootstrap()
             .workspace
             .attachments
             .values()
-            .all(|a| a.kind != collagene_core::run_lineage::WORKSPACE_ATTACHMENT_KIND)
+            .all(|a| a.kind != collagene_core::material::lineage::WORKSPACE_ATTACHMENT_KIND)
     );
 }

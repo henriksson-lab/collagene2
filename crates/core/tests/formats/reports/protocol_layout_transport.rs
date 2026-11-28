@@ -1,12 +1,12 @@
 #[path = "../../common/protocol_layout.rs"]
 mod fixture;
 use collagene_core::{
+    output::layout,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    protocol_layout as layout,
 };
 fn execute(job: AnalysisJob, revision: String) -> AnalysisResult {
     let q = Request {

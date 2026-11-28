@@ -1,5 +1,5 @@
 //! Hand-specified genetic-code/coordinate fixtures, not outputs of another cloning application.
-use collagene_core::translation::*;
+use collagene_core::sequence::translation::*;
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 fn dna(s: &str) -> Sequence {
     Sequence::dna(s).unwrap()

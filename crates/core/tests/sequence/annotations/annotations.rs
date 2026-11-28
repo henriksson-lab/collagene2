@@ -1,4 +1,4 @@
-use collagene_core::annotations::*;
+use collagene_core::sequence::annotations::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn molecule(sequence: &str, topology: Topology) -> Molecule {
     Molecule::dna("fixture", sequence, topology).unwrap()
@@ -250,7 +250,7 @@ fn derived_documents_preserve_original_headers_without_reusing_stale_reference_c
         product.metadata["source:canonical_url"],
         source.metadata["source:canonical_url"]
     );
-    let gb = collagene_core::formats::export_genbank(&product).unwrap();
+    let gb = collagene_core::formats::sequence::export_genbank(&product).unwrap();
     assert!(!gb.lines().any(|line| line.starts_with("REFERENCE")));
     assert_eq!(
         product.features[0]
@@ -379,15 +379,15 @@ fn simple_scf() -> Vec<u8> {
 #[test]
 fn full_trace_reverse_updates_evidence_view_and_region_extract_does_not_fake_remapped_signals() {
     let original = simple_scf();
-    let trace = collagene_core::traces::import_trace(&original).unwrap();
+    let trace = collagene_core::review::reads::traces::import_trace(&original).unwrap();
     let mut source = trace.attached_molecule().unwrap();
     source.features.push(feature(Location::range(0, 1)));
     let reverse = reverse_complement(&source).unwrap();
     assert_eq!(reverse.sequence.as_str(), "GT");
-    let view = collagene_core::traces::trace_from_molecule(&reverse).unwrap();
+    let view = collagene_core::review::reads::traces::trace_from_molecule(&reverse).unwrap();
     assert_eq!(
         view.orientation,
-        collagene_core::traces::TraceOrientation::ReverseComplement
+        collagene_core::review::reads::traces::TraceOrientation::ReverseComplement
     );
     assert_eq!(view.channels.g, vec![20, 0]);
     assert_eq!(view.channels.t, vec![0, 10]);
@@ -403,15 +403,15 @@ fn full_trace_reverse_updates_evidence_view_and_region_extract_does_not_fake_rem
     assert_eq!(back.sequence, source.sequence);
     assert_eq!(back.features, source.features);
     assert_eq!(
-        collagene_core::traces::trace_from_molecule(&back)
+        collagene_core::review::reads::traces::trace_from_molecule(&back)
             .unwrap()
             .orientation,
-        collagene_core::traces::TraceOrientation::AsStored
+        collagene_core::review::reads::traces::TraceOrientation::AsStored
     );
     let cropped = extract_region(&source, 0, 1).unwrap();
-    assert!(collagene_core::traces::trace_from_molecule(&cropped).is_err());
+    assert!(collagene_core::review::reads::traces::trace_from_molecule(&cropped).is_err());
     assert_eq!(
-        collagene_core::traces::original_trace_bytes(&cropped).unwrap(),
+        collagene_core::review::reads::traces::original_trace_bytes(&cropped).unwrap(),
         original
     );
     assert!(change_reference_topology(&source, Topology::Circular).is_err());

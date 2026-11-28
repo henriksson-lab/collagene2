@@ -1,14 +1,17 @@
 use collagene_core::{
-    catalog_digest::{self, InspectionOptions},
-    digest_setups::{CleavageMode, Recipe},
-    gel::{Calibration, CalibrationPoint, LaneInput, Preparation},
+    cloning::restriction::{
+        catalog as catalog_digest,
+        inspection::InspectionOptions,
+        setups::{CleavageMode, Recipe},
+    },
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
+    output::gel::{Calibration, CalibrationPoint, LaneInput, Preparation},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    workspace::Workspace,
 };
 use collagene_model::{Molecule, Topology};
 
@@ -154,7 +157,7 @@ fn stale_pins_and_unpinned_operation_cannot_relabel_catalog_digest() {
 
 #[test]
 fn pinned_gels_keep_the_ordinary_binary_message_budget() {
-    let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
+    let maximum = collagene_core::formats::sequence::MAX_IMPORT_BYTES;
     let mut wire = vec![0; 42 + maximum + 1];
     wire[4..6].copy_from_slice(&protocol::schema::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());

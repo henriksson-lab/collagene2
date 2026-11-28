@@ -1,6 +1,6 @@
 //! Real SDK annotated-text writers: explicit alphabets, loss review and immutable sources.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -97,7 +97,7 @@ async fn nucleotide_annotations_and_rna_use_real_annotated_writers_without_chang
         let output = text(&c, &reply).await;
         assert!(output.contains("join(13..16,1..4)"));
         assert!(output.contains("complement(5..12)"));
-        let parsed = collagene_core::formats::import_text(&output).unwrap();
+        let parsed = collagene_core::formats::sequence::import_text(&output).unwrap();
         let m = &parsed.molecules[0];
         assert_eq!(m.sequence.as_str(), "ACGTACGTACGTACGT");
         assert_eq!(m.topology, collagene_model::Topology::Circular);
@@ -137,7 +137,7 @@ async fn nucleotide_annotations_and_rna_use_real_annotated_writers_without_chang
     )
     .await;
     let output = text(&c, &reply).await;
-    let m = collagene_core::formats::import_text(&output)
+    let m = collagene_core::formats::sequence::import_text(&output)
         .unwrap()
         .molecules
         .remove(0);
@@ -186,11 +186,11 @@ async fn protein_profiles_require_real_identifiers_dates_and_explicit_loss_ackno
     for (format, profile) in [
         (
             json!({"GenPept":{"locus_date":"26-NOV-2026","entry_name":"LITERAL"}}),
-            collagene_core::protein_formats::Profile::GenPept,
+            collagene_core::formats::protein::Profile::GenPept,
         ),
         (
             json!({"UniProt":{"entry_name":"LITERAL","accession":"P69905"}}),
-            collagene_core::protein_formats::Profile::UniProt,
+            collagene_core::formats::protein::Profile::UniProt,
         ),
     ] {
         let review = call(
@@ -209,13 +209,13 @@ async fn protein_profiles_require_real_identifiers_dates_and_explicit_loss_ackno
         .await;
         let output = text(&c, &reply).await;
         assert!(!output.contains("Reviewed;"));
-        let m = collagene_core::protein_formats::import_bytes(output.as_bytes(), profile)
+        let m = collagene_core::formats::protein::import_bytes(output.as_bytes(), profile)
             .unwrap()
             .molecules
             .remove(0);
         assert_eq!(m.sequence.alphabet(), collagene_model::Alphabet::Protein);
         assert_eq!(m.sequence.as_str(), "ACDEFGHIK");
-        if profile == collagene_core::protein_formats::Profile::UniProt {
+        if profile == collagene_core::formats::protein::Profile::UniProt {
             assert!(output.contains("Unreviewed;"));
             assert!(output.contains("P69905;"));
         } else {

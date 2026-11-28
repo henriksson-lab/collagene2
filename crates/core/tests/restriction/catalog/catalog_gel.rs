@@ -1,11 +1,14 @@
 //! Catalog-pinned gel lanes replay the complete recipe; saved reports are not bands.
 use collagene_core::{
-    analysis,
-    catalog_digest::{self, InspectionOptions},
-    digest_setups::{CleavageMode, Recipe},
-    gel::{self, Calibration, CalibrationPoint, LaneInput, MobilityState, Preparation},
-    run_lineage::EventBinding,
-    workspace::Workspace,
+    cloning::restriction::{
+        catalog as catalog_digest,
+        inspection::InspectionOptions,
+        setups::{CleavageMode, Recipe},
+    },
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
+    output::gel::{self, Calibration, CalibrationPoint, LaneInput, MobilityState, Preparation},
+    sequence::analysis,
 };
 use collagene_model::{Molecule, Topology};
 

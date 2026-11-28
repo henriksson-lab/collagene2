@@ -1,14 +1,18 @@
 //! Planner transport must retain source/target/options binding without promoting
 //! suggested oligos into a verification report.
 use collagene_core::{
-    overlap_primer_design::{self, Fragment, Request as DesignRequest},
-    primers::DesignOptions,
+    cloning::{
+        overlap::primer_design::{
+            self as overlap_primer_design, Fragment, Request as DesignRequest,
+        },
+        pcr::primers::DesignOptions,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Vec<PlanInput>, Molecule, DesignRequest) {

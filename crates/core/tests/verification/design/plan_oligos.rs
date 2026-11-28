@@ -1,10 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
     chemistry::{AnnealOptions, EndTreatment, FivePrime, Terminus, ThreePrime},
-    mutagenesis::PcrOptions,
-    oligo_formats::{self, Delimiter},
-    plan_oligos::*,
-    verification::{DesignPlan, Operation, PlanInput, Source},
+    cloning::pcr::mutagenesis::PcrOptions,
+    formats::oligos::{self as oligo_formats, Delimiter},
+    planning::{
+        oligos::*,
+        plan::{DesignPlan, Operation, PlanInput, Source},
+    },
+    sequence::analysis::Primer,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn fixture() -> (DesignPlan, Molecule) {

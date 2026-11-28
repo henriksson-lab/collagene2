@@ -1,5 +1,5 @@
 //! Hand-specified source-context and provenance fixtures; no scientific executable.
-use collagene_core::{methylation::*, *};
+use collagene_core::{chemistry::methylation::*, sequence::analysis};
 use collagene_model::{Error, Molecule, Topology};
 fn mol(s: &str) -> Molecule {
     Molecule::dna("source", s, Topology::Linear).unwrap()

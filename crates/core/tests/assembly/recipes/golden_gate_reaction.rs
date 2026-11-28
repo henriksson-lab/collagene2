@@ -1,15 +1,16 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::Preparation,
-    golden_gate::GoldenGateOptions,
-    golden_gate_reaction as reaction,
-    prepared_golden_gate::Selection,
+    cloning::{
+        assembly::recipe::Preparation,
+        golden_gate::{GoldenGateOptions, prepared::Selection, reaction},
+    },
+    planning::plan::{Operation, PlanInput},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, Operation, PlanInput, Status},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -41,21 +42,25 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
         name: "all material entering the reaction".into(),
         rows: vec![
             reaction::Row {
-                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
-                    dam: collagene_core::methylation::MethylationState::Unmodified,
-                    dcm: collagene_core::methylation::MethylationState::Unmodified,
-                    cpg: collagene_core::methylation::MethylationState::Unmodified,
-                }),
+                generation: Some(
+                    collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                    },
+                ),
                 role: "whole vector".into(),
                 input_id: "vector".into(),
                 substrate: reaction::Substrate::WholeSource { origin: None },
             },
             reaction::Row {
-                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
-                    dam: collagene_core::methylation::MethylationState::Unmodified,
-                    dcm: collagene_core::methylation::MethylationState::Unmodified,
-                    cpg: collagene_core::methylation::MethylationState::Unmodified,
-                }),
+                generation: Some(
+                    collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                    },
+                ),
                 role: "complete amplicon".into(),
                 input_id: "insert".into(),
                 substrate: reaction::Substrate::Prepared {
@@ -69,11 +74,13 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
                 },
             },
             reaction::Row {
-                generation: Some(collagene_core::modified_duplex::GenerationAssumptions {
-                    dam: collagene_core::methylation::MethylationState::Unmodified,
-                    dcm: collagene_core::methylation::MethylationState::Unmodified,
-                    cpg: collagene_core::methylation::MethylationState::Unmodified,
-                }),
+                generation: Some(
+                    collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                        cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
+                    },
+                ),
                 role: "uncut contaminant".into(),
                 input_id: "carry".into(),
                 substrate: reaction::Substrate::WholeSource { origin: None },
@@ -124,7 +131,7 @@ fn whole_circle_and_whole_amplicon_include_every_digest_piece_and_uncut_carryove
         serde_json::to_value(&report.probe_plan.steps[..4]).unwrap()
     );
     assert_eq!(
-        verification::verify(&selected.plan, &target).status,
+        verification::engine::verify(&selected.plan, &target).status,
         Status::ConsistentUnderAssumptions
     );
     let self_a = report
@@ -143,7 +150,7 @@ fn whole_circle_and_whole_amplicon_include_every_digest_piece_and_uncut_carryove
     )
     .unwrap();
     assert_eq!(
-        verification::verify(&self_plan.plan, &target).status,
+        verification::engine::verify(&self_plan.plan, &target).status,
         Status::Invalid
     );
     assert_eq!(serde_json::to_vec(&inputs).unwrap(), before);
@@ -301,7 +308,7 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         serde_json::to_value(&plan.steps[..4]).unwrap(),
         serde_json::to_value(&discovery.probe_plan.steps[..4]).unwrap()
     );
-    let fresh = verification::verify(&plan, &target);
+    let fresh = verification::engine::verify(&plan, &target);
     assert_eq!(fresh.status, Status::ConsistentUnderAssumptions);
     assert_eq!(fresh.products.last().unwrap().sequence.as_str(), AB);
     assert!(
@@ -318,7 +325,7 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
     // Matching the target cannot rescue a changed selection key, including when
     // an otherwise valid imported/deserialized plan supplies it.
     for directed in [true, false] {
-        let mut forged: verification::DesignPlan =
+        let mut forged: collagene_core::planning::plan::DesignPlan =
             serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
         let Operation::SelectedGoldenGate {
             directed_sequence_key,
@@ -333,7 +340,7 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         } else {
             *physical_sequence_key = "0".repeat(64);
         }
-        let rejected = verification::verify(&forged, &target);
+        let rejected = verification::engine::verify(&forged, &target);
         assert_eq!(rejected.status, Status::Invalid);
         assert_eq!(
             rejected.products.len(),
@@ -355,7 +362,7 @@ fn key_bound_native_operation_reconstructs_the_selected_path_without_target_sele
         reaction::inspect_revision(&inputs, &wrong_target, &request).unwrap();
     let wrong_plan =
         reaction::compile_selected(&inputs, &wrong_target, &request, &wrong_selection).unwrap();
-    let wrong = verification::verify(&wrong_plan, &wrong_target);
+    let wrong = verification::engine::verify(&wrong_plan, &wrong_target);
     assert_eq!(wrong.status, Status::Invalid);
     assert_eq!(wrong.products.last().unwrap().sequence.as_str(), AB);
 }
@@ -378,7 +385,7 @@ fn key_bound_compilation_preserves_explicit_choice_and_refuses_stale_context() {
         physical_sequence_key: candidate.physical_sequence_key.clone(),
     };
     let plan = reaction::compile_selected(&inputs, &target, &request, &selection).unwrap();
-    let native = verification::verify(&plan, &target);
+    let native = verification::engine::verify(&plan, &target);
     assert_eq!(native.status, Status::Invalid);
     assert_eq!(
         native.products.last().unwrap().sequence.as_str(),
@@ -413,14 +420,17 @@ fn keyed_reaction_protocol_and_junctions_keep_the_native_path_identity() {
         physical_sequence_key: candidate.physical_sequence_key.clone(),
     };
     let plan = reaction::compile_selected(&inputs, &target, &request, &selection).unwrap();
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(html.contains(&selection.directed_sequence_key));
     assert!(html.contains(&selection.physical_sequence_key));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
-    let junctions =
-        collagene_core::assembly_junctions::inspect_plan(&plan, &target, &Default::default())
-            .unwrap();
+    let junctions = collagene_core::cloning::assembly::junctions::inspect_plan(
+        &plan,
+        &target,
+        &Default::default(),
+    )
+    .unwrap();
     assert!(junctions.complete);
     assert_eq!(
         junctions.verification.status,

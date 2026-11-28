@@ -357,7 +357,7 @@ async fn workspace_saves_require_independently_approved_document_closure() {
         collagene_model::Topology::Circular,
     )
     .unwrap();
-    let frame = collagene_core::workspace::Workspace::from_documents(
+    let frame = collagene_core::documents::workspace::Workspace::from_documents(
         "One selected closure",
         vec![molecule.clone()],
         0,
@@ -372,7 +372,7 @@ async fn workspace_saves_require_independently_approved_document_closure() {
             .as_ref()
             .map(|event| wire::Text::new(event).unwrap()),
     };
-    let bytes = collagene_core::workspace::save_workspace(&frame).unwrap();
+    let bytes = collagene_core::documents::workspace::save_workspace(&frame).unwrap();
     let payload = wire::Payload {
         kind: wire::PayloadKind::WorkspaceArchive,
         archive_hash: wire::Digest::new(blake3::hash(&bytes).to_hex().as_str()).unwrap(),
@@ -435,14 +435,14 @@ async fn workspace_saves_require_independently_approved_document_closure() {
         collagene_model::Topology::Linear,
     )
     .unwrap();
-    let frame = collagene_core::workspace::Workspace::from_documents(
+    let frame = collagene_core::documents::workspace::Workspace::from_documents(
         "Unrelated browser workspace",
         vec![molecule, unrelated],
         0,
     )
     .unwrap();
     let document = &frame.documents[0];
-    let bytes = collagene_core::workspace::save_workspace(&frame).unwrap();
+    let bytes = collagene_core::documents::workspace::save_workspace(&frame).unwrap();
     let extra = wire::Payload {
         kind: wire::PayloadKind::WorkspaceArchive,
         archive_hash: wire::Digest::new(blake3::hash(&bytes).to_hex().as_str()).unwrap(),
@@ -1255,7 +1255,7 @@ async fn sync_payload_validation_rejects_bad_native_bytes_without_creating_a_rec
 async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_document_sharing() {
     use collagene_library_sync as sync;
     fn archived(documents: Vec<collagene_model::Molecule>) -> wire::Payload {
-        let frame = collagene_core::workspace::Workspace::from_documents(
+        let frame = collagene_core::documents::workspace::Workspace::from_documents(
             "Selected publication",
             documents,
             0,
@@ -1270,7 +1270,7 @@ async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_documen
                 .as_ref()
                 .map(|event| wire::Text::new(event).unwrap()),
         };
-        let bytes = collagene_core::workspace::save_workspace(&frame).unwrap();
+        let bytes = collagene_core::documents::workspace::save_workspace(&frame).unwrap();
         wire::Payload {
             kind: wire::PayloadKind::WorkspaceArchive,
             archive_hash: wire::Digest::of(&bytes),
@@ -1326,7 +1326,7 @@ async fn sync_workspace_writes_retain_exact_history_and_reject_unrelated_documen
     };
     assert_eq!(payload.bytes, valid.bytes);
     assert_eq!(payload.selection, valid.selection);
-    let restored = collagene_core::workspace::load_workspace(&payload.bytes).unwrap();
+    let restored = collagene_core::documents::workspace::load_workspace(&payload.bytes).unwrap();
     assert!(!restored.history.is_empty());
     assert_eq!(
         restored.documents[0].head_event.as_deref(),
@@ -1590,14 +1590,15 @@ impl collagene_source_gateway::Backend for FixtureSource {
         &self,
         _: String,
         _: Option<String>,
-    ) -> Result<collagene_core::formats::ImportReport, collagene_sources::SourceError> {
+    ) -> Result<collagene_core::formats::sequence::ImportReport, collagene_sources::SourceError>
+    {
         self.calls.fetch_add(1, Ordering::SeqCst);
         let _drop = SourceDrop(self.dropped.clone());
         self.started.notify_one();
         if self.pending {
             std::future::pending::<()>().await;
         }
-        Ok(collagene_core::formats::ImportReport {
+        Ok(collagene_core::formats::sequence::ImportReport {
             molecules: vec![
                 collagene_model::Molecule::dna(
                     "Fixture only",
@@ -1621,7 +1622,8 @@ impl collagene_source_gateway::Backend for FixtureSource {
         _: Arc<collagene_sources::AddgeneCatalog>,
         _: u64,
         _: Option<String>,
-    ) -> Result<collagene_core::formats::ImportReport, collagene_sources::SourceError> {
+    ) -> Result<collagene_core::formats::sequence::ImportReport, collagene_sources::SourceError>
+    {
         panic!("unexpected selection backend call")
     }
 }

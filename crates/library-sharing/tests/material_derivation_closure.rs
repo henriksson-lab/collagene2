@@ -1,13 +1,19 @@
 //! Actual target-free PCR→digest followed by a separately verified physical run.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, cloning_outputs, homology_assembly,
-    material_derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    transfer::Candidate,
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
+    cloning::{overlap::assembly as homology_assembly, restriction::catalog as catalog_digest},
+    documents::{
+        transfer::Candidate,
+        workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument},
+    },
+    material::{
+        derivation::{self as native, Derivation, PcrSelection, SourceOrigin},
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Molecule, Topology};
@@ -77,7 +83,7 @@ fn fixture() -> Fixture {
     let original_source = source.revision();
     let forward = Primer::new("New original F", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("New original R", "TGACGATC", "").unwrap();
-    let preview = verification::simulate_pcr_documents(
+    let preview = verification::pcr::simulate_pcr_documents(
         &source,
         &forward,
         &reverse,
@@ -143,7 +149,7 @@ fn fixture() -> Fixture {
     let digest = second.receipt.product;
     let cut = second.workspace.revisions[&digest.revision].clone();
     assert_eq!(cut.sequence.as_str(), "AATTCCGTAGGACTTCAGACCTGTAGATCGTCA");
-    let mut options = collagene_core::overlap_profiles::ProfileOptions::default();
+    let mut options = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     options.scan_repeated_overlaps = false;
     let plan = DesignPlan {
         name: "Saved derivation then physical assembly".into(),
@@ -187,7 +193,7 @@ fn fixture() -> Fixture {
             },
         ],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -195,7 +201,7 @@ fn fixture() -> Fixture {
         report.findings
     );
     assert_eq!(report.products.len(), 4);
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &plan,
         report.products.last().unwrap(),
         &target
@@ -253,7 +259,7 @@ fn fixture() -> Fixture {
     w.candidates.push(Candidate::new(candidate));
     w.active_candidate = Some(w.candidates.last().unwrap().plan_revision.clone());
     let draft = WorkspaceAttachment {
-        kind: collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND.into(),
+        kind: collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND.into(),
         name: "Private draft".into(),
         media_type: "application/json".into(),
         bytes: br#"{"private":"UNPUBLISHED DRAFT"}"#.to_vec(),
@@ -292,9 +298,9 @@ fn check_projected(f: &Fixture, projection: sharing::Projection) {
     assert!(w.attachments.contains_key(&f.second_record));
     assert!(!w.attachments.contains_key(&f.primer_table));
     assert!(
-        !w.attachments
-            .values()
-            .any(|a| a.kind == collagene_core::assembly_library_history::ACTIVE_DRAFT_KIND)
+        !w.attachments.values().any(
+            |a| a.kind == collagene_core::cloning::assembly::library_history::ACTIVE_DRAFT_KIND
+        )
     );
     let restored = workspace::load_workspace(&workspace::save_workspace(&w).unwrap()).unwrap();
     let fresh = run_material::reconstruct(&restored, &f.final_run).unwrap();
@@ -335,7 +341,7 @@ fn selecting_only_derived_fragment_keeps_typed_ancestors_without_unrelated_downs
             .contains_key(&f.second_record)
     );
     assert!(
-        collagene_core::run_lineage::list_runs(&projected.workspace)
+        collagene_core::material::lineage::list_runs(&projected.workspace)
             .unwrap()
             .is_empty()
     );

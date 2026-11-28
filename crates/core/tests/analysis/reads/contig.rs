@@ -1,8 +1,7 @@
 //! Synthetic read fixtures with independently specified sequence/call evidence.
 use collagene_core::{
-    contig::*,
-    oligo_formats::{self, QualityEncoding},
-    traces,
+    formats::oligos::{self as oligo_formats, QualityEncoding},
+    review::{contigs::*, reads::traces},
 };
 use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 fn options() -> ContigOptions {

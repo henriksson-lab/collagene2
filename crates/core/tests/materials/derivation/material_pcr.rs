@@ -1,12 +1,20 @@
 //! Actual native saved-material replay, not imported duplex-summary bootstrap.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, cloning_outputs, homology_assembly, material_derivation as digest,
-    material_pcr as m, pcr_outputs,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source},
-    workspace::Workspace,
+    cloning::{
+        overlap::assembly as homology_assembly,
+        pcr::{material as m, outputs as pcr_outputs},
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::Workspace,
+    material::{
+        derivation as digest,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn dna(name: &str, text: &str, topology: Topology) -> Molecule {
@@ -27,7 +35,13 @@ fn event(w: &Workspace, index: usize) -> EventBinding {
         revision: d.head.clone(),
     }
 }
-fn stock(incomplete: bool) -> (Workspace, Molecule, run_material::Capsule) {
+fn stock(
+    incomplete: bool,
+) -> (
+    Workspace,
+    Molecule,
+    collagene_core::material::capsule::Capsule,
+) {
     let (docs, plan, target) = if incomplete {
         let left = dna("Left actual stock", "AGTCCGATGCTA", Topology::Linear);
         let right = dna("Right actual stock", "GCTATTCGAATTCCAGTC", Topology::Linear);
@@ -36,7 +50,7 @@ fn stock(incomplete: bool) -> (Workspace, Molecule, run_material::Capsule) {
             "AGTCCGATGCTATTCGAATTCC",
             Topology::Circular,
         );
-        let mut profile = collagene_core::overlap_profiles::ProfileOptions::default();
+        let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
         profile.scan_repeated_overlaps = false;
         let plan = DesignPlan {
             name: "Finite terminal enumeration".into(),
@@ -124,7 +138,7 @@ fn stock(incomplete: bool) -> (Workspace, Molecule, run_material::Capsule) {
     )
     .unwrap();
     let source = saved.workspace.revisions[&saved.receipt.construct.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &saved.workspace,
         &run_material::Selection {
             run_id: saved.receipt.run.run_id,
@@ -149,11 +163,11 @@ fn cut(incomplete: bool) -> (Molecule, MaterialOrigin) {
     let installed = digest::prepare_install(
         &w,
         &digest::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: origin.selection.event.clone(),
                 origin: digest::SourceOrigin::Saved(
-                    collagene_core::run_material::MaterialOrigin::Run(origin),
+                    collagene_core::material::run::MaterialOrigin::Run(origin),
                 ),
             }],
             derivation: digest::Derivation::CatalogDigest {
@@ -249,7 +263,7 @@ fn actual_staggered_digest_is_used_without_stripping_source_markers_or_trusting_
     let before = source.clone();
     let (forward, reverse) = oligos(false);
     assert!(
-        verification::simulate_pcr_documents(
+        verification::pcr::simulate_pcr_documents(
             &source,
             &forward,
             &reverse,

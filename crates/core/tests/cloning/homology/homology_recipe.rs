@@ -1,16 +1,21 @@
 //! Independent literal products through prepare → assemble → save → reuse.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self as recipe, FragmentSpec, Preparation, RunPreparation},
-    catalog_digest,
     chemistry::{EndRepairMethod, FivePrime, ThreePrime},
-    cloning_outputs,
-    homology_assembly::{Options, OuterEndPolicy},
-    ligation_recipe,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{self, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::recipe::{self, FragmentSpec, Preparation, RunPreparation},
+        ligation::recipe as ligation_recipe,
+        overlap::assembly::{Options, OuterEndPolicy},
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const LEFT: &str = "AGTCCGATGCTACGTAGGAC";
@@ -65,7 +70,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
         },
     ];
     let overlaps = if circular { vec![8, 8] } else { vec![8] };
-    let mut profile = collagene_core::overlap_profiles::ProfileOptions::default();
+    let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
     let request = recipe::Recipe {
         name: "Declared physical homology route".into(),
@@ -132,7 +137,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         .physical_processing_reports
         .iter()
         .find_map(|s| match &s.evidence {
-            verification::PhysicalProcessingEvidence::HomologyAssembly(r) => Some(r),
+            verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(r) => Some(r),
             _ => None,
         })
         .unwrap();
@@ -179,7 +184,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
     .unwrap();
     let event = commit.receipt.construct.clone();
     let source = commit.workspace.revisions[&event.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id.clone(),
@@ -230,7 +235,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         &[input("circle", source.clone())],
         &independent,
         &downstream,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -249,10 +254,10 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
     ));
     assert_eq!(serde_json::to_value(&origin).unwrap(), before);
     // Native export/import and retained replay include the physical operation.
-    let archive = collagene_core::workspace::save_workspace(&commit.workspace).unwrap();
-    let restored = collagene_core::workspace::load_workspace(&archive).unwrap();
+    let archive = collagene_core::documents::workspace::save_workspace(&commit.workspace).unwrap();
+    let restored = collagene_core::documents::workspace::load_workspace(&archive).unwrap();
     assert!(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &restored,
             &Selection {
                 run_id: commit.receipt.run.run_id,
@@ -262,13 +267,13 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         )
         .is_ok()
     );
-    let html = verification::export_protocol_html(
+    let html = verification::output::export_protocol_html(
         &preview.compiled.plan,
         &w.revisions[&target_pin.revision],
     );
     assert!(html.contains("Physical homology assembly"));
     assert!(html.contains("5′"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(
         &preview.compiled.plan,
         &w.revisions[&target_pin.revision],
     )
@@ -294,7 +299,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
     });
     let linear = Molecule::dna("Independent PCR40", CIRCLE, Topology::Linear).unwrap();
     plan.target_revision = linear.revision();
-    let unavailable = verification::verify(&plan, &linear);
+    let unavailable = verification::engine::verify(&plan, &linear);
     assert_eq!(unavailable.status, Status::Incomplete);
     assert_eq!(
         unavailable.products.len(),
@@ -309,7 +314,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
     );
     let physical = recipe::preview_homology(&inputs, &target, &request, &policy).unwrap();
     let imported = physical.verification.products.last().unwrap().clone();
-    let forged = verification::DesignPlan {
+    let forged = collagene_core::planning::plan::DesignPlan {
         name: "Metadata is not originating material".into(),
         target_revision: linear.revision(),
         inputs: vec![input("copied", imported)],
@@ -320,7 +325,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
             template_strand: collagene_core::chemistry::Strand::Top,
         }],
     };
-    let imported = verification::verify(&forged, &linear);
+    let imported = verification::engine::verify(&forged, &linear);
     assert_eq!(imported.status, Status::Incomplete);
     assert!(
         imported.products.is_empty(),
@@ -336,17 +341,18 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
     mismatched.overlaps = vec![7, 7];
     assert!(recipe::homology_preflight(&inputs, &target, &request, &mismatched).is_err());
     let mut incompatible = request.clone();
-    incompatible.options.method = collagene_core::overlap_profiles::OverlapMethod::InFusion;
+    incompatible.options.method =
+        collagene_core::cloning::overlap::profiles::OverlapMethod::InFusion;
     let (_, _, physical_policy) = fixture(true);
     assert!(recipe::homology_preflight(&inputs, &target, &incompatible, &physical_policy).is_err());
     let mut direct = physical.compiled.plan;
     if let Operation::HomologyAssembly { options, .. } = direct.steps.last_mut().unwrap() {
-        options.method = collagene_core::overlap_profiles::OverlapMethod::InFusion;
+        options.method = collagene_core::cloning::overlap::profiles::OverlapMethod::InFusion;
     } else {
         panic!("physical assembly");
     }
     assert_eq!(
-        verification::verify(&direct, &target).status,
+        verification::engine::verify(&direct, &target).status,
         Status::Invalid
     );
 }
@@ -404,7 +410,7 @@ fn linear_outer_resection_projects_only_actual_top_calls_and_preserves_real_over
         .physical_processing_reports
         .iter()
         .find_map(|s| match &s.evidence {
-            verification::PhysicalProcessingEvidence::HomologyAssembly(r) => Some(r),
+            verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(r) => Some(r),
             _ => None,
         })
         .unwrap();
@@ -471,14 +477,14 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
                 .last()
                 .unwrap()
                 .metadata
-                .contains_key(collagene_core::recombination::REFERENCE_ONLY_KEY)
+                .contains_key(collagene_core::cloning::recombination::REFERENCE_ONLY_KEY)
         );
         let g = p
             .verification
             .physical_processing_reports
             .iter()
             .find_map(|s| match &s.evidence {
-                verification::PhysicalProcessingEvidence::HomologyAssembly(g) => Some(g),
+                verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(g) => Some(g),
                 _ => None,
             })
             .unwrap();
@@ -521,7 +527,7 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
         )
         .unwrap();
         assert!(
-            run_material::capsule(
+            collagene_core::material::capsule::capsule(
                 &commit.workspace,
                 &Selection {
                     run_id: commit.receipt.run.run_id,
@@ -541,7 +547,7 @@ fn unsealed_diagnostic_strands_are_retained_but_cannot_become_saved_material() {
             reverse: Primer::new("R", "TGACGATC", "").unwrap(),
             template_strand: collagene_core::chemistry::Strand::Top,
         });
-        let unavailable = verification::verify(&downstream, &expected);
+        let unavailable = verification::engine::verify(&downstream, &expected);
         assert_eq!(unavailable.status, Status::Incomplete);
         assert_eq!(
             unavailable.products.len(),

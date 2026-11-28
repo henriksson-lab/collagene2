@@ -1,12 +1,17 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit::Edit,
-    assembly_recipe::{self, FragmentSpec, Preparation},
-    catalog_digest,
-    primers::DesignOptions,
-    selective_junction_edit::*,
-    verification::{self, PlanInput, Status},
+    cloning::{
+        assembly::{
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit::Edit,
+            recipe::{self as assembly_recipe, FragmentSpec, Preparation},
+            selective_edit::*,
+        },
+        pcr::primers::DesignOptions,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::PlanInput,
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -115,11 +120,11 @@ fn fixture() -> (Vec<PlanInput>, Request) {
     };
     (inputs, r)
 }
-fn fresh(inputs: &[PlanInput], report: &Report) -> verification::VerificationReport {
+fn fresh(inputs: &[PlanInput], report: &Report) -> verification::evidence::VerificationReport {
     let plan = assembly_recipe::compile(inputs, &report.intent.target, &report.recipe)
         .unwrap()
         .plan;
-    verification::verify(&plan, &report.intent.target)
+    verification::engine::verify(&plan, &report.intent.target)
 }
 #[test]
 fn one_selected_row_preserves_manual_and_catalog_bytes_and_matches_literal_independent_target() {
@@ -200,7 +205,7 @@ fn incompatible_manual_row_is_kept_literal_and_only_fresh_full_reconstruction_re
         .unwrap()
         .plan;
     assert_ne!(
-        verification::verify(&plan, &wrong).status,
+        verification::engine::verify(&plan, &wrong).status,
         Status::ConsistentUnderAssumptions
     );
 }

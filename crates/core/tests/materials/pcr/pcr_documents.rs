@@ -1,11 +1,11 @@
 use collagene_core::{
-    analysis::Primer,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::simulate_pcr_documents,
+    sequence::analysis::Primer,
+    verification::pcr::simulate_pcr_documents,
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 
@@ -110,8 +110,8 @@ fn physical_or_declared_single_strand_templates_are_not_flattened() {
 #[test]
 fn candidate_schema_one_cannot_claim_new_physical_operations() {
     use collagene_core::{
-        transfer::{self, Candidate},
-        verification::{DesignPlan, Operation, Source},
+        documents::transfer::{self, Candidate},
+        planning::plan::{DesignPlan, Operation, Source},
     };
     let target = Molecule::dna("target", "ACGT", Topology::Linear).unwrap();
     let candidate = Candidate::new(DesignPlan {

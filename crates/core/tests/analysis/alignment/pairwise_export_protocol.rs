@@ -1,19 +1,21 @@
 //! Portable pairwise reports use the ordinary binary worker envelope, not a
 //! workspace exception or an external formatter.
 use collagene_core::{
-    alignment::AlignmentOptions,
-    pairwise_export::{self, Format},
-    pairwise_history::Record,
-    pairwise_review::{self, Options},
-    pairwise_search,
+    alignment::{
+        AlignmentOptions,
+        export::{self as pairwise_export, Format},
+        history::Record,
+        review::{self as pairwise_review, Options},
+        search as pairwise_search,
+    },
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    workspace::Workspace,
 };
 use collagene_model::{Error, Feature, Location, Molecule, Topology};
 
@@ -193,7 +195,7 @@ fn export_responses_reject_unsafe_metadata_and_keep_the_ordinary_32mib_budget() 
     }
     assert!(protocol::request::Request::encode(&malformed).is_err());
 
-    let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
+    let maximum = collagene_core::formats::sequence::MAX_IMPORT_BYTES;
     let mut wire = vec![0; 42 + maximum + 1];
     wire[4..6].copy_from_slice(&protocol::schema::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
@@ -292,7 +294,7 @@ fn annotation_context_worker_preserves_gap_columns_and_rejects_stale_or_old_enve
     .unwrap();
     assert_eq!(report.comparison.alignment.reference_aligned, "AACC-GGTT");
     let revision =
-        collagene_core::pairwise_context::revision(&report, &reference, &query, false).unwrap();
+        collagene_core::alignment::context::revision(&report, &reference, &query, false).unwrap();
     let request = Request {
         id: 58,
         revision,

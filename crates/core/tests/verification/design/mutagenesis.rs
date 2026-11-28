@@ -1,9 +1,8 @@
 //! Independent oligo constraints and explicit inverse-PCR strand diagrams.
 use collagene_core::{
-    analysis::{self, Primer},
-    mutagenesis::*,
-    primers::BindingOptions,
-    verification::Status,
+    cloning::pcr::{mutagenesis::*, primers::BindingOptions},
+    sequence::analysis::{self, Primer},
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 use std::collections::BTreeSet;

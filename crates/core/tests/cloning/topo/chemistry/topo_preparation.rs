@@ -1,7 +1,10 @@
 //! Actual source calls and independently stated directional strand diagrams.
-use collagene_core::{analysis::Primer, topo, topo_preparation as prep};
+use collagene_core::cloning::topo::physical::{self as graph, projection};
+use collagene_core::{
+    cloning::topo::{self, preparation as prep},
+    sequence::analysis::Primer,
+};
 use collagene_model::{Molecule, Topology};
-use topo::physical::{self as graph, projection};
 fn input(role: &str, dna: &str) -> topo::Input {
     topo::Input {
         role: role.into(),
@@ -252,7 +255,7 @@ fn reversed_drawing_missing_activation_and_missing_cacc_never_gain_transfer_auth
         let prep::PreparationSource::Original { insert, .. } = &mut request.source else {
             panic!("original declaration fixture")
         };
-        insert.tail = Some(collagene_core::tailing::TailingBase::A);
+        insert.tail = Some(collagene_core::cloning::ligation::tailing::TailingBase::A);
     }
     assert!(prep::compile(&request).is_err());
     {

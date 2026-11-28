@@ -1,6 +1,6 @@
 //! Saved oligo identity is independently checked before its use in actual PCR.
-use collagene_core::analysis::Primer;
-use collagene_mcp::CollageneServer;
+use collagene_core::sequence::analysis::Primer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

@@ -1,6 +1,6 @@
 //! Append-only worker gates and exact source/options/profile assessment bindings.
 use collagene_core::{
-    methylation::*,
+    chemistry::methylation::*,
     protocol::{
         self,
         request::Request,
@@ -98,7 +98,7 @@ fn methylation_tags_require_schema_sixteen_before_body_decode_and_keep_ordinary_
             );
         }
         let mut large = prefix;
-        large.resize(collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+        large.resize(collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1, 0);
         let bytes = raw(magic, protocol::schema::WORKER_SCHEMA_VERSION, &large);
         let error = if magic == b"CGQ\0" {
             protocol::execution::process_request(&bytes).unwrap_err()

@@ -1,6 +1,6 @@
 //! Independent literal count fixtures; no published experimental data bundled.
-use collagene_core::ligation_fidelity::{
-    self as fidelity, Cell, Conditions, Dataset, Estimate, Prepared, Provenance, UnknownReason,
+use collagene_core::cloning::ligation::fidelity::{
+    self, Cell, Conditions, Dataset, Estimate, Prepared, Provenance, UnknownReason,
 };
 fn dataset(k: usize, counts: &[(&str, &str, u64)]) -> Dataset {
     let mut data = Dataset {

@@ -1,13 +1,16 @@
 //! Saved material is reconstructed before the ordinary exact-PCR/digest engine.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::{EndTreatment, FivePrime, ThreePrime},
-    cloning_outputs, pcr_digest_inspection as p,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Capsule},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source},
-    workspace::Workspace,
+    cloning::{pcr::digest as p, restriction::catalog as catalog_digest},
+    documents::workspace::Workspace,
+    material::{
+        capsule::Capsule,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs, run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn saved(
@@ -66,7 +69,7 @@ fn saved(
         .head(&commit.receipt.construct.document_id)
         .unwrap()
         .clone();
-    let capsule = run_material::capsule(
+    let capsule = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &run_material::Selection {
             run_id: commit.receipt.run.run_id,
@@ -303,9 +306,9 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
             origin,
         }],
     };
-    let report = verification::verify(&plan, &source);
+    let report = verification::engine::verify(&plan, &source);
     assert_eq!(report.products.len(), 1);
-    let verification::PhysicalProcessingEvidence::RunProduct(evidence) =
+    let verification::evidence::PhysicalProcessingEvidence::RunProduct(evidence) =
         &report.physical_processing_reports[0].evidence
     else {
         panic!("replay evidence")

@@ -1,9 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material,
-    verification::{DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::{RevisionEvent, Workspace, WorkspaceDocument},
+    documents::workspace::{RevisionEvent, Workspace, WorkspaceDocument},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run as run_material,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Molecule, Topology};
@@ -119,7 +122,7 @@ fn run_fixture() -> (Workspace, Workspace, Selection, run_material::Selection) {
     let target = Molecule::dna("Independent descendant", DNA, Topology::Linear).unwrap();
     add(&mut remote, "downstream-target", &target.name, DNA);
     let required = pin(&remote, "downstream-target");
-    let capsule = run_material::capsule(&remote, &origin).unwrap();
+    let capsule = collagene_core::material::capsule::capsule(&remote, &origin).unwrap();
     let plan = DesignPlan {
         name: "Fresh use of saved PCR stock".into(),
         target_revision: required.revision.clone(),

@@ -8,8 +8,8 @@ pub mod publication_review;
 mod remote;
 pub mod remote_removal;
 use collagene_core::{
+    documents::workspace::{self, Workspace},
     protocol,
-    workspace::{self, Workspace},
 };
 use collagene_lab_library::{self as store, mutations as durable};
 use collagene_library_protocol as wire;

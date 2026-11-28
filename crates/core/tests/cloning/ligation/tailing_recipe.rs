@@ -1,14 +1,21 @@
 //! Independently declared scars, saved actual tails, and explicit per-row decisions.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation, RunPreparation},
     chemistry::{EndTreatment, Polarity},
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    tailing::TailingBase,
-    tailing_recipe::{self as t, Action, Profile, ProfileStatus},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
+        ligation::{
+            tailing::TailingBase,
+            tailing_recipe::{self as t, Action, Profile, ProfileStatus},
+        },
+    },
+    documents::workspace::Workspace,
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn input(id: &str, molecule: Molecule) -> PlanInput {
@@ -56,7 +63,7 @@ fn saved_tail(
     base: TailingBase,
     f: &str,
     r: &str,
-) -> (Molecule, run_material::Capsule) {
+) -> (Molecule, collagene_core::material::capsule::Capsule) {
     let original = Molecule::dna("Original stock", letters, Topology::Linear).unwrap();
     let target = Molecule::dna(
         "Independently declared one-base tailed stock",
@@ -113,7 +120,7 @@ fn saved_tail(
         },
     };
     let source = commit.workspace.revisions[&product.revision].clone();
-    let origin = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     (source, origin)
 }
 fn same_circle(a: &str, b: &str) -> bool {
@@ -202,7 +209,8 @@ fn keep_saved_t_vector_and_add_a_insert_preserves_actual_material_and_only_new_o
             .covalently_closed_in_model
     );
     let oligos =
-        collagene_core::plan_oligos::build(&p.compiled.plan, &target, &Default::default()).unwrap();
+        collagene_core::planning::oligos::build(&p.compiled.plan, &target, &Default::default())
+            .unwrap();
     assert_eq!(
         oligos.oligos.records.len(),
         2,
@@ -253,7 +261,7 @@ fn keep_saved_t_vector_and_add_a_insert_preserves_actual_material_and_only_new_o
         .physical_processing_reports
         .iter()
         .find_map(|step| match &step.evidence {
-            verification::PhysicalProcessingEvidence::LigationOutcomes(e) => Some(e),
+            verification::evidence::PhysicalProcessingEvidence::LigationOutcomes(e) => Some(e),
             _ => None,
         })
         .unwrap();
@@ -347,7 +355,7 @@ fn both_existing_saved_tails_do_not_repeat_tailing_or_order_upstream_primers() {
             .any(|op| matches!(op, Operation::Tail3Prime { .. } | Operation::Pcr { .. }))
     );
     assert!(
-        collagene_core::plan_oligos::build(&p.compiled.plan, &target, &Default::default())
+        collagene_core::planning::oligos::build(&p.compiled.plan, &target, &Default::default())
             .unwrap()
             .oligos
             .records
@@ -489,7 +497,7 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
         2,
     )
     .unwrap();
-    let policy = collagene_core::homology_assembly::Options {
+    let policy = collagene_core::cloning::overlap::assembly::Options {
         overlaps: vec![4],
         topology: Topology::Linear,
         min_paired_bases: 4,
@@ -515,11 +523,11 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
             },
             Operation::HomologyAssembly {
                 fragments: vec![
-                    verification::OrientedSource {
+                    collagene_core::planning::plan::OrientedSource {
                         source: Source::Step(0),
                         reverse: false,
                     },
-                    verification::OrientedSource {
+                    collagene_core::planning::plan::OrientedSource {
                         source: Source::Step(1),
                         reverse: false,
                     },
@@ -537,7 +545,7 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
             },
         ],
     };
-    let report = verification::verify(&plan, &stock_target);
+    let report = verification::engine::verify(&plan, &stock_target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(report.products.len(), 5);
     assert_eq!(
@@ -572,7 +580,7 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
         },
     };
     let stock = commit.workspace.revisions[&product.revision].clone();
-    let origin = run_material::capsule(&commit.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selected).unwrap();
     let inputs = vec![
         input("vector", stock),
         input(
@@ -634,9 +642,11 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
         .physical_processing_reports
         .iter()
         .find_map(|step| match &step.evidence {
-            verification::PhysicalProcessingEvidence::RunProduct(e) => Some(
-                serde_json::from_slice::<verification::VerificationReport>(&e.current_report)
-                    .unwrap(),
+            verification::evidence::PhysicalProcessingEvidence::RunProduct(e) => Some(
+                serde_json::from_slice::<verification::evidence::VerificationReport>(
+                    &e.current_report,
+                )
+                .unwrap(),
             ),
             _ => None,
         })
@@ -648,12 +658,14 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
 
 mod preparation_and_receipt_tests {
     use collagene_core::{
-        analysis::Primer,
-        assembly_recipe::{FragmentSpec, Preparation},
         chemistry::{EndTreatment, Polarity, Terminus, ThreePrime},
-        tailing::TailingBase,
-        tailing_recipe as t,
-        verification::{self, Operation, PlanInput, Source, Status},
+        cloning::{
+            assembly::recipe::{FragmentSpec, Preparation},
+            ligation::{tailing::TailingBase, tailing_recipe as t},
+        },
+        planning::plan::{Operation, PlanInput, Source},
+        sequence::analysis::Primer,
+        verification::evidence::Status,
     };
     use collagene_model::{Molecule, Topology};
     fn input(id: &str, letters: &str) -> PlanInput {
@@ -677,7 +689,7 @@ mod preparation_and_receipt_tests {
                 },
                 reverse: false,
             },
-            action: collagene_core::tailing_recipe::Action::AddTail { base },
+            action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail { base },
             treatment: Some(EndTreatment::Phosphorylate),
         }
     }
@@ -691,9 +703,9 @@ mod preparation_and_receipt_tests {
             Molecule::dna("Independent scar intent", target, Topology::Circular).unwrap(),
             t::Recipe {
                 profile: if matches!(a, TailingBase::A | TailingBase::T) {
-                    collagene_core::tailing_recipe::Profile::Ta
+                    collagene_core::cloning::ligation::tailing_recipe::Profile::Ta
                 } else {
-                    collagene_core::tailing_recipe::Profile::Gc
+                    collagene_core::cloning::ligation::tailing_recipe::Profile::Gc
                 },
                 name: "Original-source tailing recipe".into(),
                 fragments: vec![
@@ -764,9 +776,10 @@ mod preparation_and_receipt_tests {
         assert_eq!(wrong.verification.status, Status::Invalid);
         assert!(wrong.preparation_complete);
         assert!(wrong.verification.products.last().is_some());
-        recipe.fragments[1].action = collagene_core::tailing_recipe::Action::AddTail {
-            base: TailingBase::T,
-        };
+        recipe.fragments[1].action =
+            collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
+                base: TailingBase::T,
+            };
         let incompatible = t::preview(&inputs, &target, &recipe).unwrap();
         assert_ne!(
             incompatible.verification.status,
@@ -822,7 +835,7 @@ mod preparation_and_receipt_tests {
     }
     #[test]
     fn pinned_catalog_and_pcr_catalog_preparations_reconstruct_their_actual_blunt_arms() {
-        let catalog = collagene_core::catalog_digest::builtin_catalog().unwrap();
+        let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
         let id = catalog
             .edition()
             .enzymes
@@ -831,7 +844,8 @@ mod preparation_and_receipt_tests {
             .unwrap()
             .id
             .clone();
-        let selection = collagene_core::catalog_digest::select(&catalog, &[id]).unwrap();
+        let selection =
+            collagene_core::cloning::restriction::catalog::select(&catalog, &[id]).unwrap();
         // Choose internal fragments between two actual SmaI cuts. Outer original
         // linear/PCR boundaries would retain unknown/5′OH chemistry, not fresh cuts.
         let inputs = vec![
@@ -845,7 +859,7 @@ mod preparation_and_receipt_tests {
         )
         .unwrap();
         let recipe = t::Recipe {
-            profile: collagene_core::tailing_recipe::Profile::Ta,
+            profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
             name: "Pinned source and whole-PCR digest".into(),
             fragments: vec![
@@ -861,7 +875,7 @@ mod preparation_and_receipt_tests {
                         },
                         reverse: false,
                     },
-                    action: collagene_core::tailing_recipe::Action::AddTail {
+                    action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                         base: TailingBase::T,
                     },
                     treatment: None,
@@ -881,7 +895,7 @@ mod preparation_and_receipt_tests {
                         },
                         reverse: false,
                     },
-                    action: collagene_core::tailing_recipe::Action::AddTail {
+                    action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail {
                         base: TailingBase::A,
                     },
                     treatment: None,
@@ -927,7 +941,8 @@ mod preparation_and_receipt_tests {
         let good = t::preview(&inputs, &target, &recipe).unwrap();
         let expected = good.context_revision.clone();
         let rehash = |p: &mut t::Preview| {
-            p.verification.plan_revision = verification::plan_revision(&p.compiled.plan)
+            p.verification.plan_revision =
+                collagene_core::planning::plan::DesignPlan::revision(&p.compiled.plan)
         };
         let mut bad = good.clone();
         let Operation::Tail3Prime { base, .. } =

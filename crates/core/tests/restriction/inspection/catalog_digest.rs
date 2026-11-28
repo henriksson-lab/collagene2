@@ -1,11 +1,14 @@
 use collagene_core::{
-    analysis,
-    catalog_digest::*,
-    chemistry, formats,
-    restriction_history::{self, SourceBinding},
-    restriction_inspection,
-    workspace::{RevisionEvent, Workspace},
-    *,
+    chemistry,
+    cloning::restriction::{
+        catalog::*,
+        history as restriction_history,
+        inspection::{self as restriction_inspection, InspectionOptions},
+    },
+    documents::workspace::{self, RevisionEvent, Workspace},
+    formats::sequence as formats,
+    material::lineage::EventBinding as SourceBinding,
+    sequence::analysis,
 };
 use collagene_model::{Molecule, Topology};
 fn selected(c: &catalog::Catalog, ids: &[&str]) -> CatalogSelection {

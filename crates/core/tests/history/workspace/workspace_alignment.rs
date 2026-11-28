@@ -1,7 +1,7 @@
 //! Recognized alignment attachments are validated before any archive restoration.
 use collagene_core::{
-    alignment_formats::{self, AlignmentFormat, WORKSPACE_ATTACHMENT_KIND},
-    workspace::*,
+    documents::workspace::*,
+    formats::alignment::{self as alignment_formats, AlignmentFormat, WORKSPACE_ATTACHMENT_KIND},
 };
 use collagene_model::{Alphabet, Molecule, Topology};
 fn workspace(bytes: Vec<u8>) -> Workspace {

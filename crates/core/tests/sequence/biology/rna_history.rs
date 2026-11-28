@@ -1,8 +1,11 @@
 use collagene_core::{
-    history::DocumentHistory,
-    rna_chemistry as rna, rna_history as native,
-    run_lineage::EventBinding,
-    workspace::{self, Workspace, WorkspaceAttachment},
+    documents::{
+        history::DocumentHistory,
+        rna_history as native,
+        workspace::{self, Workspace, WorkspaceAttachment},
+    },
+    material::lineage::EventBinding,
+    rna_chemistry as rna,
 };
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn fixture() -> (Workspace, native::Record) {

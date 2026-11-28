@@ -1,6 +1,6 @@
 //! Explicit physical preparations and ligation targets, specified independently.
-use collagene_core::{analysis::Primer, verification::DesignPlan};
-use collagene_mcp::CollageneServer;
+use collagene_core::{planning::plan::DesignPlan, sequence::analysis::Primer};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

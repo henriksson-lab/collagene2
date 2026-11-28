@@ -34,10 +34,10 @@ status below was reconciled against source on26 November2026:
    another physical engine is unnecessary. Errors should point to the affected
    source/end or parameter. Do not adopt undocumented automatic repair.
 2. **Extend the existing source/recipe handoff where coverage is missing.** Current
-   [cloning methods](../crates/web/src/cloning_methods.rs) now connect ordinary two-source TA/GC
+   [cloning methods](../crates/web/src/cloning/preparation/cloning_methods.rs) now connect ordinary two-source TA/GC
    drafts through exact source roles, pinned preparations, independently declared
    junction/terminal intent, fresh verification and product/output review. Native
-   [combinatorial design](../crates/core/src/combinatorial_design.rs) does not yet
+   [combinatorial design](../crates/core/src/planning/combinatorial/mod.rs) does not yet
    represent tailing or two-input annealing as a library preparation. Future
    integration should reuse existing typed operations and exact original events;
    copying an intermediate reference into a slot must not invent physical stock.

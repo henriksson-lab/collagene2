@@ -1,6 +1,6 @@
 //! In-memory SDK regression coverage for documentary SBOL exchange and authority boundaries.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -209,7 +209,7 @@ async fn hierarchy_projection_requires_review_and_roundtrips_only_reference_and_
     let archive = call(&c, "export_workspace_archive", workspace).await;
     assert_eq!(archive["candidates_verified"], false);
     let bytes = artifact(&c, &archive["artifact_id"]).await;
-    let frame = collagene_core::workspace::load_workspace(&bytes).unwrap();
+    let frame = collagene_core::documents::workspace::load_workspace(&bytes).unwrap();
     assert_eq!(frame.documents.len(), 1);
     assert!(frame.candidates.is_empty());
     assert!(frame.active_candidate.is_none());

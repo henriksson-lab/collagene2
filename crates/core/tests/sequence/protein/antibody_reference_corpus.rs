@@ -1,5 +1,5 @@
 use collagene_antibody_numbering::references::human_references;
-use collagene_core::translation::{TranslationOptions, translate};
+use collagene_core::sequence::translation::{TranslationOptions, translate};
 use collagene_model::{Alphabet, Sequence};
 #[test]
 fn every_reference_translation_and_cdr_boundary_agrees_with_the_existing_scientific_core() {

@@ -1,85 +1,41 @@
-# Code organization and refactoring plan
+# Code organization refactor status
 
-28 November 2026. This is part of the current product plan, not an alternative
-implementation or protocol. Three parallel static audits examined the scientific
-core, web application, and MCP/native crates. They included visible unfinished
-SBOL work; they did not verify that work or run builds/application checks.
+28 November 2026. The domain refactor is implemented across the scientific core, web and MCP sources. Integrated native/WASM validation and executable rediscovery pass locally; exact-commit cross-platform CI remains the publication gate. The current ownership and remaining checks are recorded in the [refactor checkpoint](domain-refactor-2026-11-28.md).
 
-## Measured violations
+## Current execution checklist
 
-| Directory | Direct Rust files | Maximum |
-| --- | ---: | ---: |
-| `crates/core/tests` | 320 | 20 |
-| `crates/web/src` | 228 | 20 |
-| `crates/core/src` | 156 | 20 |
-| `crates/mcp/tests` | 95 | 20 |
-
-| File | Lines | Assessment |
-| --- | ---: | --- |
-| `crates/mcp/src/lib.rs` | 8,973 | Above absolute 5,000 limit |
-| `crates/web/src/app.rs` | 7,273 | Above absolute limit |
-| `crates/core/src/protocol.rs` | 5,797 | Above absolute limit |
-| `crates/core/src/verification.rs` | 4,528 | Above 3,000 review threshold |
-| `crates/web/src/assembly_draft_model.rs` | 3,174 | Above review threshold |
-
-Run `python3 scripts/check_rust_layout.py` to refresh the baseline. It checks
-tracked and unignored Rust files, including tests and build scripts. It currently
-fails on the actual violations; there are no grandfathering exemptions. Ignored
-build output and dependency caches are not repository sources. Ownership and
-method cohesion require review in addition to this mechanical check.
-
-## Execution order
-
-Implementation checkpoint: the model facade has been deleted and callers now
-depend directly on `collagene-model`. Worker transport is split into nine
-cohesive files; the largest is below 3,000 lines. Request encoding and response
-decoding belong to their types. Core/MCP tests have moved into nine/eight explicit
-domain harnesses. Cargo metadata confirms registration; the
-[test inventory](integration-test-inventory.json) records all 1,931 preserved
-cases plus four new SBOL SDK cases. All 17 integration harnesses compile and
-their executable test lists match all 1,935 recorded cases. Focused native
-execution passed 158 tests. Draft production code is now 1,594 formatted lines;
-its identity/comparison methods live with `Draft`, its workspace facade is
-removed, and all 33 extracted unit cases pass. The web/worker WASM check passes.
-Remaining work includes verifier owners, the flat core/web source trees, and
-the oversized web/MCP roots. The exhaustive
-[core move manifest](core-source-moves.json) assigns all 164 current source files
-exactly once and projects a maximum of 11 Rust files per directory; it has not
-yet been applied.
-
-This refactor takes immediate priority over adding features. Preserve the full
-product scope, unfinished work and scientific behavior. Each batch finishes all
-callers before its focused background compilation; intermediate builds may break.
-
-| Batch | Work and owner | Completion evidence |
+| Batch | Implementation status | Verification still required |
 | --- | --- | --- |
-| R1 | Record source destinations, current tool registry/schema and test discovery. Settle session, draft and plan ownership. One integrator owns central declarations, Cargo targets and cross-crate changes. | Every existing source/test has a destination or justified deletion; projected directories have headroom, normally at most 16 files. |
-| R2 | Core: replace the model compatibility facade with direct canonical model imports; split worker envelope/schema/session/domain dispatch; colocate `DesignPlan` and `Operation` behavior. Extract a private verifier execution owner and checked HTML/PDF context. | No facade or second plan/schema; mechanical moves preserve current wire bytes/enum ordering. Fresh deterministic verification remains the authority for protocol output. |
-| R3 | MCP: separate server/resources, atomic session storage and semantic tool routers. Move schemas and actual handlers together, using named rmcp routers rather than root forwarding methods. | Registry names/schemas preserved, no omissions/duplicates; quota reservation and workspace/artifact publication remain atomic. |
-| R4 | Web: introduce cohesive workspace/document/selection and assembly controllers; move the complete export lifecycle out of `app`; return draft identity/mutations to the draft owner. Extract shell composition and remove model/view reexport facades. | App is composition rather than a universal state container; exact source/event/epoch guards, cancellation and bounded exports remain intact. |
-| R5 | Relocate remaining scientific and UI families into semantic subtrees. Regroup core/MCP integration tests into domain harnesses with explicit module registration; update target selectors, helpers and fixture paths directly. | No directory over 20 files; no file over 5,000 lines. Before/after discovery inventory accounts for every meaningful test. No obsolete root wrappers. |
-| R6 | Finish focused native/WASM validation, repair concrete failures together, then enable the layout checker in existing CI. Review every remaining 3,000-line warning and owner spread. | Focused checks pass, layout gate passes without exemptions, platform CI retains Windows/macOS/Linux coverage. Browser checks remain deferred under the existing user instruction. |
+| R1: inventory and ownership | Implemented. Source destinations, current tool/schema identities and test inventory are recorded; real state owners and shared integration boundaries are explicit. | Passed: all 1,935 integration and 401 web unit cases are discoverable; layout gate passes. |
+| R2: core owners | Implemented. Model facade removed; canonical model imports updated. Worker envelope/schema/request/response/session owners are separate. `DesignPlan` and `Operation` own identity/source methods. Private verifier execution and checked HTML/PDF output owners replace mixed responsibilities. | Passed: native harnesses, web/worker WASM, scientific/transport and fresh-output authority cases. |
+| R3: MCP owners | Implemented. Server/resources, atomic session storage and domain tool schemas/handlers are separate. Named rmcp routers compose the current 208-tool registry. | Passed: all 180 SDK cases and nine private/session/catalog cases; 208-tool registry retained. |
+| R4: web owners | Implemented. App composes narrow controllers; workspace, PCR and export lifecycles have concrete owners. Draft identity/comparison behavior lives with `Draft`; old view/model facades are removed. | Passed: final WASM ownership check and all 401 web unit cases. |
+| R5: domain and test relocation | Implemented. Scientific/UI families live in semantic subtrees. Core/MCP tests use nine/eight explicit domain harnesses with direct caller/fixture updates. | Passed: exact executable inventory comparison for all 2,336 integration/web cases. |
+| R6: final verification and enforcement | Local verification complete. The layout checker is enabled in the CI web job. | Native/WASM, formatting, layout, independent review and 1,034 executed cases pass. Await exact-commit Windows/macOS/Linux CI. |
 
-R2–R4 can be prepared by separate workers once interfaces and file ownership are
-agreed. R5 family moves can run in parallel on disjoint trees. Workers must not
-rewrite shared roots or trigger separate builds; central integration and one
-consistent Cargo package/feature selection prevent conflicting edits and rebuilds.
-Native crates below the thresholds stay intact unless a concrete ownership fix
-helps the current batch; this is not a blanket rewrite.
+The scientific version remains `science-32`; worker/candidate schemas remain `121`/`31`. The current implementation uses one plan representation and one current schema. Unsupported internal versions remain rejected. No old module facades, compatibility aliases or fallback implementations are intended to survive this change.
 
-## Detailed findings and destination maps
+## Layout policy and current measurements
 
-- [Scientific core](code-organization-core.md): transport selector constraints,
-  verifier/material ownership, semantic source families and integration harnesses.
-- [Web](code-organization-web.md): allocation of all 228 current files, controller
-  boundaries, draft cohesion and natural method candidates.
-- [MCP and native](code-organization-mcp-native.md): supported router composition,
-  transaction ownership, test harnesses and native boundary assessment.
+`python3 scripts/check_rust_layout.py` checks tracked and unignored Rust files, including tests and build scripts. More than 20 direct Rust files per directory or 5,000 lines per file fails the gate; 3,000 lines triggers an ownership warning. Ignored build/dependency caches are not source. This gate has no grandfathering exceptions, and size compliance does not replace review of coherent owners and methods.
 
-The helper at `/home/mahogny/github/claude/rust_refactor` has useful owner/scatter,
-coupling and method-discovery analyses. Its documented automatic write workflow
-uses release verification and allows temporary compatibility imports/delegators.
-Those behaviors conflict with repository rules. Use reviewed read-only reports or
-safe dry runs; apply direct coherent edits unless the helper can obey our rules.
-Do not split owners into numbered chunks, scatter a large struct's impls across
-many arbitrary files, or use compatibility reexports to keep old imports working.
+The current static checkpoint found a maximum of 16 direct Rust files per directory and no Rust file at or above 3,000 lines. Core now has only `lib.rs` directly in `src`, declaring 14 actual domain modules. Worker execution and web App composition remain close enough to the warning threshold to monitor when adding functionality. The final gate reports zero violations and zero warnings across 1,202 Rust files.
+
+The [test inventory](integration-test-inventory.json) records all 1,935 integration cases and 401 web unit cases. Executable discovery matches every case. The focused run passed 1,034 cases: 444 scientific/protocol cases, 180 MCP SDK cases, nine MCP private/session/catalog cases, and all 401 web unit cases. Source-level web test attributes remain 402; one target-gated case is outside native discovery.
+
+## Ownership review and audit artifacts
+
+- [Current domain checkpoint](domain-refactor-2026-11-28.md): actual scientific, session and controller owners; framework-specific method distribution; remaining validation.
+- [Original scientific-core audit](code-organization-core.md): pre-refactor evidence and reasoning, including wire selectors, verifier/material authority and test discovery.
+- [Original web audit](code-organization-web.md): pre-refactor controller, draft and method-cohesion findings.
+- [Original MCP/native audit](code-organization-mcp-native.md): pre-refactor router, transaction and native-boundary findings.
+
+The executed source move plan has been deleted. The current owner trees are
+defined directly by the [core](../../crates/core/src/lib.rs),
+[MCP](../../crates/mcp/src/lib.rs), and [web](../../crates/web/src/main.rs)
+module declarations. The
+[independent verifier review](verifier-ownership-review-2026-11-28.md) accounts
+for every original scientific function and type without finding a semantic
+regression. Compiler and execution checks remain separate requirements.
+
+The helper at `/home/mahogny/github/claude/rust_refactor` offers useful ownership/scatter and coupling reports. Its automatic release verification and suggested compatibility phases conflict with repository rules; use reviewed read-only analysis unless its write behavior is explicitly adjusted. Continue using coherent batches, direct caller updates and one shared compilation cache. Browser/application HTTP checks remain deferred under the user's instruction.

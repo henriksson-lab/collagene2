@@ -1,11 +1,13 @@
 use collagene_core::{
-    alignment::{AlignmentMode, AlignmentOptions, ComparisonOptions},
-    alignment_formats::{self, AlignmentFormat},
-    pairwise_export::{self, Format},
-    pairwise_history::Record,
-    pairwise_review::{self, Options},
-    run_lineage::EventBinding,
-    workspace::Workspace,
+    alignment::{
+        AlignmentMode, AlignmentOptions, ComparisonOptions,
+        export::{self as pairwise_export, Format},
+        history::Record,
+        review::{self as pairwise_review, Options},
+    },
+    documents::workspace::Workspace,
+    formats::alignment::{self as alignment_formats, AlignmentFormat},
+    material::lineage::EventBinding,
 };
 use collagene_model::{Molecule, Topology};
 use std::collections::BTreeMap;

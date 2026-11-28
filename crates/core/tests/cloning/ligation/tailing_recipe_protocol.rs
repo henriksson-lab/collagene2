@@ -1,18 +1,23 @@
 //! Source-bound TA/GC recipe previews use one appended worker selector, not a new plan format.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation},
     chemistry::EndTreatment,
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation},
+        ligation::{
+            tailing::TailingBase,
+            tailing_recipe::{self, Fragment, Recipe},
+        },
+    },
+    documents::workspace,
+    planning::plan::{Operation, PlanInput},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    tailing::TailingBase,
-    tailing_recipe::{self, Fragment, Recipe},
-    verification::{self, Operation, PlanInput, Status},
-    workspace,
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Sequence, Topology};
 fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
@@ -54,7 +59,7 @@ fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
             },
             reverse: false,
         },
-        action: collagene_core::tailing_recipe::Action::AddTail { base },
+        action: collagene_core::cloning::ligation::tailing_recipe::Action::AddTail { base },
         treatment: Some(EndTreatment::Phosphorylate),
     })
     .collect();
@@ -73,9 +78,9 @@ fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
         target,
         Recipe {
             profile: if gc {
-                collagene_core::tailing_recipe::Profile::Gc
+                collagene_core::cloning::ligation::tailing_recipe::Profile::Gc
             } else {
-                collagene_core::tailing_recipe::Profile::Ta
+                collagene_core::cloning::ligation::tailing_recipe::Profile::Ta
             },
 
             name: "Explicit original-source two-row tailing".into(),

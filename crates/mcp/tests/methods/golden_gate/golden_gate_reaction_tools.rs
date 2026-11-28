@@ -1,5 +1,5 @@
-use collagene_core::{analysis::Primer, golden_gate::GoldenGateOptions};
-use collagene_mcp::CollageneServer;
+use collagene_core::{cloning::golden_gate::GoldenGateOptions, sequence::analysis::Primer};
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -22,7 +22,7 @@ async fn import(c: &Client, m: Molecule) -> Value {
     doc(&call(
         c,
         "import_document",
-        json!({"text":collagene_core::formats::export_genbank(&m).unwrap()}),
+        json!({"text":collagene_core::formats::sequence::export_genbank(&m).unwrap()}),
     )
     .await)
 }
@@ -104,7 +104,7 @@ async fn whole_reaction_tools_retain_vector_stuffer_amplicon_flanks_and_uncut_ca
     assert_eq!(inspected["products_determined"], true);
     assert_eq!(
         inspected["profile_revision"],
-        collagene_core::modified_duplex::profile_revision()
+        collagene_core::chemistry::tracked_duplex::profile_revision()
     );
     let mut unknown = args.clone();
     unknown["request"]["rows"][0]["generation"] = Value::Null;
@@ -187,11 +187,13 @@ async fn saved_circular_whole_source_requires_exact_retained_workspace_and_canno
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use collagene_core::{
         chemistry::EndTreatment,
-        cloning_outputs,
-        run_lineage::{EventBinding, InputEventBinding},
-        run_material::{self, MaterialOrigin},
-        verification::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
-        workspace::{self, Workspace},
+        documents::workspace::{self, Workspace},
+        material::{
+            lineage::{EventBinding, InputEventBinding},
+            outputs as cloning_outputs,
+            run::{self as run_material, MaterialOrigin},
+        },
+        planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
     };
     const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
     fn event(w: &Workspace, index: usize) -> EventBinding {
@@ -261,7 +263,9 @@ async fn saved_circular_whole_source_requires_exact_retained_workspace_and_canno
         step_index: 2,
         event: saved.receipt.construct.clone(),
     };
-    let origin = MaterialOrigin::Run(run_material::capsule(&saved.workspace, &selection).unwrap());
+    let origin = MaterialOrigin::Run(
+        collagene_core::material::capsule::capsule(&saved.workspace, &selection).unwrap(),
+    );
     let original_archive = workspace::save_workspace(&saved.workspace).unwrap();
     let (a, b) = tokio::io::duplex(65536);
     let server = tokio::spawn(async move {

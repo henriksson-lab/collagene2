@@ -1,7 +1,7 @@
 use collagene_core::{
-    feature_library::{FeatureLibrary, ScanOptions, apply_selected, scan},
-    formats::{self, TextFormat},
-    *,
+    formats::sequence::{self as formats, TextFormat},
+    protocol,
+    sequence::annotations::library::{FeatureLibrary, ScanOptions, apply_selected, scan},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 
@@ -62,23 +62,24 @@ fn library_machine_identifiers_survive_genbank_and_embl_physical_wrapping() {
 }
 #[test]
 fn text_exports_report_omitted_quality_and_annotation_sources() {
-    let read = collagene_core::oligo_formats::import_fastq(
+    let read = collagene_core::formats::oligos::import_fastq(
         b"@read\nACGT\n+\nIIII\n",
-        collagene_core::oligo_formats::QualityEncoding::Phred33,
+        collagene_core::formats::oligos::QualityEncoding::Phred33,
     )
     .unwrap()
     .molecules
     .remove(0);
     let target = Molecule::dna("ref", "ACGT", Topology::Linear).unwrap();
-    let annotations = collagene_core::annotation_formats::import_annotations(
+    let annotations = collagene_core::formats::annotations::import_annotations(
         &target,
         "ref\t0\t4\tname\t0\t+\n",
-        collagene_core::annotation_formats::AnnotationFormat::Bed,
+        collagene_core::formats::annotations::AnnotationFormat::Bed,
         "ref",
     )
     .unwrap();
     let annotated =
-        collagene_core::annotation_formats::apply_annotations(&target, &annotations, &[0]).unwrap();
+        collagene_core::formats::annotations::apply_annotations(&target, &annotations, &[0])
+            .unwrap();
     for format in [TextFormat::GenBank, TextFormat::Embl, TextFormat::Fasta] {
         assert!(
             formats::export_with_report(&read, format)
@@ -99,7 +100,7 @@ fn text_exports_report_omitted_quality_and_annotation_sources() {
 
 #[test]
 fn original_annotation_download_survives_edits_and_rejects_tampered_metadata() {
-    use collagene_core::annotation_formats::{self as a, AnnotationFormat};
+    use collagene_core::formats::annotations::{self as a, AnnotationFormat};
     let source = "ref\t0\t3\tshort\t0\t+\n";
     let reference = Molecule::dna("ref", "ACGTACGT", Topology::Linear).unwrap();
     let report = a::import_annotations(&reference, source, AnnotationFormat::Bed, "ref").unwrap();

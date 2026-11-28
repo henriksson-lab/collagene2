@@ -1,7 +1,7 @@
 //! Manually calculated parameters and independent exhaustive interval oracles.
 use collagene_core::{
-    analysis::{Primer, simulate_pcr},
-    primers::*,
+    cloning::pcr::primers::*,
+    sequence::analysis::{Primer, simulate_pcr},
 };
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn oligo(s: &str) -> Primer {
@@ -368,13 +368,13 @@ fn saved_primer_binding_fields_survive_annotated_genbank_exchange() {
         ],
         needs_review: false,
     });
-    let text = collagene_core::formats::export_with_report(
+    let text = collagene_core::formats::sequence::export_with_report(
         &m,
-        collagene_core::formats::TextFormat::GenBank,
+        collagene_core::formats::sequence::TextFormat::GenBank,
     )
     .unwrap()
     .text;
-    let imported = collagene_core::formats::import_text(&text).unwrap();
+    let imported = collagene_core::formats::sequence::import_text(&text).unwrap();
     assert_eq!(
         imported.molecules[0].features[0].qualifiers,
         m.features[0].qualifiers

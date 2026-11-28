@@ -1,12 +1,12 @@
 //! Independent source-choice, exact-event and literal-target fixtures.
 use collagene_core::{
-    assembly_recipe::Preparation,
-    combinatorial_design::{
+    cloning::assembly::recipe::Preparation,
+    documents::workspace::Workspace,
+    material::lineage::EventBinding,
+    planning::combinatorial::{
         self as design, Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct,
         SelectedMatrix, TargetDeclaration,
     },
-    run_lineage::EventBinding,
-    workspace::Workspace,
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn binding(w: &Workspace, index: usize) -> EventBinding {
@@ -34,7 +34,7 @@ fn fixture() -> (Workspace, Design) {
         id: id.into(),
         label: id.into(),
         source: binding(&w, index),
-        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+        selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
             start: 0,
             end: 4,
             reverse: false,
@@ -151,7 +151,9 @@ fn original_contributions_declare_targets_independently_of_preparations() {
 
 #[test]
 fn internal_edit_changes_only_declared_row_and_never_repairs_physical_preparation() {
-    use collagene_core::{assembly_edit_intent::Edit, chemistry::Terminus, verification::Status};
+    use collagene_core::{
+        chemistry::Terminus, cloning::assembly::edit_intent::Edit, verification::evidence::Status,
+    };
     let (w, mut d) = fixture();
     for bin in &mut d.bins {
         for choice in &mut bin.choices {
@@ -300,7 +302,7 @@ fn checked_mixed_radix_pages_and_stable_operation_ids_keep_distinct_choices() {
 
 #[test]
 fn fresh_existing_verifier_preserves_a_wrong_target_and_changed_contribution() {
-    use collagene_core::{chemistry::Terminus, verification::Status};
+    use collagene_core::{chemistry::Terminus, verification::evidence::Status};
     let (w, mut d) = fixture();
     for bin in &mut d.bins {
         for choice in &mut bin.choices {
@@ -346,7 +348,7 @@ fn fresh_existing_verifier_preserves_a_wrong_target_and_changed_contribution() {
         "AACCTTAA"
     );
     let mut cropped = d.clone();
-    let collagene_core::assembly_intent::Selector::ReferenceRange { start, .. } =
+    let collagene_core::cloning::assembly::intent::Selector::ReferenceRange { start, .. } =
         &mut cropped.bins[0].choices[0].selector
     else {
         unreachable!()
@@ -367,7 +369,7 @@ fn fresh_existing_verifier_preserves_a_wrong_target_and_changed_contribution() {
 
 #[test]
 fn historical_choice_keeps_its_event_without_rewinding_later_source_heads() {
-    use collagene_core::history::DocumentHistory;
+    use collagene_core::documents::history::DocumentHistory;
     let (w, mut d) = fixture();
     let row = construct();
     let original = design::resolve(&d, &row, &w).unwrap();
@@ -406,7 +408,7 @@ fn historical_choice_keeps_its_event_without_rewinding_later_source_heads() {
 
 #[test]
 fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
-    use collagene_core::analysis::Primer;
+    use collagene_core::sequence::analysis::Primer;
     let m = Molecule::dna("circle", "ACGTAA", Topology::Circular).unwrap();
     let w = Workspace::from_documents("circle choices", vec![m], 0).unwrap();
     let d = Design {
@@ -421,7 +423,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
                 id: "crossing".into(),
                 label: "Crossing".into(),
                 source: binding(&w, 0),
-                selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                     start: 4,
                     end: 8,
                     reverse: true,
@@ -457,7 +459,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
     let resolved = design::resolve(&d, &row, &w).unwrap();
     assert_eq!(resolved.target.sequence.as_str(), "GTTT");
     let mut overrun = d.clone();
-    let collagene_core::assembly_intent::Selector::ReferenceRange { end, .. } =
+    let collagene_core::cloning::assembly::intent::Selector::ReferenceRange { end, .. } =
         &mut overrun.bins[0].choices[0].selector
     else {
         unreachable!()
@@ -466,7 +468,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
     assert!(design::resolve(&overrun, &row, &w).is_err());
     let mut unsupported = d.clone();
     unsupported.method = Method::OrderedTypeIis {
-        enzyme: collagene_core::golden_gate::GoldenGateEnzyme::BsaI,
+        enzyme: collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
         allow_nicked: false,
     };
     assert!(design::resolve(&unsupported, &row, &w).is_err());

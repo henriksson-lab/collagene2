@@ -1,14 +1,24 @@
 //! Real saved Run/Derived templates; independent genotypes precede native preparation.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
     chemistry::{EndTreatment, Strand, Terminus},
-    cloning_outputs, codon_design, domestication as design, domestication_preparation as prep,
-    material_derivation as derivation, overlap_extension_primer_design as oe, plan_oligos,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    cloning::{
+        golden_gate::domestication::{self as design, preparation as prep},
+        overlap::extension::primers as oe,
+        restriction::catalog as catalog_digest,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::{
+        oligos as plan_oligos,
+        plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    },
+    sequence::{analysis::Primer, codon_design},
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGAATTCCAGACCTGTAGATCGTCA";
@@ -104,7 +114,7 @@ fn stock(dna: &str, topology: Topology) -> (Workspace, MaterialOrigin) {
     )
     .unwrap();
     w = workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap()).unwrap();
-    let capsule = run_material::capsule(
+    let capsule = collagene_core::material::capsule::capsule(
         &w,
         &run_material::Selection {
             run_id: saved.receipt.run.run_id,
@@ -128,8 +138,8 @@ fn derived(w: &Workspace, origin: &MaterialOrigin) -> (Workspace, MaterialOrigin
     let p = derivation::prepare_install(
         w,
         &derivation::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: origin.event().clone(),
                 origin: derivation::SourceOrigin::Saved(origin.clone()),
             }],
@@ -271,7 +281,7 @@ fn run_and_derived_inverse_outputs_keep_independent_target_and_only_new_primers(
                 .all(|u| u.step_index == 1 && !u.primer_name.contains("Historical"))
         );
         let mut frame = w.clone();
-        let declared = collagene_core::history::DocumentHistory::new(
+        let declared = collagene_core::documents::history::DocumentHistory::new(
             "independent-domestication-target",
             p.target.clone(),
         )
@@ -317,9 +327,11 @@ fn run_and_derived_inverse_outputs_keep_independent_target_and_only_new_primers(
             Status::ConsistentUnderAssumptions
         );
         assert!(saved.receipt.primer_attachment.is_some());
-        assert!(verification::export_protocol_html(&p.plan, &p.target).contains("Reconstruct"));
         assert!(
-            collagene_core::pdf::export_protocol_pdf(&p.plan, &p.target)
+            verification::output::export_protocol_html(&p.plan, &p.target).contains("Reconstruct")
+        );
+        assert!(
+            collagene_core::output::pdf::export_protocol_pdf(&p.plan, &p.target)
                 .unwrap()
                 .bytes
                 .starts_with(b"%PDF-")
@@ -442,7 +454,8 @@ fn saved_rounds_keep_original_coordinates_and_consume_previous_actual_closed_pro
         panic!()
     };
     *template = Source::Step(0);
-    changed.verification.plan_revision = verification::plan_revision(&changed.plan);
+    changed.verification.plan_revision =
+        collagene_core::planning::plan::DesignPlan::revision(&changed.plan);
     assert!(changed.validate_binding(&p.context_revision).is_err());
 }
 #[test]
@@ -561,7 +574,7 @@ fn actual_nicked_saved_circle_does_not_gain_a_fabricated_pcr_template() {
     .unwrap();
     let w = saved.workspace;
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &w,
             &run_material::Selection {
                 run_id: saved.receipt.run.run_id,
@@ -653,7 +666,7 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
                     },
                 ],
                 options: Default::default(),
-                policy: collagene_core::homology_assembly::Options {
+                policy: collagene_core::cloning::overlap::assembly::Options {
                     overlaps: vec![4],
                     topology: Topology::Linear,
                     min_paired_bases: 4,
@@ -682,10 +695,10 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
             },
         ],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete, "{:?}", report.findings);
     assert_eq!(report.products.len(), 6);
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &plan,
         report.products.last().unwrap(),
         &target
@@ -715,7 +728,7 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
     let w =
         workspace::load_workspace(&workspace::save_workspace(&saved.workspace).unwrap()).unwrap();
     let origin = MaterialOrigin::Run(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &w,
             &run_material::Selection {
                 run_id: saved.receipt.run.run_id,
@@ -740,7 +753,7 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
         p.verification.findings
     );
     assert_eq!(p.verification.products.len(), 4);
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &p.plan,
         p.verification.products.last().unwrap(),
         &p.target

@@ -1,17 +1,29 @@
 //! Literal independent targets and native saved-template ancestry, not imported summaries.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
-    chemistry::{EndTreatment, FivePrime},
-    history::DocumentHistory,
-    material_derivation as derived,
-    modified_duplex::{self, ModificationSummary},
-    mutagenesis::{self, InversePcrOptions},
-    pdf, plan_oligos,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    chemistry::{
+        EndTreatment, FivePrime,
+        tracked_duplex::{self as modified_duplex, ModificationSummary},
+    },
+    cloning::{
+        pcr::mutagenesis::{self, InversePcrOptions},
+        restriction::catalog as catalog_digest,
+    },
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::{
+        derivation as derived,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        run::{self as run_material, MaterialOrigin},
+    },
+    output::pdf,
+    planning::{
+        oligos as plan_oligos,
+        plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    },
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const ORIGINAL: &str = "AGTCCGATGCTACGTAGGACTTCAGACCTGTA";
@@ -97,7 +109,7 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
         });
         3
     };
-    let ligation = collagene_core::ligation_outcomes::Options::default();
+    let ligation = collagene_core::cloning::ligation::outcomes::Options::default();
     steps.push(Operation::Ligate {
         fragments: vec![
             OrientedSource {
@@ -119,14 +131,14 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
         inputs: vec![input("left", left), input("right", right)],
         steps,
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.products.len(),
         plan.steps.len(),
         "{:?}",
         report.findings
     );
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &plan,
         report.products.last().unwrap(),
         &target
@@ -160,7 +172,9 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
         },
     };
     let saved = restart(&commit.workspace);
-    let origin = MaterialOrigin::Run(run_material::capsule(&saved, &selection).unwrap());
+    let origin = MaterialOrigin::Run(
+        collagene_core::material::capsule::capsule(&saved, &selection).unwrap(),
+    );
     (saved, origin)
 }
 fn source(w: &Workspace, origin: &MaterialOrigin) -> Molecule {
@@ -215,7 +229,7 @@ fn actual_saved_circle_supports_literal_insertion_deletion_and_replacement() {
                 ..
             }
         ));
-        assert!(verification::plan_target_matches(
+        assert!(verification::engine::plan_target_matches(
             &design.plan,
             design.verification.products.last().unwrap(),
             &target
@@ -270,8 +284,8 @@ fn cut_free_derived_circle_survives_archive_and_is_replayed_before_new_pcr() {
     assert!(preview.inspection.products_determined);
     assert_eq!(preview.inspection.fragments.len(), 1);
     let request = derived::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: run.event().clone(),
             origin: origin,
         }],
@@ -336,7 +350,7 @@ fn new_run_exports_new_oligos_protocol_and_replays_without_changing_original_hea
     assert_eq!(orders.oligos.records.len(), 2);
     assert_eq!(orders.uses.len(), 2);
     assert!(orders.uses.iter().all(|u| u.step_index == 1));
-    let html = verification::export_protocol_html(&design.plan, &target);
+    let html = verification::output::export_protocol_html(&design.plan, &target);
     assert!(html.contains("saved") && html.contains("Mutagenesis forward"));
     let pdf = pdf::export_protocol_pdf(&design.plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
@@ -374,9 +388,10 @@ fn new_run_exports_new_oligos_protocol_and_replays_without_changing_original_hea
             revision: product.revision.clone(),
         },
     };
-    let fresh = MaterialOrigin::Run(run_material::capsule(&w, &selected).unwrap())
-        .replay(&w.revisions[&product.revision])
-        .unwrap();
+    let fresh =
+        MaterialOrigin::Run(collagene_core::material::capsule::capsule(&w, &selected).unwrap())
+            .replay(&w.revisions[&product.revision])
+            .unwrap();
     assert!(fresh.tracked().duplex.nicks.is_empty());
     assert_eq!(
         modified_duplex::summary(fresh.tracked())
@@ -492,7 +507,7 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
         2,
     )
     .unwrap();
-    let mut profile = collagene_core::overlap_profiles::ProfileOptions::default();
+    let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
     let plan = DesignPlan {
         name: "Physical homology with bounded terminal alternatives".into(),
@@ -523,7 +538,7 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
                     },
                 ],
                 options: profile,
-                policy: collagene_core::homology_assembly::Options {
+                policy: collagene_core::cloning::overlap::assembly::Options {
                     overlaps: vec![4, 4],
                     topology: Topology::Circular,
                     min_paired_bases: 4,
@@ -536,10 +551,10 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
             },
         ],
     };
-    let checked = verification::verify(&plan, &original_target);
+    let checked = verification::engine::verify(&plan, &original_target);
     assert_eq!(checked.status, Status::Incomplete, "{:?}", checked.findings);
     assert_eq!(checked.products.len(), 3);
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &plan,
         checked.products.last().unwrap(),
         &original_target
@@ -548,7 +563,9 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
         .physical_processing_reports
         .iter()
         .find_map(|step| match &step.evidence {
-            verification::PhysicalProcessingEvidence::HomologyAssembly(report) => Some(report),
+            verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(report) => {
+                Some(report)
+            }
             _ => None,
         })
         .unwrap();
@@ -583,7 +600,8 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
         },
     };
     let w = restart(&saved.workspace);
-    let origin = MaterialOrigin::Run(run_material::capsule(&w, &selection).unwrap());
+    let origin =
+        MaterialOrigin::Run(collagene_core::material::capsule::capsule(&w, &selection).unwrap());
     let source = source(&w, &origin);
     assert!(origin.replay(&source).unwrap().incomplete());
     let target = dna(
@@ -599,7 +617,7 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
         design.verification.findings
     );
     assert_eq!(design.verification.status, Status::Incomplete);
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &design.plan,
         design.verification.products.last().unwrap(),
         &target

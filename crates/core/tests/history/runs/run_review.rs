@@ -1,9 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_review,
-    verification::{self, DesignPlan, Operation, PlanInput, Source},
-    workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
+    documents::workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        review as run_review,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification,
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, index: usize) -> EventBinding {
@@ -200,7 +203,9 @@ fn historical_engine_is_documentary_and_never_adopted_as_current_status() {
 fn edited_saved_pcr_reverifies_original_target_and_records_new_run_without_rewinding_heads() {
     use collagene_core::{
         chemistry::{EndTreatment, FivePrime},
-        plan_editing, run_material, transfer,
+        documents::transfer,
+        material::run as run_material,
+        planning::editing as plan_editing,
     };
     let (mut w, id) = fixture();
     let original = run_lineage::load_run(&w, &id).unwrap();
@@ -239,19 +244,20 @@ fn edited_saved_pcr_reverifies_original_target_and_records_new_run_without_rewin
         candidate.plan.inputs[0].revision,
         original.inputs[0].event.revision
     );
-    let report = verification::verify(&candidate.plan, &prepared.target);
+    let report = verification::engine::verify(&candidate.plan, &prepared.target);
     assert_eq!(
         report.status,
-        verification::Status::ConsistentUnderAssumptions,
+        verification::evidence::Status::ConsistentUnderAssumptions,
         "{:?}",
         report.findings
     );
     assert_eq!(report.products.len(), 2);
     assert_eq!(report.products[1].sequence.as_str(), "AGTCCGATGCTACGTA");
-    let html = verification::export_protocol_html(&candidate.plan, &prepared.target);
+    let html = verification::output::export_protocol_html(&candidate.plan, &prepared.target);
     assert!(html.contains("Phosphorylate") && html.contains("Original physical stock"));
     assert!(!html.contains("Later edited stock") && !html.contains("Later target draft"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&candidate.plan, &prepared.target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&candidate.plan, &prepared.target)
+        .unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
     assert_eq!(pdf.plan_revision, candidate.plan_revision);
     assert_eq!(pdf.target_revision, prepared.target_event.revision);
@@ -288,8 +294,8 @@ fn edited_saved_pcr_reverifies_original_target_and_records_new_run_without_rewin
         serde_json::to_value(run_lineage::load_run(&committed.workspace, &id).unwrap()).unwrap(),
         serde_json::to_value(&original).unwrap()
     );
-    let restarted = collagene_core::workspace::load_workspace(
-        &collagene_core::workspace::save_workspace(&committed.workspace).unwrap(),
+    let restarted = collagene_core::documents::workspace::load_workspace(
+        &collagene_core::documents::workspace::save_workspace(&committed.workspace).unwrap(),
     )
     .unwrap();
     let new = run_lineage::load_run(&restarted, &committed.receipt.run_id).unwrap();
@@ -325,7 +331,7 @@ fn edited_saved_pcr_reverifies_original_target_and_records_new_run_without_rewin
 
 #[test]
 fn saved_edit_receipt_refuses_equal_snapshot_event_aliases_and_stale_native_context() {
-    use collagene_core::history::DocumentHistory;
+    use collagene_core::documents::history::DocumentHistory;
     let (mut w, id) = fixture();
     let original = run_lineage::load_run(&w, &id).unwrap();
     let target_snapshot = w.revisions[&original.target.revision].clone();

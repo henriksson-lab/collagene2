@@ -1,11 +1,16 @@
 //! Independent scattered-site genotypes; later PCRs use real preceding products.
 use collagene_core::{
-    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
+    cloning::{
+        golden_gate::domestication::{self as design, preparation as physical},
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::{Operation, PlanInput, Source},
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, Operation, PlanInput, Source, Status},
+    sequence::codon_design,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const ORIGINAL: &str = "ACGTTGCACTGATCGAGTCCGGTCTCATGCTACGTAGGACGATCCAGTACGCTTATTCAGACCTGTAGATCGTCAGGTCTCTGCAGATCCGTAACGCTTGAAGTCCGATGCTACGTAGGAC";
@@ -97,7 +102,7 @@ fn scattered_changes_form_one_original_source_graph_with_actual_intermediate_con
         "{:?}",
         report.verification.findings
     );
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &report.plan,
         report.verification.products.last().unwrap(),
         &report.target
@@ -110,11 +115,11 @@ fn scattered_changes_form_one_original_source_graph_with_actual_intermediate_con
     assert_eq!(rounds[1].options.edit_start, 55);
     assert_eq!(rounds[0].forward.tail, "C");
     assert_eq!(rounds[1].forward.tail, "C");
-    let html = verification::export_protocol_html(&report.plan, &report.target);
+    let html = verification::output::export_protocol_html(&report.plan, &report.target);
     assert!(html.contains("Domestication round1 forward"));
     assert!(html.contains("Domestication round2 forward"));
     assert!(
-        collagene_core::pdf::export_protocol_pdf(&report.plan, &report.target)
+        collagene_core::output::pdf::export_protocol_pdf(&report.plan, &report.target)
             .unwrap()
             .bytes
             .starts_with(b"%PDF-")
@@ -126,7 +131,7 @@ fn scattered_changes_form_one_original_source_graph_with_actual_intermediate_con
     *template = Source::Input(physical::INPUT_ID.into());
     assert!(tampered.validate_binding(&report.context_revision).is_err());
     assert_eq!(
-        verification::verify(&tampered.plan, &report.target).status,
+        verification::engine::verify(&tampered.plan, &report.target).status,
         Status::Invalid
     );
 }
@@ -234,12 +239,12 @@ fn partial_reverse_tail_and_original_origin_crossing_keep_actual_round_frames() 
             .starts_with("CTCATGCTACGTAGGAC")
     );
     let intermediate = Molecule::dna("Independent first round", "ACGTTGCACTGATCGAGTCCGGCCTCATGCTACGTAGGACGATCCAGTACGCTTATTCAGACCTGTAGATCGTCAGGTCTCTGCAGATCCGTAACGCTTGAAGTCCGATGCTACGTAGGAC", Topology::Circular).unwrap();
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &report.plan,
         &report.verification.products[2],
         &intermediate
     ));
-    assert!(verification::plan_target_matches(
+    assert!(verification::engine::plan_target_matches(
         &report.plan,
         report.verification.products.last().unwrap(),
         &report.target

@@ -494,13 +494,13 @@ mod tests {
             collagene_model::Topology::Linear,
         )
         .unwrap();
-        let frame = collagene_core::workspace::Workspace::from_documents(
+        let frame = collagene_core::documents::workspace::Workspace::from_documents(
             "Private workspace",
             vec![molecule],
             0,
         )
         .unwrap();
-        let archive = collagene_core::workspace::save_workspace(&frame).unwrap();
+        let archive = collagene_core::documents::workspace::save_workspace(&frame).unwrap();
         let id = op(2);
         control
             .begin(&window, &id, base::Digest::of(b"real working save"))
@@ -545,7 +545,7 @@ mod tests {
             .begin(&window, &id, base::Digest::of(b"commit then revoke"))
             .unwrap();
         let accepted = AtomicBool::new(false);
-        let frame = collagene_core::workspace::Workspace::from_documents(
+        let frame = collagene_core::documents::workspace::Workspace::from_documents(
             "Committed private workspace",
             vec![
                 collagene_model::Molecule::dna(
@@ -558,7 +558,7 @@ mod tests {
             0,
         )
         .unwrap();
-        let archive = collagene_core::workspace::save_workspace(&frame).unwrap();
+        let archive = collagene_core::documents::workspace::save_workspace(&frame).unwrap();
         let saved = host
             .working
             .save(&None, &archive, None, || {

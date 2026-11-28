@@ -1,4 +1,4 @@
-use collagene_core::formats;
+use collagene_core::formats::sequence as formats;
 use collagene_model::{Molecule, Topology};
 #[test]
 fn annotated_exports_retain_full_supported_codon_evidence_without_imported_authority() {

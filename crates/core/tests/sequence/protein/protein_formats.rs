@@ -1,4 +1,4 @@
-use collagene_core::protein_formats::{self as protein, ExportOptions, InsdcDate, Profile};
+use collagene_core::formats::protein::{self, ExportOptions, InsdcDate, Profile};
 use collagene_model::{Alphabet, Location, Molecule, Sequence, Topology};
 use std::collections::BTreeMap;
 const GP: &str = "LOCUS       GP_FIXTURE                    12 aa            linear   PRI 24-NOV-2026\nDEFINITION  Independent protein fixture\n            with continued description.\nACCESSION   NP_000001 ALT_000001\nVERSION     NP_000001.1\nDBSOURCE    unrelated nucleotide reference retained as documentary text\nFEATURES             Location/Qualifiers\n     source          1..12\n                     /organism=\"Synthetic construct\"\n     Protein         1..12\n                     /product=\"Independent protein\"\n     Region          join(3..4,8..9)\n                     /note=\"two joined\n                     annotated pieces with \"\"quoted\"\" text\"\n     Site            <2..>4\n                     /site_type=\"active\"\n     CDS             1..12\n                     /coded_by=\"complement(NC_000001.1:10..45)\"\nORIGIN\n        1 mkwvtfisll fl\n//\n";
@@ -148,7 +148,7 @@ fn crosslinks_are_endpoint_pairs_and_never_contiguous_protein_feature_intervals(
     );
     assert_eq!(m.features[0].location.extract(&m.sequence).unwrap(), "CC");
     let actual_material =
-        collagene_core::protein_properties::analyze_protein(m, &Default::default()).unwrap();
+        collagene_core::protein::properties::analyze_protein(m, &Default::default()).unwrap();
     assert!(actual_material.mass.is_none());
     let out = protein::export(&report.molecules, Profile::UniProt).unwrap();
     let round_trip = protein::import_bytes(out.text.as_bytes(), Profile::UniProt).unwrap();
@@ -284,28 +284,28 @@ fn malformed_profiles_counters_records_nesting_and_bounds_fail_without_guessing_
 
 #[test]
 fn generic_dispatch_preserves_original_protein_bytes_and_oversize_aa_never_falls_back_to_dna() {
-    let imported = collagene_core::formats::import_bytes(GP.as_bytes()).unwrap();
+    let imported = collagene_core::formats::sequence::import_bytes(GP.as_bytes()).unwrap();
     assert_eq!(imported.molecules[0].sequence.alphabet(), Alphabet::Protein);
     assert_eq!(
         protein::original_bytes(&imported.molecules[0]).unwrap(),
         GP.as_bytes()
     );
     assert!(
-        collagene_core::formats::export_with_report(
+        collagene_core::formats::sequence::export_with_report(
             &imported.molecules[0],
-            collagene_core::formats::TextFormat::GenPept
+            collagene_core::formats::sequence::TextFormat::GenPept
         )
         .unwrap()
         .text
         .contains("12 aa")
     );
-    let imported = collagene_core::formats::import_text(HBA).unwrap();
+    let imported = collagene_core::formats::sequence::import_text(HBA).unwrap();
     assert_eq!(imported.molecules[0].sequence.alphabet(), Alphabet::Protein);
     let mut oversized = GP.as_bytes().to_vec();
     oversized.resize(protein::MAX_BYTES + 1, b' ');
     assert_eq!(protein::detect(&oversized), Some(Profile::GenPept));
     assert!(matches!(
-        collagene_core::formats::import_bytes(&oversized),
+        collagene_core::formats::sequence::import_bytes(&oversized),
         Err(collagene_model::Error::TooLarge)
     ));
 }

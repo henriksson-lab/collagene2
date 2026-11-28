@@ -1,6 +1,6 @@
 #[path = "../../core/tests/common/protocol_layout.rs"]
 mod fixture;
-use collagene_core::{protocol_layout as layout, workspace};
+use collagene_core::{documents::workspace, output::layout};
 use collagene_library_sharing::{self as sharing, Selection};
 #[test]
 fn ordinary_plasmid_omits_plate_but_explicit_plate_scope_preserves_exact_dependencies() {
@@ -77,12 +77,13 @@ fn released_layout_retains_actual_run_and_replays_after_projection() {
         sharing::project_protocol_layout_closure(&captured.workspace, &captured.attachment_hash)
             .unwrap();
     layout::load(&projected.workspace, &captured.attachment_hash).unwrap();
-    let replay = collagene_core::run_lineage::replay_run(&projected.workspace, run_id).unwrap();
+    let replay =
+        collagene_core::material::lineage::replay_run(&projected.workspace, run_id).unwrap();
     assert!(replay.products_match);
     assert!(replay.engine_matches);
     assert_eq!(
         replay.current_report.status,
-        collagene_core::verification::Status::ConsistentUnderAssumptions
+        collagene_core::verification::evidence::Status::ConsistentUnderAssumptions
     );
     assert!(
         !projected

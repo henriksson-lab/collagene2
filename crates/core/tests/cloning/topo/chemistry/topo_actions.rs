@@ -1,8 +1,11 @@
 //! Source-bound ideal processing is proven from literal original calls. Released
 //! flap material remains in the native graph and never becomes silent deletion.
-use collagene_core::{chemistry, modified_duplex, topo, topo_actions as adapter};
+use collagene_core::cloning::topo::physical::{self as p, processing as actions, projection};
+use collagene_core::{
+    chemistry::{self, tracked_duplex as modified_duplex},
+    cloning::topo::{self, actions as adapter},
+};
 use collagene_model::{Feature, Location, Molecule, Topology};
-use topo::physical::{self as p, processing as actions, projection};
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
 }
@@ -271,7 +274,7 @@ fn actual_restriction_digest_consumes_the_bridged_duplex_and_keeps_modifications
     let (inputs, preparation) = sources();
     let r = selected(&inputs, preparation, processing(true, true));
     let out = adapter::inspect(&inputs, &r).unwrap();
-    let enzyme = collagene_core::analysis::Enzyme {
+    let enzyme = collagene_core::sequence::analysis::Enzyme {
         name: "literal-CATG".into(),
         recognition: "CATG".into(),
         top_cut: 1,

@@ -2,12 +2,13 @@
 #[path = "../../../common/topo_graph.rs"]
 mod literal;
 use collagene_core::{
+    cloning::topo::{self as t, graph_history as g},
+    documents::workspace,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob as J, AnalysisResult as R},
     },
-    topo as t, topo_graph_history as g, workspace,
 };
 fn run(revision: String, job: J) -> R {
     let bytes = protocol::request::Request::encode(&Request {

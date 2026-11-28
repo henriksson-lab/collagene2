@@ -1,14 +1,18 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit::Edit,
-    assembly_recipe::{FragmentSpec, Preparation},
-    catalog_digest,
     chemistry::EndRepairMethod,
-    golden_gate::GoldenGateEnzyme,
-    golden_gate_junction_edit::*,
-    ligation_recipe,
-    verification::{self, PlanInput, Status},
+    cloning::{
+        assembly::{
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit::Edit,
+            recipe::{FragmentSpec, Preparation},
+        },
+        golden_gate::{GoldenGateEnzyme, junction_edit::*},
+        ligation::recipe as ligation_recipe,
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::PlanInput,
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -100,16 +104,16 @@ fn fixture(enzyme: GoldenGateEnzyme) -> (Vec<PlanInput>, Request) {
     };
     (inputs, r)
 }
-fn fresh(inputs: &[PlanInput], report: &Report) -> verification::VerificationReport {
+fn fresh(inputs: &[PlanInput], report: &Report) -> verification::evidence::VerificationReport {
     let plan = ligation_recipe::compile(
         inputs,
         &report.intent.target,
         &report.recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap()
     .plan;
-    verification::verify(&plan, &report.intent.target)
+    verification::engine::verify(&plan, &report.intent.target)
 }
 #[test]
 fn literal_inserted_circle_uses_real_bsai_or_sapi_ends_and_keeps_retained_oligos_exact() {
@@ -279,12 +283,12 @@ fn retained_repairs_and_names_stay_unchanged_while_fresh_verification_can_reject
         &inputs,
         &wrong,
         &p.recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap()
     .plan;
     assert_ne!(
-        verification::verify(&plan, &wrong).status,
+        verification::engine::verify(&plan, &wrong).status,
         Status::ConsistentUnderAssumptions
     );
 }
@@ -350,9 +354,9 @@ fn full_ordered_budget_allows_longer_inserts_but_rejects201nt_oligos_stale_pins_
     // Existing old DTO/public design still uses empty literal inserts and its
     // original four-part segments; the helper refactor does not change that path.
     let target = Molecule::dna("old independent target", A, Topology::Linear).unwrap();
-    let old = collagene_core::golden_gate_primer_design::Request {
+    let old = collagene_core::cloning::golden_gate::primers::Request {
         name: "Old empty-insert regression".into(),
-        fragments: vec![collagene_core::golden_gate_primer_design::Fragment {
+        fragments: vec![collagene_core::cloning::golden_gate::primers::Fragment {
             role: "selected".into(),
             input_id: "a".into(),
             start: 0,
@@ -367,7 +371,7 @@ fn full_ordered_budget_allows_longer_inserts_but_rejects201nt_oligos_stale_pins_
         spacer: "A".into(),
     };
     let report =
-        collagene_core::golden_gate_primer_design::design(&inputs[..1], &target, &old).unwrap();
+        collagene_core::cloning::golden_gate::primers::design(&inputs[..1], &target, &old).unwrap();
     assert_eq!(report.rows[0].oriented_top, A);
     assert_eq!(report.rows[0].reverse_tail.fusion, "GGAT");
     assert_eq!(report.rows[0].reverse.tail, "ACGTGGTCTCAGGAT");

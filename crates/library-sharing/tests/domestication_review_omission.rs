@@ -1,10 +1,10 @@
 #[path = "../../core/tests/common/domestication_oe.rs"]
 mod fixture;
 use collagene_core::{
-    domestication_preparation as preparation,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    verification::Status,
-    workspace::{self, Workspace, WorkspaceAttachment},
+    cloning::golden_gate::domestication::preparation,
+    documents::workspace::{self, Workspace, WorkspaceAttachment},
+    material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+    verification::evidence::Status,
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Molecule, Topology};

@@ -1,12 +1,17 @@
 //! End-to-end binary proposal/reference/preparation transport and version guards.
 use collagene_core::{
-    catalog_digest, codon_design, domestication as design, domestication_preparation as physical,
+    cloning::{
+        golden_gate::domestication::{self as design, preparation as physical},
+        restriction::catalog as catalog_digest,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{PlanInput, Status},
+    sequence::codon_design,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Molecule, design::Request, design::Selection) {

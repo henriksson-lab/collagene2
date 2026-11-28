@@ -1,14 +1,15 @@
 //! Independent literal continuation through actual cleavage/sealing, including
 //! all excised calls. No supplied graph or report is a reusable source.
+use collagene_core::cloning::topo::physical as p;
 use collagene_core::{
-    run_lineage::EventBinding,
-    topo as t, topo_actions as material, topo_graph_history as history,
-    topo_run_preparation as native,
-    verification::{self, Status},
-    workspace::{self, Workspace},
+    cloning::topo::{
+        self as t, actions as material, graph_history as history, run_preparation as native,
+    },
+    documents::workspace::{self, Workspace},
+    material::lineage::EventBinding,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
-use t::physical as p;
 const TARGET: &str = "AAGGGGCATCCCTTCACCATGACG";
 fn call(strand: usize, index: usize) -> p::Call {
     p::Call { strand, index }
@@ -269,7 +270,7 @@ fn archived_post_flap_and_sealed_graph_continues_remaining_activation_without_lo
         &native::Task::ProcessActions { request: bridge },
     )
     .unwrap();
-    let verified = verification::verify(&plan, &target);
+    let verified = verification::engine::verify(&plan, &target);
     assert_eq!(
         verified.status,
         Status::ConsistentUnderAssumptions,
@@ -285,7 +286,7 @@ fn archived_post_flap_and_sealed_graph_continues_remaining_activation_without_lo
     let mut wrong_plan = plan.clone();
     wrong_plan.target_revision = wrong.revision();
     assert_eq!(
-        verification::verify(&wrong_plan, &wrong).status,
+        verification::engine::verify(&wrong_plan, &wrong).status,
         Status::Invalid
     );
     assert_eq!(

@@ -1,17 +1,20 @@
 //! Optional mismatch policy selects a distinct native inspector without changing exact-PCR artifacts.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest, cloning_outputs,
-    mismatch_pcr_digest_inspection::Preview,
-    mutagenesis::PcrOptions,
-    restriction_inspection::InspectionOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    cloning::{
+        pcr::{mismatch_digest::Preview, mutagenesis::PcrOptions},
+        restriction::{catalog as catalog_digest, inspection::InspectionOptions},
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -187,14 +190,14 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
         step_index: 0,
         event: commit.receipt.construct.clone(),
     };
-    let origin = run_material::capsule(&commit.workspace, &selection).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selection).unwrap();
     let uploaded=call(&c,"import_workspace_archive",json!({"data_base64":STANDARD.encode(workspace::save_workspace(&commit.workspace).unwrap())})).await;
     let wr = json!({"id":uploaded["workspace"]["id"],"revision":uploaded["workspace"]["revision"]});
     let before = call(&c, "list_documents", json!({})).await["total"].clone();
     let mut from_run = args;
     from_run["document"] =
         json!({"id":selection.event.revision,"revision":selection.event.revision});
-    from_run["origin"] = serde_json::to_value(collagene_core::run_material::MaterialOrigin::Run(
+    from_run["origin"] = serde_json::to_value(collagene_core::material::run::MaterialOrigin::Run(
         origin.clone(),
     ))
     .unwrap();
@@ -211,7 +214,7 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
         "CCGAATTCACTACCCCGGGGTAACGAATTCCC"
     );
     assert_eq!(call(&c, "list_documents", json!({})).await["total"], before);
-    use collagene_core::material_derivation as d;
+    use collagene_core::material::derivation as d;
     let eco_rv = catalog
         .edition()
         .enzymes
@@ -223,8 +226,8 @@ async fn explicit_mismatch_digest_policy_actual_fragments_incomplete_search_and_
     let prepared = d::prepare_install(
         &commit.workspace,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: selection.event.clone(),
                 origin: d::SourceOrigin::Saved(run_material::MaterialOrigin::Run(origin.clone())),
             }],

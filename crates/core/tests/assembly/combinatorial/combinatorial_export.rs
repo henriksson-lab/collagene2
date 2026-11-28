@@ -1,18 +1,22 @@
 //! Independent ZIP decoding and literal sequence/order/protocol expectations.
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::Preparation,
     chemistry::EndTreatment,
-    cloning_outputs, combinatorial_batch as batch,
-    combinatorial_design::{
-        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+    cloning::assembly::recipe::Preparation,
+    documents::{
+        history::DocumentHistory,
+        workspace::{Workspace, WorkspaceAttachment},
     },
-    combinatorial_export::{self as export, Options},
-    combinatorial_release::{self as release, ReleaseSession, Request, Selection},
-    formats,
-    history::DocumentHistory,
-    run_lineage::{self, EventBinding},
-    workspace::{Workspace, WorkspaceAttachment},
+    formats::sequence as formats,
+    material::{
+        lineage::{self as run_lineage, EventBinding},
+        outputs as cloning_outputs,
+    },
+    planning::combinatorial::{
+        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration, batch,
+        export::{self, Options},
+        release::{self, ReleaseSession, Request, Selection},
+    },
+    sequence::analysis::Primer,
 };
 use collagene_model::{Molecule, Topology};
 use serde_json::Value;
@@ -62,11 +66,12 @@ fn released() -> release::Commit {
                         id: format!("choice-{i}"),
                         label: format!("Choice {i}"),
                         source: binding(&w, i),
-                        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
-                            start: 0,
-                            end: 20,
-                            reverse: false,
-                        },
+                        selector:
+                            collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
+                                start: 0,
+                                end: 20,
+                                reverse: false,
+                            },
                         preparation_reverse: false,
                         preparation: Some(Preparation::ExactPcr {
                             forward: Primer::new(format!("F α{i}"), f, "").unwrap(),

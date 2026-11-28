@@ -1,10 +1,12 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{FragmentSpec, Preparation},
-    golden_gate::{GoldenGateEnzyme, GoldenGateOptions},
-    golden_gate_primer_design as primers, ligation_recipe,
-    prepared_golden_gate::*,
-    verification::{self, Operation, PlanInput, Status},
+    cloning::{
+        assembly::recipe::{FragmentSpec, Preparation},
+        golden_gate::{GoldenGateEnzyme, GoldenGateOptions, prepared::*, primers},
+        ligation::recipe as ligation_recipe,
+    },
+    planning::plan::{Operation, PlanInput},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGA";
@@ -132,7 +134,7 @@ fn physical_pool_keeps_self_subset_and_full_alternatives_and_selection_preserves
         Some(Operation::GoldenGate { .. })
     ));
     assert_eq!(
-        verification::verify(&selected.plan, &target).status,
+        verification::engine::verify(&selected.plan, &target).status,
         Status::ConsistentUnderAssumptions
     );
     let self_a = report
@@ -143,7 +145,7 @@ fn physical_pool_keeps_self_subset_and_full_alternatives_and_selection_preserves
         .candidate_index;
     let selected_self = select(&report, &selection(&report, self_a)).unwrap();
     assert_eq!(
-        verification::verify(&selected_self.plan, &target).status,
+        verification::engine::verify(&selected_self.plan, &target).status,
         Status::Invalid
     );
     assert_eq!(selected_self.plan.inputs.len(), 2);

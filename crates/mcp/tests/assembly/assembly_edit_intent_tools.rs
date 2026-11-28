@@ -1,6 +1,6 @@
 //! Literal insertion/deletion requirements remain source-bound, reference-only MCP documents.
-use collagene_core::assembly_edit_intent::Report;
-use collagene_mcp::CollageneServer;
+use collagene_core::cloning::assembly::edit_intent::Report;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

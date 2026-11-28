@@ -1,13 +1,17 @@
 //! Source/profile binding, explicit materialization and compact score oracles.
 use collagene_core::{
-    assembly_intent::{self, Contribution, Selector},
-    golden_gate::GoldenGateEnzyme,
-    golden_gate_fusion_design::{self as fusion, Constraints, Limits, Window},
-    golden_gate_fusion_rank::{self as rank, PairEstimate, Score, ScoreClass},
-    golden_gate_junction_edit::{self as gate, Row},
-    ligation_fidelity::UnknownReason,
-    ligation_profiles as profiles, ligation_recipe,
-    verification::{PlanInput, Status},
+    cloning::{
+        assembly::intent::{self as assembly_intent, Contribution, Selector},
+        golden_gate::{
+            GoldenGateEnzyme,
+            fusion_design::{self as fusion, Constraints, Limits, Window},
+            fusion_rank::{self as rank, PairEstimate, Score, ScoreClass},
+            junction_edit::{self as gate, Row},
+        },
+        ligation::{fidelity::UnknownReason, profiles, recipe as ligation_recipe},
+    },
+    planning::plan::PlanInput,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const A: &str = "ATGACCCCGGGGTTTCCAGATCGC";
@@ -159,7 +163,7 @@ fn published_ranking_retains_original_candidates_and_never_defaults_a_selection(
         &inputs,
         &materialized.original_intent.target,
         &materialized.recipe,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(

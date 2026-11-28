@@ -1,10 +1,12 @@
 //! Selected adapter publication retains both exact oligo events, never private heads.
 use collagene_core::{
     chemistry::{AnnealOptions, EndTreatment, FivePrime, Terminus, ThreePrime},
-    material_derivation::{self as native, BoundSource, Derivation, SourceOrigin, SourceRole},
-    run_lineage::EventBinding,
-    run_material::MaterialOrigin,
-    workspace::{self, RevisionEvent, Workspace},
+    documents::workspace::{self, RevisionEvent, Workspace},
+    material::{
+        derivation::{self as native, BoundSource, Derivation, SourceOrigin, SourceRole},
+        lineage::EventBinding,
+        run::MaterialOrigin,
+    },
 };
 use collagene_library_sharing::{self as sharing, Selection};
 use collagene_model::{Feature, Location, Molecule, Topology};

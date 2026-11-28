@@ -1,7 +1,7 @@
 //! Literal protein bytes independent of the writer are the primary oracle.
-use collagene_core::{
-    snapgene,
-    snapgene_export::{self, Policy},
+use collagene_core::formats::snapgene::{
+    self,
+    export::{self as snapgene_export, Policy},
 };
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 fn packet(bytes: &mut Vec<u8>, tag: u8, data: &[u8]) {
@@ -126,7 +126,7 @@ fn protein_feature_coordinates_are_residues_and_reverse_wrap_or_chemical_interva
             .any(|s| s.contains("no contiguous peptide"))
     );
     assert!(
-        collagene_core::protein_properties::analyze_protein(m, &Default::default())
+        collagene_core::protein::properties::analyze_protein(m, &Default::default())
             .unwrap()
             .mass
             .is_none()
@@ -148,7 +148,7 @@ fn extra_properties_and_opaque_protein_history_remain_source_only_and_block_free
     assert_eq!(m.metadata["source:snapgene:chemistry_unmapped"], "true");
     assert!(m.metadata.contains_key("protein:modifications"));
     assert!(
-        collagene_core::protein_properties::analyze_protein(m, &Default::default())
+        collagene_core::protein::properties::analyze_protein(m, &Default::default())
             .unwrap()
             .mass
             .is_none()

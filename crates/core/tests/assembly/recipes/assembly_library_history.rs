@@ -1,8 +1,8 @@
 //! Recovery is raw editable data, atomically retained with one active draft.
 use collagene_core::{
-    assembly_library_history::{self as history, Impact},
-    run_lineage::{self, EventBinding},
-    workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
+    cloning::assembly::library_history::{self as history, Impact},
+    documents::workspace::{RevisionEvent, Workspace, WorkspaceAttachment},
+    material::lineage::{self as run_lineage, EventBinding},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 fn hash(bytes: &[u8]) -> String {
@@ -114,8 +114,8 @@ fn exact_unsaved_before_bytes_survive_atomic_replacement_and_native_archive() {
         history::list(&commit.workspace).unwrap()[0].allocation_highwater,
         12
     );
-    let archive = collagene_core::workspace::save_workspace(&commit.workspace).unwrap();
-    let imported = collagene_core::workspace::load_workspace(&archive).unwrap();
+    let archive = collagene_core::documents::workspace::save_workspace(&commit.workspace).unwrap();
+    let imported = collagene_core::documents::workspace::load_workspace(&archive).unwrap();
     assert_eq!(
         history::load(&imported, &commit.record_hash)
             .unwrap()

@@ -1,9 +1,9 @@
 //! Literal four-parent reference products and independent annotation/identity checks.
 use collagene_core::{
     chemistry,
-    multisite_recombination::{self as adapter, AnnotationLimits, Request, Selection, multisite},
-    recombination::{
-        self as old,
+    cloning::recombination::{
+        self as old, AnnotationLimits, Selection,
+        multisite::{self as adapter, Request, multisite},
         reference::{Family, Input, Limits, Reaction, SiteVariant, SourceRecord},
     },
 };
@@ -270,8 +270,10 @@ fn reversed_and_origin_shifted_parents_retain_annotation_correspondence() {
         .features
         .push(feature("payload", Location::range(14, 19)));
     for input in &mut inputs {
-        input.molecule = collagene_core::annotations::reverse_complement(&input.molecule).unwrap();
-        input.molecule = collagene_core::annotations::rotate_origin(&input.molecule, 7).unwrap();
+        input.molecule =
+            collagene_core::sequence::annotations::reverse_complement(&input.molecule).unwrap();
+        input.molecule =
+            collagene_core::sequence::annotations::rotate_origin(&input.molecule, 7).unwrap();
     }
     let batch = adapter::simulate(&inputs, &request).unwrap();
     assert_eq!(batch.documents.len(), 2);
@@ -394,8 +396,9 @@ fn aggregate_annotation_and_native_search_budgets_reject_before_copying_partial_
 
 #[test]
 fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
-    use collagene_core::verification::{
-        self, DesignPlan, Operation, PlanInput, Source, Status, TopoSource,
+    use collagene_core::{
+        planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+        verification::{self, evidence::Status},
     };
     let (inputs, request) = fixture();
     let target = Molecule::dna(
@@ -437,12 +440,12 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
             selection,
         }],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert_eq!(report.products.len(), 1);
     assert_eq!(report.reference_step_reports.len(), 1);
     assert!(report.physical_processing_reports.is_empty());
-    let verification::ReferenceStepEvidence::MultiSiteRecombination { batch, .. } =
+    let verification::evidence::ReferenceStepEvidence::MultiSiteRecombination { batch, .. } =
         &report.reference_step_reports[0].evidence;
     assert_eq!(batch.documents.len(), 2);
     assert_eq!(
@@ -453,13 +456,13 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
             .sum::<usize>(),
         152
     );
-    let html = verification::export_protocol_html(&plan, &target);
+    let html = verification::output::export_protocol_html(&plan, &target);
     assert!(html.contains("multi-site"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
     let wrong = Molecule::dna("Independent wrong target", "ACGT", Topology::Circular).unwrap();
     plan.target_revision = wrong.revision();
-    let mismatch = verification::verify(&plan, &wrong);
+    let mismatch = verification::engine::verify(&plan, &wrong);
     assert_eq!(mismatch.status, Status::Invalid);
     assert_eq!(mismatch.products.len(), 1);
     assert_eq!(mismatch.reference_step_reports.len(), 1);
@@ -468,7 +471,7 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
         template: Source::Step(0),
         treatment: chemistry::EndTreatment::Phosphorylate,
     });
-    let downstream = verification::verify(&plan, &target);
+    let downstream = verification::engine::verify(&plan, &target);
     assert_eq!(downstream.status, Status::Incomplete);
     assert_eq!(
         downstream.products.len(),
@@ -480,9 +483,9 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
 #[test]
 fn retained_multisite_run_requires_exact_immutable_reference_evidence() {
     use collagene_core::{
-        run_lineage::{self, EventBinding, InputEventBinding},
-        verification::{DesignPlan, Operation, PlanInput, Source, TopoSource},
-        workspace::Workspace,
+        documents::workspace::Workspace,
+        material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
     };
     let (inputs, request) = fixture();
     let target = Molecule::dna(
@@ -553,37 +556,43 @@ fn retained_multisite_run_requires_exact_immutable_reference_evidence() {
     )
     .unwrap();
     commit.validate().unwrap();
-    let history =
-        collagene_core::reference_run_evidence::load(&commit.workspace, &commit.receipt.run_id)
-            .unwrap()
-            .unwrap();
+    let history = collagene_core::material::reference_evidence::load(
+        &commit.workspace,
+        &commit.receipt.run_id,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(history.steps.len(), 1);
     let download =
-        collagene_core::run_evidence::download(&commit.workspace, &commit.receipt.run_id).unwrap();
+        collagene_core::material::evidence::download(&commit.workspace, &commit.receipt.run_id)
+            .unwrap();
     let bundle: serde_json::Value =
         serde_json::from_slice(download.bytes.as_ref().unwrap()).unwrap();
     assert_eq!(bundle["format"], "scientific-run-bundle-v1");
     assert_eq!(download.step_count, 1);
-    let bytes = collagene_core::workspace::save_workspace(&commit.workspace).unwrap();
-    let roundtrip = collagene_core::workspace::load_workspace(&bytes).unwrap();
+    let bytes = collagene_core::documents::workspace::save_workspace(&commit.workspace).unwrap();
+    let roundtrip = collagene_core::documents::workspace::load_workspace(&bytes).unwrap();
     roundtrip.validate().unwrap();
     let mut missing = roundtrip;
     missing
         .attachments
-        .retain(|_, a| a.kind != collagene_core::reference_run_evidence::KIND);
+        .retain(|_, a| a.kind != collagene_core::material::reference_evidence::KIND);
     assert!(missing.validate().is_err());
 }
 
 #[test]
 fn retained_reference_graphs_bind_exact_source_and_product_events_without_replaying_old_labels() {
     use collagene_core::{
-        reference_run_evidence as history,
-        run_lineage::{self, EventBinding, InputEventBinding},
-        verification::{
-            self, DesignPlan, Operation, PlanInput, ReferenceStepEvidence, Source, Status,
-            TopoSource,
+        documents::workspace::{self, Workspace},
+        material::{
+            lineage::{self as run_lineage, EventBinding, InputEventBinding},
+            reference_evidence as history,
         },
-        workspace::{self, Workspace},
+        planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+        verification::{
+            self,
+            evidence::{ReferenceStepEvidence, Status},
+        },
     };
     fn event(w: &Workspace, index: usize) -> EventBinding {
         let d = &w.documents[index];
@@ -648,7 +657,7 @@ fn retained_reference_graphs_bind_exact_source_and_product_events_without_replay
             selection,
         }],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert_eq!(report.reference_step_reports.len(), 1);
     assert!(report.physical_processing_reports.is_empty());

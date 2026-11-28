@@ -1,13 +1,15 @@
 //! Real SDK routing: no direct tool-method shortcuts or mock quality/verification verdicts.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    oligo_formats::{ColumnMapping, OligoImportOptions},
-    trace_validation::TraceValidationOptions,
-    transfer::Candidate,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
+    documents::{
+        transfer::Candidate,
+        workspace::{self, RevisionEvent, Workspace, WorkspaceAttachment},
+    },
+    formats::oligos::{ColumnMapping, OligoImportOptions},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    review::reads::trace_validation::TraceValidationOptions,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -232,11 +234,11 @@ async fn native_workspace_preserves_1000_documents_exact_history_candidates_atta
         1
     );
     // Original planning snapshot import stays available alongside native archives.
-    let plan = collagene_core::transfer::PlanningWorkspace {
+    let plan = collagene_core::documents::transfer::PlanningWorkspace {
         target_revision: original.documents[0].head.clone(),
         documents: vec![original.revisions[&original.documents[0].head].clone()],
     };
-    let old = collagene_core::transfer::save_workspace(&plan).unwrap();
+    let old = collagene_core::documents::transfer::save_workspace(&plan).unwrap();
     assert_eq!(
         call(
             &client,

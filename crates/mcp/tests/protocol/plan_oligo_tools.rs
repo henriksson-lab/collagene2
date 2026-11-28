@@ -1,6 +1,6 @@
 //! Exact plan order output is not PCR or independent target verification.
-use collagene_core::{analysis::Primer, mutagenesis::PcrOptions};
-use collagene_mcp::CollageneServer;
+use collagene_core::{cloning::pcr::mutagenesis::PcrOptions, sequence::analysis::Primer};
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

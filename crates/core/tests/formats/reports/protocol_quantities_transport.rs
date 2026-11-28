@@ -1,12 +1,14 @@
 #[path = "../../common/protocol_quantities.rs"]
 mod fixture;
 use collagene_core::{
+    documents::workspace,
+    material::lineage as run_lineage,
+    output::quantities as q,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    protocol_quantities as q, run_lineage, workspace,
 };
 fn execute(job: AnalysisJob, revision: String, tag: u32) -> AnalysisResult {
     let bytes = protocol::request::Request::encode(&Request {
@@ -220,7 +222,7 @@ fn missing_quantities_are_drafts_and_equal_dna_events_or_stale_context_do_not_su
 }
 #[test]
 fn binary_mass_and_molar_dilutions_preserve_explicit_rounding_and_achieved_dimension() {
-    use q::units::{
+    use collagene_core::output::quantities::units::{
         self, MassConcentration, MassUnit, MolarConcentration, MolarUnit, Rational, VolumeUnit,
     };
     let (w, mut r) = fixture::fixture();
@@ -311,7 +313,7 @@ fn candidate_deletion_keeps_discoverable_unavailable_receipt_without_reconstruct
         q::PlanSource::SavedRun { run_id } => run_lineage::load_run(&w, run_id).unwrap(),
         _ => unreachable!(),
     };
-    let candidate = collagene_core::transfer::Candidate::new(run.plan);
+    let candidate = collagene_core::documents::transfer::Candidate::new(run.plan);
     w.active_candidate = Some(candidate.plan_revision.clone());
     w.candidates.push(candidate);
     r.plan_source = q::PlanSource::Candidate;

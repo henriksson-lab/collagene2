@@ -1,7 +1,7 @@
 //! Literal source strands, actual transfer composition and explicit ligase scope.
-use collagene_core::topo;
+use collagene_core::cloning::topo;
+use collagene_core::cloning::topo::physical::{self as p, processing as process, projection};
 use collagene_model::{Molecule, Topology};
-use topo::physical::{self as p, processing as process, projection};
 fn fixture(directional: bool) -> (Vec<topo::Input>, topo::Request) {
     let dna = if directional {
         [

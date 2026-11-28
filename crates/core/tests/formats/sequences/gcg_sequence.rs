@@ -1,4 +1,4 @@
-use collagene_core::gcg_sequence::{self as gcg, ExportOptions, ImportOptions};
+use collagene_core::formats::sequence::gcg::{self, ExportOptions, ImportOptions};
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn options(alphabet: Alphabet) -> ImportOptions {
     ImportOptions {
@@ -141,7 +141,8 @@ fn source_header_and_sequence_limits_fail_without_partial_document() {
 fn actual_declared_termini_product_and_all_restrictive_documentary_shapes_cannot_be_laundered() {
     use collagene_core::{
         chemistry::Terminus,
-        verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
+        planning::plan::{DesignPlan, Operation, PlanInput, Source},
+        verification::{self, evidence::Status},
     };
     let stock = Molecule::dna("Original intact reference", "ACGTACGT", Topology::Linear).unwrap();
     let target = Molecule::dna(
@@ -164,7 +165,7 @@ fn actual_declared_termini_product_and_all_restrictive_documentary_shapes_cannot
             right: Terminus::CLEAVED,
         }],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_ne!(report.status, Status::Invalid, "{:?}", report.findings);
     assert_eq!(report.products.len(), 1);
     let product = &report.products[0];

@@ -1,19 +1,20 @@
 #[path = "../../common/inverse_pcr_origin.rs"]
 mod fixture;
 use collagene_core::{
-    mutagenesis,
+    cloning::pcr::mutagenesis,
+    planning::plan::{Operation, Source},
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::{self, Operation, Source, Status},
+    verification::{self, evidence::Status},
 };
 #[test]
 fn saved_run_and_derived_inverse_pcr_current_worker_bind_full_context_and_physical_prefix() {
     for derived in [false, true] {
         let (w, origin, _, source, target) = fixture::fixture(derived);
-        let before = collagene_core::workspace::save_workspace(&w).unwrap();
+        let before = collagene_core::documents::workspace::save_workspace(&w).unwrap();
         let options = fixture::options();
         let context =
             mutagenesis::inverse_pcr_revision(&source, &target, Some(&origin), &options).unwrap();
@@ -67,7 +68,7 @@ fn saved_run_and_derived_inverse_pcr_current_worker_bind_full_context_and_physic
             "GGAGATGCTACGTAGGACTTCAGACCTGTAAGT"
         );
         assert_eq!(target.sequence.as_str(), fixture::INTENDED);
-        assert!(verification::plan_target_matches(
+        assert!(verification::engine::plan_target_matches(
             &report.plan,
             product,
             &target
@@ -86,10 +87,10 @@ fn saved_run_and_derived_inverse_pcr_current_worker_bind_full_context_and_physic
         wrong.context_revision = "0".repeat(64);
         assert!(wrong.validate_binding(&context).is_err());
         assert_eq!(
-            collagene_core::workspace::save_workspace(&w).unwrap(),
+            collagene_core::documents::workspace::save_workspace(&w).unwrap(),
             before
         );
-        let bad = verification::verify(&report.plan, &source);
+        let bad = verification::engine::verify(&report.plan, &source);
         assert_eq!(bad.status, Status::Invalid);
     }
 }

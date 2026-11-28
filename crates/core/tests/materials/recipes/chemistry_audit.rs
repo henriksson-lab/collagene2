@@ -1,5 +1,10 @@
 //! Independent hand-specified strand diagrams. Expected products are not derived by digest().
-use collagene_core::{analysis::Primer, chemistry::*, verification::*};
+use collagene_core::{
+    chemistry::*,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{engine::verify, evidence::Status},
+};
 use collagene_model::{Error, Molecule, Sequence, Topology};
 
 fn duplex(top: &str, bottom: &str, start: i64) -> Duplex {

@@ -1,4 +1,4 @@
-use collagene_core::feature_library::*;
+use collagene_core::sequence::annotations::library::*;
 use collagene_model::{Alphabet, Feature, Location, Molecule, Sequence, Topology};
 
 fn source(name: &str, bases: &str, location: Location) -> Molecule {

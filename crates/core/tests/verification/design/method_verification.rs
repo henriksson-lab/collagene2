@@ -1,10 +1,13 @@
 use collagene_core::{
-    analysis::Primer,
-    chemistry::{AnnealOptions, EndTreatment, Terminus, ThreePrime},
-    overlap_profiles::ProfileOptions,
-    tailing::TailingBase,
-    verification::*,
-    *,
+    chemistry::{self, AnnealOptions, EndTreatment, Terminus, ThreePrime},
+    cloning::{ligation::tailing::TailingBase, overlap::profiles::ProfileOptions},
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{
+        engine::verify,
+        evidence::Status,
+        terminal::{TailSubstrate, simulate_tailing},
+    },
 };
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 fn dna(name: &str, s: &str, t: Topology) -> Molecule {

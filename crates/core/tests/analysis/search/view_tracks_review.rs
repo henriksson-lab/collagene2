@@ -1,5 +1,5 @@
 //! Independent review regressions: ambiguity/partial certainty and circular coordinate oracles.
-use collagene_core::view_tracks::*;
+use collagene_core::tracks::view::*;
 use collagene_model::{Feature, Location, Molecule, Topology};
 
 fn options() -> TrackOptions {

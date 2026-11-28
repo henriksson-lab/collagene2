@@ -1,19 +1,26 @@
 //! Whole cloning primers use literal edited source cores, not a target-selected product.
 use collagene_core::{
-    analysis::Primer,
-    assembly_edit_intent::{self, Edit},
-    assembly_edited_primer_design::{self as design, Request},
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit,
-    assembly_recipe::{Preparation, RunPreparation},
-    assembly_substitution_intent::{self, Substitution},
-    cloning_outputs,
-    overlap_extension_primer_design::Options,
-    overlap_profiles::ProfileOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Capsule, Selection},
-    verification::{self, DesignPlan, Operation, PlanInput, Source, Status},
-    workspace::Workspace,
+    cloning::{
+        assembly::{
+            edit_intent::{self as assembly_edit_intent, Edit},
+            edited_primers::{self as design, Request},
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit as assembly_junction_edit,
+            recipe::{Preparation, RunPreparation},
+            substitution_intent::{self as assembly_substitution_intent, Substitution},
+        },
+        overlap::{extension::primers::Options, profiles::ProfileOptions},
+    },
+    documents::workspace::Workspace,
+    material::{
+        capsule::Capsule,
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::Selection,
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const VECTOR: &str = "CACGTTCGTAGGACCA";
@@ -79,7 +86,7 @@ fn request() -> Request {
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
-        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+        finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
     }
 }
 fn inputs() -> Vec<PlanInput> {
@@ -332,7 +339,7 @@ fn saved() -> (Molecule, Capsule, Workspace) {
     .unwrap();
     let event = commit.receipt.construct.clone();
     let m = commit.workspace.revisions[&event.revision].clone();
-    let origin = run_material::capsule(
+    let origin = collagene_core::material::capsule::capsule(
         &commit.workspace,
         &Selection {
             run_id: commit.receipt.run.run_id,
@@ -354,7 +361,7 @@ fn per_role_closed_origin_replays_only_in_whole_scope_and_never_retargets_origin
     req.intent.base.base.material_bindings = vec![assembly_intent::MaterialBinding {
         input_id: "insert".into(),
         event: origin.selection.event.clone(),
-        origin: collagene_core::run_material::MaterialOrigin::Run(origin),
+        origin: collagene_core::material::run::MaterialOrigin::Run(origin),
     }];
     let p = design::design(&ins, &req, Some(&workspace)).unwrap();
     check(&p, TARGET);
@@ -399,7 +406,7 @@ fn ambiguous_source_exact_pcr_cannot_be_selected_using_the_independent_whole_tar
         .compiled
         .plan;
     plan.target_revision = wrong.revision();
-    let report = verification::verify(&plan, &wrong);
+    let report = verification::engine::verify(&plan, &wrong);
     assert_eq!(report.status, Status::Invalid);
     assert_eq!(report.products.last().unwrap().sequence.as_str(), TARGET);
 }
@@ -476,15 +483,18 @@ fn aggregate_work_explicit_tail_policy_stale_literals_and_receipt_tampering_are_
 
 #[test]
 fn whole_primer_proposal_keeps_actual_infusion_finishing_and_independent_intent() {
-    use collagene_core::{
-        assembly_recipe::OverlapFinishing,
-        homology_annealing::{Options, PlannedRescue},
-        three_prime_resection::Cuts,
+    use collagene_core::cloning::{
+        assembly::recipe::OverlapFinishing,
+        overlap::{
+            annealing::{Options, PlannedRescue},
+            resection::Cuts,
+        },
     };
     let inputs = inputs();
     let mut request = request();
     let reference = design::design(&inputs, &request, None).unwrap();
-    request.profile_options.method = collagene_core::overlap_profiles::OverlapMethod::InFusion;
+    request.profile_options.method =
+        collagene_core::cloning::overlap::profiles::OverlapMethod::InFusion;
     request.finishing = OverlapFinishing::HomologyAnnealing {
         policy: Options {
             overlaps: vec![8],
@@ -504,7 +514,7 @@ fn whole_primer_proposal_keeps_actual_infusion_finishing_and_independent_intent(
     );
     assert_eq!(actual.preview.verification.status, Status::Incomplete);
     assert!(
-        matches!(actual.preview.compiled.plan.steps.last(), Some(collagene_core::verification::Operation::HomologyAnnealing { policy, .. }) if policy.planned_rescue == Some(PlannedRescue::EcoliTransformation))
+        matches!(actual.preview.compiled.plan.steps.last(), Some(collagene_core::planning::plan::Operation::HomologyAnnealing { policy, .. }) if policy.planned_rescue == Some(PlannedRescue::EcoliTransformation))
     );
     let mut changed = actual.clone();
     changed.request.finishing = OverlapFinishing::ReferenceOnly;

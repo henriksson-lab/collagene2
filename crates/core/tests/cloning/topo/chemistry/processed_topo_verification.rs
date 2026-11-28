@@ -2,12 +2,14 @@
 const LINEAR_ECORI: &str = "AATTCAAGGGGCATCCCTTCG";
 const ECORI_CIRCLE: &str = "AGGGGCATCCCTTCGAATTCA";
 const CIRCLE: &str = "AGGGGCATCCCTTCGAATGA";
+use collagene_core::cloning::topo::physical::{self as p, processing as process, projection};
 use collagene_core::{
-    chemistry, modified_duplex, topo, topo_actions as adapter,
-    verification::{self as v, DesignPlan, Operation, PlanInput, Source, Status, TopoSource},
+    chemistry::{self, tracked_duplex as modified_duplex},
+    cloning::topo::{self, actions as adapter},
+    planning::plan::{DesignPlan, Operation, PlanInput, Source, TopoSource},
+    verification::{self as v, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
-use topo::physical::{self as p, processing as process, projection};
 fn fixture(directional: bool) -> (Vec<topo::Input>, topo::Request) {
     let dna = if directional {
         [
@@ -200,7 +202,7 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
     .unwrap();
     let mut plan = plan(&inputs, request, &target);
     plan.steps.push(digest());
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -213,7 +215,7 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
     assert_eq!(report.physical_processing_reports.len(), 1);
     assert_eq!(report.physical_processing_reports[0].step_index, 0);
 
-    let v::PhysicalProcessingEvidence::TopoActions(evidence) =
+    let v::evidence::PhysicalProcessingEvidence::TopoActions(evidence) =
         &report.physical_processing_reports[0].evidence
     else {
         panic!("canonical action evidence")
@@ -233,27 +235,27 @@ fn actual_sealed_ta_flows_to_ecori_digest_and_frozen_independent_target() {
     assert!(modifications.unknown_eligible > 0);
     assert_eq!(modifications.known_unmodified, 0);
     assert_eq!(modifications.known_modified, 0);
-    let html = v::export_protocol_html(&plan, &target);
+    let html = v::output::export_protocol_html(&plan, &target);
     assert!(html.contains("TOPO"));
     assert!(html.contains("Explicit ligase hypothesis"));
     assert_eq!(evidence.projection.physical.product.nicks.len(), 0);
     assert!(html.contains("not isolation"));
-    let pdf = collagene_core::pdf::export_protocol_pdf(&plan, &target).unwrap();
+    let pdf = collagene_core::output::pdf::export_protocol_pdf(&plan, &target).unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-"));
     assert_eq!(pdf.status, report.status);
     assert_eq!(pdf.plan_revision, report.plan_revision);
     assert_eq!(pdf.target_revision, target.revision());
     let encoded = postcard::to_allocvec(&plan.steps[0]).unwrap();
     assert_eq!(encoded[0], 19);
-    let candidate = collagene_core::transfer::Candidate::new(plan.clone());
-    let bytes = collagene_core::transfer::save_candidate(&candidate).unwrap();
+    let candidate = collagene_core::documents::transfer::Candidate::new(plan.clone());
+    let bytes = collagene_core::documents::transfer::save_candidate(&candidate).unwrap();
     assert_eq!(
         u16::from_le_bytes([bytes[4], bytes[5]]),
         collagene_core::protocol::schema::CANDIDATE_SCHEMA_VERSION
     );
     let mut old = bytes;
     old[4..6].copy_from_slice(&12u16.to_le_bytes());
-    assert!(collagene_core::transfer::load_candidate(&old).is_err());
+    assert!(collagene_core::documents::transfer::load_candidate(&old).is_err());
     let request = collagene_core::protocol::request::Request::encode(
         &collagene_core::protocol::request::Request {
             id: 65,
@@ -288,14 +290,14 @@ fn unsealed_nick_is_retained_and_downstream_digest_cannot_erase_it() {
     let request = selected(&inputs, treatment);
     let target = Molecule::dna("Independent nicked contour", CIRCLE, Topology::Circular).unwrap();
     let mut plan = plan(&inputs, request, &target);
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
         "{:?}",
         report.findings
     );
-    let v::PhysicalProcessingEvidence::TopoActions(evidence) =
+    let v::evidence::PhysicalProcessingEvidence::TopoActions(evidence) =
         &report.physical_processing_reports[0].evidence
     else {
         panic!("canonical action evidence")
@@ -303,12 +305,12 @@ fn unsealed_nick_is_retained_and_downstream_digest_cannot_erase_it() {
     assert_eq!(evidence.duplex.as_ref().unwrap().nicks.len(), 1);
     assert_eq!(evidence.projection.physical.product.nicks.len(), 1);
     plan.steps.push(digest());
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert_eq!(report.products.len(), 1);
     assert_eq!(
         {
-            let v::PhysicalProcessingEvidence::TopoActions(e) =
+            let v::evidence::PhysicalProcessingEvidence::TopoActions(e) =
                 &report.physical_processing_reports[0].evidence
             else {
                 panic!()
@@ -353,11 +355,11 @@ fn directional_flap_withholds_product_but_preserves_full_new_typed_evidence() {
     )
     .unwrap();
     let plan = plan(&inputs, request, &target);
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(report.products.is_empty());
     assert!(report.step_reports.iter().all(|s| s.topo.is_none()));
-    let v::PhysicalProcessingEvidence::TopoActions(evidence) =
+    let v::evidence::PhysicalProcessingEvidence::TopoActions(evidence) =
         &report.physical_processing_reports[0].evidence
     else {
         panic!("canonical action evidence")
@@ -375,7 +377,7 @@ fn directional_flap_withholds_product_but_preserves_full_new_typed_evidence() {
             .iter()
             .any(|u| &graph.chains[u.chain].sequence.as_str()[u.start..u.end] == "GGTG")
     );
-    let html = v::export_protocol_html(&plan, &target);
+    let html = v::output::export_protocol_html(&plan, &target);
     assert!(html.contains("TOPO"));
     assert!(html.contains("Faithful selected duplex available: false"));
 }
@@ -390,12 +392,12 @@ fn actual_material_does_not_select_or_rewrite_an_independently_wrong_target() {
     )
     .unwrap();
     let plan = plan(&inputs, request, &target);
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid);
     assert_eq!(report.products[0].sequence.as_str(), CIRCLE);
     assert_eq!(report.physical_processing_reports.len(), 1);
     assert!(
-        matches!(&report.physical_processing_reports[0].evidence,v::PhysicalProcessingEvidence::TopoActions(e) if e.tracked.is_some())
+        matches!(&report.physical_processing_reports[0].evidence,v::evidence::PhysicalProcessingEvidence::TopoActions(e) if e.tracked.is_some())
     );
     assert!(
         report
@@ -410,7 +412,7 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
     let request = selected(&inputs, treatment);
     let target = Molecule::dna("Independent circle", CIRCLE, Topology::Circular).unwrap();
     let first = plan(&inputs, request.clone(), &target);
-    let report = v::verify(&first, &target);
+    let report = v::engine::verify(&first, &target);
     let imported = report.products[0].clone();
     assert!(chemistry::has_unmapped_physical_evidence(&imported));
     let imported_plan = DesignPlan {
@@ -427,7 +429,7 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
             fragment_index: 0,
         }],
     };
-    let report = v::verify(&imported_plan, &target);
+    let report = v::engine::verify(&imported_plan, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(report.products.is_empty());
     let mut nested = first.clone();
@@ -442,7 +444,7 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
             assumptions: modified_duplex::GenerationAssumptions::default(),
         },
     );
-    let report = v::verify(&nested, &target);
+    let report = v::engine::verify(&nested, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(report.physical_processing_reports.is_empty());
     assert!(
@@ -459,7 +461,7 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
         .metadata
         .insert("duplex_model".into(), "imported graph summary".into());
     tainted.inputs[0].revision = tainted.inputs[0].molecule.revision();
-    let report = v::verify(&tainted, &target);
+    let report = v::engine::verify(&tainted, &target);
     assert_eq!(report.status, Status::Incomplete);
     assert!(report.products.is_empty());
     assert!(
@@ -479,7 +481,7 @@ fn treatment_and_nested_search_caps_reject_before_plan_revision_or_source_clones
         panic!()
     };
     request.options.limits.max_pairs = 0;
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid);
     assert!(report.plan_revision.is_empty());
     assert!(report.products.is_empty());
@@ -488,7 +490,7 @@ fn treatment_and_nested_search_caps_reject_before_plan_revision_or_source_clones
     };
     request.options.limits.max_pairs = 50_000;
     request.preparation.engine_limits.max_steps = 3;
-    let report = v::verify(&plan, &target);
+    let report = v::engine::verify(&plan, &target);
     assert_eq!(report.status, Status::Invalid);
     assert!(report.plan_revision.is_empty());
 }

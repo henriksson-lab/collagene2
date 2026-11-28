@@ -1,16 +1,16 @@
 //! Current ligation outcomes retain their intended path, alternatives and geometry.
 use collagene_core::{
     chemistry::Terminus,
+    documents::{transfer, workspace},
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    transfer,
     verification::{
-        self, DesignPlan, Operation, OrientedSource, PhysicalProcessingEvidence, PlanInput, Source,
-        Status,
+        self,
+        evidence::{PhysicalProcessingEvidence, Status},
     },
-    workspace,
 };
 use collagene_model::{Molecule, Topology};
 
@@ -69,7 +69,7 @@ fn tag(value: &impl serde::Serialize) -> u32 {
 fn ligation_and_evidence_keep_intended_and_extractable_alternatives() {
     let (plan, target) = fixture();
     assert_eq!(tag(&plan.steps[2]), 4);
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,

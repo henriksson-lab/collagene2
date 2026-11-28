@@ -1,18 +1,30 @@
 //! Library finishing is an explicit native route, independent of target intent.
 use collagene_core::{
-    analysis::Primer,
-    assembly_intent::Selector,
-    assembly_recipe::{OverlapFinishing, Preparation, RunPreparation},
     chemistry::Strand,
-    cloning_outputs, combinatorial_batch as batch, combinatorial_design as design,
-    combinatorial_export as export, combinatorial_release as release, homology_annealing,
-    homology_assembly, material_derivation as material,
-    overlap_profiles::{OverlapMethod, ProfileOptions},
-    run_lineage::{self, EventBinding},
-    run_material::{self, MaterialOrigin},
-    three_prime_resection::Cuts,
-    verification::{self, Operation, Status},
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::{
+            intent::Selector,
+            recipe::{OverlapFinishing, Preparation, RunPreparation},
+        },
+        overlap::{
+            annealing as homology_annealing, assembly as homology_assembly,
+            profiles::{OverlapMethod, ProfileOptions},
+            resection::Cuts,
+        },
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation as material,
+        lineage::{self as run_lineage, EventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::{
+        combinatorial::{self as design, batch, export, release},
+        plan::Operation,
+    },
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const LEFT: &str = "AGTCCGATGCTACGTAGGAC";
@@ -75,13 +87,14 @@ fn fixture(saved: bool) -> (Workspace, design::Design, design::SelectedConstruct
         let reverse = Primer::new("Source R", "GTCCTACG", "").unwrap();
         let source = &w.revisions[&left_source.revision];
         let previews =
-            verification::simulate_pcr_documents(source, &left_f, &reverse, Strand::Top).unwrap();
+            verification::pcr::simulate_pcr_documents(source, &left_f, &reverse, Strand::Top)
+                .unwrap();
         assert_eq!(previews.len(), 1);
         let installed = material::prepare_install(
             &w,
             &material::Request {
-                sources: vec![collagene_core::material_derivation::BoundSource {
-                    role: collagene_core::material_derivation::SourceRole::Template,
+                sources: vec![collagene_core::material::derivation::BoundSource {
+                    role: collagene_core::material::derivation::SourceRole::Template,
                     event: left_source,
                     origin: material::SourceOrigin::OriginalReference,
                 }],
@@ -292,7 +305,7 @@ fn five_prime_saved_source_library_releases_native_material_and_exports_actual_p
         .physical_processing_reports
         .iter()
         .find_map(|s| match &s.evidence {
-            verification::PhysicalProcessingEvidence::HomologyAssembly(r) => Some(r),
+            verification::evidence::PhysicalProcessingEvidence::HomologyAssembly(r) => Some(r),
             _ => None,
         })
         .unwrap();
@@ -346,7 +359,7 @@ fn five_prime_saved_source_library_releases_native_material_and_exports_actual_p
         Status::ConsistentUnderAssumptions
     );
     let product = &output.construct;
-    let capsule = run_material::capsule(
+    let capsule = collagene_core::material::capsule::capsule(
         &committed.workspace,
         &run_material::Selection {
             run_id: output.run.run_id.clone(),
@@ -397,7 +410,7 @@ fn three_prime_library_keeps_real_segments_and_nicks_and_planned_rescue_never_cr
         .physical_processing_reports
         .iter()
         .find_map(|s| match &s.evidence {
-            verification::PhysicalProcessingEvidence::HomologyAnnealing(r) => Some(r),
+            verification::evidence::PhysicalProcessingEvidence::HomologyAnnealing(r) => Some(r),
             _ => None,
         })
         .unwrap();
@@ -411,7 +424,7 @@ fn three_prime_library_keeps_real_segments_and_nicks_and_planned_rescue_never_cr
     assert!(replay.products_match);
     assert_eq!(replay.current_report.status, Status::Incomplete);
     assert!(
-        run_material::capsule(
+        collagene_core::material::capsule::capsule(
             &committed.workspace,
             &run_material::Selection {
                 run_id: output.run.run_id.clone(),
@@ -445,7 +458,7 @@ fn three_prime_library_keeps_real_segments_and_nicks_and_planned_rescue_never_cr
         .physical_processing_reports
         .iter()
         .find_map(|s| match &s.evidence {
-            verification::PhysicalProcessingEvidence::HomologyAnnealing(r) => Some(r),
+            verification::evidence::PhysicalProcessingEvidence::HomologyAnnealing(r) => Some(r),
             _ => None,
         })
         .unwrap();

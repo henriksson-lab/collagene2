@@ -1,15 +1,14 @@
 //! Current binary inspection and native two-role installation use the same source binding.
 use collagene_core::{
     chemistry::AnnealOptions,
-    material_derivation as native,
+    documents::workspace::{self, Workspace},
+    material::{derivation as native, lineage::EventBinding},
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    run_lineage::EventBinding,
-    workspace::{self, Workspace},
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, i: usize) -> EventBinding {

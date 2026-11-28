@@ -1,7 +1,9 @@
 use collagene_core::{
-    catalog_digest as c,
     chemistry::{FivePrime, ThreePrime},
-    digest_cut_selection::{self as s, Boundary as B, Choice},
+    cloning::restriction::{
+        catalog as c,
+        cut_selection::{self as s, Boundary as B, Choice},
+    },
 };
 use collagene_model::{Molecule, Topology};
 fn source(dna: &str, topology: Topology) -> Molecule {
@@ -21,7 +23,7 @@ fn preview(
     catalog: &c::catalog::Catalog,
     choice: &Choice,
 ) -> s::Report {
-    let o = c::InspectionOptions::default();
+    let o = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let batch = c::batch_revision(catalog, selection, "actual-source-role", m, &o).unwrap();
     s::preview(
         catalog,
@@ -185,7 +187,7 @@ fn linear_end_fragments_normalize_click_order_and_retain_actual_unequal_strands(
         ),
         (5, 9, 8, 4)
     );
-    let options = c::InspectionOptions::default();
+    let options = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let batch =
         c::batch_revision(&catalog, &selection, "actual-source-role", &m, &options).unwrap();
     assert!(
@@ -209,7 +211,7 @@ fn linear_end_fragments_normalize_click_order_and_retain_actual_unequal_strands(
 fn internal_extra_cuts_possible_sites_and_stale_batches_cannot_be_sliced_into_a_product() {
     let (catalog, selection) = select("ecori");
     let m = source("GAATTCAAAAGAATTCCCCGAATTCTTT", Topology::Circular);
-    let options = c::InspectionOptions::default();
+    let options = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let batch =
         c::batch_revision(&catalog, &selection, "actual-source-role", &m, &options).unwrap();
     let choice = Choice {
@@ -302,7 +304,7 @@ fn decoded_receipt_choice_and_product_must_remain_bound_without_restoring_state(
         complement: false,
     };
     let report = preview(&m, &selection, &catalog, &choice);
-    let options = c::InspectionOptions::default();
+    let options = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let batch =
         c::batch_revision(&catalog, &selection, "actual-source-role", &m, &options).unwrap();
     report

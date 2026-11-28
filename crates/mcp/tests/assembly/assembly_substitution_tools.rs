@@ -1,6 +1,6 @@
 //! Independent expected-base declarations can use repeated immutable source roles.
-use collagene_core::assembly_substitution_intent::Report;
-use collagene_mcp::CollageneServer;
+use collagene_core::cloning::assembly::substitution_intent::Report;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;
@@ -98,14 +98,14 @@ async fn declared_substitutions_keep_distinct_repeated_roles_and_reject_stale_so
     assert_eq!(report.applied[1].role, "right");
     assert_eq!(
         report.applied[0].source_position,
-        collagene_core::assembly_intent::ContributionPosition::Reference {
+        collagene_core::cloning::assembly::intent::ContributionPosition::Reference {
             position: 1,
             reverse: false
         }
     );
     assert_eq!(
         report.applied[1].source_position,
-        collagene_core::assembly_intent::ContributionPosition::Reference {
+        collagene_core::cloning::assembly::intent::ContributionPosition::Reference {
             position: 1,
             reverse: false
         }

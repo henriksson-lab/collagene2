@@ -1,8 +1,9 @@
 //! Independent review: exact homology cannot remove a known blocked3′ group.
 use collagene_core::{
     chemistry::{AnnealOptions, Terminus, ThreePrime},
-    overlap_profiles::ProfileOptions,
-    verification::*,
+    cloning::overlap::profiles::ProfileOptions,
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    verification::{engine::verify, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 fn input(id: &str, bases: &str) -> PlanInput {

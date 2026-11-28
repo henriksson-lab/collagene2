@@ -1,18 +1,24 @@
 //! Independent row targets, generic native source ownership and durable release.
 use collagene_core::{
-    analysis::Primer,
-    assembly_edit_intent::Edit,
-    assembly_edited_primer_design as primers,
-    assembly_recipe::{Preparation, RunPreparation},
-    assembly_substitution_intent::Substitution,
-    cloning_outputs, combinatorial_batch as batch, combinatorial_design as library,
-    combinatorial_release as release, material_derivation as derivation,
-    overlap_extension_primer_design::Options,
-    overlap_profiles::ProfileOptions,
-    run_lineage::{self, EventBinding},
-    run_material::MaterialOrigin,
-    verification::{self, Status},
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::{
+            edit_intent::Edit,
+            edited_primers as primers,
+            recipe::{Preparation, RunPreparation},
+            substitution_intent::Substitution,
+        },
+        overlap::{extension::primers::Options, profiles::ProfileOptions},
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        derivation,
+        lineage::{self as run_lineage, EventBinding},
+        outputs as cloning_outputs,
+        run::MaterialOrigin,
+    },
+    planning::combinatorial::{self as library, batch, release},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 const VECTOR: &str = "CACGTTCGTAGGACCA";
@@ -52,7 +58,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
     .unwrap();
     let forward = Primer::new("Original F", "AGTCCGAT", "").unwrap();
     let reverse = Primer::new("Original R", "TGACGATC", "").unwrap();
-    let documents = verification::simulate_pcr_documents(
+    let documents = verification::pcr::simulate_pcr_documents(
         &w.revisions[&event(&w, 1).revision],
         &forward,
         &reverse,
@@ -61,8 +67,8 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
     .unwrap();
     assert_eq!(documents.len(), 1);
     let request = derivation::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event(&w, 1),
             origin: derivation::SourceOrigin::OriginalReference,
         }],
@@ -94,7 +100,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
         name: "Independent row edits".into(),
         circular: false,
         method: library::Method::Overlap {
-            finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+            finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
             overlaps: vec![8],
             options: ProfileOptions::default(),
         },
@@ -106,7 +112,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
                     id: "vector-choice".into(),
                     label: "Vector".into(),
                     source: event(&w, 0),
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: 16,
                         reverse: false,
@@ -128,7 +134,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
                     id: "insert-choice".into(),
                     label: "Saved insert".into(),
                     source: product,
-                    selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+                    selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
                         start: 0,
                         end: 40,
                         reverse: false,
@@ -195,7 +201,7 @@ fn proposal(
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
-        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+        finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
     };
     let p = primers::design(&resolved.inputs, &request, Some(w)).unwrap();
     p.validate_sources(&resolved.inputs, &p.context_revision, Some(w))
@@ -362,7 +368,7 @@ fn saved_proposal_requires_actual_workspace_and_full_source_and_refuses_document
         overlap: 8,
         options: options(),
         profile_options: ProfileOptions::default(),
-        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+        finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
     };
     assert!(
         primers::source_preflight(

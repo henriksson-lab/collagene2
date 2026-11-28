@@ -1,12 +1,11 @@
 #[path = "../../common/material_library.rs"]
 mod fixture;
 use collagene_core::{
-    assembly_intent::{ContributionPosition, Selector},
-    combinatorial_design as library,
-    history::DocumentHistory,
-    run_lineage,
-    verification::{self, Status},
-    workspace,
+    cloning::assembly::intent::{ContributionPosition, Selector},
+    documents::{history::DocumentHistory, workspace},
+    material::lineage as run_lineage,
+    planning::combinatorial as library,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Molecule, Topology};
 use fixture::*;
@@ -67,13 +66,13 @@ fn actual_bottom_library_freezes_independent_target_and_releases_replayable_circ
         Status::ConsistentUnderAssumptions
     );
     let retained = run_lineage::load_run(&restored, &run).unwrap();
-    let html = verification::export_protocol_html(
+    let html = verification::output::export_protocol_html(
         &retained.plan,
         &restored.revisions[&retained.target.revision],
     );
     assert!(html.contains(EXPECTED));
     assert!(
-        collagene_core::pdf::export_protocol_pdf(
+        collagene_core::output::pdf::export_protocol_pdf(
             &retained.plan,
             &restored.revisions[&retained.target.revision]
         )
@@ -119,9 +118,9 @@ fn wrong_independent_target_state_source_alias_and_undeclared_or_different_origi
     );
     let (w, mut d, row) = fixture();
     d.material_bindings[0].origin = match d.material_bindings[0].origin.clone() {
-        collagene_core::run_material::MaterialOrigin::Run(mut o) => {
+        collagene_core::material::run::MaterialOrigin::Run(mut o) => {
             o.target.name.push('!');
-            collagene_core::run_material::MaterialOrigin::Run(o)
+            collagene_core::material::run::MaterialOrigin::Run(o)
         }
         _ => unreachable!(),
     };
@@ -131,11 +130,11 @@ fn wrong_independent_target_state_source_alias_and_undeclared_or_different_origi
 #[test]
 fn actual_bottom_pcr_work_counts_both_seventeen_base_frame_and_real_coverage_scan() {
     use collagene_core::{
-        analysis::Primer,
-        assembly_recipe::{Preparation, RunPreparation},
-        chemistry::Strand,
-        combinatorial_batch as batch, modified_duplex,
-        run_material::MaterialOrigin,
+        chemistry::{Strand, tracked_duplex as modified_duplex},
+        cloning::assembly::recipe::{Preparation, RunPreparation},
+        material::run::MaterialOrigin,
+        planning::combinatorial::batch,
+        sequence::analysis::Primer,
     };
     let (w, pin, origin) = native_source("AGTCCGATGCTAC", "GTAGGTAGCATCGGACT", 13);
     let source = &w.revisions[&pin.revision];

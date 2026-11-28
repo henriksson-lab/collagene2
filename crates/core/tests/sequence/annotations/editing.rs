@@ -1,4 +1,4 @@
-use collagene_core::editing::*;
+use collagene_core::sequence::editing::*;
 use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 fn molecule() -> Molecule {
     Molecule::dna("fixture", "AAAACCCCGGGGTTTT", Topology::Circular).unwrap()
@@ -30,8 +30,8 @@ fn annotation_form_accepts_compound_fuzzy_and_duplicate_qualifiers_without_flatt
         collagene_core::protocol::load_document(&binary).unwrap(),
         edited
     );
-    let gb = collagene_core::formats::export_genbank(&edited).unwrap();
-    let restored = collagene_core::formats::import_genbank(&gb).unwrap();
+    let gb = collagene_core::formats::sequence::export_genbank(&edited).unwrap();
+    let restored = collagene_core::formats::sequence::import_genbank(&gb).unwrap();
     assert_eq!(restored.molecules[0].features[0].location, feature.location);
     let fuzzy = parse_location("<2..>8", 16).unwrap();
     assert!(fuzzy.extract(&source.sequence).is_err());

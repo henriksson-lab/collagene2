@@ -1,6 +1,6 @@
 //! Declared selection intent is independent of later primer/PCR reconstruction.
-use collagene_core::primers::DesignOptions;
-use collagene_mcp::CollageneServer;
+use collagene_core::cloning::pcr::primers::DesignOptions;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

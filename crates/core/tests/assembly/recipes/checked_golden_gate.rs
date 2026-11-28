@@ -1,13 +1,15 @@
 //! Literal chemistry-aware cleavage and junction reassessment, independent of any target.
 use collagene_core::{
-    analysis,
-    chemistry::{Duplex, Strand},
-    golden_gate::{self, GoldenGateEnzyme, GoldenGateOptions},
-    methylation::{MethylationState, Outcome},
-    modified_duplex::{
-        self as m, CallState, CheckedDigestOptions, Chemical, CleavageBudget,
-        GenerationAssumptions, TrackedDuplex,
+    chemistry::{
+        Duplex, Strand,
+        methylation::{MethylationState, Outcome},
+        tracked_duplex::{
+            self as m, CallState, CheckedDigestOptions, Chemical, CleavageBudget,
+            GenerationAssumptions, TrackedDuplex,
+        },
     },
+    cloning::golden_gate::{self, GoldenGateEnzyme, GoldenGateOptions},
+    sequence::analysis,
 };
 use collagene_model::{Molecule, Topology};
 fn assumptions(dcm: MethylationState) -> GenerationAssumptions {
@@ -299,7 +301,9 @@ fn preparation_source_and_recut_scans_share_one_ledger_and_capped_recut_retains_
 
 #[test]
 fn exact_recognition_budget_proves_absence_without_irrelevant_context_work() {
-    use collagene_core::restriction_inspection::{self, InspectionOptions};
+    use collagene_core::cloning::restriction::inspection::{
+        self as restriction_inspection, InspectionOptions,
+    };
     let source = Molecule::dna(
         "No selected motif, unknown chemical state",
         "AACCGGTT",
@@ -348,7 +352,9 @@ fn exact_recognition_budget_proves_absence_without_irrelevant_context_work() {
 
 #[test]
 fn actual_unmodified_recognition_residues_need_no_context_budget() {
-    use collagene_core::restriction_inspection::{self, InspectionOptions};
+    use collagene_core::cloning::restriction::inspection::{
+        self as restriction_inspection, InspectionOptions,
+    };
     let source = Molecule::dna(
         "Known new PCR with BsaI site",
         "AAGGTCTCAAAAACCCCTTTT",

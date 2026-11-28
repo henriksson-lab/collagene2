@@ -1,7 +1,7 @@
 use collagene_core::{
-    analysis::{self, Enzyme},
     chemistry,
-    restriction_inspection::*,
+    cloning::restriction::inspection::*,
+    sequence::analysis::{self, Enzyme},
 };
 use collagene_model::{Feature, Location, Molecule, Sequence, Topology};
 fn enzyme(name: &str) -> Enzyme {
@@ -315,7 +315,7 @@ fn complete_fragment_set_must_conserve_both_source_strands() {
 
 #[test]
 fn native_recipe_and_annotated_text_roundtrip_retain_only_unverified_producer_claims() {
-    use collagene_core::formats::{self, TextFormat};
+    use collagene_core::formats::sequence::{self as formats, TextFormat};
     let raw = "LOCUS       source_record             12 bp    DNA     linear   SYN 01-JAN-2026\nDEFINITION  Independent source with reference coordinates.\nACCESSION   AB123456\nVERSION     AB123456.2\nREFERENCE   1  (bases 1 to 12)\n  AUTHORS   Independent,A.\n  TITLE     Source-only reference\n  JOURNAL   Unpublished\nFEATURES             Location/Qualifiers\n     misc_feature    2..7\n                     /label=\"clipped annotation\"\nORIGIN\n        1 tttgaattca aa\n//\n";
     let m = formats::import_genbank(raw).unwrap().molecules.remove(0);
     let p = product(

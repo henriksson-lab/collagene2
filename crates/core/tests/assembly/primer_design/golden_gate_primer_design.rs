@@ -1,10 +1,14 @@
 use collagene_core::{
-    assembly_recipe::Preparation, golden_gate_primer_design as d, verification::PlanInput,
+    cloning::{assembly::recipe::Preparation, golden_gate::primers as d},
+    planning::plan::PlanInput,
 };
 use collagene_model::{Molecule, Sequence, Topology};
 const SOURCE: &str = "GCTTACCGATGACCTAGTACGGCATTCGAAGC";
 const REVERSED: &str = "GCTTCGAATGCCGTACTAGGTCATCGGTAAGC";
-fn fixture(reverse: bool, enzyme: d::GoldenGateEnzyme) -> (Vec<PlanInput>, Molecule, d::Request) {
+fn fixture(
+    reverse: bool,
+    enzyme: collagene_core::cloning::golden_gate::GoldenGateEnzyme,
+) -> (Vec<PlanInput>, Molecule, d::Request) {
     let molecule = Molecule::dna("original", SOURCE, Topology::Linear).unwrap();
     let inputs = vec![PlanInput {
         id: "source".into(),
@@ -17,7 +21,7 @@ fn fixture(reverse: bool, enzyme: d::GoldenGateEnzyme) -> (Vec<PlanInput>, Molec
         Topology::Linear,
     )
     .unwrap();
-    let k = if enzyme == d::GoldenGateEnzyme::SapI {
+    let k = if enzyme == collagene_core::cloning::golden_gate::GoldenGateEnzyme::SapI {
         3
     } else {
         4
@@ -36,7 +40,7 @@ fn fixture(reverse: bool, enzyme: d::GoldenGateEnzyme) -> (Vec<PlanInput>, Molec
         }],
         enzyme,
         clamp: "ACGT".into(),
-        spacer: if enzyme == d::GoldenGateEnzyme::BbsI {
+        spacer: if enzyme == collagene_core::cloning::golden_gate::GoldenGateEnzyme::BbsI {
             "AA"
         } else {
             "A"
@@ -48,10 +52,10 @@ fn fixture(reverse: bool, enzyme: d::GoldenGateEnzyme) -> (Vec<PlanInput>, Molec
 #[test]
 fn literal_forward_bsa_i_and_sap_i_preserve_top_and_actual_bottom_fusions() {
     for enzyme in [
-        d::GoldenGateEnzyme::BsaI,
-        d::GoldenGateEnzyme::SapI,
-        d::GoldenGateEnzyme::BsmBI,
-        d::GoldenGateEnzyme::BbsI,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::SapI,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsmBI,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BbsI,
     ] {
         let (inputs, target, r) = fixture(false, enzyme);
         let before = serde_json::to_value(&inputs).unwrap();
@@ -66,7 +70,7 @@ fn literal_forward_bsa_i_and_sap_i_preserve_top_and_actual_bottom_fusions() {
         assert_eq!(row.forward_tail.fusion, "");
         assert_eq!(
             row.right.overhang,
-            if enzyme == d::GoldenGateEnzyme::SapI {
+            if enzyme == collagene_core::cloning::golden_gate::GoldenGateEnzyme::SapI {
                 "CAG"
             } else {
                 "TCAG"
@@ -74,7 +78,7 @@ fn literal_forward_bsa_i_and_sap_i_preserve_top_and_actual_bottom_fusions() {
         );
         assert_eq!(
             row.left.overhang,
-            if enzyme == d::GoldenGateEnzyme::SapI {
+            if enzyme == collagene_core::cloning::golden_gate::GoldenGateEnzyme::SapI {
                 "GCT"
             } else {
                 "GCTT"
@@ -87,7 +91,7 @@ fn literal_forward_bsa_i_and_sap_i_preserve_top_and_actual_bottom_fusions() {
             Preparation::PcrCatalogDigest { repair: None, .. }
         ));
         assert_eq!(serde_json::to_value(&inputs).unwrap(), before);
-        if enzyme == d::GoldenGateEnzyme::BsaI {
+        if enzyme == collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI {
             assert_eq!(row.forward.tail, "ACGTGGTCTCA");
             assert_eq!(row.reverse.tail, "ACGTGGTCTCATCAG");
         }
@@ -95,13 +99,16 @@ fn literal_forward_bsa_i_and_sap_i_preserve_top_and_actual_bottom_fusions() {
 }
 #[test]
 fn reverse_rows_use_original_bottom_geometry_not_rc_of_original_full_top() {
-    for enzyme in [d::GoldenGateEnzyme::BsaI, d::GoldenGateEnzyme::SapI] {
+    for enzyme in [
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::SapI,
+    ] {
         let (inputs, target, r) = fixture(true, enzyme);
         let report = d::design(&inputs, &target, &r).unwrap();
         let row = &report.rows[0];
         assert_eq!(row.oriented_top, REVERSED);
         assert_eq!(row.forward.annealing.as_str(), "GCTTACCG");
-        if enzyme == d::GoldenGateEnzyme::BsaI {
+        if enzyme == collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI {
             assert_eq!(row.forward_tail.fusion, "TCAG");
             assert_eq!(row.reverse_tail.fusion, "GCTT");
             assert_eq!(row.reverse.annealing.as_str(), "CGAATGCC");
@@ -128,7 +135,10 @@ fn circular_origin_interval_and_wrong_target_do_not_choose_primers() {
         revision: m.revision(),
         molecule: m,
     }];
-    let (_, target, mut r) = fixture(false, d::GoldenGateEnzyme::BsaI);
+    let (_, target, mut r) = fixture(
+        false,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+    );
     r.fragments[0].start = 24;
     r.fragments[0].end = 48;
     let report = d::design(&inputs, &target, &r).unwrap();
@@ -144,7 +154,10 @@ fn circular_origin_interval_and_wrong_target_do_not_choose_primers() {
 }
 #[test]
 fn internal_sites_binding_alternatives_and_invalid_bounds_withhold_proposals() {
-    let (mut inputs, target, mut r) = fixture(false, d::GoldenGateEnzyme::BsaI);
+    let (mut inputs, target, mut r) = fixture(
+        false,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+    );
     let m = Molecule::dna(
         "internal",
         "GCTTACCGGGTCTCAATACGGCATTCGAAGC",
@@ -155,7 +168,10 @@ fn internal_sites_binding_alternatives_and_invalid_bounds_withhold_proposals() {
     inputs[0].revision = m.revision();
     inputs[0].molecule = m;
     assert!(d::design(&inputs, &target, &r).is_err());
-    let (inputs, target, mut r) = fixture(false, d::GoldenGateEnzyme::BsaI);
+    let (inputs, target, mut r) = fixture(
+        false,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+    );
     r.spacer = "AA".into();
     assert!(d::design(&inputs, &target, &r).is_err());
     r.spacer = "A".into();
@@ -172,7 +188,10 @@ fn internal_sites_binding_alternatives_and_invalid_bounds_withhold_proposals() {
 }
 #[test]
 fn source_and_report_budget_context_and_geometry_guards() {
-    let (mut inputs, target, r) = fixture(false, d::GoldenGateEnzyme::BsaI);
+    let (mut inputs, target, r) = fixture(
+        false,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+    );
     let report = d::design(&inputs, &target, &r).unwrap();
     let mut forged = report.clone();
     forged.rows[0].reverse_tail.fusion = "AAAA".into();
@@ -182,10 +201,16 @@ fn source_and_report_budget_context_and_geometry_guards() {
     assert!(forged.validate().is_err());
     inputs[0].revision = "0".repeat(64);
     assert!(d::design(&inputs, &target, &r).is_err());
-    let (inputs, target, mut r) = fixture(false, d::GoldenGateEnzyme::BsaI);
+    let (inputs, target, mut r) = fixture(
+        false,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+    );
     r.fragments = vec![r.fragments[0].clone(); 33];
     assert!(d::source_preflight(&[(&inputs[0].id, &inputs[0].molecule)], &target, &r).is_err());
-    let (mut inputs, target, r) = fixture(false, d::GoldenGateEnzyme::BsaI);
+    let (mut inputs, target, r) = fixture(
+        false,
+        collagene_core::cloning::golden_gate::GoldenGateEnzyme::BsaI,
+    );
     inputs[0]
         .molecule
         .metadata

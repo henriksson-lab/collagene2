@@ -4,13 +4,16 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-The current refactoring batch removes the core model facade, splits worker
-transport into cohesive owners, and groups 415 core/MCP integration targets into
-17 explicitly registered domain suites. It preserves 1,931 existing test cases;
-four new SDK cases exercise the completed native SBOL adapter. All 17 harnesses
-compile and expose all 1,935 cases; 158 focused native tests and the web/worker
-WASM check pass. The [refactoring plan](audits/CODE_ORGANIZATION.md)
-tracks the remaining directory/file violations and ownership changes.
+The domain refactor is implemented: core scientific owners, native MCP server/
+atomic session storage, and web workspace/feature controllers have cohesive
+module trees. Every directory has at most 16 Rust files and every Rust file is
+below 3,000 lines. The strict layout gate now runs in CI. Native harness builds,
+web/worker WASM checks, executable discovery of all 1,935 integration and 401 web
+unit cases, and 1,034 selected scientific/SDK/model/private tests pass locally.
+The [refactor status](audits/CODE_ORGANIZATION.md) records scope and evidence.
+Cross-platform CI for the preceding `970f97d` checkpoint passed; the newly
+refactored tree still requires its own exact-commit CI. This does not establish
+full-product or visual acceptance.
 
 Current source uses worker schema 121, candidate schema 31, draft schema 19
 and 208 native MCP tools. RNA chemistry/declaration review, protein liability

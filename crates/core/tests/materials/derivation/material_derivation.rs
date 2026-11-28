@@ -1,16 +1,21 @@
 //! Literal target-free PCR → archive restart → real EcoRI fragments → independent
 //! assembly target. References alone never manufacture private material state.
 use collagene_core::{
-    analysis::Primer,
-    catalog_digest,
-    chemistry::{Duplex, FivePrime},
-    cloning_outputs,
-    history::DocumentHistory,
-    material_derivation as d, material_pcr, modified_duplex,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_material::{self, MaterialOrigin},
-    verification::{self, DesignPlan, Operation, OrientedSource, PlanInput, Source, Status},
-    workspace::{self, Workspace},
+    chemistry::{Duplex, FivePrime, tracked_duplex as modified_duplex},
+    cloning::{pcr::material as material_pcr, restriction::catalog as catalog_digest},
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace},
+    },
+    material::{
+        derivation as d,
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, MaterialOrigin},
+    },
+    planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::{self, evidence::Status},
 };
 use collagene_model::{Feature, Location, Molecule, Topology};
 const STOCK: &str = "AGTCCGATGAATTCCGTAGGACTTCAGACCTGTAGATCGTCA";
@@ -52,7 +57,7 @@ fn pcr(
 ) -> d::Request {
     let source = source(w, pin);
     let previews = match &origin {
-        d::SourceOrigin::OriginalReference => verification::simulate_pcr_documents(
+        d::SourceOrigin::OriginalReference => verification::pcr::simulate_pcr_documents(
             &source,
             &forward,
             &reverse,
@@ -70,8 +75,8 @@ fn pcr(
     };
     assert_eq!(previews.len(), 1);
     d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin.clone(),
             origin: origin,
         }],
@@ -147,8 +152,8 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
     assert_eq!(preview.inspection.fragments.len(), 2);
     assert_eq!(preview.fragment_modifications.len(), 2);
     let make = |index, name: &str| d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pcr_pin.clone(),
             origin: origin.clone(),
         }],
@@ -222,7 +227,7 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
             },
         ],
     };
-    let report = verification::verify(&plan, &target);
+    let report = verification::engine::verify(&plan, &target);
     assert_eq!(
         report.status,
         Status::ConsistentUnderAssumptions,
@@ -342,7 +347,7 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
         step_index: 0,
         event: saved.receipt.construct,
     };
-    let origin = run_material::capsule(&saved.workspace, &selection).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&saved.workspace, &selection).unwrap();
     let request = pcr(
         &saved.workspace,
         &selection.event,
@@ -361,10 +366,10 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
     let digested = d::prepare_install(
         &saved.workspace,
         &d::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: selection.event,
-                origin: d::SourceOrigin::Saved(collagene_core::run_material::MaterialOrigin::Run(
+                origin: d::SourceOrigin::Saved(collagene_core::material::run::MaterialOrigin::Run(
                     origin,
                 )),
             }],
@@ -479,8 +484,8 @@ fn saved_primer_table_is_atomic_presentation_and_omission_does_not_break_materia
     );
     let cap = d::capsule(&w, &pin).unwrap();
     let request = d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: pin.clone(),
             origin: d::SourceOrigin::Saved(MaterialOrigin::Derived(cap)),
         }],
@@ -497,7 +502,9 @@ fn saved_primer_table_is_atomic_presentation_and_omission_does_not_break_materia
 
 #[test]
 fn an_actual_reusable_incomplete_origin_stays_incomplete_after_new_unmodified_pcr() {
-    use collagene_core::{homology_assembly, overlap_profiles};
+    use collagene_core::cloning::overlap::{
+        assembly as homology_assembly, profiles as overlap_profiles,
+    };
     let a = Molecule::dna("Literal left source", "AGTCCGATGCTA", Topology::Linear).unwrap();
     let b = Molecule::dna(
         "Literal right source",
@@ -566,7 +573,7 @@ fn an_actual_reusable_incomplete_origin_stays_incomplete_after_new_unmodified_pc
         ],
     };
     assert_eq!(
-        verification::verify(&plan, &target).status,
+        verification::engine::verify(&plan, &target).status,
         Status::Incomplete
     );
     let w = Workspace::from_documents("Actual incomplete source", vec![a, b, target], 2).unwrap();
@@ -597,7 +604,7 @@ fn an_actual_reusable_incomplete_origin_stays_incomplete_after_new_unmodified_pc
         step_index: 2,
         event: saved.receipt.construct,
     };
-    let origin = run_material::capsule(&saved.workspace, &selected).unwrap();
+    let origin = collagene_core::material::capsule::capsule(&saved.workspace, &selected).unwrap();
     let request = pcr(
         &saved.workspace,
         &selected.event,
@@ -633,7 +640,7 @@ fn multiple_pcr_geometries_and_detached_chemical_summaries_never_become_implicit
     .unwrap();
     let w = Workspace::from_documents("Multiple PCR products", vec![repeated.clone()], 0).unwrap();
     let (f, r) = primers();
-    let previews = verification::simulate_pcr_documents(
+    let previews = verification::pcr::simulate_pcr_documents(
         &repeated,
         &f,
         &r,
@@ -642,8 +649,8 @@ fn multiple_pcr_geometries_and_detached_chemical_summaries_never_become_implicit
     .unwrap();
     assert!(previews.len() > 1);
     let request = d::Request {
-        sources: vec![collagene_core::material_derivation::BoundSource {
-            role: collagene_core::material_derivation::SourceRole::Template,
+        sources: vec![collagene_core::material::derivation::BoundSource {
+            role: collagene_core::material::derivation::SourceRole::Template,
             event: event(&w, 0),
             origin: d::SourceOrigin::OriginalReference,
         }],

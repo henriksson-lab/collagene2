@@ -1,11 +1,12 @@
 //! MCP previews physical strands explicitly and attests saved material before reuse.
 use collagene_core::{
-    assembly_recipe::{self, FragmentSpec, Preparation},
     chemistry::Terminus,
-    homology_annealing::Options,
-    three_prime_resection::Cuts,
+    cloning::{
+        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation},
+        overlap::{annealing::Options, resection::Cuts},
+    },
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::Topology;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};

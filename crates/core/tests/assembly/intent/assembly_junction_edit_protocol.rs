@@ -1,13 +1,17 @@
 use collagene_core::{
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit as edit,
-    primers::DesignOptions,
+    cloning::{
+        assembly::{
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit as edit,
+        },
+        pcr::primers::DesignOptions,
+    },
+    planning::plan::PlanInput,
     protocol::{
         self,
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    verification::PlanInput,
 };
 use collagene_model::{Molecule, Topology};
 fn fixture() -> (Vec<PlanInput>, edit::Request) {

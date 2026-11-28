@@ -1,14 +1,18 @@
 //! Fresh private bulk finalization and output export across the binary boundary.
 use collagene_core::{
-    assembly_recipe::Preparation,
     chemistry::Terminus,
-    cloning_outputs::Options as OutputOptions,
-    combinatorial_batch::{self as batch, RowRequest},
-    combinatorial_design::{
-        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+    cloning::assembly::recipe::Preparation,
+    documents::workspace::Workspace,
+    material::{
+        lineage::{self as run_lineage, EventBinding},
+        outputs::Options as OutputOptions,
     },
-    combinatorial_export as export,
-    combinatorial_release::{self as release, Selection},
+    planning::combinatorial::{
+        Bin, Choice, ChoiceSelection, Design, Method, SelectedConstruct, TargetDeclaration,
+        batch::{self, RowRequest},
+        export,
+        release::{self, Selection},
+    },
     protocol::{
         self,
         request::Request,
@@ -16,8 +20,6 @@ use collagene_core::{
         schema::{AnalysisJob, AnalysisResult},
         session::AnalysisSession,
     },
-    run_lineage::{self, EventBinding},
-    workspace::Workspace,
 };
 use collagene_model::{Error, Molecule, Topology};
 fn binding(workspace: &Workspace, index: usize) -> EventBinding {
@@ -45,7 +47,7 @@ fn fixture() -> (Workspace, String) {
         id: id.into(),
         label: id.into(),
         source: binding(&frame, index),
-        selector: collagene_core::assembly_intent::Selector::ReferenceRange {
+        selector: collagene_core::cloning::assembly::intent::Selector::ReferenceRange {
             start: 0,
             end: 4,
             reverse: false,
@@ -560,7 +562,7 @@ fn released_manifest_exports_through_the_worker_and_checks_archive_integrity() {
 
 #[test]
 fn progress_and_inspection_keep_ordinary_limits_and_only_explicit_workspace_variants_expand() {
-    let maximum = collagene_core::formats::MAX_IMPORT_BYTES;
+    let maximum = collagene_core::formats::sequence::MAX_IMPORT_BYTES;
     let mut wire = vec![0; 42 + maximum + 1];
     wire[4..6].copy_from_slice(&protocol::schema::WORKER_SCHEMA_VERSION.to_le_bytes());
     wire[6..10].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());

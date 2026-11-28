@@ -1,6 +1,6 @@
-#[path = "../src/history_graph.rs"]
+#[path = "../src/history/history_view/graph.rs"]
 mod graph;
-use collagene_core::history::HistorySummary;
+use collagene_core::documents::history::HistorySummary;
 use graph::*;
 fn event(id: &str, revision: &str, parents: &[&str]) -> HistorySummary {
     HistorySummary {

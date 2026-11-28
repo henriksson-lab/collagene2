@@ -1,6 +1,6 @@
 //! Explicitly reviewed documentary SBOL projection. Native identities never change.
 use crate::{Error, Export, Inventory, Projection, Selection, Workspace, sbol_source};
-use collagene_core::workspace::{self, WorkspaceAttachment};
+use collagene_core::documents::workspace::{self, WorkspaceAttachment};
 use collagene_design_exchange::{self as sbol, subset};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};

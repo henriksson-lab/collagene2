@@ -1,4 +1,4 @@
-use collagene_core::{
+use collagene_core::documents::{
     history::DocumentHistory,
     workspace::{self, RevisionEvent, Workspace},
 };

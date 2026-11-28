@@ -1,14 +1,16 @@
 //! Native/WASM worker boundary contracts for durable workspace I/O and trace validation.
 use collagene_core::{
+    documents::workspace::*,
     protocol::{
         self,
         request::Request,
         response::Response,
         schema::{AnalysisJob, AnalysisResult},
     },
-    trace_validation::{TraceValidationOptions, TrimMode},
-    traces,
-    workspace::*,
+    review::reads::{
+        trace_validation::{TraceValidationOptions, TrimMode},
+        traces,
+    },
 };
 use collagene_model::{Error, Molecule, Topology};
 use std::collections::BTreeMap;
@@ -333,7 +335,7 @@ fn trace_fixture() -> Molecule {
 fn trace_validation_worker_binds_reference_and_preserves_raw_quality_options() {
     let options = TraceValidationOptions {
         both_strands: false,
-        trim: collagene_core::trace_validation::TrimOptions {
+        trim: collagene_core::review::reads::trace_validation::TrimOptions {
             mode: TrimMode::AllCalls,
             min_retained_bases: 1,
             ..Default::default()

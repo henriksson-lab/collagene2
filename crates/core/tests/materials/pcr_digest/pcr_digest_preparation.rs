@@ -1,10 +1,13 @@
 use collagene_core::{
-    analysis::Primer,
-    assembly_recipe::{self as a, FragmentSpec, Preparation},
-    catalog_digest as c,
     chemistry::{EndRepairMethod, FivePrime, Polarity},
-    ligation_recipe as l,
-    verification::{Operation, PlanInput, Source, Status},
+    cloning::{
+        assembly::recipe::{self as a, FragmentSpec, Preparation},
+        ligation::recipe as l,
+        restriction::catalog as c,
+    },
+    planning::plan::{Operation, PlanInput, Source},
+    sequence::analysis::Primer,
+    verification::evidence::Status,
 };
 use collagene_model::{Molecule, Topology};
 fn input(source: &str) -> PlanInput {
@@ -51,7 +54,7 @@ fn pcr_added_bsai_sites_have_independent_top_bottom_geometry_and_original_source
         &inputs,
         &target("ACGACCCCGGGG"),
         &recipe(),
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(
@@ -117,7 +120,7 @@ fn optional_repair_is_a_separate_chain_step_and_overlap_receipt_accepts_chain_ma
         &target("ACGACCCCGGGG"),
         &recipe.name,
         &[recipe.fragments[0].source.clone()],
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(prepared.steps.len(), 3);
@@ -155,7 +158,7 @@ fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_referen
         &inputs,
         &target("AAAAAAAAAAAA"),
         &recipe(),
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_eq!(wrong.verification.status, Status::Invalid);
@@ -170,7 +173,7 @@ fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_referen
         &inputs,
         &target("ACGACCCCGGGG"),
         &r,
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert!(!absent.preparation_complete);
@@ -179,7 +182,7 @@ fn wrong_target_internal_cut_and_fragment_index_do_not_select_a_matching_referen
         &[input("ACGACCCCGGTCTCGGGGTAAC")],
         &target("ACGACCCCGGTCTCGGGG"),
         &recipe(),
-        collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete,
+        collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete,
     )
     .unwrap();
     assert_ne!(
@@ -204,7 +207,7 @@ fn tampered_catalog_stale_original_and_aggregate_amplicon_work_fail_preflight() 
             &stale,
             &t,
             &recipe(),
-            collagene_core::assembly_recipe::CleavagePolicy::AssumedComplete
+            collagene_core::cloning::assembly::recipe::CleavagePolicy::AssumedComplete
         )
         .is_err()
     );

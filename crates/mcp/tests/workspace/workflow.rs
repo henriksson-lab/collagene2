@@ -1,4 +1,4 @@
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{ServiceExt, model::CallToolRequestParams};
 use serde_json::json;
 
@@ -305,7 +305,7 @@ async fn scientific_tools_use_core_models_and_bound_output() {
 #[tokio::test]
 async fn binary_snapshot_to_candidate_preserves_revisions_and_has_no_trusted_verdict() {
     use base64::{Engine as _, engine::general_purpose::STANDARD};
-    use collagene_core::{transfer, verification};
+    use collagene_core::{documents::transfer, verification};
     use collagene_model::{Molecule, Topology};
     let mut left = Molecule::dna("left", "AAAACCCC", Topology::Linear).unwrap();
     left.metadata
@@ -379,8 +379,8 @@ async fn binary_snapshot_to_candidate_preserves_revisions_and_has_no_trusted_ver
     );
     let plan = package.bind(&target, &workspace.documents).unwrap();
     assert_eq!(
-        verification::verify(&plan, &target).status,
-        verification::Status::ConsistentUnderAssumptions
+        verification::engine::verify(&plan, &target).status,
+        verification::evidence::Status::ConsistentUnderAssumptions
     );
     let mut edited = workspace.documents.clone();
     edited[0] = edited[0].replace(0, 1, "T").unwrap();
@@ -438,7 +438,7 @@ async fn restriction_ligation_tools_keep_nicks_and_strand_geometry_explicit() {
         digest["fragments"][0]["duplex"]["ends"][0]["chemistry"]["five_prime"],
         "Phosphate"
     );
-    let proposal = json!({"name":"Nicked restriction ligation","target":reference("ligation_target"),"inputs":[{"id":"vector","document":reference("vector_fixture")},{"id":"insert","document":reference("insert_fixture")}],"steps":[{"Digest":{"template":{"Input":"vector"},"enzymes":["EcoRI"],"fragment_index":0}},{"Digest":{"template":{"Input":"insert"},"enzymes":["EcoRI"],"fragment_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Dephosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":2},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":true,"options":collagene_core::ligation_outcomes::Options::default()}}]});
+    let proposal = json!({"name":"Nicked restriction ligation","target":reference("ligation_target"),"inputs":[{"id":"vector","document":reference("vector_fixture")},{"id":"insert","document":reference("insert_fixture")}],"steps":[{"Digest":{"template":{"Input":"vector"},"enzymes":["EcoRI"],"fragment_index":0}},{"Digest":{"template":{"Input":"insert"},"enzymes":["EcoRI"],"fragment_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Dephosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":2},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":true,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]});
     let candidate = call!("propose_plan", proposal.clone());
     let bound = json!({"plan_revision":candidate["plan_revision"]});
     let report = call!("verify_plan", bound.clone());

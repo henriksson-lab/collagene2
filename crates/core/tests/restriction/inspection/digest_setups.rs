@@ -1,11 +1,16 @@
 //! Retained digest recipes are historical evidence, never a freshness receipt.
 use collagene_core::{
-    catalog_digest::{self, CatalogRestrictionInspection, InspectionOptions, catalog},
-    digest_setups::{self, CleavageMode, Record},
-    history::DocumentHistory,
-    restriction_history,
-    run_lineage::EventBinding,
-    workspace::{self, Workspace, WorkspaceAttachment},
+    cloning::restriction::{
+        catalog::{self as catalog_digest, CatalogRestrictionInspection, catalog},
+        history as restriction_history,
+        inspection::InspectionOptions,
+        setups::{self as digest_setups, CleavageMode, Record},
+    },
+    documents::{
+        history::DocumentHistory,
+        workspace::{self, Workspace, WorkspaceAttachment},
+    },
+    material::lineage::EventBinding,
 };
 use collagene_model::{Molecule, Topology};
 

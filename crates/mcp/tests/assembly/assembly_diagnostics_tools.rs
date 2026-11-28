@@ -1,6 +1,6 @@
 //! Additive typed locations distinguish preparation failure, blocked rows and target mismatch.
-use collagene_core::analysis::Primer;
-use collagene_mcp::CollageneServer;
+use collagene_core::sequence::analysis::Primer;
+use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
 type Client = RunningService<RoleClient, ()>;

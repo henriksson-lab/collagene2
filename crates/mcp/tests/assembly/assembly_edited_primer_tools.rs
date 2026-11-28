@@ -1,19 +1,27 @@
 //! A whole edited-assembly proposal remains source-bound and separate from target retention.
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_core::{
-    analysis::Primer,
-    assembly_edit_intent::{self, Edit},
-    assembly_edited_primer_design::{Report, Request},
-    assembly_intent::{self, Contribution, Selector},
-    assembly_junction_edit, assembly_substitution_intent, cloning_outputs,
-    overlap_extension_primer_design::Options,
-    primers::DesignOptions,
-    run_lineage::{EventBinding, InputEventBinding},
-    run_material::{self, Selection},
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::{self, Workspace},
+    cloning::{
+        assembly::{
+            edit_intent::{self as assembly_edit_intent, Edit},
+            edited_primers::{Report, Request},
+            intent::{self as assembly_intent, Contribution, Selector},
+            junction_edit as assembly_junction_edit,
+            substitution_intent as assembly_substitution_intent,
+        },
+        overlap::extension::primers::Options,
+        pcr::primers::DesignOptions,
+    },
+    documents::workspace::{self, Workspace},
+    material::{
+        lineage::{EventBinding, InputEventBinding},
+        outputs as cloning_outputs,
+        run::{self as run_material, Selection},
+    },
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
+    sequence::analysis::Primer,
 };
-use collagene_mcp::CollageneServer;
+use collagene_mcp::server::CollageneServer;
 use collagene_model::{Molecule, Topology};
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
@@ -83,7 +91,7 @@ fn request() -> Request {
             ..Default::default()
         },
         profile_options: Default::default(),
-        finishing: collagene_core::assembly_recipe::OverlapFinishing::ReferenceOnly,
+        finishing: collagene_core::cloning::assembly::recipe::OverlapFinishing::ReferenceOnly,
     }
 }
 async fn setup() -> (Client, tokio::task::JoinHandle<()>) {
@@ -367,10 +375,10 @@ async fn saved_role_requires_exact_workspace_attestation_before_any_full_design(
 
 #[tokio::test]
 async fn derived_template_is_hydrated_from_exact_native_selection_and_never_client_capsule() {
-    use collagene_core::material_derivation::{
+    use collagene_core::material::derivation::{
         self as native, Derivation, PcrSelection, SourceOrigin,
     };
-    use collagene_core::run_material::MaterialSelection;
+    use collagene_core::material::run::MaterialSelection;
     let (client, server) = setup().await;
     let source = Molecule::dna(
         "Original for target-free source PCR",
@@ -391,8 +399,8 @@ async fn derived_template_is_hydrated_from_exact_native_selection_and_never_clie
     let installed = native::prepare_install(
         &w,
         &native::Request {
-            sources: vec![collagene_core::material_derivation::BoundSource {
-                role: collagene_core::material_derivation::SourceRole::Template,
+            sources: vec![collagene_core::material::derivation::BoundSource {
+                role: collagene_core::material::derivation::SourceRole::Template,
                 event: binding(&w, 0),
                 origin: SourceOrigin::OriginalReference,
             }],
@@ -456,8 +464,8 @@ fn verification_preview(
     source: &Molecule,
     forward: &Primer,
     reverse: &Primer,
-) -> collagene_core::verification::PcrDocument {
-    let mut products = collagene_core::verification::simulate_pcr_documents(
+) -> collagene_core::verification::pcr::PcrDocument {
+    let mut products = collagene_core::verification::pcr::simulate_pcr_documents(
         source,
         forward,
         reverse,

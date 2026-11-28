@@ -1,15 +1,18 @@
 //! Current-format review/export boundaries preserve exact scientific intent.
 use collagene_core::{
-    analysis::{self, Primer},
+    cloning::restriction::inspection as restriction_inspection,
+    documents::workspace::Workspace,
+    material::{
+        lineage::{self as run_lineage, EventBinding, InputEventBinding},
+        review as run_review,
+    },
+    output::svg_export,
+    planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
         schema::{AnalysisJob, AnalysisResult},
     },
-    restriction_inspection,
-    run_lineage::{self, EventBinding, InputEventBinding},
-    run_review, svg_export,
-    verification::{DesignPlan, Operation, PlanInput, Source},
-    workspace::Workspace,
+    sequence::analysis::{self, Primer},
 };
 use collagene_model::{Molecule, Topology};
 fn event(w: &Workspace, i: usize) -> EventBinding {
@@ -239,7 +242,10 @@ fn session_and_stateless_admission_keep_review_and_map_size_policies_distinct() 
         // Valid current payload plus trailing bytes: review's larger snapshot
         // allowance must reach complete-payload validation. Map export must
         // refuse the ordinary-message size before decoding its body.
-        frame.resize(42 + collagene_core::formats::MAX_IMPORT_BYTES + 1, 0);
+        frame.resize(
+            42 + collagene_core::formats::sequence::MAX_IMPORT_BYTES + 1,
+            0,
+        );
         let length = (frame.len() - 42) as u32;
         frame[6..10].copy_from_slice(&length.to_le_bytes());
         let checksum = blake3::hash(&frame[42..]);

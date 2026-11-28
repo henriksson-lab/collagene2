@@ -63,16 +63,17 @@ checks, complete executable discovery and 1,034 focused tests pass; cross-platfo
 CI passed for the refactor; current-source validation and the remaining product
 gates remain separate requirements.
 
-**Current ownership follow-up:** three parallel reviewers checked the working
-tree against the same rules. Follow the concrete
-[ownership action queue](audits/organization-followup-2026-11-28.md): typed worker
-domain handlers, complete material-preview owners, narrow restoration and cloning
-proposal/pool owners, natural methods and a shared bounded-codec owner. Integrate
-the active scientific batch before changing these shared interfaces. The size
-gate currently passes (1,213 files; largest directory 17 direct Rust files), but
-worker execution at 2,990 lines and App at 2,945 require proactive ownership work
-before further growth. This queue extends the current plan; it does not create a
-second internal architecture or preserve superseded implementations.
+**Current ownership follow-up:** parallel workers implemented typed worker domain
+execution, complete material-preview owners, narrow restoration owners, natural
+planning/record/library methods and a shared bounded-encoding owner. Native/WASM checks and 1,745 focused cases pass locally;
+exact-source CI remains required. Follow the concrete
+[ownership tracking](audits/organization-followup-2026-11-28.md): proposal/pool UI
+ownership and small tree-job methods remain. Current layout passes across 1,234
+Rust files/212 directories; the largest directory has 17 direct Rust files and
+no file reaches 3,000 lines. The paired-oligo base `ded0067` passed scientific CI
+on Windows/macOS/Linux and desktop packaging. Current-source checks and the
+full existing delivery gates remain required. No superseded internal API or
+second plan representation is retained.
 
 Saved-material digest export, named setups and gel handoff are implemented and
 locally verified, including recognition-only scans without physical authority.

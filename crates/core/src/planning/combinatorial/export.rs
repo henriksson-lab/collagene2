@@ -267,7 +267,7 @@ pub fn preflight(
     prepare(workspace, manifest_hash, options).map(|_| ())
 }
 fn context(workspace: &Workspace, manifest_hash: &str, options: &Options) -> Result<String, Error> {
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         CONTRACT,
         verification::ENGINE_VERSION,
         run_lineage::workspace_fingerprint(workspace)?,

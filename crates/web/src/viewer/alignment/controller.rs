@@ -190,3 +190,37 @@ impl ComparisonController {
         )
     }
 }
+
+/// Retained alignment revisions and pending alignment/source dialogs.
+#[derive(Clone, Copy)]
+pub(crate) struct ComparisonState {
+    pub(crate) alignments:
+        RwSignal<Vec<crate::viewer::alignment::alignment_view::AlignmentRevision>>,
+    pub(crate) pending_alignment:
+        RwSignal<Option<crate::viewer::alignment::alignment_view::PendingAlignment>>,
+    pub(crate) pending_comparison_source:
+        RwSignal<Option<crate::viewer::alignment::pairwise_source_view::Snapshot>>,
+}
+impl ComparisonState {
+    pub(crate) fn new() -> Self {
+        Self {
+            alignments: RwSignal::new(Vec::<
+                crate::viewer::alignment::alignment_view::AlignmentRevision,
+            >::new()),
+            pending_alignment: RwSignal::new(
+                None::<crate::viewer::alignment::alignment_view::PendingAlignment>,
+            ),
+            pending_comparison_source: RwSignal::new(
+                None::<crate::viewer::alignment::pairwise_source_view::Snapshot>,
+            ),
+        }
+    }
+    pub(crate) fn restore(
+        &self,
+        alignments: Vec<crate::viewer::alignment::alignment_view::AlignmentRevision>,
+    ) {
+        self.alignments.set(alignments);
+        self.pending_alignment.set(None);
+        self.pending_comparison_source.set(None);
+    }
+}

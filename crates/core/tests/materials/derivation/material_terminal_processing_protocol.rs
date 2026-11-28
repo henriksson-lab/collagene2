@@ -30,7 +30,7 @@ fn actual_pcr() -> (Workspace, EventBinding, native::SourceOrigin) {
     let w = Workspace::from_documents("PCR source", vec![source.clone()], 0).unwrap();
     let f = Primer::new("Initial F", "AAA", "").unwrap();
     let r = Primer::new("Initial R", "GGG", "").unwrap();
-    let product = native::preview_pcr(
+    let product = native::pcr::preview_pcr(
         &source,
         &native::SourceOrigin::OriginalReference,
         &f,
@@ -109,9 +109,10 @@ fn actual_pcr_tail_then_phosphorylation_replay_through_current_binary_without_ta
         },
     ] {
         let before = workspace::save_workspace(&frame).unwrap();
-        let context =
-            native::terminal_processing_preview_revision(&frame, &source, &origin, &action)
-                .unwrap();
+        let context = native::terminal::terminal_processing_preview_revision(
+            &frame, &source, &origin, &action,
+        )
+        .unwrap();
         let job = AnalysisJob::InspectMaterialTerminalProcessing {
             workspace: frame.clone(),
             source: source.clone(),
@@ -170,7 +171,8 @@ fn changed_action_source_and_documentary_hash_refuse_without_any_installation() 
         base: TailingBase::A,
     };
     let context =
-        native::terminal_processing_preview_revision(&frame, &source, &origin, &action).unwrap();
+        native::terminal::terminal_processing_preview_revision(&frame, &source, &origin, &action)
+            .unwrap();
     let changed = AnalysisJob::InspectMaterialTerminalProcessing {
         workspace: frame.clone(),
         source: source.clone(),
@@ -205,7 +207,8 @@ fn changed_action_source_and_documentary_hash_refuse_without_any_installation() 
         })
         .is_err()
     );
-    let preview = native::preview_terminal_processing(&frame, &source, &origin, &action).unwrap();
+    let preview =
+        native::terminal::preview_terminal_processing(&frame, &source, &origin, &action).unwrap();
     let mut response = Response {
         id: 43,
         revision: context,

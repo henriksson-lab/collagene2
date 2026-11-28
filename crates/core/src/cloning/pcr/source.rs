@@ -73,7 +73,7 @@ impl<'a> Template<'a> {
         }
     }
     pub(crate) fn context_revision(self) -> Result<String, Error> {
-        crate::cloning::assembly::recipe::hash(&(
+        crate::encoding::bounded_json::hash(&(
             "native-pcr-frame-1",
             self.reference.revision(),
             self.strand,

@@ -37,7 +37,7 @@ pub struct VerificationReport {
 #[serde(deny_unknown_fields)]
 pub struct StepReport {
     pub step_index: usize,
-    #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+    #[serde(deserialize_with = "crate::encoding::required_option")]
     #[cfg_attr(feature = "json-schema", schemars(required))]
     pub topo: Option<crate::cloning::topo::Product>,
 }
@@ -110,8 +110,8 @@ impl LigationOutcomeEvidence {
         if fragments.len() != self.bindings.len()
             || self.report.request.circular != circular
             || self.report.request.allow_nicked != allow_nicked
-            || crate::cloning::assembly::recipe::hash(options)?
-                != crate::cloning::assembly::recipe::hash(&self.report.request.options)?
+            || crate::encoding::bounded_json::hash(options)?
+                != crate::encoding::bounded_json::hash(&self.report.request.options)?
         {
             return Err(Error::Format(
                 "Ligation outcomes declaration changed".into(),
@@ -122,8 +122,8 @@ impl LigationOutcomeEvidence {
             .zip(&self.bindings)
             .zip(&self.report.request.intended)
         {
-            if crate::cloning::assembly::recipe::hash(&fragment.source)?
-                != crate::cloning::assembly::recipe::hash(&binding.source)?
+            if crate::encoding::bounded_json::hash(&fragment.source)?
+                != crate::encoding::bounded_json::hash(&binding.source)?
                 || placement.key != binding.key
                 || placement.reverse != fragment.reverse
             {

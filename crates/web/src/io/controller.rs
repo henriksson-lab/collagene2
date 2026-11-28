@@ -807,3 +807,68 @@ impl ImportController {
         )
     }
 }
+
+/// Imported oligo collections and pending file-admission dialogs.
+#[derive(Clone, Copy)]
+pub(crate) struct ImportState {
+    pub(crate) oligo_tables:
+        RwSignal<Vec<std::sync::Arc<collagene_core::formats::oligos::OligoTable>>>,
+    pub(crate) existing_oligo: RwSignal<Option<collagene_core::formats::oligos::OligoTable>>,
+    pub(crate) pending_oligo:
+        RwSignal<Option<(String, collagene_core::formats::oligos::Delimiter)>>,
+    pub(crate) pending_fastq: RwSignal<Option<std::sync::Arc<Vec<u8>>>>,
+    pub(crate) pending_sbol: RwSignal<Option<std::sync::Arc<Vec<u8>>>>,
+    pub(crate) pending_variants: RwSignal<
+        Option<(
+            std::sync::Arc<Vec<u8>>,
+            collagene_core::review::variants::session::FileFormat,
+            String,
+        )>,
+    >,
+    pub(crate) pending_read_alignment: RwSignal<
+        Option<(
+            std::sync::Arc<Vec<u8>>,
+            collagene_core::review::reads::session::FileFormat,
+            String,
+        )>,
+    >,
+}
+impl ImportState {
+    pub(crate) fn new() -> Self {
+        Self {
+            oligo_tables: RwSignal::new(Vec::<
+                std::sync::Arc<collagene_core::formats::oligos::OligoTable>,
+            >::new()),
+            existing_oligo: RwSignal::new(None::<collagene_core::formats::oligos::OligoTable>),
+            pending_oligo: RwSignal::new(None::<(String, oligo_formats::Delimiter)>),
+            pending_fastq: RwSignal::new(None::<std::sync::Arc<Vec<u8>>>),
+            pending_sbol: RwSignal::new(None::<std::sync::Arc<Vec<u8>>>),
+            pending_variants: RwSignal::new(
+                None::<(
+                    std::sync::Arc<Vec<u8>>,
+                    collagene_core::review::variants::session::FileFormat,
+                    String,
+                )>,
+            ),
+            pending_read_alignment: RwSignal::new(
+                None::<(
+                    std::sync::Arc<Vec<u8>>,
+                    collagene_core::review::reads::session::FileFormat,
+                    String,
+                )>,
+            ),
+        }
+    }
+    pub(crate) fn restore(
+        &self,
+        oligos: Vec<std::sync::Arc<collagene_core::formats::oligos::OligoTable>>,
+    ) {
+        self.oligo_tables.set(oligos);
+        self.existing_oligo.set(None);
+        self.pending_oligo.set(None);
+        self.pending_fastq.set(None);
+        self.pending_sbol.set(None);
+        self.pending_variants.set(None);
+        self.pending_read_alignment.set(None);
+    }
+}

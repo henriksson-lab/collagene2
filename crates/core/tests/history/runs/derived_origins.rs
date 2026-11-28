@@ -192,12 +192,13 @@ fn nested_pcr_then_digest_keeps_exact_sources_and_actual_staggered_state_after_a
     };
     let record = native::load_record(&capsule.record_bytes).unwrap();
     assert!(
-        native::source_bindings(&record)
+        record
+            .source_bindings()
             .unwrap()
             .contains(&first.receipt.product)
     );
     assert_eq!(
-        native::required_derivation_products(&record).unwrap(),
+        record.required_derivation_products().unwrap(),
         vec![first.receipt.product]
     );
 }

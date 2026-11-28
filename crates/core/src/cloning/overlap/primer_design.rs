@@ -272,7 +272,7 @@ pub fn preflight(
                 bad("aggregate later exact-PCR scan reservation exceeds100million comparisons")
             })?;
     }
-    assembly_recipe::hash(&(inputs, target, request))?;
+    crate::encoding::bounded_json::hash(&(inputs, target, request))?;
     Ok(())
 }
 pub fn design_revision(
@@ -295,7 +295,7 @@ pub fn design_revision(
         return Err(bad("explicit canonical source revisions required"));
     }
     let target_revision = assembly_recipe::bound_revisions(inputs, target)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         inputs
             .iter()
@@ -433,8 +433,8 @@ impl Report {
             || self.recipe.circular != self.request.circular
             || self.recipe.overlaps
                 != vec![self.request.overlap; n - 1 + usize::from(self.request.circular)]
-            || assembly_recipe::hash(&self.recipe.options)?
-                != assembly_recipe::hash(&self.request.profile_options)?
+            || crate::encoding::bounded_json::hash(&self.recipe.options)?
+                != crate::encoding::bounded_json::hash(&self.request.profile_options)?
             || self.warnings.len() > 32
             || self.warnings.iter().any(|s| s.len() > 8192)
         {
@@ -494,8 +494,10 @@ impl Report {
                     return Err(bad("invalid concrete returned primer"));
                 }
             }
-            if assembly_recipe::hash(forward)? != assembly_recipe::hash(&pair.forward.primer)?
-                || assembly_recipe::hash(reverse)? != assembly_recipe::hash(&pair.reverse.primer)?
+            if crate::encoding::bounded_json::hash(forward)?
+                != crate::encoding::bounded_json::hash(&pair.forward.primer)?
+                || crate::encoding::bounded_json::hash(reverse)?
+                    != crate::encoding::bounded_json::hash(&pair.reverse.primer)?
                 || forward.name != format!("{}-forward", f.role)
                 || reverse.name != format!("{}-reverse", f.role)
                 || pair.forward.analysis.name != forward.name
@@ -548,7 +550,7 @@ impl Report {
             location_guard(&pair.forward.location)?;
             location_guard(&pair.reverse.location)?;
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {

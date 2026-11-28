@@ -56,7 +56,7 @@ fn pcr(w: &Workspace, index: usize, f: &str, r: &str) -> native::PreparedInstall
     let molecule = &w.revisions[&source.revision];
     let forward = Primer::new("Historical PCR F", f, "").unwrap();
     let reverse = Primer::new("Historical PCR R", r, "").unwrap();
-    let preview = native::preview_pcr(
+    let preview = native::pcr::preview_pcr(
         molecule,
         &native::SourceOrigin::OriginalReference,
         &forward,
@@ -114,11 +114,14 @@ fn all_four_explicit_single_base_tails_and_five_prime_treatments_keep_literal_ac
         let action = native::TerminalAction::Tail3Prime { base };
         let origin = derived(&w, &source);
         let before = workspace::save_workspace(&w).unwrap();
-        let preview = native::preview_terminal_processing(&w, &source, &origin, &action).unwrap();
+        let preview =
+            native::terminal::preview_terminal_processing(&w, &source, &origin, &action).unwrap();
         preview
             .validate_binding(
-                &native::terminal_processing_preview_revision(&w, &source, &origin, &action)
-                    .unwrap(),
+                &native::terminal::terminal_processing_preview_revision(
+                    &w, &source, &origin, &action,
+                )
+                .unwrap(),
             )
             .unwrap();
         assert_eq!(preview.product.sequence.as_str(), top);
@@ -318,7 +321,7 @@ fn unknown_original_chemistry_wrong_origins_and_detached_preview_cannot_supply_t
     let tail = native::TerminalAction::Tail3Prime {
         base: TailingBase::A,
     };
-    let report = native::preview_terminal_processing(
+    let report = native::terminal::preview_terminal_processing(
         &w,
         &source,
         &native::SourceOrigin::OriginalReference,
@@ -334,7 +337,7 @@ fn unknown_original_chemistry_wrong_origins_and_detached_preview_cannot_supply_t
         ThreePrime::Unknown
     );
     assert!(
-        native::preview_terminal_processing(
+        native::terminal::preview_terminal_processing(
             &w,
             &source,
             &native::SourceOrigin::OriginalReference,
@@ -352,7 +355,7 @@ fn unknown_original_chemistry_wrong_origins_and_detached_preview_cannot_supply_t
     )
     .unwrap();
     assert!(
-        native::preview_terminal_processing(
+        native::terminal::preview_terminal_processing(
             &processed.workspace,
             &processed.receipt.product,
             &derived(&processed.workspace, &processed.receipt.product),
@@ -364,7 +367,7 @@ fn unknown_original_chemistry_wrong_origins_and_detached_preview_cannot_supply_t
     detached.metadata.remove("duplex_model");
     let detached = Workspace::from_documents("Detached preview", vec![detached], 0).unwrap();
     assert!(
-        native::preview_terminal_processing(
+        native::terminal::preview_terminal_processing(
             &detached,
             &pin(&detached, 0),
             &native::SourceOrigin::OriginalReference,
@@ -387,14 +390,17 @@ fn unknown_original_chemistry_wrong_origins_and_detached_preview_cannot_supply_t
     let seed = pcr(&w, 0, "AAA", "GGG");
     let source = seed.receipt.product;
     let origin = derived(&seed.workspace, &source);
-    assert!(native::preview_terminal_processing(&w, &source, &origin, &treatment).is_err());
+    assert!(
+        native::terminal::preview_terminal_processing(&w, &source, &origin, &treatment).is_err()
+    );
     let mut alias = source.clone();
     alias.event_id = pin(&seed.workspace, 0).event_id;
     assert!(
-        native::preview_terminal_processing(&seed.workspace, &alias, &origin, &treatment).is_err()
+        native::terminal::preview_terminal_processing(&seed.workspace, &alias, &origin, &treatment)
+            .is_err()
     );
     assert!(
-        native::preview_terminal_processing(
+        native::terminal::preview_terminal_processing(
             &seed.workspace,
             &source,
             &native::SourceOrigin::OriginalReference,
@@ -409,7 +415,7 @@ fn unknown_original_chemistry_wrong_origins_and_detached_preview_cannot_supply_t
     )
     .unwrap();
     assert!(
-        native::preview_terminal_processing(
+        native::terminal::preview_terminal_processing(
             &circle,
             &pin(&circle, 0),
             &native::SourceOrigin::OriginalReference,
@@ -499,7 +505,7 @@ fn cut_created_oh_and_original_dam_calls_survive_tailing_and_phosphorylation_wit
             .unwrap(),
         Some(CallState::Modified)
     );
-    let preview = native::preview_terminal_processing(
+    let preview = native::terminal::preview_terminal_processing(
         &saved.workspace,
         &source,
         &native::SourceOrigin::Saved(origin.clone()),
@@ -659,7 +665,8 @@ fn tailing_keeps_a_real_internal_nick_and_treatment_refuses_to_seal_it() {
         base: TailingBase::A,
     };
     let preview =
-        native::preview_terminal_processing(&saved.workspace, &source, &origin, &action).unwrap();
+        native::terminal::preview_terminal_processing(&saved.workspace, &source, &origin, &action)
+            .unwrap();
     assert_eq!(preview.source_duplex.nicks.len(), 1);
     assert_eq!(preview.duplex.nicks, preview.source_duplex.nicks);
     assert_eq!(preview.product.sequence.as_str(), "AGTCCGGACTGAA");
@@ -668,7 +675,7 @@ fn tailing_keeps_a_real_internal_nick_and_treatment_refuses_to_seal_it() {
     let fresh = native::reconstruct(&reopened, &installed.receipt.product).unwrap();
     assert_eq!(fresh.tracked().duplex.nicks, preview.duplex.nicks);
     assert!(
-        native::preview_terminal_processing(
+        native::terminal::preview_terminal_processing(
             &reopened,
             &installed.receipt.product,
             &derived(&reopened, &installed.receipt.product),
@@ -695,7 +702,7 @@ fn conditionally_capped_upstream_pcr_does_not_become_complete_after_terminal_pro
     options.binding.max_mismatches = 1;
     options.binding.min_three_prime_exact = 2;
     options.max_products = 1;
-    let preview = native::preview_mismatch_pcr(
+    let preview = native::pcr::preview_mismatch_pcr(
         &source,
         &native::SourceOrigin::OriginalReference,
         &forward,
@@ -734,7 +741,8 @@ fn conditionally_capped_upstream_pcr_does_not_become_complete_after_terminal_pro
     let source = seed.receipt.product;
     let origin = derived(&seed.workspace, &source);
     let preview =
-        native::preview_terminal_processing(&seed.workspace, &source, &origin, &action).unwrap();
+        native::terminal::preview_terminal_processing(&seed.workspace, &source, &origin, &action)
+            .unwrap();
     assert!(preview.origin_incomplete);
     assert!(preview.incomplete);
     let mut forged = preview.clone();

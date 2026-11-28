@@ -1,10 +1,7 @@
 //! Conditional published-profile ranking of retained source-bound fusion sets.
 //! Ranking never changes a recipe, chooses a reaction winner or grants physical authority.
 use crate::{
-    cloning::{
-        assembly::recipe as assembly_recipe, golden_gate::fusion_design as fusion,
-        ligation::profiles,
-    },
+    cloning::{golden_gate::fusion_design as fusion, ligation::profiles},
     planning::plan::PlanInput,
 };
 use collagene_model::{Error, Molecule, Sequence};
@@ -88,7 +85,7 @@ fn profile(request: &Request) -> Result<profiles::Summary, Error> {
 pub fn preflight(inputs: &[(&str, &Molecule)], request: &Request) -> Result<(), Error> {
     profile(request)?;
     fusion::preflight(inputs, &request.design)?;
-    assembly_recipe::hash(request)?;
+    crate::encoding::bounded_json::hash(request)?;
     Ok(())
 }
 fn context(
@@ -96,7 +93,7 @@ fn context(
     request: &Request,
     metadata: &profiles::Summary,
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(ENGINE_VERSION, source_context, request, metadata))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, source_context, request, metadata))
 }
 pub fn inspect_revision(inputs: &[PlanInput], request: &Request) -> Result<String, Error> {
     let metadata = profile(request)?;
@@ -311,8 +308,8 @@ impl Report {
             || self.context_revision != expected
             || !metadata_matches(&self.metadata, &summary)
             || !digest(&self.metadata.data_revision)
-            || assembly_recipe::hash(&self.request.design)?
-                != assembly_recipe::hash(&self.search.request)?
+            || crate::encoding::bounded_json::hash(&self.request.design)?
+                != crate::encoding::bounded_json::hash(&self.search.request)?
             || context(&self.search.context_revision, &self.request, &summary)? != expected
             || self.ranked.len() != self.search.candidates.len()
             || self.ranked.len() > fusion::MAX_CANDIDATES

@@ -3,10 +3,7 @@
 use crate::cloning::topo::physical::{self, projection};
 use crate::{
     chemistry::{self, tracked_duplex as tracked},
-    cloning::{
-        assembly::recipe as assembly_recipe,
-        topo::{self, annotations as topo_annotations, worker as topo_worker},
-    },
+    cloning::topo::{self, annotations as topo_annotations, worker as topo_worker},
 };
 use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
@@ -73,7 +70,7 @@ fn binding(
     sources: &[topo::SourceIdentity],
     r: &Request,
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         projection::ENGINE,
         preparation_revision,
@@ -292,11 +289,13 @@ impl Report {
         }
         let expanded =
             topo::expanded_source_identities(&self.input_sources, &self.request.preparation)?;
-        if assembly_recipe::hash(&expanded)? != assembly_recipe::hash(&self.sources)? {
+        if crate::encoding::bounded_json::hash(&expanded)?
+            != crate::encoding::bounded_json::hash(&self.sources)?
+        {
             return Err(bad("root and expanded native source identities differ"));
         }
         let original = &self.request.preparation;
-        let original_revision = assembly_recipe::hash(&(
+        let original_revision = crate::encoding::bounded_json::hash(&(
             topo::ENGINE_VERSION,
             physical::ENGINE,
             physical::PRIMARY_MODEL,
@@ -366,8 +365,8 @@ impl Report {
                         &self.sources,
                         m.sequence.len(),
                     )?;
-                    if assembly_recipe::hash(&evidence.features)?
-                        != assembly_recipe::hash(&m.features)?
+                    if crate::encoding::bounded_json::hash(&evidence.features)?
+                        != crate::encoding::bounded_json::hash(&m.features)?
                     {
                         return Err(bad("product features differ from annotation evidence"));
                     }
@@ -418,7 +417,9 @@ fn bounded(value: &impl Serialize, limit: usize) -> Result<(), Error> {
 }
 pub fn replay(inputs: &[topo::Input], r: &Request, report: &Report) -> Result<(), Error> {
     report.validate_binding(&revision(inputs, r)?)?;
-    if assembly_recipe::hash(&inspect(inputs, r)?)? != assembly_recipe::hash(report)? {
+    if crate::encoding::bounded_json::hash(&inspect(inputs, r)?)?
+        != crate::encoding::bounded_json::hash(report)?
+    {
         return Err(bad("report differs from fresh source-backed processing"));
     }
     Ok(())

@@ -3,7 +3,6 @@
 //! constructs CheckedIntent; hosts additionally attest exact source events.
 use crate::{
     cloning::{
-        assembly::recipe as assembly_recipe,
         pcr::mutation_intent,
         restriction::catalog::{self as catalog_digest, CatalogSelection},
     },
@@ -154,7 +153,7 @@ fn request_shape(r: &Request) -> Result<(), Error> {
             return Err(bad("invalid or duplicate retained site"));
         }
     }
-    assembly_recipe::hash(r)?;
+    crate::encoding::bounded_json::hash(r)?;
     Ok(())
 }
 pub fn feature_pin(source: &Molecule, index: usize) -> Result<FeaturePin, Error> {
@@ -164,7 +163,7 @@ pub fn feature_pin(source: &Molecule, index: usize) -> Result<FeaturePin, Error>
         .ok_or_else(|| bad("feature index is not retained"))?;
     Ok(FeaturePin {
         index,
-        revision: assembly_recipe::hash(feature)?,
+        revision: crate::encoding::bounded_json::hash(feature)?,
     })
 }
 /// Borrowed guards before scans or source copies; host event ownership is separate.
@@ -194,7 +193,7 @@ pub fn preflight(source: &Molecule, r: &Request) -> Result<(), Error> {
 }
 fn context(tag: &str, r: &Request) -> Result<String, Error> {
     request_shape(r)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, tag, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, tag, r))
 }
 pub fn inspect_revision(source: &Molecule, r: &Request) -> Result<String, Error> {
     preflight(source, r)?;
@@ -230,7 +229,7 @@ fn patch_shape(r: &Request, patches: &[Patch]) -> Result<(), Error> {
 pub fn candidate_id(r: &Request, patches: &[Patch]) -> Result<String, Error> {
     request_shape(r)?;
     patch_shape(r, patches)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, "candidate", r, patches))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "candidate", r, patches))
 }
 pub fn check_revision(source: &Molecule, r: &Request, s: &Selection) -> Result<String, Error> {
     preflight(source, r)?;
@@ -246,7 +245,7 @@ pub fn check_revision(source: &Molecule, r: &Request, s: &Selection) -> Result<S
     {
         return Err(bad("substitution lies outside original source"));
     }
-    assembly_recipe::hash(&(ENGINE_VERSION, "check", r, s))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "check", r, s))
 }
 fn scan(source: &Molecule, r: &Request) -> Result<Vec<Site>, Error> {
     let n = source.sequence.len();
@@ -985,7 +984,7 @@ impl Inspection {
                 return Err(bad("CDS assessment shape changed"));
             }
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }
@@ -1028,10 +1027,16 @@ impl Proposal {
                 {
                     return Err(bad("candidate declaration changed"));
                 }
-                let token =
-                    assembly_recipe::hash(&(ENGINE_VERSION, "check", &self.inspection.request, s))?;
+                let token = crate::encoding::bounded_json::hash(&(
+                    ENGINE_VERSION,
+                    "check",
+                    &self.inspection.request,
+                    s,
+                ))?;
                 c.validate_binding(&token)?;
-                if assembly_recipe::hash(&c.selection)? != assembly_recipe::hash(s)? {
+                if crate::encoding::bounded_json::hash(&c.selection)?
+                    != crate::encoding::bounded_json::hash(s)?
+                {
                     return Err(bad("candidate check belongs to another selection"));
                 }
             }
@@ -1042,7 +1047,7 @@ impl Proposal {
             }
             _ => return Err(bad("incomplete candidate/check pair")),
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }
@@ -1058,7 +1063,7 @@ impl CheckReport {
             || self.selection.context_revision != context("propose", &self.request)?
             || self.selection.candidate_id != candidate_id(&self.request, &self.selection.patches)?
             || expected
-                != assembly_recipe::hash(&(
+                != crate::encoding::bounded_json::hash(&(
                     ENGINE_VERSION,
                     "check",
                     &self.request,
@@ -1099,7 +1104,7 @@ impl CheckReport {
                 return Err(bad("checked CDS assertions changed"));
             }
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

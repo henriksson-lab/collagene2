@@ -1,7 +1,6 @@
 //! Immutable construct-owned read checks. Loading is historical evidence;
 //! capture and replay alone invoke the existing fresh scientific validator.
 use crate::{
-    cloning::assembly::recipe as assembly_recipe,
     documents::workspace::{self, Workspace, WorkspaceAttachment},
     material::lineage::{self as run_lineage, EventBinding},
     review::reads::trace_validation::{
@@ -115,7 +114,7 @@ fn inputs_guard(
         models.push(resolve(w, b)?);
     }
     collagene_model::bounds::model_preflight(&models)?;
-    assembly_recipe::hash(&(models, options))?;
+    crate::encoding::bounded_json::hash(&(models, options))?;
     Ok(())
 }
 fn saved_revision(
@@ -123,7 +122,7 @@ fn saved_revision(
     reads: &[EventBinding],
     report: &TraceValidationReport,
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "read-check-evidence-1",
         reference,
         reads,
@@ -141,7 +140,7 @@ pub fn capture_revision(
     options: &TraceValidationOptions,
 ) -> Result<String, Error> {
     inputs_guard(w, reference, reads, options)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "capture-read-check-1",
         run_lineage::workspace_fingerprint(w)?,
         reference,
@@ -576,7 +575,7 @@ impl Commit {
 pub fn replay_revision(w: &Workspace, hash: &str) -> Result<String, Error> {
     let saved = load(w, hash)?;
     inputs_guard(w, &saved.reference, &saved.reads, &saved.report.options)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "replay-read-check-1",
         run_lineage::workspace_fingerprint(w)?,
         hash,
@@ -619,7 +618,7 @@ impl Checked {
         {
             return Err(bad("fresh replay engine/options/reference mismatch"));
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

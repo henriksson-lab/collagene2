@@ -1054,3 +1054,51 @@ impl AssemblyController {
     )
     }
 }
+
+/// Editable assembly and release state belonging to the current workspace.
+#[derive(Clone, Copy)]
+pub(crate) struct AssemblyState {
+    pub(crate) method_config:
+        RwSignal<crate::cloning::preparation::cloning_methods_model::MethodsState>,
+    pub(crate) assembly_draft: RwSignal<crate::assembly::draft::model::Draft>,
+    pub(crate) previous_assembly_draft:
+        RwSignal<Option<std::sync::Arc<crate::assembly::draft::model::Draft>>>,
+    pub(crate) assembly_visible: RwSignal<bool>,
+    pub(crate) pending_finalize: RwSignal<Option<std::sync::Arc<PendingFinalize>>>,
+    pub(crate) pending_release: RwSignal<Option<String>>,
+    pub(crate) selected_release_manifest: RwSignal<Option<String>>,
+    pub(crate) pending_donor: RwSignal<Option<crate::cloning::methods::crispr::DonorRequest>>,
+}
+impl AssemblyState {
+    pub(crate) fn new(epoch: RwSignal<u64>) -> Self {
+        let state = Self {
+            method_config: RwSignal::new(
+                crate::cloning::preparation::cloning_methods_model::MethodsState::default(),
+            ),
+            assembly_draft: RwSignal::new(crate::assembly::draft::model::Draft::default()),
+            previous_assembly_draft: RwSignal::new(
+                None::<std::sync::Arc<crate::assembly::draft::model::Draft>>,
+            ),
+            assembly_visible: RwSignal::new(false),
+            pending_finalize: RwSignal::new(None::<std::sync::Arc<PendingFinalize>>),
+            pending_release: RwSignal::new(None::<String>),
+            selected_release_manifest: RwSignal::new(None::<String>),
+            pending_donor: RwSignal::new(None::<crate::cloning::methods::crispr::DonorRequest>),
+        };
+        Effect::new(move |_| {
+            let _ = epoch.get();
+            state.previous_assembly_draft.set(None);
+        });
+        state
+    }
+    pub(crate) fn restore(&self, draft: crate::assembly::draft::model::Draft) {
+        self.method_config.set(Default::default());
+        self.assembly_draft.set(draft);
+        self.previous_assembly_draft.set(None);
+        self.assembly_visible.set(false);
+        self.pending_finalize.set(None);
+        self.pending_release.set(None);
+        self.selected_release_manifest.set(None);
+        self.pending_donor.set(None);
+    }
+}

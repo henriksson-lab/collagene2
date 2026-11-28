@@ -155,3 +155,27 @@ impl AnnotationController {
     )
     }
 }
+
+/// Retained annotation libraries and the pending annotation-import source.
+#[derive(Clone, Copy)]
+pub(crate) struct AnnotationState {
+    pub(crate) libraries: RwSignal<Vec<crate::viewer::sequence::feature_tools::LibraryRevision>>,
+    pub(crate) annotation_source: RwSignal<String>,
+}
+impl AnnotationState {
+    pub(crate) fn new() -> Self {
+        Self {
+            libraries: RwSignal::new(
+                Vec::<crate::viewer::sequence::feature_tools::LibraryRevision>::new(),
+            ),
+            annotation_source: RwSignal::new(String::new()),
+        }
+    }
+    pub(crate) fn restore(
+        &self,
+        libraries: Vec<crate::viewer::sequence::feature_tools::LibraryRevision>,
+    ) {
+        self.libraries.set(libraries);
+        self.annotation_source.set(String::new());
+    }
+}

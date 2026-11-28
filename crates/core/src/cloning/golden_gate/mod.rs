@@ -508,7 +508,7 @@ pub fn simulate_tracked(
         ));
     }
     collagene_model::bounds::model_preflight(&inputs.iter().collect::<Vec<_>>())?;
-    crate::cloning::assembly::recipe::hash(&(inputs, substrates))?;
+    crate::encoding::bounded_json::hash(&(inputs, substrates))?;
     let mut report=GoldenGateReport{model:MODEL.into(),options:options.clone(),profile_revision:modified_duplex::profile_revision(),source_cleavage:vec![],products_determined:true,comparisons:budget.used(),sources:vec![],fragments:vec![],carryover_sources:vec![],candidates:vec![],enumeration_complete:true,exhaustive_mixture_search:false,states_examined:0,truncation_reasons:vec![],stable_physical_product_count:0,warnings:vec![
         "Positional checked cleavage uses actual inherited/synthesized modification states under pinned current profiles. Sealed complementary ligation, supplier conditions, fidelity and kinetics remain separate assumptions; this is not experimental success.".into(),
         "Enumeration uses at most one copy of each complete-digest pool fragment. It cannot establish absence of repeated-copy concatemers or other real-mixture products; uncut circular carryover is listed separately.".into(),
@@ -644,7 +644,7 @@ pub fn simulate_tracked(
         // no fragment subset is enumerated as the requested complete pool.
         report.enumeration_complete = false;
         report.truncation_reasons.push("Requested pool withheld: one or more complete source fragment sets are unresolved; no available subset was substituted".into());
-        crate::cloning::assembly::recipe::hash(&report)?;
+        crate::encoding::bounded_json::hash(&report)?;
         return Ok(FreshGoldenGate {
             report,
             selected: None,
@@ -730,7 +730,7 @@ pub fn simulate_tracked(
     if report.candidates.iter().any(|c| !c.restriction_site_free) {
         report.warnings.push("Some ligatable candidates retain or recreate a recognition site, including sites formed across junctions; those candidates are not restriction-site-free products.".into());
     }
-    crate::cloning::assembly::recipe::hash(&report)?;
+    crate::encoding::bounded_json::hash(&report)?;
     Ok(FreshGoldenGate {
         report,
         selected,

@@ -145,12 +145,12 @@ async fn preview(
     source: &EventBinding,
     origin: &Origin,
     preparation: &Preparation,
-) -> native::OverlapExtensionPreview {
+) -> native::overlap_extension::OverlapExtensionPreview {
     let result = call(c, "material_derivation", json!({"workspace":w,"task":{"PreviewOverlapExtensionPcr":{"source":source,"origin":origin,"preparation":preparation}}})).await;
     let (text, encoding) = artifact(c, &result["artifact_id"]).await;
     assert_eq!(encoding, "utf-8");
     let evidence: Value = serde_json::from_str(&text).unwrap();
-    let report: native::OverlapExtensionPreview =
+    let report: native::overlap_extension::OverlapExtensionPreview =
         serde_json::from_value(evidence["preview"].clone()).unwrap();
     report
         .validate_binding(result["context_revision"].as_str().unwrap())
@@ -311,7 +311,7 @@ fn saved_source(run: bool) -> (Workspace, EventBinding, Origin) {
     let f = Primer::new("Historical stock F", "AGTCCGAT", "").unwrap();
     let r = Primer::new("Historical stock R", "TGACGATC", "").unwrap();
     if !run {
-        let product = native::preview_pcr(
+        let product = native::pcr::preview_pcr(
             &source,
             &native::SourceOrigin::OriginalReference,
             &f,

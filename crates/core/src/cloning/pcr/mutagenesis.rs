@@ -528,7 +528,7 @@ fn inverse_context(
     origin: Option<&MaterialOrigin>,
     options: &InversePcrOptions,
 ) -> Result<String, Error> {
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         INVERSE_ENGINE_VERSION,
         verification::ENGINE_VERSION,
         source.revision(),
@@ -727,13 +727,13 @@ fn validate_inverse_fields(
         return Err(bad());
     }
     let parts = inverse_parts(&source.sequence, options)?;
-    if crate::cloning::assembly::recipe::hash(&(
+    if crate::encoding::bounded_json::hash(&(
         forward,
         reverse,
         forward_location,
         reverse_location,
         retained,
-    ))? != crate::cloning::assembly::recipe::hash(&(
+    ))? != crate::encoding::bounded_json::hash(&(
         &parts.forward,
         &parts.reverse,
         &parts.forward_location,
@@ -758,8 +758,8 @@ fn validate_inverse_fields(
             reverse: r,
             template_strand: crate::chemistry::Strand::Top,
             ..
-        } if crate::cloning::assembly::recipe::hash(&(template, f, r))?
-            == crate::cloning::assembly::recipe::hash(&(expected_template, forward, reverse))? =>
+        } if crate::encoding::bounded_json::hash(&(template, f, r))?
+            == crate::encoding::bounded_json::hash(&(expected_template, forward, reverse))? =>
         {
             ()
         }
@@ -778,8 +778,8 @@ fn validate_inverse_fields(
         } if fragments.len() == 1
             && !fragments[0].reverse
             && matches!(&fragments[0].source,Source::Step(j) if *j==i+1)
-            && crate::cloning::assembly::recipe::hash(options)?
-                == crate::cloning::assembly::recipe::hash(
+            && crate::encoding::bounded_json::hash(options)?
+                == crate::encoding::bounded_json::hash(
                     &crate::cloning::ligation::outcomes::Options::default(),
                 )? =>
         {

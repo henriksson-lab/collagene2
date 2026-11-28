@@ -101,7 +101,7 @@ impl RestrictionController {
         (
             String,
             collagene_core::cloning::restriction::setups::Recipe,
-            collagene_core::material::derivation::DigestPreview,
+            collagene_core::material::derivation::digest::DigestPreview,
         ),
         Result<(), String>,
     > {
@@ -118,7 +118,7 @@ impl RestrictionController {
             move |(name, recipe, report): (
                 String,
                 collagene_core::cloning::restriction::setups::Recipe,
-                collagene_core::material::derivation::DigestPreview,
+                collagene_core::material::derivation::digest::DigestPreview,
             )|
                   -> Result<(), String> {
                 if workspace_restoring.get_untracked() {
@@ -152,5 +152,33 @@ impl RestrictionController {
                 Ok(())
             },
         )
+    }
+}
+
+/// Digest source navigation and pending material-admission dialogs.
+#[derive(Clone, Copy)]
+pub(crate) struct DigestWorkspaceState {
+    pub(crate) pending_digest:
+        RwSignal<Option<crate::restriction::digest_product::DigestOpenRequest>>,
+    pub(crate) pending_material:
+        RwSignal<Option<crate::restriction::digest_product::MaterialOpenRequest>>,
+    pub(crate) digest_boundary_pick: RwSignal<Option<crate::restriction::digest::BoundaryPick>>,
+}
+impl DigestWorkspaceState {
+    pub(crate) fn new() -> Self {
+        Self {
+            pending_digest: RwSignal::new(
+                None::<crate::restriction::digest_product::DigestOpenRequest>,
+            ),
+            pending_material: RwSignal::new(
+                None::<crate::restriction::digest_product::MaterialOpenRequest>,
+            ),
+            digest_boundary_pick: RwSignal::new(None::<crate::restriction::digest::BoundaryPick>),
+        }
+    }
+    pub(crate) fn restore(&self) {
+        self.pending_digest.set(None);
+        self.pending_material.set(None);
+        self.digest_boundary_pick.set(None);
     }
 }

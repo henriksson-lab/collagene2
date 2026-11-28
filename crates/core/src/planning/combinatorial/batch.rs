@@ -1,7 +1,6 @@
 //! Private sequential batch computation and immutable historical summaries.
 //! No decoded record/session flag can authorize fresh science or product release.
 use crate::{
-    cloning::assembly::recipe as assembly_recipe,
     documents::workspace::{self, Workspace, WorkspaceAttachment},
     material::lineage::{self as run_lineage, EventBinding, InputEventBinding},
     planning::combinatorial::{
@@ -41,7 +40,7 @@ dto! {pub struct RowEvidence {
     pub input_bindings:Vec<InputEventBinding>,pub target_binding:Option<EventBinding>,
     pub plan_revision:Option<String>,pub target_revision:Option<String>,pub final_product_revision:Option<String>,
     pub completed_steps:usize,pub planned_steps:usize,pub preparation_complete:bool,
-    #[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub tailing_profile:Option<TailingProfileEvidence>,
+    #[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub tailing_profile:Option<TailingProfileEvidence>,
     pub findings:Vec<String>,pub assumptions:Vec<String>,pub exhaustive_alternative_search:Option<bool>,
 }}
 dto! {pub struct Progress {pub context_revision:String,pub next_index:usize,pub total_rows:usize,pub finished:bool,pub row:Option<RowEvidence>}}
@@ -143,7 +142,7 @@ impl Request {
             return Err(bad("select 1–256 batch rows"));
         }
         if let Some(design) = &self.design {
-            design::validate_design(design)?;
+            design.validate()?;
         }
         let mut ids = BTreeSet::new();
         for row in &self.rows {
@@ -216,14 +215,20 @@ impl Request {
 }
 pub fn request_revision(request: &Request) -> Result<String, Error> {
     request.validate()?;
-    assembly_recipe::hash(&(CONTRACT, ENGINE_VERSION, "request", request))
+    crate::encoding::bounded_json::hash(&(CONTRACT, ENGINE_VERSION, "request", request))
 }
 pub fn preflight(workspace: &Workspace, request: &Request) -> Result<(), Error> {
     request.validate()?;
     design::workspace_guard(workspace)
 }
 fn begin_token(fingerprint: &str, request: &Request) -> Result<String, Error> {
-    assembly_recipe::hash(&(CONTRACT, ENGINE_VERSION, "session", fingerprint, request))
+    crate::encoding::bounded_json::hash(&(
+        CONTRACT,
+        ENGINE_VERSION,
+        "session",
+        fingerprint,
+        request,
+    ))
 }
 pub fn begin_revision(workspace: &Workspace, request: &Request) -> Result<String, Error> {
     preflight(workspace, request)?;
@@ -233,7 +238,13 @@ fn capture_token(fingerprint: &str, context: &str) -> Result<String, Error> {
     if !digest(fingerprint) || !digest(context) {
         return Err(bad("invalid capture context"));
     }
-    assembly_recipe::hash(&(CONTRACT, ENGINE_VERSION, "capture", fingerprint, context))
+    crate::encoding::bounded_json::hash(&(
+        CONTRACT,
+        ENGINE_VERSION,
+        "capture",
+        fingerprint,
+        context,
+    ))
 }
 pub fn capture_revision(workspace: &Workspace, context: &str) -> Result<String, Error> {
     design::workspace_guard(workspace)?;
@@ -307,7 +318,7 @@ fn evaluate_row(
     };
     let combination = design::combination_key(design, &construct.choices).ok();
     let result = (|| -> Result<RowEvidence, Error> {
-        let evaluated = design::evaluate_resolved(resolved?)?;
+        let evaluated = resolved?.evaluate()?;
         let report = evaluated.verification();
         let plan = evaluated.plan();
         if report.findings.len() > 4096
@@ -652,7 +663,7 @@ impl Session {
 }
 fn record_revision(engine: &str, request: &Request, rows: &[RowEvidence]) -> Result<String, Error> {
     count(&(engine, request, rows), MAX_RECORD_BYTES - 1024)?;
-    assembly_recipe::hash(&("combinatorial-batch-record-3", engine, request, rows))
+    crate::encoding::bounded_json::hash(&("combinatorial-batch-record-3", engine, request, rows))
 }
 
 impl Record {

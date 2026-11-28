@@ -178,7 +178,7 @@ fn source_revision(m: &Molecule) -> Result<String, Error> {
     Ok(writer.hash.finalize().to_hex().to_string())
 }
 fn context(source: &str, format: &Format) -> Result<String, Error> {
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         crate::verification::ENGINE_VERSION,
         source,

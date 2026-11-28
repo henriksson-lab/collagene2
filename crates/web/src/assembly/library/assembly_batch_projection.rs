@@ -584,7 +584,7 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
         })
     };
     if let Some(catalog) = &catalog {
-        design::validate_design(catalog).map_err(|e| e.to_string())?;
+        catalog.validate().map_err(|e| e.to_string())?;
     }
     let rows=library.rows.iter().map(|row|{
         let result=if row.id==library.active_row&&pending.is_some(){

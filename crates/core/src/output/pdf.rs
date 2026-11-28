@@ -534,7 +534,7 @@ fn topo_actions_evidence_text(
     for note in &evidence.bridge_notes {
         writeln!(out, "Bridge limitation: {note}").map_err(|_| Error::TooLarge)?;
     }
-    let hash = crate::cloning::assembly::recipe::hash(evidence)?;
+    let hash = crate::encoding::bounded_json::hash(evidence)?;
     writeln!(out,"Complete chronological graph, ordered transfer/cut/seal evidence, displacement, terminal activation and source maps remain in the matching cloning-run JSON sidecar. Action evidence content hash: {hash}. Source/request context: {}. This readable protocol summarizes that evidence; the full graph is not embedded here.",evidence.context_revision).map_err(|_|Error::TooLarge)?;
     out.finish()
 }

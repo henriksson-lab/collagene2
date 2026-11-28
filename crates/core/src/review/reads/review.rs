@@ -1,7 +1,6 @@
 //! Explicit caller decisions over fresh read evidence. No original call or source
 //! document is edited, and a reviewed reference is never physical sample proof.
 use crate::{
-    cloning::assembly::recipe as assembly_recipe,
     documents::{
         history::DocumentHistory,
         workspace::{Workspace, WorkspaceAttachment},
@@ -200,7 +199,7 @@ pub fn source_preflight(w: &Workspace, r: &Request) -> Result<(), Error> {
 }
 fn revision(w: &Workspace, r: &Request, domain: &str) -> Result<String, Error> {
     source_preflight(w, r)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         domain,
         run_lineage::workspace_fingerprint(w)?,
         r,
@@ -220,12 +219,12 @@ fn stable_revision(
     reads: &[EventBinding],
     report: &TraceValidationReport,
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "read-review-evidence-1",
         r,
         reference,
         reads,
-        assembly_recipe::hash(report)?,
+        crate::encoding::bounded_json::hash(report)?,
     ))
 }
 fn warnings_guard(warnings: &[String]) -> Result<(), Error> {
@@ -550,7 +549,7 @@ impl Preview {
                 None,
             )?;
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

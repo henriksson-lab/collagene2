@@ -165,7 +165,7 @@ pub fn source_preflight(
             _ => {}
         }
     }
-    preparation::hash(recipe)?;
+    crate::encoding::bounded_json::hash(recipe)?;
     preparation::preparation_source_preflight(inputs, target, &recipe.name, &sources(recipe)?)?;
     Ok(())
 }
@@ -194,7 +194,14 @@ pub fn preview_revision(
 ) -> Result<String, Error> {
     preflight(inputs, target, recipe)?;
     preparation::bound_revisions(inputs, target)?;
-    preparation::hash(&(ENGINE_VERSION, "preview", inputs, target, recipe, policy))
+    crate::encoding::bounded_json::hash(&(
+        ENGINE_VERSION,
+        "preview",
+        inputs,
+        target,
+        recipe,
+        policy,
+    ))
 }
 pub fn compile(
     inputs: &[PlanInput],
@@ -245,7 +252,7 @@ pub fn compile(
         rows,
         ligation_step,
     };
-    preparation::hash(&compiled)?;
+    crate::encoding::bounded_json::hash(&compiled)?;
     Ok(compiled)
 }
 fn summary(duplex: &Duplex, reverse: bool) -> Result<DuplexSummary, Error> {
@@ -333,7 +340,7 @@ pub(crate) fn preview_with_tracked(
             .filter(|n| *n <= preparation::MAX_ROLE_BASES)
             .ok_or(Error::TooLarge)?;
     }
-    preparation::hash(&available)?;
+    crate::encoding::bounded_json::hash(&available)?;
     let preparation_complete = available.len() == compiled.rows.len();
     let mut physical = Vec::with_capacity(available.len());
     let mut fresh: Vec<Option<crate::chemistry::tracked_duplex::TrackedDuplex>> =
@@ -445,7 +452,8 @@ impl Preview {
             &self.compiled.plan.inputs,
             &self.compiled.plan.steps,
         )?;
-        if self.verification.plan_revision != preparation::hash(&self.compiled.plan)?
+        if self.verification.plan_revision
+            != crate::encoding::bounded_json::hash(&self.compiled.plan)?
             || self.verification.target_revision != self.compiled.plan.target_revision
         {
             return Err(bad("verification plan/target binding mismatch"));
@@ -457,8 +465,10 @@ impl Preview {
                 allow_nicked,
                 options,
             }) => {
-                if preparation::hash(options)?
-                    != preparation::hash(&crate::cloning::ligation::outcomes::Options::default())?
+                if crate::encoding::bounded_json::hash(options)?
+                    != crate::encoding::bounded_json::hash(
+                        &crate::cloning::ligation::outcomes::Options::default(),
+                    )?
                 {
                     return Err(bad("compiled outcome bounds changed"));
                 }
@@ -554,7 +564,9 @@ impl Preview {
             summary_bounds(s)?;
         }
         let expected = junctions(&self.physical, rows, *circular);
-        if preparation::hash(&expected)? != preparation::hash(&self.junctions)? {
+        if crate::encoding::bounded_json::hash(&expected)?
+            != crate::encoding::bounded_json::hash(&self.junctions)?
+        {
             return Err(bad(
                 "junction endpoints disagree with actual prepared summaries",
             ));
@@ -566,7 +578,7 @@ impl Preview {
                 "product physical evidence has no reconstructed product",
             ));
         }
-        preparation::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {

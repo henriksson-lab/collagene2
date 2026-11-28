@@ -2,7 +2,7 @@
 use crate::{
     cloning::assembly::{
         intent::{self as assembly_intent, ContributionPosition, PlacedFragment},
-        junction_edit as assembly_junction_edit, recipe as assembly_recipe,
+        junction_edit as assembly_junction_edit,
     },
     documents::workspace::Workspace,
     planning::plan::PlanInput,
@@ -90,11 +90,11 @@ pub fn source_preflight(
             }
         }
     }
-    assembly_recipe::hash(&(inputs, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, r))?;
     Ok(())
 }
 fn context(source: &str, r: &Request) -> Result<String, Error> {
-    assembly_recipe::hash(&(ENGINE_VERSION, source, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, source, r))
 }
 pub fn intent_revision(
     inputs: &[PlanInput],
@@ -276,7 +276,7 @@ pub(crate) fn build_resolved(
         ),
         (
             "features_revision",
-            assembly_recipe::hash(&target.features)?,
+            crate::encoding::bounded_json::hash(&target.features)?,
         ),
     ] {
         target.metadata.insert(format!("{PREFIX}{key}"), value);
@@ -388,7 +388,7 @@ impl Report {
             ),
             (
                 "features_revision",
-                assembly_recipe::hash(&self.target.features)?,
+                crate::encoding::bounded_json::hash(&self.target.features)?,
             ),
         ] {
             if self.target.metadata.get(&format!("{PREFIX}{key}")) != Some(&value) {

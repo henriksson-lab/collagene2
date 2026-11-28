@@ -51,12 +51,7 @@ pub fn inspection_revision(
     }
     let fingerprint = run_lineage::workspace_fingerprint(workspace)?;
     resolve(workspace, event)?;
-    crate::cloning::assembly::recipe::hash(&(
-        INSPECTION_ENGINE_VERSION,
-        fingerprint,
-        event,
-        selection,
-    ))
+    crate::encoding::bounded_json::hash(&(INSPECTION_ENGINE_VERSION, fingerprint, event, selection))
 }
 
 pub fn inspect(
@@ -339,7 +334,7 @@ pub fn material_inspection_revision(
     // workspace_fingerprint validates native source/model/attachment bounds first.
     let fingerprint = run_lineage::workspace_fingerprint(workspace)?;
     resolve(workspace, event)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         MATERIAL_INSPECTION_ENGINE_VERSION,
         fingerprint,
         event,
@@ -646,7 +641,7 @@ pub fn reconstruct(workspace: &Workspace, selection: &Selection) -> Result<Fresh
     let tracked = states.get_mut(selection.step_index).and_then(Option::take)
         .ok_or_else(|| bad("this run step has no established reusable strand/modification state; a reference projection cannot supply physical material"))?;
     tracked.validate()?;
-    let context_revision = crate::cloning::assembly::recipe::hash(&(
+    let context_revision = crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         fingerprint,

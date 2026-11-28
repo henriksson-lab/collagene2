@@ -67,6 +67,15 @@ pub struct Slot {
     pub anneal_bottom: Option<Arc<CapturedSource>>,
 }
 impl Slot {
+    /// Exact captured operands and material/interval intent, excluding UI labels.
+    pub(crate) fn same_source_geometry(&self, other: &Self) -> bool {
+        self.captured == other.captured
+            && self.anneal_bottom == other.anneal_bottom
+            && self.selector == other.selector
+            && self.digest_geometry == other.digest_geometry
+            && self.material_origin == other.material_origin
+    }
+
     pub(crate) fn empty(label: &str) -> Self {
         Self {
             label: label.into(),
@@ -1163,7 +1172,7 @@ pub fn set_digest_fragment(
         if *origin.event() != fragment.source.binding {
             return Err("Saved material belongs to a different exact source event".into());
         }
-        collagene_core::material::derivation::digest_inspection_revision(
+        collagene_core::material::derivation::digest::digest_inspection_revision(
             &role,
             &fragment.molecule,
             &collagene_core::material::derivation::SourceOrigin::Saved(origin.as_ref().clone()),
@@ -1193,7 +1202,7 @@ pub fn set_digest_fragment(
     }
     if fragment.fragment_index >= fragment.options.max_fragments
         || !hex(&fragment.batch_revision)
-        || collagene_core::material::derivation::digest_inspection_revision(
+        || collagene_core::material::derivation::digest::digest_inspection_revision(
             &role,
             &fragment.molecule,
             &fragment.origin.as_ref().map_or(

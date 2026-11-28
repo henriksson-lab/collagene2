@@ -96,7 +96,7 @@ async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_p
     )
     .unwrap();
     let source_origin = derivation::SourceOrigin::OriginalReference;
-    let products = derivation::preview_pcr(
+    let products = derivation::pcr::preview_pcr(
         &original.molecule,
         &source_origin,
         &forward,

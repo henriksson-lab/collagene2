@@ -43,7 +43,7 @@ impl Request {
             ));
         }
         let inspection = self.recipe.inspection_revision(source)?;
-        crate::cloning::assembly::recipe::hash(&(
+        crate::encoding::bounded_json::hash(&(
             ENGINE_VERSION,
             inspection,
             self.fragment_index,

@@ -104,7 +104,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     let options = collagene_core::cloning::restriction::inspection::InspectionOptions::default();
     let source = saved.workspace.revisions[&original.revision].clone();
     let before = source.clone();
-    let preview = native::inspect_digest(
+    let preview = native::digest::inspect_digest(
         "actual13/17",
         &source,
         &SourceOrigin::Saved(origin.clone()),

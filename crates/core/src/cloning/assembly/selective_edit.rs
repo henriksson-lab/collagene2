@@ -328,7 +328,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
             .filter(|n| *n <= 100_000_000)
             .ok_or(Error::TooLarge)?;
     }
-    assembly_recipe::hash(&(inputs, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, r))?;
     Ok(())
 }
 fn pins(inputs: &[PlanInput]) -> Result<Vec<(&str, &str)>, Error> {
@@ -356,7 +356,7 @@ pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Erro
             .collect::<Vec<_>>(),
         r,
     )?;
-    assembly_recipe::hash(&(ENGINE_VERSION, pins(inputs)?, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, pins(inputs)?, r))
 }
 pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
     let context_revision = design_revision(inputs, r)?;
@@ -467,8 +467,8 @@ impl Report {
         }
         self.intent
             .validate_binding(&self.intent.context_revision)?;
-        if assembly_recipe::hash(&self.request.base)?
-            != assembly_recipe::hash(&self.intent.base_request)?
+        if crate::encoding::bounded_json::hash(&self.request.base)?
+            != crate::encoding::bounded_json::hash(&self.intent.base_request)?
             || self.request.edits != self.intent.edits
             || self.recipe.name != self.request.base.name
             || self.recipe.circular != self.request.base.circular
@@ -486,7 +486,8 @@ impl Report {
             .ok_or_else(|| bad("missing original source pins"))?;
         let pins: Vec<(String, String)> =
             serde_json::from_str(raw).map_err(|_| bad("invalid source pins"))?;
-        if assembly_recipe::hash(&(ENGINE_VERSION, &pins, &self.request))? != self.context_revision
+        if crate::encoding::bounded_json::hash(&(ENGINE_VERSION, &pins, &self.request))?
+            != self.context_revision
         {
             return Err(bad("request/source revision binding changed"));
         }
@@ -510,7 +511,8 @@ impl Report {
             match request {
                 Row::Retain(original) => {
                     if design.is_some()
-                        || assembly_recipe::hash(original)? != assembly_recipe::hash(row)?
+                        || crate::encoding::bounded_json::hash(original)?
+                            != crate::encoding::bounded_json::hash(row)?
                     {
                         return Err(bad("retained preparation changed"));
                     }
@@ -549,10 +551,10 @@ impl Report {
                     options.forward_tail = forward.tail.clone();
                     options.reverse_tail = reverse.tail.clone();
                     if options != d.options
-                        || assembly_recipe::hash(forward)?
-                            != assembly_recipe::hash(&pair.forward.primer)?
-                        || assembly_recipe::hash(reverse)?
-                            != assembly_recipe::hash(&pair.reverse.primer)?
+                        || crate::encoding::bounded_json::hash(forward)?
+                            != crate::encoding::bounded_json::hash(&pair.forward.primer)?
+                        || crate::encoding::bounded_json::hash(reverse)?
+                            != crate::encoding::bounded_json::hash(&pair.reverse.primer)?
                     {
                         return Err(bad(
                             "selected recipe primers differ from actual ranked pair",
@@ -636,7 +638,7 @@ impl Report {
             return Err(bad("retained row index receipt changed"));
         }
         warnings(&self.warnings)?;
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

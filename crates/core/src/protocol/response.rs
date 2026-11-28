@@ -156,8 +156,8 @@ impl Response {
                 let expected = crate::cloning::ligation::profiles::list()?;
                 if items.len() != expected.len()
                     || response.revision != crate::cloning::ligation::profiles::catalog_revision()?
-                    || crate::cloning::assembly::recipe::hash(items)?
-                        != crate::cloning::assembly::recipe::hash(&expected)?
+                    || crate::encoding::bounded_json::hash(items)?
+                        != crate::encoding::bounded_json::hash(&expected)?
                 {
                     return Err(Error::Format("Published ligation catalog changed".into()));
                 }

@@ -243,7 +243,7 @@ impl std::io::Write for CountBytes {
 }
 pub fn revision(report: &Report, pattern: &str, options: &Options) -> Result<String, Error> {
     preflight(report, pattern, options)?;
-    crate::cloning::assembly::recipe::hash(&("pairwise-row-search-1", report, pattern, options))
+    crate::encoding::bounded_json::hash(&("pairwise-row-search-1", report, pattern, options))
 }
 pub fn search(report: &Report, pattern: &str, options: Options) -> Result<Matches, Error> {
     preflight(report, pattern, &options)?;

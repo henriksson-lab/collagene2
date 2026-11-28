@@ -67,7 +67,7 @@ fn saved_staggered_fragment_export_uses_actual_strands_and_discloses_detachment(
     assert!(gb.text.contains("source:material_digest_export:losses"));
     let imported = sequence::import_text(&gb.text).unwrap();
     assert_eq!(imported.molecules[0].sequence, product.molecule.sequence);
-    let recognition = d::inspect_digest(
+    let recognition = d::digest::inspect_digest(
         "unattested reimport",
         &imported.molecules[0],
         &d::SourceOrigin::OriginalReference,

@@ -209,11 +209,11 @@ impl MismatchChoice {
         forward: Primer,
         reverse: Primer,
         options: collagene_core::cloning::pcr::mutagenesis::PcrOptions,
-        preview: &native::MismatchPreview,
+        preview: &native::pcr::MismatchPreview,
         selected_index: usize,
     ) -> Result<Self, String> {
         source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
-        let context = native::mismatch_pcr_preview_revision(
+        let context = native::pcr::mismatch_pcr_preview_revision(
             molecule,
             &source.native_origin(),
             &forward,
@@ -297,11 +297,11 @@ impl OverlapExtensionChoice {
         molecule: &Molecule,
         workspace: &Workspace,
         preparation: collagene_core::cloning::overlap::extension::pcr::Request,
-        preview: &native::OverlapExtensionPreview,
+        preview: &native::overlap_extension::OverlapExtensionPreview,
     ) -> Result<Self, String> {
         source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
         source.attest(workspace)?;
-        let revision = native::overlap_extension_preview_revision(
+        let revision = native::overlap_extension::overlap_extension_preview_revision(
             workspace,
             source.event(),
             &source.native_origin(),
@@ -356,7 +356,7 @@ pub struct AnnealedReview {
     top: SourcePin,
     bottom: SourcePin,
     fingerprint: String,
-    preview: native::AnnealedOligosPreview,
+    preview: native::annealing::AnnealedOligosPreview,
 }
 impl AnnealedReview {
     pub fn capture(
@@ -365,7 +365,7 @@ impl AnnealedReview {
         bottom: SourcePin,
         options: &collagene_core::chemistry::AnnealOptions,
         confirmed_supplied_ssdna: bool,
-        preview: native::AnnealedOligosPreview,
+        preview: native::annealing::AnnealedOligosPreview,
     ) -> Result<Self, String> {
         if !confirmed_supplied_ssdna || top.origin().is_some() || bottom.origin().is_some() {
             return Err("Explicitly declare both supplied strands as standard unmodified single-strand oligos with the selected termini. Saved duplex material cannot be reinterpreted as a supplied oligo.".into());
@@ -375,7 +375,7 @@ impl AnnealedReview {
         }
         top.attest(workspace)?;
         bottom.attest(workspace)?;
-        let revision = native::annealed_oligos_preview_revision(
+        let revision = native::annealing::annealed_oligos_preview_revision(
             workspace,
             top.event(),
             bottom.event(),
@@ -407,7 +407,7 @@ impl AnnealedReview {
             preview,
         })
     }
-    pub fn preview(&self) -> &native::AnnealedOligosPreview {
+    pub fn preview(&self) -> &native::annealing::AnnealedOligosPreview {
         &self.preview
     }
     pub fn epoch(&self) -> u64 {
@@ -490,11 +490,11 @@ impl TerminalChoice {
         molecule: &Molecule,
         workspace: &Workspace,
         action: native::TerminalAction,
-        preview: &native::TerminalProcessingPreview,
+        preview: &native::terminal::TerminalProcessingPreview,
     ) -> Result<Self, String> {
         source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
         source.attest(workspace)?;
-        let revision = native::terminal_processing_preview_revision(
+        let revision = native::terminal::terminal_processing_preview_revision(
             workspace,
             source.event(),
             &source.native_origin(),
@@ -542,11 +542,12 @@ impl RepairChoice {
         source: SourcePin,
         molecule: &Molecule,
         method: collagene_core::chemistry::EndRepairMethod,
-        preview: &native::RepairPreview,
+        preview: &native::end_repair::RepairPreview,
     ) -> Result<Self, String> {
         source.validate_current(source.event(), source.epoch(), molecule, source.origin())?;
-        let context = native::repair_preview_revision(molecule, &source.native_origin(), method)
-            .map_err(|e| e.to_string())?;
+        let context =
+            native::end_repair::repair_preview_revision(molecule, &source.native_origin(), method)
+                .map_err(|e| e.to_string())?;
         preview
             .validate_binding(&context)
             .map_err(|e| e.to_string())?;
@@ -729,7 +730,7 @@ mod tests {
         let selection = catalog_digest::select(&catalog, &["ecori".into()]).unwrap();
         let options =
             collagene_core::cloning::restriction::inspection::InspectionOptions::default();
-        let preview = native::inspect_digest(
+        let preview = native::digest::inspect_digest(
             &role,
             &source,
             &SourceOrigin::OriginalReference,
@@ -737,7 +738,7 @@ mod tests {
             &options,
         )
         .unwrap();
-        let expected = native::digest_inspection_revision(
+        let expected = native::digest::digest_inspection_revision(
             &role,
             &source,
             &SourceOrigin::OriginalReference,
@@ -751,7 +752,7 @@ mod tests {
         assert_eq!(fragment.bottom_start, 8);
         let mut changed = options.clone();
         changed.max_sites -= 1;
-        let changed_context = native::digest_inspection_revision(
+        let changed_context = native::digest::digest_inspection_revision(
             &role,
             &source,
             &SourceOrigin::OriginalReference,
@@ -813,7 +814,7 @@ mod tests {
         let options = InspectionOptions::default();
         let role = restriction_history::source_role(&original_event).unwrap();
         let first_selection = select("EcoRI");
-        let preview = native::inspect_digest(
+        let preview = native::digest::inspect_digest(
             &role,
             &source,
             &SourceOrigin::OriginalReference,
@@ -823,7 +824,7 @@ mod tests {
         .unwrap();
         preview
             .validate_binding(
-                &native::digest_inspection_revision(
+                &native::digest::digest_inspection_revision(
                     &role,
                     &source,
                     &SourceOrigin::OriginalReference,
@@ -861,7 +862,7 @@ mod tests {
         ));
         let role = restriction_history::source_role(&product).unwrap();
         let second_selection = select("SmaI");
-        let preview = native::inspect_digest(
+        let preview = native::digest::inspect_digest(
             &role,
             material,
             &SourceOrigin::Saved(origin.as_ref().clone()),
@@ -872,7 +873,7 @@ mod tests {
         assert_eq!(preview.inspection.fragments.len(), 2);
         preview
             .validate_binding(
-                &native::digest_inspection_revision(
+                &native::digest::digest_inspection_revision(
                     &role,
                     material,
                     &SourceOrigin::Saved(origin.as_ref().clone()),
@@ -947,7 +948,7 @@ mod mismatch_repair_tests {
             },
             ..Default::default()
         };
-        let preview = native::preview_mismatch_pcr(
+        let preview = native::pcr::preview_mismatch_pcr(
             &source,
             &SourceOrigin::OriginalReference,
             &forward,
@@ -1048,7 +1049,7 @@ mod mismatch_repair_tests {
             native::capsule(&cut.workspace, &event).unwrap(),
         ));
         let method = EndRepairMethod::FillFivePrimeOverhangs;
-        let preview = native::preview_repair(
+        let preview = native::end_repair::preview_repair(
             &molecule,
             &SourceOrigin::Saved(origin.as_ref().clone()),
             method,
@@ -1144,7 +1145,7 @@ mod overlap_extension_tests {
         let (frame, source, event) = frame();
         let before = serde_json::to_vec(&frame).unwrap();
         let preparation = preparation();
-        let preview = native::preview_overlap_extension(
+        let preview = native::overlap_extension::preview_overlap_extension(
             &frame,
             &event,
             &SourceOrigin::OriginalReference,
@@ -1179,7 +1180,7 @@ mod overlap_extension_tests {
         let origin = Arc::new(MaterialOrigin::Derived(capsule));
         let pin =
             SourcePin::capture(product.clone(), 20, &saved_source, Some(origin.clone())).unwrap();
-        let preview = native::preview_overlap_extension(
+        let preview = native::overlap_extension::preview_overlap_extension(
             &reopened,
             &product,
             &SourceOrigin::Saved(origin.as_ref().clone()),
@@ -1214,7 +1215,7 @@ mod overlap_extension_tests {
     fn oe_review_rejects_changed_six_oligo_settings_source_epoch_and_product_selection() {
         let (frame, source, event) = frame();
         let preparation = preparation();
-        let preview = native::preview_overlap_extension(
+        let preview = native::overlap_extension::preview_overlap_extension(
             &frame,
             &event,
             &SourceOrigin::OriginalReference,
@@ -1272,7 +1273,7 @@ mod overlap_extension_tests {
             Workspace::from_documents("Ambiguous OE source", vec![source.clone()], 0).unwrap();
         let event = event(&frame);
         let preparation = preparation();
-        let preview = native::preview_overlap_extension(
+        let preview = native::overlap_extension::preview_overlap_extension(
             &frame,
             &event,
             &SourceOrigin::OriginalReference,
@@ -1318,7 +1319,7 @@ mod terminal_processing_tests {
         let (frame, source, event) = original();
         let forward = Primer::new("Historical stock forward", "AGTCCG", "").unwrap();
         let reverse = Primer::new("Historical stock reverse", "AGTCTA", "").unwrap();
-        let previews = native::preview_pcr(
+        let previews = native::pcr::preview_pcr(
             &source,
             &SourceOrigin::OriginalReference,
             &forward,
@@ -1359,7 +1360,7 @@ mod terminal_processing_tests {
         let action = native::TerminalAction::Tail3Prime {
             base: TailingBase::A,
         };
-        let preview = native::preview_terminal_processing(
+        let preview = native::terminal::preview_terminal_processing(
             &frame,
             &event,
             &SourceOrigin::Saved(origin.as_ref().clone()),
@@ -1405,7 +1406,7 @@ mod terminal_processing_tests {
         let action = native::TerminalAction::TreatEnds {
             treatment: EndTreatment::Phosphorylate,
         };
-        let preview = native::preview_terminal_processing(
+        let preview = native::terminal::preview_terminal_processing(
             &reopened,
             &product,
             &SourceOrigin::Saved(origin.as_ref().clone()),
@@ -1438,7 +1439,7 @@ mod terminal_processing_tests {
             base: TailingBase::A,
         };
         assert!(
-            native::preview_terminal_processing(
+            native::terminal::preview_terminal_processing(
                 &original,
                 &original_event,
                 &SourceOrigin::OriginalReference,
@@ -1450,7 +1451,7 @@ mod terminal_processing_tests {
         let (frame, source, event, origin) = pcr_material();
         let before = serde_json::to_vec(&frame).unwrap();
         assert!(
-            native::preview_terminal_processing(
+            native::terminal::preview_terminal_processing(
                 &frame,
                 &event,
                 &SourceOrigin::OriginalReference,
@@ -1458,7 +1459,7 @@ mod terminal_processing_tests {
             )
             .is_err()
         );
-        let preview = native::preview_terminal_processing(
+        let preview = native::terminal::preview_terminal_processing(
             &frame,
             &event,
             &SourceOrigin::Saved(origin.as_ref().clone()),
@@ -1537,7 +1538,7 @@ mod annealed_material_tests {
             min_paired_bases: 6,
             ..Default::default()
         };
-        let preview = native::preview_annealed_oligos(&w, &top, &bottom, &o).unwrap();
+        let preview = native::annealing::preview_annealed_oligos(&w, &top, &bottom, &o).unwrap();
         let id = preview.preview.annealing.candidates[0].id.clone();
         let p = SourcePin::capture(top.clone(), 7, a, None).unwrap();
         let q = SourcePin::capture(bottom.clone(), 7, b, None).unwrap();

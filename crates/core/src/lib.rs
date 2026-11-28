@@ -5,6 +5,7 @@ pub mod alignment;
 pub mod chemistry;
 pub mod cloning;
 pub mod documents;
+pub(crate) mod encoding;
 pub mod formats;
 pub mod material;
 pub mod output;

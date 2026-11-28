@@ -333,6 +333,24 @@ impl WorkspaceSession {
             attachments: RwSignal::new(Attachments::new()),
         }
     }
+    /// Advance identity before installing any state from a replacement frame.
+    pub(crate) fn begin_replacement(&self) {
+        self.workspace_epoch
+            .update(|epoch| *epoch = epoch.wrapping_add(1));
+    }
+    /// The frame has already passed RestoredWorkspace's full bounded validation.
+    pub(crate) fn install_documents(
+        &self,
+        name: String,
+        documents: Vec<OpenDocument>,
+        active: usize,
+        attachments: Attachments,
+    ) {
+        self.documents.set(documents);
+        self.active.set(active);
+        self.workspace_name.set(name);
+        self.attachments.set(attachments);
+    }
     pub(crate) fn snapshot(
         documents: &[OpenDocument],
         active: usize,

@@ -1084,7 +1084,7 @@ fn derived_pcr_restart_topo_check_and_record_preserve_exact_native_origin_and_in
     let forward = Primer::new("Derived template F", "CACCA", "").unwrap();
     let reverse = Primer::new("Derived template R", "CGTCA", "").unwrap();
     let declaration = d::SourceOrigin::Saved(run_origin);
-    let previews = d::preview_pcr(
+    let previews = d::pcr::preview_pcr(
         &inputs[2].molecule,
         &declaration,
         &forward,

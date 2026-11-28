@@ -2,10 +2,7 @@
 //! Original third-party data is CC-BY-4.0; this independent importer/scorer is MIT.
 //! These are published pair-frequency entries, not independent raw directional
 //! sequencing observations. No optimizer implementation or Excel runtime is used.
-use crate::cloning::{
-    assembly::recipe as assembly_recipe, golden_gate::GoldenGateEnzyme,
-    ligation::fidelity as numeric,
-};
+use crate::cloning::{golden_gate::GoldenGateEnzyme, ligation::fidelity as numeric};
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -440,7 +437,7 @@ fn summary(def: &SourceDef) -> Result<Summary, Error> {
     };
     let conditions=numeric::Conditions{ligase:"T4 DNA ligase".into(),buffer:if def.table==4{"1×CutSmart buffer supplemented with10 mM DTT and1 mM ATP"}else{"1×T4 DNA ligase buffer"}.into(),temperature_protocol:format!("30 cycles:5 min at{high}°C then5 min at16°C; final5 min at60°C"),incubation:format!("300 min cycling plus5 min final heat step; {formulation}"),restriction_enzymes:vec![def.enzyme.into()],substrate_context:"100 nM randomized-overhang hairpin assay substrate,20 µL reaction; sequencing of ligated products; at least two experiments on different days. Table does not identify separate replicate values or their pooling/normalization.".into()};
     let provenance=numeric::Provenance{source_url:format!("https://journals.plos.org/plosone/article/file?id=10.1371/journal.pone.0238592.s{:03}&type=supplementary",def.table),citation:format!("Pryor JM, Potapov V, Kucera RB, Bilotti K, Cantor EJ, Lohman GJS (2020). Enabling one-pot Golden Gate assemblies of unprecedented complexity using data-optimized assembly design. PLOS ONE15(9):e0238592. doi:10.1371/journal.pone.0238592; S{} Table.",def.table),license:"CC-BY-4.0; https://creativecommons.org/licenses/by/4.0/".into(),attribution:"©2020 Pryor et al. Published by PLOS. Data separately licensed from MIT importer/scorer; no NEB/PLOS endorsement implied.".into(),source_blake3:blake3::hash(def.raw).to_hex().to_string(),normalization:format!("{VERSION}: literal integer published ligation-frequency entries, mapped by actual row/column labels. Published table is symmetric; original replicate/sequence-read preprocessing unspecified. No transposition fill, symmetry averaging, rescaling, row normalization or fabricated independent directional observations.")};
-    let profile_revision = assembly_recipe::hash(&(
+    let profile_revision = crate::encoding::bounded_json::hash(&(
         MODEL,
         VERSION,
         def.id,
@@ -488,7 +485,7 @@ pub fn summaries() -> Result<Vec<Summary>, Error> {
     list()
 }
 pub fn catalog_revision() -> Result<String, Error> {
-    assembly_recipe::hash(&(VERSION, list()?))
+    crate::encoding::bounded_json::hash(&(VERSION, list()?))
 }
 fn resolve(reference: &ProfileRef) -> Result<(usize, Summary), Error> {
     if reference.profile_id.len() > 64 || !hex(&reference.profile_revision) {
@@ -521,7 +518,7 @@ fn build_profile(i: usize, summary: Summary) -> Result<Arc<Profile>, Error> {
         return Err(bad("embedded source hash changed"));
     }
     let data_revision =
-        assembly_recipe::hash(&(MODEL, VERSION, &summary.profile, &matrix.weights))?;
+        crate::encoding::bounded_json::hash(&(MODEL, VERSION, &summary.profile, &matrix.weights))?;
     let metadata = Metadata {
         profile: summary.profile,
         version: summary.version,
@@ -576,7 +573,7 @@ pub fn revision_with_competitors(
 ) -> Result<String, Error> {
     let (_, summary) = resolve(reference)?;
     numeric::physical_scope(summary.overhang_length, joins, extras)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         MODEL,
         "literal-physical-competition",
         reference,

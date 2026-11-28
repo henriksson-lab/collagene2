@@ -106,7 +106,7 @@ fn retain(molecule: &mut Molecule, key: String, value: String) -> Result<(), Err
 fn preflight(source: &Molecule) -> Result<(), Error> {
     collagene_model::bounds::model_preflight(&[source])?;
     source.validate()?;
-    crate::cloning::assembly::recipe::hash(source)?;
+    crate::encoding::bounded_json::hash(source)?;
     Ok(())
 }
 impl Selection {
@@ -233,7 +233,7 @@ pub fn copy_revision(request: &RequestCopy) -> Result<String, Error> {
         request.source.sequence.len(),
         request.source.sequence.alphabet(),
     )?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "copy",
         &request.source,
@@ -404,7 +404,7 @@ pub fn paste_revision(request: &RequestPaste) -> Result<String, Error> {
             "paste requires an explicit in-range destination interval/caret and copied context",
         ));
     }
-    crate::cloning::assembly::recipe::hash(&(ENGINE_VERSION, "paste", request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "paste", request))
 }
 pub fn paste(request: &RequestPaste) -> Result<Report, Error> {
     let context_revision = paste_revision(request)?;
@@ -558,7 +558,7 @@ impl Fragment {
         {
             return Err(bad("copied reference receipt differs from its declaration"));
         }
-        crate::cloning::assembly::recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }
@@ -610,7 +610,7 @@ impl Report {
         {
             return Err(bad("pasted reference receipt differs from its declaration"));
         }
-        crate::cloning::assembly::recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

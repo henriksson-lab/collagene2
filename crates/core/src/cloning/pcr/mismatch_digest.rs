@@ -28,7 +28,7 @@ fn hex(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 fn same(a: &impl Serialize, b: &impl Serialize) -> Result<bool, Error> {
-    Ok(assembly_recipe::hash(a)? == assembly_recipe::hash(b)?)
+    Ok(crate::encoding::bounded_json::hash(a)? == crate::encoding::bounded_json::hash(b)?)
 }
 fn shape(r: &Request) -> Result<(), Error> {
     pcr_digest_inspection::shape(&r.base)?;
@@ -41,7 +41,7 @@ fn shape(r: &Request) -> Result<(), Error> {
     Ok(())
 }
 fn context(source: &str, origin: &Option<String>, request: &Request) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         restriction_inspection::ENGINE_VERSION,
@@ -113,7 +113,9 @@ pub fn inspection_revision(
     source_preflight(source, origin, request, workspace)?;
     context(
         &source.revision(),
-        &origin.map(assembly_recipe::hash).transpose()?,
+        &origin
+            .map(crate::encoding::bounded_json::hash)
+            .transpose()?,
         request,
     )
 }
@@ -199,7 +201,9 @@ pub fn inspect(
         engine_version: ENGINE_VERSION.into(),
         context_revision,
         source_revision: source.revision(),
-        origin_revision: origin.map(assembly_recipe::hash).transpose()?,
+        origin_revision: origin
+            .map(crate::encoding::bounded_json::hash)
+            .transpose()?,
         origin_incomplete,
         origin_findings,
         origin_findings_total,
@@ -402,7 +406,7 @@ impl Preview {
         {
             return Err(Error::TooLarge);
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

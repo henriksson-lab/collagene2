@@ -1,7 +1,6 @@
 //! Immutable historical processed graphs, separately bound to exact run events.
 //! Reading this attachment never restores fresh scientific/material authority.
 use crate::{
-    cloning::assembly::recipe as assembly_recipe,
     documents::workspace::{Workspace, WorkspaceAttachment},
     material::lineage::{
         self as run_lineage, EventBinding, InputEventBinding, ProductBinding, RunRecord,
@@ -73,8 +72,8 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
         || e.steps.len() > 64
         || e.inputs.len() > 1000
         || e.products.len() > 1000
-        || assembly_recipe::hash(&(&e.target, &e.inputs, &e.products))?
-            != assembly_recipe::hash(&(&r.target, &r.inputs, &r.products))?
+        || crate::encoding::bounded_json::hash(&(&e.target, &e.inputs, &e.products))?
+            != crate::encoding::bounded_json::hash(&(&r.target, &r.inputs, &r.products))?
     {
         return Err(bad("run identity, engine or exact event bindings disagree"));
     }
@@ -125,7 +124,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 ),
             ) => {
                 geometry.validate_documentary()?;
-                if assembly_recipe::hash(policy)? != assembly_recipe::hash(&geometry.options)? {
+                if crate::encoding::bounded_json::hash(policy)?
+                    != crate::encoding::bounded_json::hash(&geometry.options)?
+                {
                     return Err(bad("3′ annealing policy changed"));
                 }
                 continue;
@@ -137,7 +138,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 ),
             ) => {
                 geometry.validate_documentary()?;
-                if assembly_recipe::hash(policy)? != assembly_recipe::hash(&geometry.options)? {
+                if crate::encoding::bounded_json::hash(policy)?
+                    != crate::encoding::bounded_json::hash(&geometry.options)?
+                {
                     return Err(bad("homology assembly policy changed"));
                 }
                 continue;
@@ -163,7 +166,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             ) => {
                 origin.validate_documentary()?;
                 replay.validate_documentary()?;
-                if assembly_recipe::hash(origin)? != assembly_recipe::hash(&replay.origin)? {
+                if crate::encoding::bounded_json::hash(origin)?
+                    != crate::encoding::bounded_json::hash(&replay.origin)?
+                {
                     return Err(bad("saved-material origin declaration changed"));
                 }
                 let revision = match template {
@@ -192,7 +197,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             ) => {
                 origin.validate_documentary()?;
                 replay.validate_documentary()?;
-                if assembly_recipe::hash(origin)? != assembly_recipe::hash(&replay.origin)? {
+                if crate::encoding::bounded_json::hash(origin)?
+                    != crate::encoding::bounded_json::hash(&replay.origin)?
+                {
                     return Err(bad("saved derivation origin declaration changed"));
                 }
                 let Source::Input(id) = template else {
@@ -267,7 +274,9 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
         let Operation::TopoActions { sources, request } = &r.plan.steps[index] else {
             return Err(bad("historical processing declaration changed"));
         };
-        if assembly_recipe::hash(request)? != assembly_recipe::hash(&report.request)? {
+        if crate::encoding::bounded_json::hash(request)?
+            != crate::encoding::bounded_json::hash(&report.request)?
+        {
             return Err(bad("processed declaration changed"));
         }
         let mut external = vec![];
@@ -293,12 +302,16 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
                 revision,
             });
         }
-        if assembly_recipe::hash(&external)? != assembly_recipe::hash(&report.input_sources)? {
+        if crate::encoding::bounded_json::hash(&external)?
+            != crate::encoding::bounded_json::hash(&report.input_sources)?
+        {
             return Err(bad("owning run external source identities changed"));
         }
         let actual =
             crate::cloning::topo::expanded_source_identities(&external, &request.preparation)?;
-        if assembly_recipe::hash(&actual)? != assembly_recipe::hash(&report.sources)? {
+        if crate::encoding::bounded_json::hash(&actual)?
+            != crate::encoding::bounded_json::hash(&report.sources)?
+        {
             return Err(bad(
                 "original, upstream or closed graph source identity changed",
             ));
@@ -388,7 +401,7 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                 if molecule
                     .metadata
                     .get("source:ligation_outcomes:evidence_hash")
-                    != Some(&assembly_recipe::hash(evidence)?)
+                    != Some(&crate::encoding::bounded_json::hash(evidence)?)
                     || molecule.metadata.get("source:ligation_outcomes:context")
                         != Some(&evidence.report.context_revision)
                 {
@@ -415,9 +428,9 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                 let actual = intended.duplex.summary()?;
                 if molecule.sequence != intended.sequence
                     || molecule.topology != intended.topology
-                    || assembly_recipe::hash(&stored)?
-                        != assembly_recipe::hash(&intended.modifications)?
-                    || assembly_recipe::hash(&(
+                    || crate::encoding::bounded_json::hash(&stored)?
+                        != crate::encoding::bounded_json::hash(&intended.modifications)?
+                    || crate::encoding::bounded_json::hash(&(
                         duplex.top_length,
                         duplex.bottom_length,
                         duplex.bottom_start,
@@ -425,7 +438,7 @@ pub(crate) fn validate_workspace(w: &Workspace) -> Result<(), Error> {
                         &duplex.ends,
                         &duplex.nicks,
                         duplex.covalently_closed_in_model,
-                    ))? != assembly_recipe::hash(&(
+                    ))? != crate::encoding::bounded_json::hash(&(
                         actual.top_length,
                         actual.bottom_length,
                         actual.bottom_start,

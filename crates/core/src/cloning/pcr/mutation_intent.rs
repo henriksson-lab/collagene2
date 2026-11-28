@@ -1,5 +1,5 @@
 //! Explicit reference edit intent, independent of every molecular preparation engine.
-use crate::{cloning::assembly::recipe as assembly_recipe, sequence::annotations};
+use crate::sequence::annotations;
 use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
@@ -91,12 +91,12 @@ pub fn source_preflight(source: &Molecule, request: &Request) -> Result<(), Erro
             "coordinate-bearing qualifiers cannot yet be safely edited; original source remains intact",
         ));
     }
-    assembly_recipe::hash(&(source, request))?;
+    crate::encoding::bounded_json::hash(&(source, request))?;
     Ok(())
 }
 pub fn intent_revision(source: &Molecule, request: &Request) -> Result<String, Error> {
     source_preflight(source, request)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, source.revision(), request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, source.revision(), request))
 }
 struct EvidenceWriter {
     bytes: Vec<u8>,
@@ -230,8 +230,11 @@ impl Report {
             return Err(bad("source/request context changed"));
         }
         request_guard(&self.request)?;
-        if assembly_recipe::hash(&(ENGINE_VERSION, &self.source_revision, &self.request))?
-            != self.context_revision
+        if crate::encoding::bounded_json::hash(&(
+            ENGINE_VERSION,
+            &self.source_revision,
+            &self.request,
+        ))? != self.context_revision
         {
             return Err(bad("request does not match its context revision"));
         }
@@ -303,7 +306,7 @@ impl Report {
                 return Err(bad("intended reference evidence binding changed"));
             }
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

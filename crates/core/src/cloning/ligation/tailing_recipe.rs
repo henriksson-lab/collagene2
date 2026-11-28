@@ -80,7 +80,7 @@ fn shape(recipe: &Recipe) -> Result<(), Error> {
     }
     // Streamed recipe bound precedes spec/primer/origin cloning. Shared preparation
     // preflight below owns every preparation's more specific shape/model limits.
-    preparation::hash(recipe)?;
+    crate::encoding::bounded_json::hash(recipe)?;
     crate::material::capsule::material_capsules_preflight(recipe.fragments.iter().filter_map(
         |row| match &row.source.preparation {
             preparation::Preparation::FromRun { origin, .. } => {
@@ -126,7 +126,7 @@ pub fn preview_revision(
     recipe: &Recipe,
 ) -> Result<String, Error> {
     preflight(inputs, target, recipe)?;
-    preparation::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         inputs,
@@ -163,7 +163,7 @@ fn compile_bound(
         &specs,
     )?;
     for input in inputs {
-        if preparation::hash(&input.molecule)? != input.revision {
+        if crate::encoding::bounded_json::hash(&input.molecule)? != input.revision {
             return Err(bad("original source revision changed"));
         }
     }
@@ -224,7 +224,7 @@ fn compile_bound(
         rows,
         ligation_step,
     };
-    preparation::hash(&result)?;
+    crate::encoding::bounded_json::hash(&result)?;
     Ok(result)
 }
 fn source_document<'a>(
@@ -373,7 +373,7 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
     let result=Preview{context_revision,recipe:recipe.clone(),compiled,verification,prepared,physical,product_physical,junctions,preparation_complete,profile_status,profile_findings,
         warnings:vec!["KeepExisting adds no tail and makes no assertion that the existing ends are complementary, phosphorylated, intact or ligatable. Only fresh native source reconstruction and ligation assess those states.".into(),
         "TA/GC profile geometry requires fresh one-base 3′ tails of the declared family on every prepared row and complementary intended junctions; KeepExisting alone proves none of these. Profiles do not identify an enzyme, commercial kit, reaction yield, isolated clone or exclusive product; retained alternatives remain within their declared one-copy search scope.".into()]};
-    preparation::hash(&result)?;
+    crate::encoding::bounded_json::hash(&result)?;
     Ok(result)
 }
 impl Preview {
@@ -385,7 +385,7 @@ impl Preview {
         let recipe = &self.recipe;
         let inputs = &self.compiled.plan.inputs;
         let target_revision = &self.compiled.plan.target_revision;
-        let context = preparation::hash(&(
+        let context = crate::encoding::bounded_json::hash(&(
             ENGINE_VERSION,
             verification::ENGINE_VERSION,
             inputs,
@@ -394,8 +394,12 @@ impl Preview {
         ))?;
         if self.context_revision != expected
             || context != expected
-            || preparation::hash(&self.compiled)?
-                != preparation::hash(&compile_bound(inputs, target_revision, recipe)?)?
+            || crate::encoding::bounded_json::hash(&self.compiled)?
+                != crate::encoding::bounded_json::hash(&compile_bound(
+                    inputs,
+                    target_revision,
+                    recipe,
+                )?)?
             || self.verification.engine_version != verification::ENGINE_VERSION
             || self.verification.plan_revision
                 != crate::planning::plan::DesignPlan::revision(&self.compiled.plan)
@@ -432,7 +436,9 @@ impl Preview {
                 &row.prepared_source,
             )
             .ok_or_else(|| bad("prepared source missing"))?;
-            if preparation::hash(molecule)? != preparation::hash(expected)? {
+            if crate::encoding::bounded_json::hash(molecule)?
+                != crate::encoding::bounded_json::hash(expected)?
+            {
                 return Err(bad("prepared source snapshot differs"));
             }
         }
@@ -455,8 +461,8 @@ impl Preview {
                 return Err(Error::TooLarge);
             }
         }
-        if preparation::hash(&self.junctions)?
-            != preparation::hash(&junctions(
+        if crate::encoding::bounded_json::hash(&self.junctions)?
+            != crate::encoding::bounded_json::hash(&junctions(
                 &self.physical,
                 self.compiled.rows.len(),
                 recipe.circular,
@@ -473,7 +479,7 @@ impl Preview {
         if self.profile_status != profile_status || self.profile_findings != profile_findings {
             return Err(bad("profile geometry correspondence differs"));
         }
-        preparation::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     /// Additionally binds a receipt to the caller's actual independently declared request.
@@ -486,9 +492,11 @@ impl Preview {
     ) -> Result<(), Error> {
         let context = preview_revision(inputs, target, recipe)?;
         if context != expected
-            || preparation::hash(&inputs)? != preparation::hash(&self.compiled.plan.inputs)?
+            || crate::encoding::bounded_json::hash(&inputs)?
+                != crate::encoding::bounded_json::hash(&self.compiled.plan.inputs)?
             || target.revision() != self.compiled.plan.target_revision
-            || preparation::hash(recipe)? != preparation::hash(&self.recipe)?
+            || crate::encoding::bounded_json::hash(recipe)?
+                != crate::encoding::bounded_json::hash(&self.recipe)?
         {
             return Err(bad("preview belongs to another source/target request"));
         }

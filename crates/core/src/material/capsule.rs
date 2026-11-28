@@ -336,7 +336,7 @@ fn shallow_binding(origin: &Capsule, candidate: &Candidate) -> Result<(), Error>
     run_material::shape(&origin.selection)?;
     run_material::event_shape(&origin.target_event)?;
     let plan = &candidate.plan;
-    if candidate.plan_revision != crate::cloning::assembly::recipe::hash(plan)?
+    if candidate.plan_revision != crate::encoding::bounded_json::hash(plan)?
         || plan.target_revision != origin.target.revision()
         || origin.target_event.revision != plan.target_revision
         || origin.inputs.len() != plan.inputs.len()
@@ -1096,13 +1096,13 @@ fn attest_run(
         .get(&origin.selection.run_id)
         .ok_or_else(|| bad("origin run is not retained in this workspace"))?;
     if run.plan_revision != candidate.plan_revision
-        || crate::cloning::assembly::recipe::hash(&run.plan)?
-            != crate::cloning::assembly::recipe::hash(&candidate.plan)?
+        || crate::encoding::bounded_json::hash(&run.plan)?
+            != crate::encoding::bounded_json::hash(&candidate.plan)?
         || run.target != origin.target_event
-        || crate::cloning::assembly::recipe::hash(&run.inputs)?
-            != crate::cloning::assembly::recipe::hash(&origin.inputs)?
-        || crate::cloning::assembly::recipe::hash(&run.products)?
-            != crate::cloning::assembly::recipe::hash(&origin.products)?
+        || crate::encoding::bounded_json::hash(&run.inputs)?
+            != crate::encoding::bounded_json::hash(&origin.inputs)?
+        || crate::encoding::bounded_json::hash(&run.products)?
+            != crate::encoding::bounded_json::hash(&origin.products)?
         || run_material::resolve(workspace, &run.target)? != &origin.target
     {
         return Err(bad("origin declaration differs from retained run/events"));

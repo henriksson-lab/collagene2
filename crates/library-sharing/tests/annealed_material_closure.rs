@@ -39,7 +39,7 @@ fn anneal(
     bottom: &EventBinding,
     options: AnnealOptions,
 ) -> native::PreparedInstallation {
-    let preview = native::preview_annealed_oligos(w, top, bottom, &options).unwrap();
+    let preview = native::annealing::preview_annealed_oligos(w, top, bottom, &options).unwrap();
     assert!(preview.preview.annealing.unique);
     let candidate = &preview.preview.annealing.candidates[0].id;
     native::prepare_install(

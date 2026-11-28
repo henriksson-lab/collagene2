@@ -212,7 +212,7 @@ pub fn finalize_revision(
         }
         resolve(w, &input.event)?;
     }
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         run_lineage::workspace_fingerprint(w)?,
         crate::planning::plan::DesignPlan::revision(plan),
@@ -400,8 +400,8 @@ impl Commit {
             .ok_or_else(|| bad("missing run attachment"))?;
         if asset.kind != run_lineage::WORKSPACE_ATTACHMENT_KIND
             || run_lineage::load_run_record(&asset.bytes)?.run_id != run.run_id
-            || crate::cloning::assembly::recipe::hash(&run.products)?
-                != crate::cloning::assembly::recipe::hash(&r.run.products)?
+            || crate::encoding::bounded_json::hash(&run.products)?
+                != crate::encoding::bounded_json::hash(&r.run.products)?
             || run.assessment.status != r.run.recorded_status
             || run.assessment.engine_version != r.run.recorded_engine
         {

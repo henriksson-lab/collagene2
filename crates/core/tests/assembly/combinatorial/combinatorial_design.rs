@@ -239,7 +239,7 @@ fn wrong_event_owner_and_duplicate_ids_are_rejected() {
     assert!(design::resolve(&owner, &construct(), &w).is_err());
     let mut duplicate = d.clone();
     duplicate.bins[1].choices[0].id = "backbone-a".into();
-    assert!(design::validate_design(&duplicate).is_err());
+    assert!(duplicate.validate().is_err());
     let row = construct();
     let mut duplicate_row = row.clone();
     duplicate_row.id = "different-row-id".into();

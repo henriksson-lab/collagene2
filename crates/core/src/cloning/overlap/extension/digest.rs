@@ -138,7 +138,7 @@ fn context(
     origin_revision: &Option<String>,
     request: &Request,
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         restriction_inspection::ENGINE_VERSION,
@@ -156,7 +156,9 @@ pub fn inspection_revision(
     source_preflight(source, origin, request, workspace)?;
     context(
         &source.revision(),
-        &origin.map(assembly_recipe::hash).transpose()?,
+        &origin
+            .map(crate::encoding::bounded_json::hash)
+            .transpose()?,
         request,
     )
 }
@@ -222,7 +224,9 @@ pub fn inspect(
         engine_version: ENGINE_VERSION.into(),
         context_revision,
         source_revision: source.revision(),
-        origin_revision: origin.map(assembly_recipe::hash).transpose()?,
+        origin_revision: origin
+            .map(crate::encoding::bounded_json::hash)
+            .transpose()?,
         origin_incomplete,
         request: request.clone(),
         pcr_stages,

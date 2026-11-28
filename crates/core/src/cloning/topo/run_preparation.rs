@@ -22,7 +22,7 @@ fn bad(s: &str) -> Error {
     Error::Unsupported(format!("TOPO native sources: {s}"))
 }
 fn hash(v: &impl Serialize) -> Result<String, Error> {
-    crate::cloning::assembly::recipe::hash(v)
+    crate::encoding::bounded_json::hash(v)
 }
 impl Task {
     pub fn preparation(&self) -> &topo::Request {

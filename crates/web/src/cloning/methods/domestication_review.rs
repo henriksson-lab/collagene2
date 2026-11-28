@@ -796,7 +796,8 @@ mod tests {
         .unwrap();
         let source_origin = native::SourceOrigin::OriginalReference;
         let previews =
-            native::preview_pcr(&source, &source_origin, &forward, &reverse, Strand::Top).unwrap();
+            native::pcr::preview_pcr(&source, &source_origin, &forward, &reverse, Strand::Top)
+                .unwrap();
         assert_eq!(previews.len(), 1);
         let installed = native::prepare_install(
             &frame,

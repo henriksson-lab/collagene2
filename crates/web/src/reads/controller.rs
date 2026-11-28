@@ -466,6 +466,13 @@ pub(crate) struct ReadReviewState {
     pub(crate) pending_read_review: RwSignal<Option<PendingReadReview>>,
 }
 impl ReadReviewState {
+    pub(crate) fn clear(&self) {
+        self.read_reference.set(None);
+        self.pending_read_check.set(None);
+        self.reviewed_check.set(None);
+        self.review_seed.set(None);
+        self.pending_read_review.set(None);
+    }
     pub(crate) fn new() -> Self {
         let read_reference = RwSignal::new(None::<collagene_core::material::lineage::EventBinding>);
         let pending_read_check =
@@ -662,5 +669,36 @@ impl ReadController {
             read_review_snapshot,
             restore_read_review,
         }
+    }
+}
+
+/// Retained contig assemblies and their current inspection dialog.
+#[derive(Clone, Copy)]
+pub(crate) struct ReadArchiveState {
+    pub(crate) saved_assemblies:
+        RwSignal<Vec<collagene_core::review::contigs::history::AssemblySummary>>,
+    pub(crate) assembly_page: RwSignal<usize>,
+    pub(crate) pending_assembly: RwSignal<Option<crate::reads::contigs::ArchiveRequest>>,
+    pub(crate) inspected_assembly: RwSignal<String>,
+}
+impl ReadArchiveState {
+    pub(crate) fn new() -> Self {
+        Self {
+            saved_assemblies: RwSignal::new(Vec::<
+                collagene_core::review::contigs::history::AssemblySummary,
+            >::new()),
+            assembly_page: RwSignal::new(0usize),
+            pending_assembly: RwSignal::new(None::<crate::reads::contigs::ArchiveRequest>),
+            inspected_assembly: RwSignal::new(String::new()),
+        }
+    }
+    pub(crate) fn restore(
+        &self,
+        assemblies: Vec<collagene_core::review::contigs::history::AssemblySummary>,
+    ) {
+        self.saved_assemblies.set(assemblies);
+        self.assembly_page.set(0);
+        self.pending_assembly.set(None);
+        self.inspected_assembly.set(String::new());
     }
 }

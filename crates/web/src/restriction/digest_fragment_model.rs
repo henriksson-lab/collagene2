@@ -220,7 +220,7 @@ mod tests {
         let options = InspectionOptions::default();
         let role =
             collagene_core::cloning::restriction::history::source_role(&info.binding).unwrap();
-        let inspected = collagene_core::material::derivation::inspect_digest(
+        let inspected = collagene_core::material::derivation::digest::inspect_digest(
             &role,
             &molecule,
             &collagene_core::material::derivation::SourceOrigin::Saved(pin.as_ref().clone()),
@@ -750,7 +750,7 @@ mod tests {
         let derived_role =
             collagene_core::cloning::restriction::history::source_role(&derived.receipt.product)
                 .unwrap();
-        let derived_preview = collagene_core::material::derivation::inspect_digest(
+        let derived_preview = collagene_core::material::derivation::digest::inspect_digest(
             &derived_role,
             &derived_molecule,
             &collagene_core::material::derivation::SourceOrigin::Saved(derived_origin.clone()),

@@ -6,14 +6,11 @@ use crate::{
         self,
         tracked_duplex::{self as modified_duplex, ModificationSummary},
     },
-    cloning::{
-        assembly::recipe as assembly_recipe,
-        restriction::{
-            catalog::{
-                self as catalog_digest, CatalogRestrictionInspection, CatalogSelection, catalog,
-            },
-            inspection::{self as restriction_inspection, InspectionOptions},
+    cloning::restriction::{
+        catalog::{
+            self as catalog_digest, CatalogRestrictionInspection, CatalogSelection, catalog,
         },
+        inspection::{self as restriction_inspection, InspectionOptions},
     },
     material::capsule::Capsule,
     verification::{self, evidence::Status},
@@ -32,7 +29,12 @@ fn hex(s: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 fn context(origin: &str, batch: &str) -> Result<String, Error> {
-    assembly_recipe::hash(&(ENGINE_VERSION, verification::ENGINE_VERSION, origin, batch))
+    crate::encoding::bounded_json::hash(&(
+        ENGINE_VERSION,
+        verification::ENGINE_VERSION,
+        origin,
+        batch,
+    ))
 }
 pub fn source_preflight(
     c: &catalog::Catalog,
@@ -59,7 +61,7 @@ pub fn inspection_revision(
 ) -> Result<String, Error> {
     source_preflight(c, s, role, m, origin, o)?;
     context(
-        &assembly_recipe::hash(origin)?,
+        &crate::encoding::bounded_json::hash(origin)?,
         &catalog_digest::batch_revision(c, s, role, m, o)?,
     )
 }
@@ -122,7 +124,7 @@ pub fn inspect(
     let report = Inspection {
         engine_version: ENGINE_VERSION.into(),
         context_revision,
-        origin_revision: assembly_recipe::hash(origin)?,
+        origin_revision: crate::encoding::bounded_json::hash(origin)?,
         origin_status: origin_report.status,
         source_duplex,
         source_modifications,
@@ -194,7 +196,7 @@ impl Inspection {
                 ));
             }
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn selected_fragment(
@@ -226,7 +228,7 @@ impl Inspection {
     ) -> Result<(), Error> {
         self.validate_binding(&inspection_revision(c, s, role, m, origin, o)?)?;
         self.inspection.validate_bindings_for(c, s, role, m, o)?;
-        if self.origin_revision != assembly_recipe::hash(origin)? {
+        if self.origin_revision != crate::encoding::bounded_json::hash(origin)? {
             return Err(bad("saved origin declaration changed"));
         }
         Ok(())

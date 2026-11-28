@@ -86,7 +86,7 @@ pub fn revision(request: &Request) -> Result<String, Error> {
             ));
         }
     }
-    crate::cloning::assembly::recipe::hash(&(ENGINE_VERSION, request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, request))
 }
 fn summary(report: &PcrReport, source_length: usize) -> SearchSummary {
     SearchSummary {
@@ -227,7 +227,7 @@ impl Prepared {
                 return Err(bad("collection must retain both declared oligos"));
             }
         }
-        crate::cloning::assembly::recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

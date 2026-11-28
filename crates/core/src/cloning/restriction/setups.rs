@@ -8,7 +8,7 @@ use crate::{
     },
     documents::workspace::{self, Workspace, WorkspaceAttachment},
     material::{
-        derivation::{self, DigestPreview, SourceOrigin},
+        derivation::{self, SourceOrigin, digest::DigestPreview},
         lineage::EventBinding,
     },
 };
@@ -118,7 +118,7 @@ impl Recipe {
     /// Current compute binding: resolves the installed catalog without reconstructing material.
     pub fn inspection_revision(&self, molecule: &Molecule) -> Result<String, Error> {
         let role = self.source_binding(molecule)?;
-        derivation::digest_inspection_revision(
+        derivation::digest::digest_inspection_revision(
             &role,
             molecule,
             &self.origin,
@@ -129,7 +129,7 @@ impl Recipe {
     /// Freshly reconstruct the declared source and digest its actual strand material.
     pub fn inspect(&self, molecule: &Molecule) -> Result<DigestPreview, Error> {
         let role = self.source_binding(molecule)?;
-        derivation::inspect_digest(
+        derivation::digest::inspect_digest(
             &role,
             molecule,
             &self.origin,
@@ -141,7 +141,7 @@ impl Recipe {
     /// Documentary validation never scans, replays material, or grants freshness.
     fn documentary_revision(&self, molecule: &Molecule) -> Result<String, Error> {
         let role = self.source_binding(molecule)?;
-        derivation::digest_inspection_context(
+        derivation::digest::digest_inspection_context(
             &role,
             molecule,
             &self.origin,

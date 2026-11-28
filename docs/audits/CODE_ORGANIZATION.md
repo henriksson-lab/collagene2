@@ -5,11 +5,13 @@
 ## Current execution checklist
 
 The [working-tree ownership follow-up](organization-followup-2026-11-28.md)
-records the new parallel audit and current action queue. The original domain
-move is complete; remaining work concerns worker dispatch, material preview
-owners, restoration/proposal lifecycles and natural methods. Current limits pass
-across 1,213 Rust files, with worker execution and App composition close to the
-3,000-line review threshold. Historical measurements below describe the completed
+records the parallel audit and follow-up source implementation. Worker domain
+execution, material previews, restoration owners, natural methods and shared
+encoding ownership are implemented; native/WASM checks and 1,745 focused cases
+pass locally. Exact-source CI remains required. Current
+limits pass across 1,234 Rust files/212 directories, with no size warnings.
+Proposal/pool UI ownership and the small TreeJob method cleanup remain in the
+current queue. Historical measurements below describe the completed `416b26c`
 refactor checkpoint, not the latest working tree.
 
 | Batch | Implementation status | Verification still required |

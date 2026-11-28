@@ -84,7 +84,7 @@ pub fn revision(request: &Request) -> Result<String, Error> {
             "invalid selected geometry or expected preview revision",
         ));
     }
-    crate::cloning::assembly::recipe::hash(&(ENGINE_VERSION, request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, request))
 }
 /// Two literal named oligos, including domain/tail decomposition and full ordered
 /// bases. Reuses the standard collection constructor and its export safety rules.
@@ -179,7 +179,7 @@ impl Prepared {
                 return Err(bad("output collection must contain both declared primers"));
             }
         }
-        crate::cloning::assembly::recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

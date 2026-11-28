@@ -128,7 +128,7 @@ fn request_preflight(request: &Request) -> Result<(), Error> {
 }
 pub fn inspect_revision(request: &Request) -> Result<String, Error> {
     request_preflight(request)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         request.source.revision(),
         &request.selection,
@@ -137,7 +137,7 @@ pub fn inspect_revision(request: &Request) -> Result<String, Error> {
 pub fn inspect(request: &Request) -> Result<Report, Error> {
     request_preflight(request)?;
     let source_revision = request.source.revision();
-    let context_revision = crate::cloning::assembly::recipe::hash(&(
+    let context_revision = crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         &source_revision,
         &request.selection,
@@ -186,7 +186,7 @@ pub fn output_revision(request: &Request, name: &str) -> Result<String, Error> {
             "output name must be 1–1024 bytes without control characters",
         ));
     }
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "outputs",
         inspect_revision(request)?,
@@ -239,7 +239,7 @@ pub fn prepare(request: &Request, name: &str) -> Result<Outputs, Error> {
     if report.protein.is_empty() {
         return Err(bad("translation contains no protein residues to open"));
     }
-    let context_revision = crate::cloning::assembly::recipe::hash(&(
+    let context_revision = crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "outputs",
         &report.context_revision,
@@ -344,7 +344,7 @@ impl Report {
             options_valid(options)?;
         }
         if self.context_revision
-            != crate::cloning::assembly::recipe::hash(&(
+            != crate::encoding::bounded_json::hash(&(
                 ENGINE_VERSION,
                 &self.source_revision,
                 &self.selection,
@@ -434,7 +434,7 @@ impl Outputs {
             || self.protein.original_genbank.is_some()
             || self.protein.metadata.len() != 5
             || self.context_revision
-                != crate::cloning::assembly::recipe::hash(&(
+                != crate::encoding::bounded_json::hash(&(
                     ENGINE_VERSION,
                     "outputs",
                     &self.report.context_revision,

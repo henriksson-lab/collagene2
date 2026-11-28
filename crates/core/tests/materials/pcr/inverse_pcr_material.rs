@@ -273,7 +273,7 @@ fn cut_free_derived_circle_survives_archive_and_is_replayed_before_new_pcr() {
     let original = source(&w, &run);
     assert!(!ORIGINAL.contains("GAATTC"));
     let origin = derived::SourceOrigin::Saved(run.clone());
-    let preview = derived::inspect_digest(
+    let preview = derived::digest::inspect_digest(
         "circle",
         &original,
         &origin,

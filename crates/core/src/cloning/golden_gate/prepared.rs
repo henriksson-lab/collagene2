@@ -76,7 +76,7 @@ pub fn preflight(
         return Err(Error::TooLarge);
     }
     ligation_recipe::source_preflight(inputs, target, &r.recipe)?;
-    assembly_recipe::hash(&(inputs, target, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, target, r))?;
     Ok(())
 }
 pub fn source_preflight(
@@ -103,17 +103,17 @@ pub fn inspect_revision(
         r,
     )?;
     for i in inputs {
-        if i.revision != assembly_recipe::hash(&i.molecule)? {
+        if i.revision != crate::encoding::bounded_json::hash(&i.molecule)? {
             return Err(bad("original input revision changed"));
         }
     }
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         inputs
             .iter()
             .map(|i| (&i.id, &i.revision))
             .collect::<Vec<_>>(),
-        assembly_recipe::hash(target)?,
+        crate::encoding::bounded_json::hash(target)?,
         r,
     ))
 }
@@ -247,7 +247,7 @@ fn pool_guard(report: &Report, pool: &GoldenGateReport) -> Result<(), Error> {
     for (i, s) in pool.sources.iter().enumerate() {
         let actual = &report.preview.prepared[i];
         if s.source_index != i
-            || s.revision != assembly_recipe::hash(actual)?
+            || s.revision != crate::encoding::bounded_json::hash(actual)?
             || s.name != actual.name.chars().take(1024).collect::<String>()
             || s.recognition_sites.len() > 1_000_000
             || s.recognition_sites
@@ -360,7 +360,8 @@ impl Report {
         collagene_model::bounds::model_preflight(&[&self.target])?;
         self.target.validate()?;
         let inputs = &self.preview.compiled.plan.inputs;
-        if self.preview.verification.target_revision != assembly_recipe::hash(&self.target)?
+        if self.preview.verification.target_revision
+            != crate::encoding::bounded_json::hash(&self.target)?
             || inspect_revision(inputs, &self.target, &self.request)? != self.context_revision
         {
             return Err(bad("actual source/target/request binding changed"));
@@ -378,8 +379,8 @@ impl Report {
             &self.request.recipe,
             assembly_recipe::CleavagePolicy::PositionalChecked,
         )?;
-        if assembly_recipe::hash(&expected_compiled)?
-            != assembly_recipe::hash(&self.preview.compiled)?
+        if crate::encoding::bounded_json::hash(&expected_compiled)?
+            != crate::encoding::bounded_json::hash(&self.preview.compiled)?
         {
             return Err(bad(
                 "ordered preview no longer compiles from its declared original-source recipe",
@@ -439,7 +440,7 @@ impl Report {
             }
         }
         texts(&self.warnings)?;
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }
@@ -485,7 +486,7 @@ fn selected_plan(report: &Report, selection: &Selection) -> Result<DesignPlan, E
 }
 pub fn selection_revision(report: &Report, selection: &Selection) -> Result<String, Error> {
     let plan = selected_plan(report, selection)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "prepared-golden-gate-selection-1",
         &report.context_revision,
         selection,
@@ -494,7 +495,7 @@ pub fn selection_revision(report: &Report, selection: &Selection) -> Result<Stri
 }
 pub fn select(report: &Report, selection: &Selection) -> Result<SelectionReport, Error> {
     let plan = selected_plan(report, selection)?;
-    let context_revision = assembly_recipe::hash(&(
+    let context_revision = crate::encoding::bounded_json::hash(&(
         "prepared-golden-gate-selection-1",
         &report.context_revision,
         selection,
@@ -549,7 +550,7 @@ impl SelectionReport {
             if i.id.is_empty()
                 || i.id.len() > 128
                 || !ids.insert(i.id.as_str())
-                || i.revision != assembly_recipe::hash(&i.molecule)?
+                || i.revision != crate::encoding::bounded_json::hash(&i.molecule)?
             {
                 return Err(bad("selected plan original source changed"));
             }
@@ -632,7 +633,7 @@ impl SelectionReport {
         {
             return Err(bad("selected candidate/template mapping changed"));
         }
-        if assembly_recipe::hash(&(
+        if crate::encoding::bounded_json::hash(&(
             "prepared-golden-gate-selection-1",
             &self.parent_context,
             &self.selection,
@@ -642,7 +643,7 @@ impl SelectionReport {
             return Err(bad("selected plan revision changed"));
         }
         texts(&self.warnings)?;
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

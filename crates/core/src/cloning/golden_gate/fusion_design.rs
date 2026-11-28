@@ -137,7 +137,7 @@ fn shape(r: &Request) -> Result<usize, Error> {
             return Err(bad("invalid or duplicate signed placement window"));
         }
     }
-    assembly_recipe::hash(r)?;
+    crate::encoding::bounded_json::hash(r)?;
     Ok(k)
 }
 /// Borrowed bounds before input copies, hashing, source scans or native preparation.
@@ -186,7 +186,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
     if !retained.is_empty() {
         assembly_recipe::preparation_rows_preflight(inputs, &r.base.base.name, &retained)?;
     }
-    assembly_recipe::hash(&(inputs, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, r))?;
     Ok(())
 }
 fn pins(inputs: &[PlanInput]) -> Result<Vec<(&str, &str)>, Error> {
@@ -211,11 +211,12 @@ pub fn inspect_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Err
             .collect::<Vec<_>>(),
         r,
     )?;
-    assembly_recipe::hash(&(ENGINE_VERSION, pins(inputs)?, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, pins(inputs)?, r))
 }
 fn from_intent(intent: &Intent, r: &Request) -> Result<String, Error> {
     intent.validate_binding(&intent.context_revision)?;
-    if assembly_recipe::hash(&intent.base_request)? != assembly_recipe::hash(&r.base.base)?
+    if crate::encoding::bounded_json::hash(&intent.base_request)?
+        != crate::encoding::bounded_json::hash(&r.base.base)?
         || intent.edits != r.base.edits
     {
         return Err(bad("original independent intent changed"));
@@ -236,7 +237,7 @@ fn from_intent(intent: &Intent, r: &Request) -> Result<String, Error> {
     {
         return Err(bad("invalid bounded source pins"));
     }
-    assembly_recipe::hash(&(ENGINE_VERSION, pins, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, pins, r))
 }
 #[derive(Clone)]
 struct Geometry {
@@ -480,7 +481,7 @@ fn identity(
     fusions: &[String],
     terminal: &[String],
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "candidate",
         context,
@@ -608,7 +609,7 @@ pub fn materialize_revision(
     if s.context_revision != parent || !hex(&s.candidate_id) {
         return Err(bad("selection belongs to another source/request context"));
     }
-    assembly_recipe::hash(&(ENGINE_VERSION, "materialize", parent, s))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "materialize", parent, s))
 }
 fn placements(
     intent: &Intent,
@@ -815,7 +816,7 @@ impl Report {
         }
         texts(&self.limits, 8)?;
         texts(&self.warnings, 16)?;
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }
@@ -843,7 +844,7 @@ impl Materialized {
                     &self.terminal_fusions,
                 )?
             || expected
-                != assembly_recipe::hash(&(
+                != crate::encoding::bounded_json::hash(&(
                     ENGINE_VERSION,
                     "materialize",
                     &parent,
@@ -870,7 +871,8 @@ impl Materialized {
             &self.candidate.shifts,
             k,
         )?;
-        if assembly_recipe::hash(&expected_placements)? != assembly_recipe::hash(&self.placements)?
+        if crate::encoding::bounded_json::hash(&expected_placements)?
+            != crate::encoding::bounded_json::hash(&self.placements)?
         {
             return Err(bad(
                 "materialized original-source intervals or copied flanks changed",
@@ -910,7 +912,8 @@ impl Materialized {
             match original {
                 Row::Retain(original) => {
                     if design.is_some()
-                        || assembly_recipe::hash(original)? != assembly_recipe::hash(row)?
+                        || crate::encoding::bounded_json::hash(original)?
+                            != crate::encoding::bounded_json::hash(row)?
                     {
                         return Err(bad("manual preparation changed"));
                     }
@@ -954,10 +957,14 @@ impl Materialized {
                         || d.oriented_top != placement.oriented_top
                         || d.forward.tail != d.forward_tail.sequence()
                         || d.reverse.tail != d.reverse_tail.sequence()
-                        || assembly_recipe::hash(forward)? != assembly_recipe::hash(&d.forward)?
-                        || assembly_recipe::hash(reverse)? != assembly_recipe::hash(&d.reverse)?
-                        || assembly_recipe::hash(selection)? != assembly_recipe::hash(&pin)?
-                        || assembly_recipe::hash(&d.selection)? != assembly_recipe::hash(&pin)?
+                        || crate::encoding::bounded_json::hash(forward)?
+                            != crate::encoding::bounded_json::hash(&d.forward)?
+                        || crate::encoding::bounded_json::hash(reverse)?
+                            != crate::encoding::bounded_json::hash(&d.reverse)?
+                        || crate::encoding::bounded_json::hash(selection)?
+                            != crate::encoding::bounded_json::hash(&pin)?
+                        || crate::encoding::bounded_json::hash(&d.selection)?
+                            != crate::encoding::bounded_json::hash(&pin)?
                         || d.left.polarity != Polarity::FivePrime
                         || d.right.polarity != Polarity::FivePrime
                         || d.left.chemistry != Terminus::CLEAVED
@@ -992,7 +999,7 @@ impl Materialized {
             return Err(bad("placement changed independent intended DNA"));
         }
         texts(&self.warnings, 16)?;
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

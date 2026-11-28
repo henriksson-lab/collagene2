@@ -26,13 +26,13 @@ macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg
 dto! {#[derive(PartialEq,Eq)]pub enum PlanSource{Candidate,SavedRun{run_id:String}}}
 dto! {pub struct Quantization{#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub increment:units::Volume,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub mode:units::RoundingMode}}
 dto! {pub enum VolumeSpec{
- Direct{#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value",required))]volume:Option<units::Volume>},
- MassDilution{#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]recipe:units::DilutionRecipe<units::MassConcentration>,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]quantization:Option<Quantization>},
- MolarDilution{#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]recipe:units::DilutionRecipe<units::MolarConcentration>,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]quantization:Option<Quantization>},
+ Direct{#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value",required))]volume:Option<units::Volume>},
+ MassDilution{#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]recipe:units::DilutionRecipe<units::MassConcentration>,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]quantization:Option<Quantization>},
+ MolarDilution{#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]recipe:units::DilutionRecipe<units::MolarConcentration>,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]quantization:Option<Quantization>},
 }}
-dto! {pub struct Component{pub id:String,pub label:String,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub source:Option<Source>,pub volume:VolumeSpec}}
+dto! {pub struct Component{pub id:String,pub label:String,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub source:Option<Source>,pub volume:VolumeSpec}}
 dto! {pub enum FillPolicy{Unallocated,ToFinal{component_id:String,label:String}}}
-dto! {pub struct Reaction{pub id:String,pub step_index:usize,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value",required))]pub final_volume:Option<units::Volume>,pub fill:FillPolicy,#[serde(deserialize_with="components")]pub components:Vec<Component>}}
+dto! {pub struct Reaction{pub id:String,pub step_index:usize,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value",required))]pub final_volume:Option<units::Volume>,pub fill:FillPolicy,#[serde(deserialize_with="components")]pub components:Vec<Component>}}
 dto! {pub struct Request{pub name:String,pub plan_source:PlanSource,pub plan_revision:String,pub target:EventBinding,#[serde(deserialize_with="inputs")]pub inputs:Vec<InputEventBinding>,#[serde(deserialize_with="reactions")]pub reactions:Vec<Reaction>}}
 dto! {#[derive(PartialEq,Eq)]pub struct Finding{pub path:String,pub message:String}}
 dto! {pub enum DilutionResult{
@@ -57,7 +57,7 @@ pub enum ExportFormat {
     ProtocolPdf,
 }
 dto! {pub struct MolecularVerification{pub engine_version:String,pub plan_revision:String,pub target_revision:String,pub status:verification::evidence::Status,pub report_revision:String,pub findings_total:usize,pub exhaustive_alternative_search:bool}}
-dto! {pub struct Exported{pub context_revision:String,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]pub source_workspace_fingerprint:Option<String>,pub quantity_hash:String,pub plan_revision:String,pub target:EventBinding,pub inputs:Vec<InputEventBinding>,pub arithmetic_complete:bool,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]pub molecular:Option<MolecularVerification>,pub format:ExportFormat,pub filename:String,pub media_type:String,pub bytes:Vec<u8>,pub content_hash:String,pub warnings:Vec<String>}}
+dto! {pub struct Exported{pub context_revision:String,#[serde(deserialize_with="crate::encoding::required_option")]pub source_workspace_fingerprint:Option<String>,pub quantity_hash:String,pub plan_revision:String,pub target:EventBinding,pub inputs:Vec<InputEventBinding>,pub arithmetic_complete:bool,#[serde(deserialize_with="crate::encoding::required_option")]pub molecular:Option<MolecularVerification>,pub format:ExportFormat,pub filename:String,pub media_type:String,pub bytes:Vec<u8>,pub content_hash:String,pub warnings:Vec<String>}}
 dto! {pub struct Summary{pub attachment_hash:String,pub name:String,pub plan_source:PlanSource,pub plan_revision:String,pub target:EventBinding,pub inputs:Vec<InputEventBinding>,pub complete:bool,pub reaction_count:usize,pub available:bool,pub findings:Vec<Finding>}}
 dto! {pub struct Listed{pub context_revision:String,pub source_workspace_fingerprint:String,pub entries:Vec<Summary>}}
 #[derive(Debug, Clone)]

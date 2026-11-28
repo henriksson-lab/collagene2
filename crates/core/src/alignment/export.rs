@@ -138,7 +138,7 @@ pub fn revision(
     format: Format,
 ) -> Result<String, Error> {
     preflight(record, reference_name, query_name)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         CONTRACT,
         record,
         reference_name,

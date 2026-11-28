@@ -3,19 +3,16 @@
 //! document and calls that physical preparation, or searches toward a target.
 use crate::{
     cloning::overlap::profiles::{self as overlap_profiles, ProfileOptions, ProfileReport},
+    encoding::{bounded_json::hash, required_option},
     planning::plan::{DesignPlan, Operation, OrientedSource, PlanInput, Source},
     sequence::analysis::Primer,
     verification::{self, evidence::VerificationReport},
 };
 use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    io::Write,
-};
+use std::collections::{BTreeMap, BTreeSet};
 pub const ENGINE_VERSION: &str = "overlap-recipe-1";
 pub const MAX_ROWS: usize = 128;
-pub(crate) const MAX_BYTES: usize = 32 << 20;
 const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
 const MAX_PREPARATION_WORK: usize = 100_000_000;
@@ -30,11 +27,6 @@ dto! {pub enum OverlapFinishing {
 }}
 dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::material::capsule::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material::derivation::Capsule,preparation:RunPreparation}}}
 dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
-pub(crate) fn required_option<'de, D: serde::Deserializer<'de>, T: Deserialize<'de>>(
-    d: D,
-) -> Result<Option<T>, D::Error> {
-    Option::deserialize(d)
-}
 /// Actual cleavage model selected by the compiling workflow, never inferred from metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -302,32 +294,6 @@ fn token(s: &str, cap: usize) -> Result<(), Error> {
     } else {
         Ok(())
     }
-}
-struct Hash {
-    hash: blake3::Hasher,
-    bytes: usize,
-}
-impl Write for Hash {
-    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
-        self.bytes = self
-            .bytes
-            .checked_add(b.len())
-            .filter(|n| *n <= MAX_BYTES)
-            .ok_or_else(|| std::io::Error::other("bounded assembly recipe"))?;
-        self.hash.update(b);
-        Ok(b.len())
-    }
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-pub(crate) fn hash(v: &impl Serialize) -> Result<String, Error> {
-    let mut w = Hash {
-        hash: blake3::Hasher::new(),
-        bytes: 0,
-    };
-    serde_json::to_writer(&mut w, v).map_err(|_| Error::TooLarge)?;
-    Ok(w.hash.finalize().to_hex().to_string())
 }
 /// Stable secondary-input identity shared by ordinary and library paired-oligo recipes.
 pub fn anneal_bottom_input_id(primary: &str) -> Result<String, Error> {

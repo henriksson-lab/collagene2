@@ -76,7 +76,7 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
     options.binding.min_three_prime_exact = 4;
     let origin = native::SourceOrigin::OriginalReference;
     let context =
-        native::mismatch_pcr_preview_revision(&source, &origin, &forward, &reverse, &options)
+        native::pcr::mismatch_pcr_preview_revision(&source, &origin, &forward, &reverse, &options)
             .unwrap();
     let job = AnalysisJob::InspectMaterialMismatchPcr {
         source: source.clone(),
@@ -188,9 +188,12 @@ fn mismatch_install_redigest_and_repair_keep_literal_tails_and_actual_sticky_str
     let origin = native::SourceOrigin::Saved(MaterialOrigin::Derived(
         native::capsule(&cut.workspace, &cut.receipt.product).unwrap(),
     ));
-    let context =
-        native::repair_preview_revision(&source, &origin, EndRepairMethod::FillFivePrimeOverhangs)
-            .unwrap();
+    let context = native::end_repair::repair_preview_revision(
+        &source,
+        &origin,
+        EndRepairMethod::FillFivePrimeOverhangs,
+    )
+    .unwrap();
     let response = call(
         AnalysisJob::InspectMaterialRepair {
             source: source.clone(),

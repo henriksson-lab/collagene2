@@ -225,7 +225,7 @@ fn CombinationMatrix(
             saved
                 .alternatives
                 .as_ref()
-                .map(alternatives::matrix_size)
+                .map(|library| library.matrix_size())
                 .transpose()
         })
     });
@@ -245,7 +245,7 @@ fn CombinationMatrix(
             let result=(||->Result<_,String>{
                 let total=size.get()?.ok_or("Source alternatives are unavailable.")?;
                 let current=page.get().min(total.saturating_sub(1)/COMBINATIONS_PER_PAGE);
-                let combinations=alternatives::combinations_page(library,current*COMBINATIONS_PER_PAGE,COMBINATIONS_PER_PAGE as usize)?;
+                let combinations=library.combinations_page(current*COMBINATIONS_PER_PAGE,COMBINATIONS_PER_PAGE as usize)?;
                 Ok((total,current,combinations))
             })();
             Some(match result {

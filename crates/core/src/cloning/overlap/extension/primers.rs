@@ -3,7 +3,7 @@
 use crate::cloning::pcr::source::Template;
 use crate::{
     cloning::{
-        assembly::{edit_intent::Edit, recipe as assembly_recipe},
+        assembly::edit_intent::Edit,
         overlap::{
             extension::{
                 self as overlap_extension,
@@ -57,7 +57,7 @@ dto! {pub struct BoundOrigin {pub event:crate::material::lineage::EventBinding,p
 dto! {pub struct Request {
  pub fragment:Fragment,pub edits:Vec<Edit>,pub options:Options,
  pub template_strand:crate::chemistry::Strand,
- #[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]
+ #[serde(deserialize_with="crate::encoding::required_option")]
  pub material_binding:Option<BoundOrigin>,
 }}
 // Documentary coordinate evidence only; never restored as native material.
@@ -535,7 +535,7 @@ pub fn preflight(
     binding_preflight(source, request, workspace)
 }
 fn context(source: &Molecule, request: &Request) -> Result<String, Error> {
-    assembly_recipe::hash(&(ENGINE_VERSION, source.revision(), request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, source.revision(), request))
 }
 pub fn design_revision(
     source: &Molecule,
@@ -974,8 +974,11 @@ pub(crate) fn compile_source_with_budget(
     }
     let b = bounds(source.into(), request)?;
     let source_revision = source.reference.revision();
-    let context_revision =
-        assembly_recipe::hash(&(ENGINE_VERSION, source.context_revision()?, request))?;
+    let context_revision = crate::encoding::bounded_json::hash(&(
+        ENGINE_VERSION,
+        source.context_revision()?,
+        request,
+    ))?;
     let insert = edited(source.into(), request, &b, b.start, b.end);
     let mut right_prefix = String::with_capacity(request.options.homology_flank);
     segment(
@@ -1219,7 +1222,7 @@ fn validate_frame_preparation(
     bytes(&(request, prepared, designs, searches), MAX_REPORT_BYTES)?;
     let b = bounds(source.into(), request)?;
     let source_revision = source.reference.revision();
-    if assembly_recipe::hash(&(ENGINE_VERSION, source_context, request))? != context {
+    if crate::encoding::bounded_json::hash(&(ENGINE_VERSION, source_context, request))? != context {
         return Err(bad("returned source/request binding changed"));
     }
     prepared.validate_shape()?;
@@ -1317,7 +1320,9 @@ fn validate_frame_preparation(
         }
     }
     let selected = preparation(designs, searches, request, &b, source.strand)?;
-    if assembly_recipe::hash(&selected)? != assembly_recipe::hash(prepared)? {
+    if crate::encoding::bounded_json::hash(&selected)?
+        != crate::encoding::bounded_json::hash(prepared)?
+    {
         return Err(bad(
             "returned preparation differs from the selected native oligos",
         ));
@@ -1424,7 +1429,7 @@ impl Report {
         if context(source, &self.request)? != self.context_revision {
             return Err(bad("documentary source/request context changed"));
         }
-        let internal_context = assembly_recipe::hash(&(
+        let internal_context = crate::encoding::bounded_json::hash(&(
             ENGINE_VERSION,
             &self.source_frame.context_revision,
             &self.request,
@@ -1447,7 +1452,8 @@ impl Report {
         let expected_steps = expected_plan.steps;
         if self.plan.name != format!("{} overlap-extension PCR", self.request.fragment.role)
             || self.plan.target_revision != expected.revision()
-            || assembly_recipe::hash(&expected_steps)? != assembly_recipe::hash(&self.plan.steps)?
+            || crate::encoding::bounded_json::hash(&expected_steps)?
+                != crate::encoding::bounded_json::hash(&self.plan.steps)?
             || self.verification.plan_revision
                 != crate::planning::plan::DesignPlan::revision(&self.plan)
             || self.verification.target_revision != self.expected.revision()

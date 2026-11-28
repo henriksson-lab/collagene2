@@ -79,7 +79,7 @@ pub enum AnalysisJob {
     InversePcr {
         molecule: Molecule,
         target: Molecule,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         origin: Option<crate::material::run::MaterialOrigin>,
         options: crate::cloning::pcr::mutagenesis::InversePcrOptions,
     },
@@ -481,7 +481,7 @@ pub enum AnalysisJob {
     BuildAssemblyIntent {
         inputs: Vec<crate::planning::plan::PlanInput>,
         request: crate::cloning::assembly::intent::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     SelectDigestFragment {
@@ -540,7 +540,7 @@ pub enum AnalysisJob {
         inputs: Vec<crate::planning::plan::PlanInput>,
         base: crate::cloning::assembly::intent::Request,
         edits: Vec<crate::cloning::assembly::junction_edit::Edit>,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     DesignEditedAssemblyPrimers {
@@ -682,7 +682,7 @@ pub enum AnalysisJob {
     PrepareDomestication {
         input: crate::planning::plan::PlanInput,
         request: crate::cloning::golden_gate::domestication::preparation::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     ListLigationProfiles,
@@ -760,39 +760,39 @@ pub enum AnalysisJob {
     BuildSubstitutedAssemblyIntent {
         inputs: Vec<crate::planning::plan::PlanInput>,
         request: crate::cloning::assembly::substitution_intent::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     InspectMismatchPcrDigest {
         molecule: Molecule,
         origin: Option<crate::material::run::MaterialOrigin>,
         request: crate::cloning::pcr::mismatch_digest::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     BuildContributionEditIntent {
         inputs: Vec<crate::planning::plan::PlanInput>,
         request: crate::cloning::assembly::edit_intent::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     DesignOverlapExtensionPrimers {
         source: Molecule,
         request: crate::cloning::overlap::extension::primers::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     InspectOverlapExtensionDigest {
         source: Molecule,
         origin: Option<crate::material::run::MaterialOrigin>,
         request: crate::cloning::overlap::extension::digest::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     DesignEditedOverlapPrimers {
         inputs: Vec<crate::planning::plan::PlanInput>,
         request: crate::cloning::assembly::edited_primers::Request,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         workspace: Option<crate::documents::workspace::Workspace>,
     },
     PreviewHomologyRecipe {
@@ -809,7 +809,7 @@ pub enum AnalysisJob {
     },
     InspectTopoRun {
         inputs: Vec<crate::cloning::topo::Input>,
-        #[serde(deserialize_with = "crate::cloning::assembly::recipe::required_option")]
+        #[serde(deserialize_with = "crate::encoding::required_option")]
         template: Option<crate::cloning::topo::run_preparation::BoundTemplate>,
         task: crate::cloning::topo::run_preparation::Task,
     },
@@ -1140,11 +1140,11 @@ pub enum AnalysisResult {
     SequenceExportPrepared(crate::formats::sequence::export::Prepared),
     ScfTraceExported(crate::formats::scf::Exported),
     MaterialDerivationInstalled(crate::material::derivation::Installed),
-    MaterialDigestInspection(crate::material::derivation::DigestPreview),
+    MaterialDigestInspection(crate::material::derivation::digest::DigestPreview),
     SavedRunReviewPrepared(crate::material::review::PreparedReview),
     MapSvgExported(crate::output::svg_export::Rendered),
-    MaterialMismatchPcrPreview(crate::material::derivation::MismatchPreview),
-    MaterialRepairPreview(crate::material::derivation::RepairPreview),
+    MaterialMismatchPcrPreview(crate::material::derivation::pcr::MismatchPreview),
+    MaterialRepairPreview(crate::material::derivation::end_repair::RepairPreview),
     ProtocolLayoutPreview(crate::output::layout::Layout),
     ProtocolLayoutCaptured(crate::output::layout::Capture),
     ProtocolLayoutExported(crate::output::layout::Exported),
@@ -1156,9 +1156,13 @@ pub enum AnalysisResult {
     TopoGraphsListed(crate::cloning::topo::graph_history::Listed),
     TopoGraphCaptured(crate::cloning::topo::graph_history::PreparedCapture),
     TopoGraphInspected(crate::cloning::topo::graph_history::Inspection),
-    MaterialOverlapExtensionPreview(crate::material::derivation::OverlapExtensionPreview),
-    MaterialTerminalProcessingPreview(crate::material::derivation::TerminalProcessingPreview),
-    MaterialAnnealedOligosPreview(crate::material::derivation::AnnealedOligosPreview),
+    MaterialOverlapExtensionPreview(
+        crate::material::derivation::overlap_extension::OverlapExtensionPreview,
+    ),
+    MaterialTerminalProcessingPreview(
+        crate::material::derivation::terminal::TerminalProcessingPreview,
+    ),
+    MaterialAnnealedOligosPreview(crate::material::derivation::annealing::AnnealedOligosPreview),
     SequenceSimilarity(crate::sequence::similarity::Report),
     StructurePrepared(crate::protein::structure::Prepared),
     RnaChemistry(crate::rna_chemistry::Report),

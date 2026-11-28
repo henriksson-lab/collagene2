@@ -5,7 +5,6 @@ use crate::workspace::tabs::{DocumentItems, DocumentTabs};
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod shell;
 
-use crate::platform::storage;
 use crate::platform::worker;
 use crate::viewer::map::renderer::MapRenderer;
 use crate::workspace::session::RestoredWorkspace;
@@ -18,40 +17,13 @@ use collagene_core::planning::plan::Operation;
 use collagene_core::planning::plan::Source;
 use collagene_core::protocol;
 use collagene_core::sequence::analysis::Primer;
-use collagene_core::verification::evidence::VerificationReport;
 use collagene_core::{
-    alignment::{self, dotplot, history as pairwise_history},
-    antibody_numbering,
     chemistry::{self, methylation, tracked_duplex as modified_duplex},
-    cloning::{
-        assembly::junctions as assembly_junctions,
-        pcr::{mutagenesis, outputs as pcr_outputs, primers, reuse as primer_reuse},
-        recombination::{self, multisite as multisite_recombination},
-        restriction::{enzyme_sets, selection as restriction_selection, setups as digest_setups},
-        topo::{self, preparation as topo_preparation},
-    },
-    documents::{history, rna_history, workspace},
-    formats::{
-        annotations as annotation_formats, oligos as oligo_formats, original as legacy_formats,
-        protein as protein_formats, snapgene,
-    },
-    material::{lineage as run_lineage, review as run_review},
-    output::{gel, svg},
-    planning::combinatorial::{batch as combinatorial_batch, release as combinatorial_release},
-    protein::{properties as protein_properties, structure as structure_view},
-    protein_liabilities,
-    review::{
-        contigs::history as contig_history,
-        reads::{
-            archive as read_alignment_archive, checks as read_checks, review as read_review,
-            session as read_alignment_session, store as read_alignment_store, trace_validation,
-            traces,
-        },
-        variants::{archive as variants_archive, session as variants_session},
-    },
-    rna_chemistry,
-    sequence::{analysis, codon_design, crispr, editing},
-    tracks::genome,
+    documents::workspace,
+    formats::{oligos as oligo_formats, snapgene},
+    output::svg,
+    review::reads::traces,
+    sequence::editing,
     verification,
 };
 use collagene_model::Alphabet;
@@ -69,31 +41,24 @@ use web_sys::HtmlInputElement;
 use crate::app::shell::dismiss_viewer_menus;
 use crate::viewer::sequence::selection::ViewerSelection;
 use crate::workspace::session::MAX_WORKSPACE_BYTES;
-use crate::workspace::session::assembly_draft_kind;
 use crate::workspace::session::bound_primer_source;
 use crate::workspace::session::current_event_binding;
-use crate::workspace::session::decode_workspace;
 use crate::workspace::session::document_bytes;
-use crate::workspace::session::encode_workspace;
 use crate::workspace::session::open_histories;
 use crate::workspace::session::recombination_source_info;
 use crate::workspace::shell_state::ShellState;
 
 use crate::cloning::preparation::restriction_fields::RestrictionFields;
-use crate::io::download::download;
-use crate::io::download::download_with_completion;
 use crate::protocol::step_description::describe_step;
 use demo::demonstration;
 mod demo;
 use crate::assembly::controller::AssemblyController;
-use crate::assembly::controller::PendingFinalize;
 use crate::biology::controller::BiologyController;
 use crate::io::controller::ImportController;
 use crate::library::controller::LibraryController;
 use crate::primers::pcr::controller::PcrController;
 use crate::primers::pcr::controller::PcrState;
 use crate::protocol::controller::ProtocolController;
-use crate::reads::controller::PendingReadReview;
 use crate::reads::controller::ReadController;
 use crate::restriction::controller::RestrictionController;
 use crate::viewer::alignment::controller::ComparisonController;
@@ -124,57 +89,78 @@ pub fn App() -> impl IntoView {
                 .collect::<Vec<_>>()
         })
     });
-    let recorded_runs = RwSignal::new(Vec::<collagene_core::material::lineage::RunSummary>::new());
-    let saved_assemblies = RwSignal::new(Vec::<
-        collagene_core::review::contigs::history::AssemblySummary,
-    >::new());
-    let assembly_page = RwSignal::new(0usize);
-    let pending_assembly = RwSignal::new(None::<crate::reads::contigs::ArchiveRequest>);
-    let pending_donor = RwSignal::new(None::<crate::cloning::methods::crispr::DonorRequest>);
-    let pending_digest =
-        RwSignal::new(None::<crate::restriction::digest_product::DigestOpenRequest>);
-    let pending_material =
-        RwSignal::new(None::<crate::restriction::digest_product::MaterialOpenRequest>);
+    let run_history_state = crate::protocol::controller::RunHistoryState::new();
+    let crate::protocol::controller::RunHistoryState {
+        recorded_runs,
+        run_page,
+        pending_run_event,
+        hidden_products,
+        show_prepared_history,
+    } = run_history_state;
+    let read_archive_state = crate::reads::controller::ReadArchiveState::new();
+    let crate::reads::controller::ReadArchiveState {
+        saved_assemblies,
+        assembly_page,
+        pending_assembly,
+        inspected_assembly,
+    } = read_archive_state;
+
+    let assembly_state = crate::assembly::controller::AssemblyState::new(workspace_epoch);
+    let crate::assembly::controller::AssemblyState {
+        method_config,
+        assembly_draft,
+        previous_assembly_draft,
+        assembly_visible,
+        pending_finalize,
+        pending_release,
+        selected_release_manifest,
+        pending_donor,
+    } = assembly_state;
+    let digest_workspace_state = crate::restriction::controller::DigestWorkspaceState::new();
+    let crate::restriction::controller::DigestWorkspaceState {
+        pending_digest,
+        pending_material,
+        digest_boundary_pick,
+    } = digest_workspace_state;
+
     let gel_digest_seeds = RwSignal::new(Vec::<crate::restriction::gel::DigestLaneSeed>::new());
-    let inspected_assembly = RwSignal::new(String::new());
+
     let selected_run = RwSignal::new(String::new());
-    let internal_clipboard =
-        RwSignal::new(None::<std::sync::Arc<crate::workspace::reference_transfer_view::Copied>>);
-    let pending_reference_paste =
-        RwSignal::new(None::<crate::workspace::reference_transfer_view::PasteOpen>);
-    let pending_comparison_source =
-        RwSignal::new(None::<crate::viewer::alignment::pairwise_source_view::Snapshot>);
+    let reference_transfer_state =
+        crate::workspace::reference_controller::ReferenceTransferState::new();
+    let crate::workspace::reference_controller::ReferenceTransferState {
+        internal_clipboard,
+        pending_reference_paste,
+    } = reference_transfer_state;
+
+    let comparison_state = crate::viewer::alignment::controller::ComparisonState::new();
+    let crate::viewer::alignment::controller::ComparisonState {
+        alignments,
+        pending_alignment,
+        pending_comparison_source,
+    } = comparison_state;
     let pending_translation_source =
         RwSignal::new(None::<crate::viewer::alignment::pairwise_source_view::Snapshot>);
     let pending_pcr_source = RwSignal::new(None::<crate::primers::pcr::pcr_source_view::Snapshot>);
-    let pending_run_event =
-        RwSignal::new(None::<std::sync::Arc<crate::history::run_event_model::Snapshot>>);
-    let run_page = RwSignal::new(0usize);
-    let oligo_tables = RwSignal::new(Vec::<
-        std::sync::Arc<collagene_core::formats::oligos::OligoTable>,
-    >::new());
-    let libraries =
-        RwSignal::new(Vec::<crate::viewer::sequence::feature_tools::LibraryRevision>::new());
-    let alignments = RwSignal::new(Vec::<
-        crate::viewer::alignment::alignment_view::AlignmentRevision,
-    >::new());
-    let pending_alignment =
-        RwSignal::new(None::<crate::viewer::alignment::alignment_view::PendingAlignment>);
-    let pending_sbol = RwSignal::new(None::<std::sync::Arc<Vec<u8>>>);
-    let method_config =
-        RwSignal::new(crate::cloning::preparation::cloning_methods_model::MethodsState::default());
-    let assembly_draft = RwSignal::new(crate::assembly::draft::model::Draft::default());
-    let previous_assembly_draft =
-        RwSignal::new(None::<std::sync::Arc<crate::assembly::draft::model::Draft>>);
-    Effect::new(move |_| {
-        let _ = workspace_epoch.get();
-        previous_assembly_draft.set(None);
-    });
-    let assembly_visible = RwSignal::new(false);
+
+    let import_state = crate::io::controller::ImportState::new();
+    let crate::io::controller::ImportState {
+        oligo_tables,
+        existing_oligo,
+        pending_oligo,
+        pending_fastq,
+        pending_sbol,
+        pending_variants,
+        pending_read_alignment,
+    } = import_state;
+    let annotation_state = crate::viewer::sequence::annotation_controller::AnnotationState::new();
+    let crate::viewer::sequence::annotation_controller::AnnotationState {
+        libraries,
+        annotation_source,
+    } = annotation_state;
+
     let web_mcp_assembly = RwSignal::new(None::<crate::ai::web_mcp_assembly::bridge::Endpoint>);
-    let pending_finalize = RwSignal::new(None::<std::sync::Arc<PendingFinalize>>);
-    let pending_release = RwSignal::new(None::<String>);
-    let selected_release_manifest = RwSignal::new(None::<String>);
+
     let read_state = ReadReviewState::new();
     let ReadReviewState {
         read_reference,
@@ -183,36 +169,27 @@ pub fn App() -> impl IntoView {
         review_seed,
         pending_read_review,
     } = read_state;
-    let hidden_products = RwSignal::new(std::collections::BTreeSet::<String>::new());
-    let show_prepared_history = RwSignal::new(false);
-    let digest_boundary_pick = RwSignal::new(None::<crate::restriction::digest::BoundaryPick>);
+
     let digest_run_origin = RwSignal::new(None::<crate::history::run_origin_model::PinnedOrigin>);
     Effect::new(move || {
         let _ = workspace_epoch.get();
         digest_run_origin.set(None);
     });
-    let annotation_source = RwSignal::new(String::new());
+
     let annotation_format =
         RwSignal::new(collagene_core::formats::annotations::AnnotationFormat::Gff3);
-    let existing_oligo = RwSignal::new(None::<collagene_core::formats::oligos::OligoTable>);
-    let pending_oligo = RwSignal::new(None::<(String, oligo_formats::Delimiter)>);
-    let pending_fastq = RwSignal::new(None::<std::sync::Arc<Vec<u8>>>);
-    let pending_variants = RwSignal::new(
-        None::<(
-            std::sync::Arc<Vec<u8>>,
-            collagene_core::review::variants::session::FileFormat,
-            String,
-        )>,
-    );
-    let pending_read_alignment = RwSignal::new(
-        None::<(
-            std::sync::Arc<Vec<u8>>,
-            collagene_core::review::reads::session::FileFormat,
-            String,
-        )>,
-    );
+
     let fastq_encoding = RwSignal::new(None::<oligo_formats::QualityEncoding>);
-    let stored_candidates = RwSignal::new(Vec::<transfer::Candidate>::new());
+    let plan_state = crate::protocol::controller::PlanState::new();
+    let crate::protocol::controller::PlanState {
+        candidate,
+        stored_candidates,
+        candidate_events,
+        plan_report,
+        last_plan,
+        last_plan_target,
+        plan_generation,
+    } = plan_state;
 
     // Working tabs are presentation state, separate from retained histories and
     // the archive's last working document index (which must remain valid).
@@ -227,10 +204,13 @@ pub fn App() -> impl IntoView {
     let selected_feature = RwSignal::new(None::<usize>);
     let feature_for_editor = RwSignal::new(None::<usize>);
     let feature_initial_location = RwSignal::new(None::<Location>);
-    let primer_seed = RwSignal::new(None::<Primer>);
-    let pair_draft = RwSignal::new(crate::primers::primer_pair_model::PairDraft::default());
-    let mutation_seed =
-        RwSignal::new(None::<crate::cloning::methods::mutagenesis::MutationSelection>);
+    let primer_design_state = crate::primers::pcr::controller::PrimerDesignState::new();
+    let crate::primers::pcr::controller::PrimerDesignState {
+        pair_draft,
+        primer_seed,
+        mutation_seed,
+    } = primer_design_state;
+
     let inspected_feature = Memo::new(move |_| {
         molecule.with(|m| {
             selected_feature
@@ -786,7 +766,7 @@ pub fn App() -> impl IntoView {
     let first_input = RwSignal::new(0usize);
     let overlap = RwSignal::new("20".to_string());
     let closure_overlap = RwSignal::new("20".to_string());
-    let candidate = RwSignal::new(None::<transfer::Candidate>);
+
     Effect::new(move |_| {
         if let Some(value) = candidate.get() {
             stored_candidates.update(|values| {
@@ -821,20 +801,9 @@ pub fn App() -> impl IntoView {
             Vec<collagene_core::material::lineage::InputEventBinding>,
         )>,
     );
-    let candidate_events = RwSignal::new(
-        None::<(
-            String,
-            u64,
-            collagene_core::material::lineage::EventBinding,
-            Vec<collagene_core::material::lineage::InputEventBinding>,
-        )>,
-    );
 
     let allow_nicked = RwSignal::new(false);
-    let plan_report = RwSignal::new(None::<VerificationReport>);
-    let last_plan = RwSignal::new(None::<(DesignPlan, Molecule)>);
-    let last_plan_target =
-        RwSignal::new(None::<(String, u64, collagene_core::material::lineage::EventBinding)>);
+
     let capture_junction_plan = Callback::new(
         move |()| -> Result<(DesignPlan, Molecule), String> {
             if workspace_restoring.get_untracked() {
@@ -886,7 +855,7 @@ pub fn App() -> impl IntoView {
             }
         })
     });
-    let plan_generation = RwSignal::new(0u32);
+
     Effect::new(move |_| {
         let _ = (
             first_input.get(),
@@ -913,70 +882,28 @@ pub fn App() -> impl IntoView {
         );
         first_modifications.track();
         second_modifications.track();
-        plan_generation.set(plan_generation.get_untracked().wrapping_add(1));
-        plan_report.set(None);
-        last_plan.set(None);
-        last_plan_target.set(None);
+        plan_state.invalidate_evidence();
     });
     let apply_restored = Callback::new(move |state: RestoredWorkspace| {
-        workspace_epoch.update(|epoch| *epoch = epoch.wrapping_add(1));
-        pcr_generation.update(|g| *g = g.wrapping_add(1));
-        existing_oligo.set(None);
-        pending_oligo.set(None);
-        pending_fastq.set(None);
-        pending_read_alignment.set(None);
-        pending_sbol.set(None);
-        pending_variants.set(None);
-        pending_finalize.set(None);
-        pending_release.set(None);
-        selected_release_manifest.set(None);
-        pending_run_event.set(None);
-        pending_comparison_source.set(None);
-        internal_clipboard.set(None);
-        pending_reference_paste.set(None);
-        read_reference.set(None);
-        pending_read_check.set(None);
-        reviewed_check.set(None);
-        review_seed.set(None);
-        pending_read_review.set(None);
-        pair_draft.set(state.pair_draft);
-        primer_seed.set(None);
-        mutation_seed.set(None);
-        hidden_products.set(state.hidden_products);
-        show_prepared_history.set(false);
-        documents.set(state.documents);
-        active.set(state.active);
-        workspace_name.set(state.name);
-        stored_candidates.set(state.candidates);
-        attachments.set(state.attachments);
-        oligo_tables.set(state.oligos);
-        libraries.set(state.libraries);
-        alignments.set(state.alignments);
-        recorded_runs.set(state.runs);
-        saved_assemblies.set(state.assemblies);
-        assembly_page.set(0);
-        pending_assembly.set(None);
-        pending_donor.set(None);
-        pending_digest.set(None);
-        pending_material.set(None);
-        inspected_assembly.set(String::new());
-        run_page.set(0);
-        pending_alignment.set(None);
-        annotation_source.set(String::new());
-        method_config
-            .set(crate::cloning::preparation::cloning_methods_model::MethodsState::default());
-        assembly_draft.set(state.assembly_draft);
-        assembly_visible.set(false);
-        digest_boundary_pick.set(None);
-        candidate_events.set(None);
-        candidate.set(state.candidate);
-        plan_generation.update(|g| *g = g.wrapping_add(1));
-        plan_report.set(None);
-        last_plan.set(None);
-        last_plan_target.set(None);
-        selection.set(None);
-        selected_feature.set(None);
-        modal.set("");
+        // Invalidate every outstanding source receipt before any owner installs data.
+        batch(|| {
+            session.begin_replacement();
+            pcr_state.workspace_replaced();
+            plan_state.restore(state.candidate, state.candidates);
+            import_state.restore(state.oligos);
+            comparison_state.restore(state.alignments);
+            annotation_state.restore(state.libraries);
+            read_state.clear();
+            read_archive_state.restore(state.assemblies);
+            primer_design_state.restore(state.pair_draft);
+            run_history_state.restore(state.runs, state.hidden_products);
+            reference_transfer_state.restore();
+            assembly_state.restore(state.assembly_draft);
+            digest_workspace_state.restore();
+            session.install_documents(state.name, state.documents, state.active, state.attachments);
+            viewer.clear();
+            shell.workspace_replaced();
+        });
     });
     // Persistence callbacks outlive the dock/modal that initiated a transaction.
     // A committed write must reach App even after that child owner is disposed.
@@ -1232,10 +1159,7 @@ pub fn App() -> impl IntoView {
                 }
             }
         }
-        plan_generation.set(plan_generation.get_untracked().wrapping_add(1));
-        plan_report.set(None);
-        last_plan.set(None);
-        last_plan_target.set(None);
+        plan_state.invalidate_evidence();
     });
 
     let open_file = ImportController {

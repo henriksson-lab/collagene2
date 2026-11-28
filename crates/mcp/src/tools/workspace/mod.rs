@@ -794,11 +794,11 @@ impl CollageneServer {
                     for event in [&top,&bottom] {
                         server.session.material_derivation_source(&workspace,event,&native::SourceOrigin::OriginalReference)?;
                     }
-                    let context=native::annealed_oligos_preview_revision(&workspace,&top,&bottom,&options).map_err(bad)?;
-                    let preview=native::preview_annealed_oligos(&workspace,&top,&bottom,&options).map_err(bad)?;
+                    let context=native::annealing::annealed_oligos_preview_revision(&workspace,&top,&bottom,&options).map_err(bad)?;
+                    let preview=native::annealing::preview_annealed_oligos(&workspace,&top,&bottom,&options).map_err(bad)?;
                     preview.validate_binding(&context).map_err(bad)?;
                     #[derive(Serialize)]
-                    struct AnnealedMaterialEvidence<'a>{workspace:&'a WorkspaceRef,preview:&'a native::AnnealedOligosPreview}
+                    struct AnnealedMaterialEvidence<'a>{workspace:&'a WorkspaceRef,preview:&'a native::annealing::AnnealedOligosPreview}
                     let artifact=server.session.text_artifact(bounded_json_limit(&AnnealedMaterialEvidence{workspace:&args.workspace,preview:&preview},32*1024*1024)?,"application/json","material-annealed-oligos-preview.json")?;
                     let candidates=preview.preview.annealing.candidates.iter().zip(&preview.products).take(100).map(|(candidate,product)|{
                         Ok(json!({"candidate_id":candidate.id,"paired_bases":candidate.paired_bases,"duplex":candidate.duplex.summary().map_err(bad)?,"product_revision":product.revision(),"selection":native::AnnealSelection{expected_preview_revision:context.clone(),candidate_id:candidate.id.clone(),expected_product_revision:product.revision()}}))
@@ -808,8 +808,8 @@ impl CollageneServer {
                 MaterialDerivationTask::PreviewTerminalProcessing{source,origin,action}=>{
                     let origin=server.session.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     server.session.material_derivation_source(&workspace,&source,&origin)?;
-                    let context=native::terminal_processing_preview_revision(&workspace,&source,&origin,&action).map_err(bad)?;
-                    let preview=native::preview_terminal_processing(&workspace,&source,&origin,&action).map_err(bad)?;
+                    let context=native::terminal::terminal_processing_preview_revision(&workspace,&source,&origin,&action).map_err(bad)?;
+                    let preview=native::terminal::preview_terminal_processing(&workspace,&source,&origin,&action).map_err(bad)?;
                     preview.validate_binding(&context).map_err(bad)?;
                     let artifact=server.session.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:&action,preview:&preview},32*1024*1024)?,"application/json","material-terminal-processing-preview.json")?;
                     output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"action":action,"product":{"revision":preview.product.revision(),"length":preview.product.sequence.len(),"topology":preview.product.topology},"source_duplex":preview.source_duplex,"duplex":preview.duplex,"source_modifications":preview.source_modifications,"modifications":preview.modifications,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Target-free explicit terminal treatment or single-base 3′ tailing preview on freshly reconstructed source strands. Native end-geometry guards and positional modifications remain in force. Installation independently executes the selected action. No ligation, target agreement, nick sealing, new primers, isolation or experimental yield is established."}))
@@ -817,8 +817,8 @@ impl CollageneServer {
                 MaterialDerivationTask::PreviewOverlapExtensionPcr{source,origin,preparation}=>{
                     let origin=server.session.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     server.session.material_derivation_source(&workspace,&source,&origin)?;
-                    let context=native::overlap_extension_preview_revision(&workspace,&source,&origin,&preparation).map_err(bad)?;
-                    let preview=native::preview_overlap_extension(&workspace,&source,&origin,&preparation).map_err(bad)?;
+                    let context=native::overlap_extension::overlap_extension_preview_revision(&workspace,&source,&origin,&preparation).map_err(bad)?;
+                    let preview=native::overlap_extension::preview_overlap_extension(&workspace,&source,&origin,&preparation).map_err(bad)?;
                     preview.validate_binding(&context).map_err(bad)?;
                     let artifact=server.session.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:&preparation,preview:&preview},32*1024*1024)?,"application/json","material-overlap-extension-pcr-preview.json")?;
                     output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"reusable":preview.reusable(),"selection":preview.selection().ok(),"product":preview.product.as_ref().map(|m|json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology})),"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Source-bound target-free OE PCR preview only. Both source PCR branches, reciprocal extension and outer PCR are freshly executed. Explicit installation repeats native execution and retains all six new primer uses; no independent target, isolation, yield or experimental success is established."}))
@@ -826,8 +826,8 @@ impl CollageneServer {
                 MaterialDerivationTask::PreviewPcr{source,origin,forward,reverse,template_strand}=>{
                     let origin=server.session.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     let molecule=server.session.material_derivation_source(&workspace,&source,&origin)?;
-                    let context=native::pcr_preview_revision(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
-                    let documents=native::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
+                    let context=native::pcr::pcr_preview_revision(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
+                    let documents=native::pcr::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
                     #[derive(Serialize)]
                     struct PcrEvidence<'a>{workspace:&'a WorkspaceRef,source:&'a collagene_core::material::lineage::EventBinding,context_revision:&'a str,forward:&'a Primer,reverse:&'a Primer,template_strand:collagene_core::chemistry::Strand,documents:&'a[verification::pcr::PcrDocument]}
                     let text=bounded_json_limit(&PcrEvidence{workspace:&args.workspace,source:&source,context_revision:&context,forward:&forward,reverse:&reverse,template_strand,documents:&documents},32*1024*1024)?;
@@ -838,8 +838,8 @@ impl CollageneServer {
                 MaterialDerivationTask::PreviewMismatchPcr{source,origin,forward,reverse,options}=>{
                     let origin=server.session.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     let molecule=server.session.material_derivation_source(&workspace,&source,&origin)?;
-                    let context=native::mismatch_pcr_preview_revision(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
-                    let preview=native::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
+                    let context=native::pcr::mismatch_pcr_preview_revision(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
+                    let preview=native::pcr::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
                     preview.validate_binding(&context).map_err(bad)?;
                     let artifact=server.session.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:json!({"forward":forward,"reverse":reverse,"options":options}),preview:&preview},32*1024*1024)?,"application/json","material-mismatch-pcr-preview.json")?;
                     let report=&preview.preview.report;
@@ -850,8 +850,8 @@ impl CollageneServer {
                 MaterialDerivationTask::PreviewRepair{source,origin,method}=>{
                     let origin=server.session.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     let molecule=server.session.material_derivation_source(&workspace,&source,&origin)?;
-                    let context=native::repair_preview_revision(&molecule,&origin,method).map_err(bad)?;
-                    let preview=native::preview_repair(&molecule,&origin,method).map_err(bad)?;
+                    let context=native::end_repair::repair_preview_revision(&molecule,&origin,method).map_err(bad)?;
+                    let preview=native::end_repair::preview_repair(&molecule,&origin,method).map_err(bad)?;
                     preview.validate_binding(&context).map_err(bad)?;
                     let artifact=server.session.text_artifact(bounded_json_limit(&MaterialPreviewEvidence{workspace:&args.workspace,source:&source,parameters:json!({"method":method}),preview:&preview},32*1024*1024)?,"application/json","material-end-repair-preview.json")?;
                     output(json!({"workspace":args.workspace,"source":source,"context_revision":context,"method":method,"length":preview.molecule.sequence.len(),"preview_revision":preview.molecule.revision(),"source_duplex":preview.source_duplex,"source_modifications":preview.source_modifications,"repair":preview.repair,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Fresh saved-material strand repair under the explicit method; actual synthesized/removed bases and inherited findings remain evidence. No independent target, isolated stock, experimental success or saved product is asserted by this preview."}))
@@ -860,8 +860,8 @@ impl CollageneServer {
                     let origin=server.session.resolve_material_derivation_origin(&workspace,&source,&origin)?;
                     let molecule=server.session.material_derivation_source(&workspace,&source,&origin)?;
                     let role=collagene_core::cloning::restriction::history::source_role(&source).map_err(bad)?;
-                    let context=native::digest_inspection_revision(&role,&molecule,&origin,&selection,&options).map_err(bad)?;
-                    let preview=native::inspect_digest(&role,&molecule,&origin,&selection,&options).map_err(bad)?;
+                    let context=native::digest::digest_inspection_revision(&role,&molecule,&origin,&selection,&options).map_err(bad)?;
+                    let preview=native::digest::inspect_digest(&role,&molecule,&origin,&selection,&options).map_err(bad)?;
                     preview.validate_binding(&context).map_err(bad)?;
                     let artifact=server.session.text_artifact(bounded_json_limit(&preview,32*1024*1024)?,"application/json","material-digest-preview.json")?;
                     output(json!({"workspace":args.workspace,"source":source,"source_role":role,"context_revision":context,"products_determined":preview.inspection.products_determined,"scan_complete":preview.inspection.scan_complete,"fragment_count":preview.inspection.fragments.len(),"fragments":preview.inspection.fragments.iter().take(100).collect::<Vec<_>>(),"fragments_truncated":preview.inspection.fragments.len()>100,"incomplete":preview.incomplete,"findings":preview.findings,"findings_total":preview.findings_total,"findings_truncated":preview.findings_truncated,"artifact_id":artifact,"authority":"Fresh actual source-strand catalog inspection under declared complete cleavage. This creates no material document, selected physical stock or independent target assessment."}))
@@ -887,7 +887,7 @@ impl CollageneServer {
                         MaterialDerivationOperation::ExactPcr{forward,reverse,selection,template_strand}=>{
                             let (molecule,origin)=template_context()?;
                             if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit PCR preview index/revision."));}
-                            let previews=native::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
+                            let previews=native::pcr::preview_pcr(&molecule,&origin,&forward,&reverse,template_strand).map_err(bad)?;
                             let chosen=previews.into_iter().nth(selection.selected_index).ok_or_else(||bad("The explicitly selected PCR preview no longer exists."))?;
                             if chosen.molecule.revision()!=selection.expected_preview_revision {return Err(bad("The explicitly selected PCR preview changed; preview again."));}
                             native::Derivation::ExactPcr{forward,reverse,template_strand,selection:native::PcrSelection{selected_index:selection.selected_index,expected_preview_revision:selection.expected_preview_revision,geometry:chosen.geometry}}
@@ -895,7 +895,7 @@ impl CollageneServer {
                         MaterialDerivationOperation::MismatchPcr{forward,reverse,options,selection}=>{
                             let (molecule,origin)=template_context()?;
                             if selection.selected_index>=10000||selection.expected_preview_revision.len()!=64||!selection.expected_preview_revision.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(bad("Invalid explicit mismatch-PCR preview index/revision."));}
-                            let preview=native::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
+                            let preview=native::pcr::preview_mismatch_pcr(&molecule,&origin,&forward,&reverse,&options).map_err(bad)?;
                             let chosen=preview.preview.documents.get(selection.selected_index).ok_or_else(||bad("The explicitly selected mismatch-PCR preview no longer exists."))?;
                             if chosen.revision()!=selection.expected_preview_revision{return Err(bad("The explicitly selected mismatch-PCR preview changed; preview again."));}
                             let geometry=preview.preview.report.products.get(selection.selected_index).cloned().ok_or_else(||bad("The selected mismatch-PCR geometry is unavailable."))?;

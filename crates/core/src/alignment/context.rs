@@ -76,7 +76,7 @@ pub fn revision(
     translate: bool,
 ) -> Result<String, Error> {
     preflight(report, reference, query, translate)?;
-    crate::cloning::assembly::recipe::hash(&(CONTRACT, report, reference, query, translate))
+    crate::encoding::bounded_json::hash(&(CONTRACT, report, reference, query, translate))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

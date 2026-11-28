@@ -277,7 +277,7 @@ mod tests {
         let reverse = Primer::new("Native R", "TACCGGTA", "").unwrap();
         let original = d::SourceOrigin::OriginalReference;
         let documents =
-            d::preview_pcr(&source, &original, &forward, &reverse, Strand::Top).unwrap();
+            d::pcr::preview_pcr(&source, &original, &forward, &reverse, Strand::Top).unwrap();
         assert_eq!(documents.len(), 1);
         let prepared = d::prepare_install(
             &w,
@@ -869,7 +869,7 @@ mod mismatch_digest_tests {
         let reverse = Primer::new("Template R", "TACAGGTC", "").unwrap();
         let original = d::SourceOrigin::OriginalReference;
         let documents =
-            d::preview_pcr(&source, &original, &forward, &reverse, Strand::Top).unwrap();
+            d::pcr::preview_pcr(&source, &original, &forward, &reverse, Strand::Top).unwrap();
         assert_eq!(documents.len(), 1);
         assert_eq!(documents[0].molecule.sequence.as_str(), ORIGINAL);
         let prepared = d::prepare_install(

@@ -734,5 +734,5 @@ fn bind_revisions(
     subjects: &[(&str, &str)],
     options: &Options,
 ) -> Result<String, Error> {
-    crate::cloning::assembly::recipe::hash(&(ENGINE_VERSION, query.0, query.1, subjects, options))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, query.0, query.1, subjects, options))
 }

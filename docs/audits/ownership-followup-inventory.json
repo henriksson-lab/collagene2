@@ -1,0 +1,2399 @@
+{
+  "base_commit": "ded006754779abf4feb5b7a67e69219973d63a6e",
+  "scope": "Ownership refactor; wire/scientific versions unchanged. Static comparisons do not replace compiler, fixture or graphical acceptance.",
+  "worker_cases": [
+    {
+      "variant": "Search",
+      "execution_owner": "sequence::search",
+      "fields": [
+        "molecule",
+        "query"
+      ]
+    },
+    {
+      "variant": "Restriction",
+      "execution_owner": "preparation::restriction",
+      "fields": [
+        "molecule",
+        "enzyme"
+      ]
+    },
+    {
+      "variant": "Pcr",
+      "execution_owner": "preparation::pcr",
+      "fields": [
+        "molecule",
+        "forward",
+        "reverse"
+      ]
+    },
+    {
+      "variant": "Verify",
+      "execution_owner": "output::verify",
+      "fields": [
+        "target",
+        "plan"
+      ]
+    },
+    {
+      "variant": "DuplexDigest",
+      "execution_owner": "preparation::duplex_digest",
+      "fields": [
+        "molecule",
+        "enzymes"
+      ]
+    },
+    {
+      "variant": "Translate",
+      "execution_owner": "sequence::translate",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "TranslateCds",
+      "execution_owner": "sequence::translate_cds",
+      "fields": [
+        "molecule",
+        "feature_index"
+      ]
+    },
+    {
+      "variant": "FindOrfs",
+      "execution_owner": "sequence::find_orfs",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "Align",
+      "execution_owner": "review::align",
+      "fields": [
+        "molecule",
+        "query",
+        "options"
+      ]
+    },
+    {
+      "variant": "PcrDocuments",
+      "execution_owner": "preparation::pcr_documents",
+      "fields": [
+        "molecule",
+        "forward",
+        "reverse",
+        "template_strand"
+      ]
+    },
+    {
+      "variant": "AnalyzePrimer",
+      "execution_owner": "preparation::analyze_primer",
+      "fields": [
+        "molecule",
+        "primer",
+        "conditions",
+        "binding_options"
+      ]
+    },
+    {
+      "variant": "DesignPrimers",
+      "execution_owner": "preparation::design_primers",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "ExportProtocolPdf",
+      "execution_owner": "output::export_protocol_pdf",
+      "fields": [
+        "target",
+        "plan"
+      ]
+    },
+    {
+      "variant": "GoldenGate",
+      "execution_owner": "preparation::golden_gate",
+      "fields": [
+        "molecule",
+        "templates",
+        "options"
+      ]
+    },
+    {
+      "variant": "MismatchPcr",
+      "execution_owner": "preparation::mismatch_pcr",
+      "fields": [
+        "molecule",
+        "forward",
+        "reverse",
+        "options"
+      ]
+    },
+    {
+      "variant": "InversePcr",
+      "execution_owner": "preparation::inverse_pcr",
+      "fields": [
+        "molecule",
+        "target",
+        "origin",
+        "options"
+      ]
+    },
+    {
+      "variant": "PredictGel",
+      "execution_owner": "output::predict_gel",
+      "fields": [
+        "molecule",
+        "lanes",
+        "calibration"
+      ]
+    },
+    {
+      "variant": "DiagnosticDigests",
+      "execution_owner": "output::diagnostic_digests",
+      "fields": [
+        "molecule",
+        "candidates",
+        "options"
+      ]
+    },
+    {
+      "variant": "MismatchPcrPreview",
+      "execution_owner": "preparation::mismatch_pcr_preview",
+      "fields": [
+        "molecule",
+        "forward",
+        "reverse",
+        "options"
+      ]
+    },
+    {
+      "variant": "SaveWorkspace",
+      "execution_owner": "documents::save_workspace",
+      "fields": [
+        "workspace"
+      ]
+    },
+    {
+      "variant": "LoadWorkspace",
+      "execution_owner": "documents::load_workspace",
+      "fields": [
+        "bytes"
+      ]
+    },
+    {
+      "variant": "ValidateTraces",
+      "execution_owner": "review::validate_traces",
+      "fields": [
+        "molecule",
+        "reads",
+        "options"
+      ]
+    },
+    {
+      "variant": "ScanFeatureLibrary",
+      "execution_owner": "sequence::scan_feature_library",
+      "fields": [
+        "molecule",
+        "library",
+        "options"
+      ]
+    },
+    {
+      "variant": "ApplyFeatureLibrary",
+      "execution_owner": "sequence::apply_feature_library",
+      "fields": [
+        "molecule",
+        "library",
+        "report",
+        "selected"
+      ]
+    },
+    {
+      "variant": "ImportAnnotations",
+      "execution_owner": "sequence::import_annotations",
+      "fields": [
+        "molecule",
+        "text",
+        "format",
+        "seqid"
+      ]
+    },
+    {
+      "variant": "ApplyAnnotations",
+      "execution_owner": "sequence::apply_annotations",
+      "fields": [
+        "molecule",
+        "report",
+        "selected"
+      ]
+    },
+    {
+      "variant": "ExportAnnotations",
+      "execution_owner": "sequence::export_annotations",
+      "fields": [
+        "molecule",
+        "format",
+        "seqid"
+      ]
+    },
+    {
+      "variant": "RepairPreview",
+      "execution_owner": "preparation::repair_preview",
+      "fields": [
+        "molecule",
+        "enzymes",
+        "fragment_index",
+        "method"
+      ]
+    },
+    {
+      "variant": "AnnealPreview",
+      "execution_owner": "preparation::anneal_preview",
+      "fields": [
+        "molecule",
+        "bottom",
+        "options"
+      ]
+    },
+    {
+      "variant": "AnnealedDocument",
+      "execution_owner": "preparation::annealed_document",
+      "fields": [
+        "molecule",
+        "bottom",
+        "preview",
+        "candidate_index"
+      ]
+    },
+    {
+      "variant": "ViewTracks",
+      "execution_owner": "tracks::view_tracks",
+      "fields": [
+        "molecule",
+        "window",
+        "options"
+      ]
+    },
+    {
+      "variant": "SearchDocument",
+      "execution_owner": "sequence::search_document",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "PrepareTracks",
+      "execution_owner": "tracks::prepare_tracks",
+      "fields": [
+        "molecule"
+      ]
+    },
+    {
+      "variant": "CachedViewTracks",
+      "execution_owner": "tracks::cached_view_tracks",
+      "fields": []
+    },
+    {
+      "variant": "ImportAlignment",
+      "execution_owner": "review::import_alignment",
+      "fields": [
+        "bytes",
+        "format",
+        "alphabet",
+        "name"
+      ]
+    },
+    {
+      "variant": "ExportAlignment",
+      "execution_owner": "review::export_alignment",
+      "fields": [
+        "document",
+        "format"
+      ]
+    },
+    {
+      "variant": "ExtractAlignmentRows",
+      "execution_owner": "review::extract_alignment_rows",
+      "fields": [
+        "document",
+        "row_ids"
+      ]
+    },
+    {
+      "variant": "SaveAlignment",
+      "execution_owner": "review::save_alignment",
+      "fields": [
+        "document"
+      ]
+    },
+    {
+      "variant": "LoadAlignment",
+      "execution_owner": "review::load_alignment",
+      "fields": [
+        "bytes"
+      ]
+    },
+    {
+      "variant": "ProteinProperties",
+      "execution_owner": "sequence::protein_properties",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "TailPreview",
+      "execution_owner": "preparation::tail_preview",
+      "fields": [
+        "molecule",
+        "recipe",
+        "base"
+      ]
+    },
+    {
+      "variant": "CheckOverlapProfile",
+      "execution_owner": "assembly::check_overlap_profile",
+      "fields": [
+        "molecules",
+        "reverse",
+        "overlaps",
+        "circular",
+        "options"
+      ]
+    },
+    {
+      "variant": "RecordCloningRun",
+      "execution_owner": "material::record_cloning_run",
+      "fields": [
+        "workspace",
+        "plan",
+        "target_binding",
+        "input_bindings",
+        "allow_incomplete"
+      ]
+    },
+    {
+      "variant": "ReplayCloningRun",
+      "execution_owner": "material::replay_cloning_run",
+      "fields": [
+        "workspace",
+        "run_id"
+      ]
+    },
+    {
+      "variant": "DesignCodons",
+      "execution_owner": "sequence::design_codons",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "CheckCodonDesign",
+      "execution_owner": "sequence::check_codon_design",
+      "fields": [
+        "source",
+        "candidate",
+        "options"
+      ]
+    },
+    {
+      "variant": "DotPlot",
+      "execution_owner": "review::dot_plot",
+      "fields": [
+        "molecule",
+        "query",
+        "options"
+      ]
+    },
+    {
+      "variant": "AssembleContigs",
+      "execution_owner": "review::assemble_contigs",
+      "fields": [
+        "reads",
+        "options"
+      ]
+    },
+    {
+      "variant": "AssessMethylation",
+      "execution_owner": "preparation::assess_methylation",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "DesignCrisprGuides",
+      "execution_owner": "sequence::design_crispr_guides",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "SearchCrisprOffTargets",
+      "execution_owner": "sequence::search_crispr_off_targets",
+      "fields": [
+        "query",
+        "references",
+        "options"
+      ]
+    },
+    {
+      "variant": "DesignEditTemplate",
+      "execution_owner": "sequence::design_edit_template",
+      "fields": [
+        "source",
+        "target",
+        "options",
+        "guide"
+      ]
+    },
+    {
+      "variant": "CheckEditTemplate",
+      "execution_owner": "sequence::check_edit_template",
+      "fields": [
+        "source",
+        "target",
+        "options",
+        "guide",
+        "donor"
+      ]
+    },
+    {
+      "variant": "BeginGenomeFasta",
+      "execution_owner": "tracks::begin_genome_fasta",
+      "fields": []
+    },
+    {
+      "variant": "PushGenomeFasta",
+      "execution_owner": "tracks::push_genome_fasta",
+      "fields": []
+    },
+    {
+      "variant": "FinishGenomeFasta",
+      "execution_owner": "tracks::finish_genome_fasta",
+      "fields": []
+    },
+    {
+      "variant": "BeginGenomeNative",
+      "execution_owner": "tracks::begin_genome_native",
+      "fields": []
+    },
+    {
+      "variant": "PushGenomeNativeBlock",
+      "execution_owner": "tracks::push_genome_native_block",
+      "fields": []
+    },
+    {
+      "variant": "FinishGenomeNative",
+      "execution_owner": "tracks::finish_genome_native",
+      "fields": []
+    },
+    {
+      "variant": "AbortGenomeImport",
+      "execution_owner": "tracks::abort_genome_import",
+      "fields": []
+    },
+    {
+      "variant": "RegisterGenome",
+      "execution_owner": "tracks::register_genome",
+      "fields": []
+    },
+    {
+      "variant": "GenomeIntervalGuides",
+      "execution_owner": "tracks::genome_interval_guides",
+      "fields": []
+    },
+    {
+      "variant": "StartGenomeSearch",
+      "execution_owner": "tracks::start_genome_search",
+      "fields": []
+    },
+    {
+      "variant": "AdvanceGenomeSearch",
+      "execution_owner": "tracks::advance_genome_search",
+      "fields": []
+    },
+    {
+      "variant": "PageGenomeSearch",
+      "execution_owner": "tracks::page_genome_search",
+      "fields": []
+    },
+    {
+      "variant": "CancelGenomeJob",
+      "execution_owner": "tracks::cancel_genome_job",
+      "fields": []
+    },
+    {
+      "variant": "ReadGenomeInterval",
+      "execution_owner": "tracks::read_genome_interval",
+      "fields": []
+    },
+    {
+      "variant": "InspectRestriction",
+      "execution_owner": "restriction::inspect_restriction",
+      "fields": [
+        "source_role",
+        "molecule",
+        "enzymes",
+        "options"
+      ]
+    },
+    {
+      "variant": "MaterializeDigestFragment",
+      "execution_owner": "restriction::materialize_digest_fragment",
+      "fields": [
+        "source_role",
+        "molecule",
+        "enzymes",
+        "options",
+        "fragment_index"
+      ]
+    },
+    {
+      "variant": "InstallDigestFragment",
+      "execution_owner": "restriction::install_digest_fragment",
+      "fields": [
+        "workspace",
+        "source",
+        "enzymes",
+        "options",
+        "fragment_index"
+      ]
+    },
+    {
+      "variant": "InspectCatalogRestriction",
+      "execution_owner": "restriction::inspect_catalog_restriction",
+      "fields": [
+        "selection",
+        "source_role",
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "MaterializeCatalogDigestFragment",
+      "execution_owner": "restriction::materialize_catalog_digest_fragment",
+      "fields": [
+        "selection",
+        "source_role",
+        "molecule",
+        "options",
+        "fragment_index"
+      ]
+    },
+    {
+      "variant": "InstallCatalogDigestFragment",
+      "execution_owner": "restriction::install_catalog_digest_fragment",
+      "fields": [
+        "selection",
+        "workspace",
+        "source",
+        "options",
+        "fragment_index"
+      ]
+    },
+    {
+      "variant": "InspectRecombination",
+      "execution_owner": "topology::inspect_recombination",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "CheckRecombinationTarget",
+      "execution_owner": "topology::check_recombination_target",
+      "fields": [
+        "inputs",
+        "request",
+        "target",
+        "policy"
+      ]
+    },
+    {
+      "variant": "SelectRecombinationComponent",
+      "execution_owner": "topology::select_recombination_component",
+      "fields": [
+        "inputs",
+        "request",
+        "selection",
+        "target",
+        "policy"
+      ]
+    },
+    {
+      "variant": "ScanRestriction",
+      "execution_owner": "restriction::scan_restriction",
+      "fields": [
+        "source_role",
+        "molecule",
+        "enzymes",
+        "options"
+      ]
+    },
+    {
+      "variant": "PrepareReadAlignments",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "ReadAlignmentPage",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "CheckReadAlignment",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "ExportReadAlignments",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "DisposeReadAlignments",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "SimulateTopo",
+      "execution_owner": "topology::simulate_topo",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "InspectTopoOrientations",
+      "execution_owner": "topology::inspect_topo_orientations",
+      "fields": [
+        "inputs",
+        "request",
+        "vector",
+        "insert",
+        "directional"
+      ]
+    },
+    {
+      "variant": "ProjectTopoProduct",
+      "execution_owner": "topology::project_topo_product",
+      "fields": [
+        "inputs",
+        "request",
+        "selection"
+      ]
+    },
+    {
+      "variant": "CheckTopoTarget",
+      "execution_owner": "topology::check_topo_target",
+      "fields": [
+        "inputs",
+        "request",
+        "selection",
+        "target",
+        "policy"
+      ]
+    },
+    {
+      "variant": "PrepareVariants",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "VariantPage",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "CheckVariantReference",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "PreviewVariantAllele",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "ExportVariants",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "DisposeVariants",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "PreviewOverlapRecipe",
+      "execution_owner": "assembly::preview_overlap_recipe",
+      "fields": [
+        "inputs",
+        "target",
+        "recipe"
+      ]
+    },
+    {
+      "variant": "PreviewLigationRecipe",
+      "execution_owner": "assembly::preview_ligation_recipe",
+      "fields": [
+        "inputs",
+        "target",
+        "recipe",
+        "policy"
+      ]
+    },
+    {
+      "variant": "InspectAssemblyJunctions",
+      "execution_owner": "assembly::inspect_assembly_junctions",
+      "fields": [
+        "plan",
+        "target",
+        "options"
+      ]
+    },
+    {
+      "variant": "DesignOverlapPrimers",
+      "execution_owner": "assembly::design_overlap_primers",
+      "fields": [
+        "inputs",
+        "target",
+        "request"
+      ]
+    },
+    {
+      "variant": "BuildAssemblyIntent",
+      "execution_owner": "assembly::build_assembly_intent",
+      "fields": [
+        "inputs",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "SelectDigestFragment",
+      "execution_owner": "restriction::select_digest_fragment",
+      "fields": [
+        "selection",
+        "source_role",
+        "molecule",
+        "options",
+        "expected_batch_revision",
+        "choice"
+      ]
+    },
+    {
+      "variant": "ExportPlanOligos",
+      "execution_owner": "output::export_plan_oligos",
+      "fields": [
+        "plan",
+        "target",
+        "options",
+        "delimiter"
+      ]
+    },
+    {
+      "variant": "ExportProtocolHtml",
+      "execution_owner": "output::export_protocol_html",
+      "fields": [
+        "plan",
+        "target"
+      ]
+    },
+    {
+      "variant": "FinalizeCloningOutputs",
+      "execution_owner": "material::finalize_cloning_outputs",
+      "fields": [
+        "workspace",
+        "plan",
+        "target",
+        "inputs",
+        "options"
+      ]
+    },
+    {
+      "variant": "DesignGoldenGatePrimers",
+      "execution_owner": "assembly::design_golden_gate_primers",
+      "fields": [
+        "inputs",
+        "target",
+        "request"
+      ]
+    },
+    {
+      "variant": "BuildMutationIntent",
+      "execution_owner": "assembly::build_mutation_intent",
+      "fields": [
+        "molecule",
+        "request"
+      ]
+    },
+    {
+      "variant": "CaptureReadCheck",
+      "execution_owner": "review::capture_read_check",
+      "fields": [
+        "workspace",
+        "reference",
+        "reads",
+        "options"
+      ]
+    },
+    {
+      "variant": "ReplayReadCheck",
+      "execution_owner": "review::replay_read_check",
+      "fields": [
+        "workspace",
+        "attachment_hash"
+      ]
+    },
+    {
+      "variant": "PreviewReadReview",
+      "execution_owner": "review::preview_read_review",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "CommitReadReview",
+      "execution_owner": "review::commit_read_review",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "BuildEditedAssemblyIntent",
+      "execution_owner": "assembly::build_edited_assembly_intent",
+      "fields": [
+        "inputs",
+        "base",
+        "edits",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "DesignEditedAssemblyPrimers",
+      "execution_owner": "assembly::design_edited_assembly_primers",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "DesignSelectiveAssemblyPrimers",
+      "execution_owner": "assembly::design_selective_assembly_primers",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "DesignGoldenGateJunctionPrimers",
+      "execution_owner": "assembly::design_golden_gate_junction_primers",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "InspectPreparedGoldenGatePool",
+      "execution_owner": "assembly::inspect_prepared_golden_gate_pool",
+      "fields": [
+        "inputs",
+        "target",
+        "request"
+      ]
+    },
+    {
+      "variant": "SelectPreparedGoldenGateCandidate",
+      "execution_owner": "assembly::select_prepared_golden_gate_candidate",
+      "fields": [
+        "report",
+        "selection"
+      ]
+    },
+    {
+      "variant": "InspectGoldenGateReaction",
+      "execution_owner": "assembly::inspect_golden_gate_reaction",
+      "fields": [
+        "inputs",
+        "target",
+        "request"
+      ]
+    },
+    {
+      "variant": "SelectGoldenGateReaction",
+      "execution_owner": "assembly::select_golden_gate_reaction",
+      "fields": [
+        "report",
+        "selection"
+      ]
+    },
+    {
+      "variant": "PreparePcrOutputs",
+      "execution_owner": "preparation::prepare_pcr_outputs",
+      "fields": [
+        "request"
+      ]
+    },
+    {
+      "variant": "PrepareMismatchPcrOutputs",
+      "execution_owner": "preparation::prepare_mismatch_pcr_outputs",
+      "fields": [
+        "request"
+      ]
+    },
+    {
+      "variant": "CompareSequences",
+      "execution_owner": "review::compare_sequences",
+      "fields": [
+        "reference",
+        "query",
+        "options"
+      ]
+    },
+    {
+      "variant": "CopyReferenceFragment",
+      "execution_owner": "documents::copy_reference_fragment",
+      "fields": [
+        "request"
+      ]
+    },
+    {
+      "variant": "PasteReferenceFragment",
+      "execution_owner": "documents::paste_reference_fragment",
+      "fields": [
+        "request"
+      ]
+    },
+    {
+      "variant": "TranslateReference",
+      "execution_owner": "documents::translate_reference",
+      "fields": [
+        "request"
+      ]
+    },
+    {
+      "variant": "PrepareTranslatedReference",
+      "execution_owner": "documents::prepare_translated_reference",
+      "fields": [
+        "request",
+        "name"
+      ]
+    },
+    {
+      "variant": "PredictPinnedGel",
+      "execution_owner": "output::predict_pinned_gel",
+      "fields": [
+        "molecule",
+        "lanes",
+        "calibration"
+      ]
+    },
+    {
+      "variant": "ExportPairwiseComparison",
+      "execution_owner": "review::export_pairwise_comparison",
+      "fields": [
+        "record",
+        "reference_name",
+        "query_name",
+        "fresh",
+        "format"
+      ]
+    },
+    {
+      "variant": "SearchPairwiseComparison",
+      "execution_owner": "review::search_pairwise_comparison",
+      "fields": [
+        "report",
+        "pattern",
+        "options"
+      ]
+    },
+    {
+      "variant": "PreparePairwiseContext",
+      "execution_owner": "review::prepare_pairwise_context",
+      "fields": [
+        "report",
+        "reference",
+        "query",
+        "translate"
+      ]
+    },
+    {
+      "variant": "BeginCombinatorialBatch",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "AdvanceCombinatorialBatch",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "CaptureCombinatorialBatch",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "BeginCombinatorialRelease",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "AdvanceCombinatorialRelease",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "InspectCombinatorialRelease",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "FinishCombinatorialRelease",
+      "execution_owner": "direct stateless rejection in router",
+      "fields": []
+    },
+    {
+      "variant": "ExportCombinatorialOutputs",
+      "execution_owner": "library::export_combinatorial_outputs",
+      "fields": [
+        "workspace",
+        "manifest_hash",
+        "options"
+      ]
+    },
+    {
+      "variant": "SearchGoldenGateFusions",
+      "execution_owner": "assembly::search_golden_gate_fusions",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "MaterializeGoldenGateFusions",
+      "execution_owner": "assembly::materialize_golden_gate_fusions",
+      "fields": [
+        "inputs",
+        "request",
+        "selection"
+      ]
+    },
+    {
+      "variant": "ScoreLigationFidelity",
+      "execution_owner": "preparation::score_ligation_fidelity",
+      "fields": [
+        "dataset",
+        "ends"
+      ]
+    },
+    {
+      "variant": "InspectDomestication",
+      "execution_owner": "assembly::inspect_domestication",
+      "fields": [
+        "source",
+        "request"
+      ]
+    },
+    {
+      "variant": "ProposeDomestication",
+      "execution_owner": "assembly::propose_domestication",
+      "fields": [
+        "source",
+        "request"
+      ]
+    },
+    {
+      "variant": "CheckDomestication",
+      "execution_owner": "assembly::check_domestication",
+      "fields": [
+        "source",
+        "request",
+        "selection"
+      ]
+    },
+    {
+      "variant": "PrepareDomestication",
+      "execution_owner": "assembly::prepare_domestication",
+      "fields": [
+        "input",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "ListLigationProfiles",
+      "execution_owner": "preparation::list_ligation_profiles",
+      "fields": []
+    },
+    {
+      "variant": "ScorePublishedLigation",
+      "execution_owner": "preparation::score_published_ligation",
+      "fields": [
+        "profile",
+        "ends",
+        "physical_competitors"
+      ]
+    },
+    {
+      "variant": "RankGoldenGateFusions",
+      "execution_owner": "assembly::rank_golden_gate_fusions",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "ScoreLigationCompetition",
+      "execution_owner": "preparation::score_ligation_competition",
+      "fields": [
+        "dataset",
+        "ends",
+        "physical_competitors"
+      ]
+    },
+    {
+      "variant": "LoadRunEvidence",
+      "execution_owner": "material::load_run_evidence",
+      "fields": [
+        "workspace",
+        "run_id"
+      ]
+    },
+    {
+      "variant": "ProcessTopoActions",
+      "execution_owner": "topology::process_topo_actions",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "SimulateMultiSiteRecombination",
+      "execution_owner": "topology::simulate_multi_site_recombination",
+      "fields": [
+        "inputs",
+        "request"
+      ]
+    },
+    {
+      "variant": "ProjectMultiSiteRecombination",
+      "execution_owner": "topology::project_multi_site_recombination",
+      "fields": [
+        "inputs",
+        "request",
+        "selection"
+      ]
+    },
+    {
+      "variant": "CheckMultiSiteRecombination",
+      "execution_owner": "topology::check_multi_site_recombination",
+      "fields": [
+        "inputs",
+        "request",
+        "selection",
+        "target"
+      ]
+    },
+    {
+      "variant": "InspectCombinatorialMultiSite",
+      "execution_owner": "library::inspect_combinatorial_multi_site",
+      "fields": [
+        "workspace",
+        "design",
+        "construct"
+      ]
+    },
+    {
+      "variant": "PreviewTailingRecipe",
+      "execution_owner": "assembly::preview_tailing_recipe",
+      "fields": [
+        "inputs",
+        "target",
+        "recipe"
+      ]
+    },
+    {
+      "variant": "InspectPcrDigest",
+      "execution_owner": "preparation::inspect_pcr_digest",
+      "fields": [
+        "molecule",
+        "request"
+      ]
+    },
+    {
+      "variant": "InspectRunMaterial",
+      "execution_owner": "material::inspect_run_material",
+      "fields": [
+        "workspace",
+        "event",
+        "selection"
+      ]
+    },
+    {
+      "variant": "InspectMaterialPcrDigest",
+      "execution_owner": "preparation::inspect_material_pcr_digest",
+      "fields": [
+        "molecule",
+        "origin",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "InspectRunCatalogRestriction",
+      "execution_owner": "restriction::inspect_run_catalog_restriction",
+      "fields": [
+        "source_role",
+        "molecule",
+        "origin",
+        "selection",
+        "options"
+      ]
+    },
+    {
+      "variant": "BuildSubstitutedAssemblyIntent",
+      "execution_owner": "assembly::build_substituted_assembly_intent",
+      "fields": [
+        "inputs",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "InspectMismatchPcrDigest",
+      "execution_owner": "preparation::inspect_mismatch_pcr_digest",
+      "fields": [
+        "molecule",
+        "origin",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "BuildContributionEditIntent",
+      "execution_owner": "assembly::build_contribution_edit_intent",
+      "fields": [
+        "inputs",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "DesignOverlapExtensionPrimers",
+      "execution_owner": "preparation::design_overlap_extension_primers",
+      "fields": [
+        "source",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "InspectOverlapExtensionDigest",
+      "execution_owner": "preparation::inspect_overlap_extension_digest",
+      "fields": [
+        "source",
+        "origin",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "DesignEditedOverlapPrimers",
+      "execution_owner": "assembly::design_edited_overlap_primers",
+      "fields": [
+        "inputs",
+        "request",
+        "workspace"
+      ]
+    },
+    {
+      "variant": "PreviewHomologyRecipe",
+      "execution_owner": "assembly::preview_homology_recipe",
+      "fields": [
+        "inputs",
+        "target",
+        "recipe",
+        "policy"
+      ]
+    },
+    {
+      "variant": "PreviewAnnealingRecipe",
+      "execution_owner": "assembly::preview_annealing_recipe",
+      "fields": [
+        "inputs",
+        "target",
+        "recipe",
+        "policy"
+      ]
+    },
+    {
+      "variant": "InspectTopoRun",
+      "execution_owner": "topology::inspect_topo_run",
+      "fields": [
+        "inputs",
+        "template",
+        "task"
+      ]
+    },
+    {
+      "variant": "InspectMaterialOrigin",
+      "execution_owner": "material::inspect_material_origin",
+      "fields": [
+        "workspace",
+        "event",
+        "selection"
+      ]
+    },
+    {
+      "variant": "MaterialPcrDocuments",
+      "execution_owner": "material::material_pcr_documents",
+      "fields": [
+        "molecule",
+        "origin",
+        "forward",
+        "reverse",
+        "template_strand"
+      ]
+    },
+    {
+      "variant": "PrepareMaterialPcrOutputs",
+      "execution_owner": "material::prepare_material_pcr_outputs",
+      "fields": [
+        "origin",
+        "request"
+      ]
+    },
+    {
+      "variant": "ReviewSequenceExport",
+      "execution_owner": "documents::review_sequence_export",
+      "fields": [
+        "molecule",
+        "format"
+      ]
+    },
+    {
+      "variant": "PrepareSequenceExport",
+      "execution_owner": "documents::prepare_sequence_export",
+      "fields": [
+        "molecule",
+        "format",
+        "expected_context_revision",
+        "allow_omissions"
+      ]
+    },
+    {
+      "variant": "ExportScfTrace",
+      "execution_owner": "documents::export_scf_trace",
+      "fields": [
+        "trace",
+        "options"
+      ]
+    },
+    {
+      "variant": "InstallMaterialDerivation",
+      "execution_owner": "material::install_material_derivation",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "InspectMaterialDigest",
+      "execution_owner": "material::inspect_material_digest",
+      "fields": [
+        "source_role",
+        "source",
+        "origin",
+        "selection",
+        "options"
+      ]
+    },
+    {
+      "variant": "PrepareSavedRunReview",
+      "execution_owner": "material::prepare_saved_run_review",
+      "fields": [
+        "workspace",
+        "run_id"
+      ]
+    },
+    {
+      "variant": "RenderMapSvg",
+      "execution_owner": "output::render_map_svg",
+      "fields": [
+        "request"
+      ]
+    },
+    {
+      "variant": "InspectMaterialMismatchPcr",
+      "execution_owner": "material::inspect_material_mismatch_pcr",
+      "fields": [
+        "source",
+        "origin",
+        "forward",
+        "reverse",
+        "options"
+      ]
+    },
+    {
+      "variant": "InspectMaterialRepair",
+      "execution_owner": "material::inspect_material_repair",
+      "fields": [
+        "source",
+        "origin",
+        "method"
+      ]
+    },
+    {
+      "variant": "PreviewProtocolLayout",
+      "execution_owner": "output::preview_protocol_layout",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "CaptureProtocolLayout",
+      "execution_owner": "output::capture_protocol_layout",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "ExportProtocolLayout",
+      "execution_owner": "output::export_protocol_layout",
+      "fields": [
+        "workspace",
+        "layout_hash",
+        "format"
+      ]
+    },
+    {
+      "variant": "PreviewProtocolQuantities",
+      "execution_owner": "output::preview_protocol_quantities",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "CaptureProtocolQuantities",
+      "execution_owner": "output::capture_protocol_quantities",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "OpenProtocolQuantities",
+      "execution_owner": "output::open_protocol_quantities",
+      "fields": [
+        "workspace",
+        "quantity_hash"
+      ]
+    },
+    {
+      "variant": "ExportProtocolQuantities",
+      "execution_owner": "output::export_protocol_quantities",
+      "fields": [
+        "workspace",
+        "quantity_hash",
+        "format"
+      ]
+    },
+    {
+      "variant": "ListProtocolQuantities",
+      "execution_owner": "output::list_protocol_quantities",
+      "fields": [
+        "workspace"
+      ]
+    },
+    {
+      "variant": "ListTopoGraphs",
+      "execution_owner": "topology::list_topo_graphs",
+      "fields": [
+        "workspace"
+      ]
+    },
+    {
+      "variant": "CaptureTopoGraph",
+      "execution_owner": "topology::capture_topo_graph",
+      "fields": [
+        "workspace",
+        "request"
+      ]
+    },
+    {
+      "variant": "InspectTopoGraph",
+      "execution_owner": "topology::inspect_topo_graph",
+      "fields": [
+        "workspace",
+        "selection"
+      ]
+    },
+    {
+      "variant": "InspectMaterialOverlapExtension",
+      "execution_owner": "material::inspect_material_overlap_extension",
+      "fields": [
+        "workspace",
+        "source",
+        "origin",
+        "preparation"
+      ]
+    },
+    {
+      "variant": "InspectMaterialTerminalProcessing",
+      "execution_owner": "material::inspect_material_terminal_processing",
+      "fields": [
+        "workspace",
+        "source",
+        "origin",
+        "action"
+      ]
+    },
+    {
+      "variant": "InspectMaterialAnnealedOligos",
+      "execution_owner": "material::inspect_material_annealed_oligos",
+      "fields": [
+        "workspace",
+        "top",
+        "bottom",
+        "options"
+      ]
+    },
+    {
+      "variant": "FindSimilarSequences",
+      "execution_owner": "review::find_similar_sequences",
+      "fields": [
+        "query",
+        "subjects",
+        "options"
+      ]
+    },
+    {
+      "variant": "PrepareStructure",
+      "execution_owner": "output::prepare_structure",
+      "fields": [
+        "bytes",
+        "format",
+        "selection"
+      ]
+    },
+    {
+      "variant": "AnalyzeRnaChemistry",
+      "execution_owner": "sequence::analyze_rna_chemistry",
+      "fields": [
+        "molecule",
+        "declaration"
+      ]
+    },
+    {
+      "variant": "ScreenProteinLiabilities",
+      "execution_owner": "sequence::screen_protein_liabilities",
+      "fields": [
+        "molecule",
+        "options"
+      ]
+    },
+    {
+      "variant": "AnalyzeAntibody",
+      "execution_owner": "sequence::analyze_antibody",
+      "fields": [
+        "molecule",
+        "options",
+        "limits",
+        "selection"
+      ]
+    },
+    {
+      "variant": "AnalyzeAlignmentAntibody",
+      "execution_owner": "sequence::analyze_alignment_antibody",
+      "fields": [
+        "alignment",
+        "source",
+        "options",
+        "limits",
+        "selection"
+      ]
+    },
+    {
+      "variant": "MaterializeMaterialDigestFragment",
+      "execution_owner": "material::materialize_material_digest_fragment",
+      "fields": [
+        "source",
+        "request"
+      ]
+    }
+  ],
+  "direct_stateless_rejection_count": 18,
+  "material_owner_paths": {
+    "material::derivation::DigestSourceMaterial": "material::derivation::digest::DigestSourceMaterial",
+    "material::derivation::DigestPreview": "material::derivation::digest::DigestPreview",
+    "material::derivation::source_bindings": "material::derivation::Record::source_bindings",
+    "material::derivation::required_run_ids": "material::derivation::Record::required_run_ids",
+    "material::derivation::required_derivation_products": "material::derivation::Record::required_derivation_products",
+    "material::derivation::required_graph_records": "material::derivation::Record::required_graph_records",
+    "material::derivation::pcr_preview_revision": "material::derivation::pcr::pcr_preview_revision",
+    "material::derivation::preview_pcr": "material::derivation::pcr::preview_pcr",
+    "material::derivation::digest_inspection_revision": "material::derivation::digest::digest_inspection_revision",
+    "material::derivation::inspect_digest": "material::derivation::digest::inspect_digest",
+    "material::derivation::MismatchPreview": "material::derivation::pcr::MismatchPreview",
+    "material::derivation::RepairPreview": "material::derivation::end_repair::RepairPreview",
+    "material::derivation::mismatch_pcr_preview_revision": "material::derivation::pcr::mismatch_pcr_preview_revision",
+    "material::derivation::preview_mismatch_pcr": "material::derivation::pcr::preview_mismatch_pcr",
+    "material::derivation::repair_preview_revision": "material::derivation::end_repair::repair_preview_revision",
+    "material::derivation::preview_repair": "material::derivation::end_repair::preview_repair",
+    "material::derivation::OverlapExtensionPreview": "material::derivation::overlap_extension::OverlapExtensionPreview",
+    "material::derivation::overlap_extension_preview_revision": "material::derivation::overlap_extension::overlap_extension_preview_revision",
+    "material::derivation::preview_overlap_extension": "material::derivation::overlap_extension::preview_overlap_extension",
+    "material::derivation::TerminalProcessingPreview": "material::derivation::terminal::TerminalProcessingPreview",
+    "material::derivation::terminal_processing_preview_revision": "material::derivation::terminal::terminal_processing_preview_revision",
+    "material::derivation::preview_terminal_processing": "material::derivation::terminal::preview_terminal_processing",
+    "material::derivation::AnnealedOligosPreview": "material::derivation::annealing::AnnealedOligosPreview",
+    "material::derivation::annealed_oligos_preview_revision": "material::derivation::annealing::annealed_oligos_preview_revision",
+    "material::derivation::preview_annealed_oligos": "material::derivation::annealing::preview_annealed_oligos"
+  },
+  "material_static_comparison": {
+    "exact_functions": [
+      "bad",
+      "hex",
+      "encoded",
+      "name",
+      "context",
+      "save_record_shallow",
+      "save_record",
+      "load_record_shallow",
+      "load_record",
+      "original_reference_admission",
+      "original_source",
+      "limitations",
+      "fresh_source",
+      "request_source",
+      "preflight",
+      "revision",
+      "fresh_template",
+      "prepare_install",
+      "install",
+      "record_for",
+      "attest_record_shallow",
+      "validate_workspace_records",
+      "documentary_capsule_parts",
+      "capsule",
+      "validate_capsule_for_workspace",
+      "replay",
+      "replay_fields",
+      "reconstruct",
+      "summary_shape",
+      "primer_table",
+      "declared_primer_table",
+      "pcr_preview_revision",
+      "preview_pcr",
+      "digest_inspection_revision",
+      "digest_inspection_context",
+      "inspect_digest",
+      "source_origin_preflight",
+      "mismatch_pcr_preview_revision",
+      "mismatch_from_fresh",
+      "preview_mismatch_pcr",
+      "repair_preview_revision",
+      "preview_repair",
+      "preview_receipt_shape",
+      "preview_source_shape",
+      "overlap_extension_context",
+      "overlap_extension_context_fields",
+      "overlap_extension_preview_revision",
+      "preview_overlap_extension",
+      "source_sequence_hash",
+      "workspace_source",
+      "terminal_context_fields",
+      "terminal_processing_preview_revision",
+      "terminal_from_fresh",
+      "preview_terminal_processing",
+      "validate_source_bindings",
+      "distinct_parent_events",
+      "declared_oligo_source",
+      "validate_source_snapshots",
+      "workspace_snapshots",
+      "anneal_options_shape",
+      "candidate_id_shape",
+      "anneal_context",
+      "fresh",
+      "protect_anneal_preview",
+      "annealed_oligos_preview_revision",
+      "preview_annealed_oligos"
+    ],
+    "function_deltas": {},
+    "types_compared": 26,
+    "type_differences": [],
+    "impls_compared": 13,
+    "impl_differences": [],
+    "record_method_bodies_equivalent": {
+      "required_run_ids": true,
+      "source_bindings": true,
+      "required_graph_records": true,
+      "required_derivation_products": true
+    },
+    "parent_documentation_change": "After the author comparison, DigestSourceMaterial documentation was attached inside dto! so rustdoc/schema documentation belongs to the type. Scientific fields, serde attributes and binary bytes are unchanged."
+  },
+  "restoration": {
+    "old_restoration_signals": [
+      "active",
+      "alignments",
+      "annotation_source",
+      "assembly_draft",
+      "assembly_page",
+      "assembly_visible",
+      "attachments",
+      "candidate",
+      "candidate_events",
+      "digest_boundary_pick",
+      "documents",
+      "existing_oligo",
+      "hidden_products",
+      "inspected_assembly",
+      "internal_clipboard",
+      "last_plan",
+      "last_plan_target",
+      "libraries",
+      "method_config",
+      "modal",
+      "mutation_seed",
+      "oligo_tables",
+      "pair_draft",
+      "pcr_generation",
+      "pending_alignment",
+      "pending_assembly",
+      "pending_comparison_source",
+      "pending_digest",
+      "pending_donor",
+      "pending_fastq",
+      "pending_finalize",
+      "pending_material",
+      "pending_oligo",
+      "pending_read_alignment",
+      "pending_read_check",
+      "pending_read_review",
+      "pending_reference_paste",
+      "pending_release",
+      "pending_run_event",
+      "pending_sbol",
+      "pending_variants",
+      "plan_generation",
+      "plan_report",
+      "primer_seed",
+      "read_reference",
+      "recorded_runs",
+      "review_seed",
+      "reviewed_check",
+      "run_page",
+      "saved_assemblies",
+      "selected_feature",
+      "selected_release_manifest",
+      "selection",
+      "show_prepared_history",
+      "stored_candidates",
+      "workspace_epoch",
+      "workspace_name"
+    ],
+    "missing_owner_mutations": [],
+    "owners": [
+      "assembly/controller.rs",
+      "io/controller.rs",
+      "protocol/controller.rs",
+      "reads/controller.rs",
+      "primers/pcr/controller.rs",
+      "workspace/session.rs",
+      "workspace/reference_controller.rs",
+      "workspace/shell_state.rs",
+      "viewer/alignment/controller.rs",
+      "viewer/sequence/annotation_controller.rs",
+      "viewer/sequence/selection.rs",
+      "restriction/controller.rs"
+    ],
+    "app_lines": 2904,
+    "test_declarations": 408,
+    "verification": "Static comparison and owned-file rustfmt only; no compilation or tests.",
+    "write_mapping": [
+      {
+        "signal": "workspace_epoch",
+        "old_statement": "workspace_epoch.update(|epoch| *epoch = epoch.wrapping_add(1));",
+        "file": "crates/web/src/workspace/session.rs",
+        "owner": "WorkspaceSession",
+        "method": "begin_replacement",
+        "new_call": "WorkspaceSession::begin_replacement"
+      },
+      {
+        "signal": "pcr_generation",
+        "old_statement": "pcr_generation.update(|g| *g = g.wrapping_add(1));",
+        "file": "crates/web/src/primers/pcr/controller.rs",
+        "owner": "PcrState",
+        "method": "workspace_replaced",
+        "new_call": "PcrState::workspace_replaced"
+      },
+      {
+        "signal": "existing_oligo",
+        "old_statement": "existing_oligo.set(None);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "pending_oligo",
+        "old_statement": "pending_oligo.set(None);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "pending_fastq",
+        "old_statement": "pending_fastq.set(None);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "pending_read_alignment",
+        "old_statement": "pending_read_alignment.set(None);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "pending_sbol",
+        "old_statement": "pending_sbol.set(None);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "pending_variants",
+        "old_statement": "pending_variants.set(None);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "pending_finalize",
+        "old_statement": "pending_finalize.set(None);",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "pending_release",
+        "old_statement": "pending_release.set(None);",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "selected_release_manifest",
+        "old_statement": "selected_release_manifest.set(None);",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "pending_run_event",
+        "old_statement": "pending_run_event.set(None);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "RunHistoryState",
+        "method": "restore",
+        "new_call": "RunHistoryState::restore"
+      },
+      {
+        "signal": "pending_comparison_source",
+        "old_statement": "pending_comparison_source.set(None);",
+        "file": "crates/web/src/viewer/alignment/controller.rs",
+        "owner": "ComparisonState",
+        "method": "restore",
+        "new_call": "ComparisonState::restore"
+      },
+      {
+        "signal": "internal_clipboard",
+        "old_statement": "internal_clipboard.set(None);",
+        "file": "crates/web/src/workspace/reference_controller.rs",
+        "owner": "ReferenceTransferState",
+        "method": "restore",
+        "new_call": "ReferenceTransferState::restore"
+      },
+      {
+        "signal": "pending_reference_paste",
+        "old_statement": "pending_reference_paste.set(None);",
+        "file": "crates/web/src/workspace/reference_controller.rs",
+        "owner": "ReferenceTransferState",
+        "method": "restore",
+        "new_call": "ReferenceTransferState::restore"
+      },
+      {
+        "signal": "read_reference",
+        "old_statement": "read_reference.set(None);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadReviewState",
+        "method": "clear",
+        "new_call": "ReadReviewState::clear"
+      },
+      {
+        "signal": "pending_read_check",
+        "old_statement": "pending_read_check.set(None);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadReviewState",
+        "method": "clear",
+        "new_call": "ReadReviewState::clear"
+      },
+      {
+        "signal": "reviewed_check",
+        "old_statement": "reviewed_check.set(None);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadReviewState",
+        "method": "clear",
+        "new_call": "ReadReviewState::clear"
+      },
+      {
+        "signal": "review_seed",
+        "old_statement": "review_seed.set(None);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadReviewState",
+        "method": "clear",
+        "new_call": "ReadReviewState::clear"
+      },
+      {
+        "signal": "pending_read_review",
+        "old_statement": "pending_read_review.set(None);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadReviewState",
+        "method": "clear",
+        "new_call": "ReadReviewState::clear"
+      },
+      {
+        "signal": "pair_draft",
+        "old_statement": "pair_draft.set(state.pair_draft);",
+        "file": "crates/web/src/primers/pcr/controller.rs",
+        "owner": "PrimerDesignState",
+        "method": "restore",
+        "new_call": "PrimerDesignState::restore"
+      },
+      {
+        "signal": "primer_seed",
+        "old_statement": "primer_seed.set(None);",
+        "file": "crates/web/src/primers/pcr/controller.rs",
+        "owner": "PrimerDesignState",
+        "method": "restore",
+        "new_call": "PrimerDesignState::restore"
+      },
+      {
+        "signal": "mutation_seed",
+        "old_statement": "mutation_seed.set(None);",
+        "file": "crates/web/src/primers/pcr/controller.rs",
+        "owner": "PrimerDesignState",
+        "method": "restore",
+        "new_call": "PrimerDesignState::restore"
+      },
+      {
+        "signal": "hidden_products",
+        "old_statement": "hidden_products.set(state.hidden_products);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "RunHistoryState",
+        "method": "restore",
+        "new_call": "RunHistoryState::restore"
+      },
+      {
+        "signal": "show_prepared_history",
+        "old_statement": "show_prepared_history.set(false);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "RunHistoryState",
+        "method": "restore",
+        "new_call": "RunHistoryState::restore"
+      },
+      {
+        "signal": "documents",
+        "old_statement": "documents.set(state.documents);",
+        "file": "crates/web/src/workspace/session.rs",
+        "owner": "WorkspaceSession",
+        "method": "install_documents",
+        "new_call": "WorkspaceSession::install_documents"
+      },
+      {
+        "signal": "active",
+        "old_statement": "active.set(state.active);",
+        "file": "crates/web/src/workspace/session.rs",
+        "owner": "WorkspaceSession",
+        "method": "install_documents",
+        "new_call": "WorkspaceSession::install_documents"
+      },
+      {
+        "signal": "workspace_name",
+        "old_statement": "workspace_name.set(state.name);",
+        "file": "crates/web/src/workspace/session.rs",
+        "owner": "WorkspaceSession",
+        "method": "install_documents",
+        "new_call": "WorkspaceSession::install_documents"
+      },
+      {
+        "signal": "stored_candidates",
+        "old_statement": "stored_candidates.set(state.candidates);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore"
+      },
+      {
+        "signal": "attachments",
+        "old_statement": "attachments.set(state.attachments);",
+        "file": "crates/web/src/workspace/session.rs",
+        "owner": "WorkspaceSession",
+        "method": "install_documents",
+        "new_call": "WorkspaceSession::install_documents"
+      },
+      {
+        "signal": "oligo_tables",
+        "old_statement": "oligo_tables.set(state.oligos);",
+        "file": "crates/web/src/io/controller.rs",
+        "owner": "ImportState",
+        "method": "restore",
+        "new_call": "ImportState::restore"
+      },
+      {
+        "signal": "libraries",
+        "old_statement": "libraries.set(state.libraries);",
+        "file": "crates/web/src/viewer/sequence/annotation_controller.rs",
+        "owner": "AnnotationState",
+        "method": "restore",
+        "new_call": "AnnotationState::restore"
+      },
+      {
+        "signal": "alignments",
+        "old_statement": "alignments.set(state.alignments);",
+        "file": "crates/web/src/viewer/alignment/controller.rs",
+        "owner": "ComparisonState",
+        "method": "restore",
+        "new_call": "ComparisonState::restore"
+      },
+      {
+        "signal": "recorded_runs",
+        "old_statement": "recorded_runs.set(state.runs);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "RunHistoryState",
+        "method": "restore",
+        "new_call": "RunHistoryState::restore"
+      },
+      {
+        "signal": "saved_assemblies",
+        "old_statement": "saved_assemblies.set(state.assemblies);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadArchiveState",
+        "method": "restore",
+        "new_call": "ReadArchiveState::restore"
+      },
+      {
+        "signal": "assembly_page",
+        "old_statement": "assembly_page.set(0);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadArchiveState",
+        "method": "restore",
+        "new_call": "ReadArchiveState::restore"
+      },
+      {
+        "signal": "pending_assembly",
+        "old_statement": "pending_assembly.set(None);",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadArchiveState",
+        "method": "restore",
+        "new_call": "ReadArchiveState::restore"
+      },
+      {
+        "signal": "pending_donor",
+        "old_statement": "pending_donor.set(None);",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "pending_digest",
+        "old_statement": "pending_digest.set(None);",
+        "file": "crates/web/src/restriction/controller.rs",
+        "owner": "DigestWorkspaceState",
+        "method": "restore",
+        "new_call": "DigestWorkspaceState::restore"
+      },
+      {
+        "signal": "pending_material",
+        "old_statement": "pending_material.set(None);",
+        "file": "crates/web/src/restriction/controller.rs",
+        "owner": "DigestWorkspaceState",
+        "method": "restore",
+        "new_call": "DigestWorkspaceState::restore"
+      },
+      {
+        "signal": "inspected_assembly",
+        "old_statement": "inspected_assembly.set(String::new());",
+        "file": "crates/web/src/reads/controller.rs",
+        "owner": "ReadArchiveState",
+        "method": "restore",
+        "new_call": "ReadArchiveState::restore"
+      },
+      {
+        "signal": "run_page",
+        "old_statement": "run_page.set(0);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "RunHistoryState",
+        "method": "restore",
+        "new_call": "RunHistoryState::restore"
+      },
+      {
+        "signal": "pending_alignment",
+        "old_statement": "pending_alignment.set(None);",
+        "file": "crates/web/src/viewer/alignment/controller.rs",
+        "owner": "ComparisonState",
+        "method": "restore",
+        "new_call": "ComparisonState::restore"
+      },
+      {
+        "signal": "annotation_source",
+        "old_statement": "annotation_source.set(String::new());",
+        "file": "crates/web/src/viewer/sequence/annotation_controller.rs",
+        "owner": "AnnotationState",
+        "method": "restore",
+        "new_call": "AnnotationState::restore"
+      },
+      {
+        "signal": "method_config",
+        "old_statement": "method_config .set(crate::cloning::preparation::cloning_methods_model::MethodsState::default());",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "assembly_draft",
+        "old_statement": "assembly_draft.set(state.assembly_draft);",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "assembly_visible",
+        "old_statement": "assembly_visible.set(false);",
+        "file": "crates/web/src/assembly/controller.rs",
+        "owner": "AssemblyState",
+        "method": "restore",
+        "new_call": "AssemblyState::restore"
+      },
+      {
+        "signal": "digest_boundary_pick",
+        "old_statement": "digest_boundary_pick.set(None);",
+        "file": "crates/web/src/restriction/controller.rs",
+        "owner": "DigestWorkspaceState",
+        "method": "restore",
+        "new_call": "DigestWorkspaceState::restore"
+      },
+      {
+        "signal": "candidate_events",
+        "old_statement": "candidate_events.set(None);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore"
+      },
+      {
+        "signal": "candidate",
+        "old_statement": "candidate.set(state.candidate);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore"
+      },
+      {
+        "signal": "plan_generation",
+        "old_statement": "plan_generation.update(|g| *g = g.wrapping_add(1));",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore",
+        "delegates_to": "PlanState::invalidate_evidence"
+      },
+      {
+        "signal": "plan_report",
+        "old_statement": "plan_report.set(None);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore",
+        "delegates_to": "PlanState::invalidate_evidence"
+      },
+      {
+        "signal": "last_plan",
+        "old_statement": "last_plan.set(None);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore",
+        "delegates_to": "PlanState::invalidate_evidence"
+      },
+      {
+        "signal": "last_plan_target",
+        "old_statement": "last_plan_target.set(None);",
+        "file": "crates/web/src/protocol/controller.rs",
+        "owner": "PlanState",
+        "method": "restore",
+        "new_call": "PlanState::restore",
+        "delegates_to": "PlanState::invalidate_evidence"
+      },
+      {
+        "signal": "selection",
+        "old_statement": "selection.set(None);",
+        "file": "crates/web/src/viewer/sequence/selection.rs",
+        "owner": "ViewerSelection",
+        "method": "clear",
+        "new_call": "ViewerSelection::clear"
+      },
+      {
+        "signal": "selected_feature",
+        "old_statement": "selected_feature.set(None);",
+        "file": "crates/web/src/viewer/sequence/selection.rs",
+        "owner": "ViewerSelection",
+        "method": "clear",
+        "new_call": "ViewerSelection::clear"
+      },
+      {
+        "signal": "modal",
+        "old_statement": "modal.set(\"\");",
+        "file": "crates/web/src/workspace/shell_state.rs",
+        "owner": "ShellState",
+        "method": "workspace_replaced",
+        "new_call": "ShellState::workspace_replaced"
+      }
+    ],
+    "invariants": [
+      "apply_restored itself opens one Leptos batch; existing caller-level batches remain nested and preserve atomicity.",
+      "WorkspaceSession::begin_replacement advances workspace_epoch first; PcrState then advances pcr_generation before any feature install.",
+      "PlanState clears candidate_events and current verification evidence before restored candidate installation; retained candidate declarations do not restore a source-event authority receipt.",
+      "The 57 original explicitly written signal names all have direct owner methods; original cancellation/revision/epoch guards and worker cleanup effects remain unchanged.",
+      "Existing effects keep their relative registration order. Assembly previous-draft epoch effect is now registered by AssemblyState::new at the same position relative to other effects (first).",
+      "RestoredWorkspace validation remains before apply_restored; no fallback decoder, new format, scientific work, or asynchronous admission is introduced."
+    ],
+    "deliberate_changes": [
+      "AssemblyState::restore clears previous_assembly_draft synchronously inside the batch, in addition to its existing epoch effect clearing it on the subsequent reactive flush.",
+      "Restoration is intrinsically atomic even when invoked without a caller-level batch; existing restoration callers and their batch boundaries are retained.",
+      "Plan invalidation and candidate pin resets occur earlier within the atomic restoration batch, before document installation, rather than at its tail; no intermediate reactive state is published."
+    ],
+    "evidence_limits": "Owned files parsed by rustfmt; complete signal-name mapping and direct source inspection only. Native web model tests do not execute these WASM-only Leptos lifecycle controllers. Runtime callback/effect ordering has not been exercised; parent owns native/WASM integration checks. No browser or application HTTP checks performed."
+  },
+  "library_methods": {
+    "api_mapping": {
+      "entity_id": "Library::entity_id",
+      "allocate": "Library::allocate",
+      "active": "Library::active",
+      "active_mut": "Library::active_mut",
+      "roles": "Library::roles",
+      "matrix_counts": "Library::matrix_counts",
+      "matrix_size": "Library::matrix_size",
+      "combinations_page": "Library::combinations_page",
+      "same_geometry": "Slot::same_source_geometry"
+    },
+    "body_equivalence": {
+      "entity_id": true,
+      "allocate": true,
+      "active": true,
+      "active_mut": true,
+      "roles": true,
+      "matrix_counts": true,
+      "matrix_size": true,
+      "combinations_page": true
+    },
+    "tests": 408,
+    "free_functions_retained": {
+      "chosen": "Operates on borrowed bins and choice IDs, including when Construct mutably borrows its independent edits. No whole-Library dependency.",
+      "roles_for_active/identity/require_active_choice_match": "Access optional Library within Draft and compare working Draft state with retained choice state.",
+      "enable/save_active/for_storage/capture_active_choice/open_row/add_row/remove_choice/remove_row": "Whole-Draft transactions with validation, snapshot normalization, source-role restoration and active-slot edits.",
+      "all_captures": "Enumerates both working Draft captures and immutable library choices."
+    },
+    "evidence": "Static body comparison and owned-file rustfmt only; no compiler/tests/runtime checks.",
+    "comparison_normalization": "Receiver ownership rewrite, whitespace and rustfmt trailing call commas only."
+  },
+  "planning_methods": [
+    {
+      "from": "validate_design",
+      "to": "pub fn validate(&self)",
+      "exact_tokens_after_receiver_and_direct_call_substitution": true
+    },
+    {
+      "from": "compile_resolved",
+      "to": "pub fn compile(&self)",
+      "exact_tokens_after_receiver_and_direct_call_substitution": true
+    },
+    {
+      "from": "evaluate_resolved",
+      "to": "pub(crate) fn evaluate(self)",
+      "exact_tokens_after_receiver_and_direct_call_substitution": true
+    },
+    {
+      "from": "preflight_resolved",
+      "to": "fn preflight(&self)",
+      "exact_tokens_after_receiver_and_direct_call_substitution": true
+    }
+  ],
+  "validation": {
+    "native_harness_compilation": "pass",
+    "web_and_worker_wasm": "pass",
+    "unique_focused_cases": 1745,
+    "failed_cases": 0,
+    "format_layout_whitespace": "pass",
+    "baseline_case_names_preserved": true,
+    "current_discovery": 2430,
+    "exact_source_ci": "pending",
+    "browser_or_application_http_checks": "deferred; none run"
+  },
+  "independent_material_review": {
+    "base_commit": "ded006754779abf4feb5b7a67e69219973d63a6e",
+    "scope": "Function/method bodies, DTO attributes, version constants, private replay/installation ownership; excludes caller/compiler/runtime validation.",
+    "bodies_compared": 107,
+    "dto_declarations_compared": 23,
+    "concrete_defects_found": 0
+  },
+  "independent_worker_review": {
+    "base_commit": "ded006754779abf4feb5b7a67e69219973d63a6e",
+    "scope": "Independently extracted original matches, current routes and handler bodies; scope is static and excludes runtime validation.",
+    "schema_and_router_cases": 198,
+    "handler_expression_pairs_compared": 180,
+    "borrow_aliases_compared": 408,
+    "direct_outer_rejections_compared": 18,
+    "framing_and_preflight_order_preserved": true,
+    "concrete_defects_found": 0
+  },
+  "discovery": {
+    "baseline_cases": 1380,
+    "baseline_harnesses": 14,
+    "baseline_case_names_preserved": true,
+    "current_discoverable_cases": 2430,
+    "current_harnesses": 27
+  },
+  "execution": {
+    "unique_cases": 1745,
+    "failed_cases": 0,
+    "scope": "Affected scientific/transport/native SDK/sharing cases and native web models; does not execute WASM Leptos controller lifecycle.",
+    "unchanged_passes_retained_after_unused_cleanup": true
+  }
+}

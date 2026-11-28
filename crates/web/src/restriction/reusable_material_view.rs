@@ -89,10 +89,10 @@ pub enum Settings {
     },
 }
 enum Preview {
-    Mismatch(native::MismatchPreview),
-    Repair(native::RepairPreview),
-    OverlapExtension(native::OverlapExtensionPreview),
-    TerminalProcessing(native::TerminalProcessingPreview),
+    Mismatch(native::pcr::MismatchPreview),
+    Repair(native::end_repair::RepairPreview),
+    OverlapExtension(native::overlap_extension::OverlapExtensionPreview),
+    TerminalProcessing(native::terminal::TerminalProcessingPreview),
 }
 struct Reviewed {
     source: SourcePin,
@@ -236,7 +236,7 @@ pub fn ReusableMaterialView(
                     reverse,
                     options,
                 } => (
-                    native::mismatch_pcr_preview_revision(
+                    native::pcr::mismatch_pcr_preview_revision(
                         &molecule,
                         &pin.native_origin(),
                         forward,
@@ -253,7 +253,7 @@ pub fn ReusableMaterialView(
                     },
                 ),
                 Settings::OverlapExtension { preparation } => (
-                    native::overlap_extension_preview_revision(
+                    native::overlap_extension::overlap_extension_preview_revision(
                         &frame,
                         pin.event(),
                         &pin.native_origin(),
@@ -268,7 +268,7 @@ pub fn ReusableMaterialView(
                     },
                 ),
                 Settings::TerminalProcessing { action } => (
-                    native::terminal_processing_preview_revision(
+                    native::terminal::terminal_processing_preview_revision(
                         &frame,
                         pin.event(),
                         &pin.native_origin(),
@@ -283,8 +283,12 @@ pub fn ReusableMaterialView(
                     },
                 ),
                 Settings::Repair { method } => (
-                    native::repair_preview_revision(&molecule, &pin.native_origin(), *method)
-                        .map_err(|e| e.to_string())?,
+                    native::end_repair::repair_preview_revision(
+                        &molecule,
+                        &pin.native_origin(),
+                        *method,
+                    )
+                    .map_err(|e| e.to_string())?,
                     AnalysisJob::InspectMaterialRepair {
                         source: molecule,
                         origin: pin.native_origin(),

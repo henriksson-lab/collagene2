@@ -428,7 +428,7 @@ pub fn AssemblyPoolView(
                 .ok_or("The active construct is unavailable.")??;
             let resolved = design::resolve_pool(catalog, construct, &snapshot.run(())?)
                 .map_err(|e| e.to_string())?;
-            let plan = design::compile_resolved(&resolved).map_err(|e| e.to_string())?;
+            let plan = resolved.compile().map_err(|e| e.to_string())?;
             let intent = match resolved
                 .intent
                 .ok_or("An independent original-source target is required.")?

@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 pub const ENGINE_VERSION: &str = "golden-gate-reaction-1";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
-dto! {pub enum Substrate{WholeSource{#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]origin:Option<crate::material::run::MaterialOrigin>},Prepared{preparation:Preparation,treatment:Option<EndTreatment>}}}
-dto! {pub struct Row{pub role:String,pub input_id:String,pub substrate:Substrate,#[serde(deserialize_with="assembly_recipe::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::chemistry::tracked_duplex::GenerationAssumptions>}}
+dto! {pub enum Substrate{WholeSource{#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]origin:Option<crate::material::run::MaterialOrigin>},Prepared{preparation:Preparation,treatment:Option<EndTreatment>}}}
+dto! {pub struct Row{pub role:String,pub input_id:String,pub substrate:Substrate,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::chemistry::tracked_duplex::GenerationAssumptions>}}
 dto! {pub struct Request{pub name:String,pub rows:Vec<Row>,pub options:GoldenGateOptions}}
 dto! {pub struct Material{pub index:usize,pub role:String,pub input_id:String,pub source:Source}}
 dto! {pub struct Report{pub context_revision:String,pub request:Request,pub target:Molecule,pub probe_plan:DesignPlan,pub materials:Vec<Material>,pub verification:VerificationReport,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub pool:Option<GoldenGateReport>,pub assessments:Vec<Assessment>,pub warnings:Vec<String>}}
@@ -133,7 +133,7 @@ pub fn preflight(
             return Err(bad("invalid/duplicate role or missing original input"));
         }
     }
-    assembly_recipe::hash(r)?;
+    crate::encoding::bounded_json::hash(r)?;
     for row in &r.rows {
         if let Substrate::WholeSource { origin } = &row.substrate {
             if origin.is_some() && row.generation.is_some() {
@@ -157,7 +157,7 @@ pub fn preflight(
     if !prepared.is_empty() {
         assembly_recipe::preparation_source_preflight(inputs, target, &r.name, &prepared)?;
     }
-    assembly_recipe::hash(&(inputs, target, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, target, r))?;
     Ok(())
 }
 pub fn inspect_revision(
@@ -178,7 +178,7 @@ pub fn inspect_revision(
             return Err(bad("original source revision changed"));
         }
     }
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         inputs
             .iter()
@@ -381,8 +381,10 @@ impl Report {
             return Err(bad("reaction context changed"));
         }
         let (plan, materials) = compile(&self.probe_plan.inputs, &self.target, &self.request)?;
-        if assembly_recipe::hash(&plan)? != assembly_recipe::hash(&self.probe_plan)?
-            || assembly_recipe::hash(&materials)? != assembly_recipe::hash(&self.materials)?
+        if crate::encoding::bounded_json::hash(&plan)?
+            != crate::encoding::bounded_json::hash(&self.probe_plan)?
+            || crate::encoding::bounded_json::hash(&materials)?
+                != crate::encoding::bounded_json::hash(&self.materials)?
             || self.verification.plan_revision != crate::planning::plan::DesignPlan::revision(&plan)
             || self.verification.target_revision != self.target.revision()
             || self.verification.engine_version != verification::ENGINE_VERSION
@@ -399,8 +401,8 @@ impl Report {
         }
         if let Some(pool) = &self.pool {
             if pool.model != golden_gate::MODEL
-                || assembly_recipe::hash(&pool.options)?
-                    != assembly_recipe::hash(&self.request.options)?
+                || crate::encoding::bounded_json::hash(&pool.options)?
+                    != crate::encoding::bounded_json::hash(&self.request.options)?
                 || pool.sources.len() != materials.len()
                 || pool.fragments.len() > 128
                 || pool.candidates.len() > self.request.options.max_products
@@ -476,8 +478,8 @@ impl Report {
             {
                 return Err(bad("reaction completeness or carryover scope changed"));
             }
-            if assembly_recipe::hash(&self.assessments)?
-                != assembly_recipe::hash(&assessments(&plan, &self.target, pool)?)?
+            if crate::encoding::bounded_json::hash(&self.assessments)?
+                != crate::encoding::bounded_json::hash(&assessments(&plan, &self.target, pool)?)?
             {
                 return Err(bad("reaction candidate assessments changed"));
             }
@@ -487,7 +489,7 @@ impl Report {
         if self.warnings.len() > 64 || self.warnings.iter().any(|w| w.len() > 8192) {
             return Err(Error::TooLarge);
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }
@@ -515,7 +517,7 @@ fn selected_plan(report: &Report, s: &Selection) -> Result<DesignPlan, Error> {
     Ok(plan)
 }
 pub fn selection_revision(report: &Report, s: &Selection) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "prepared-golden-gate-selection-1",
         &report.context_revision,
         s,
@@ -524,7 +526,7 @@ pub fn selection_revision(report: &Report, s: &Selection) -> Result<String, Erro
 }
 pub fn select(report: &Report, s: &Selection) -> Result<SelectionReport, Error> {
     let plan = selected_plan(report, s)?;
-    let context_revision = assembly_recipe::hash(&(
+    let context_revision = crate::encoding::bounded_json::hash(&(
         "prepared-golden-gate-selection-1",
         &report.context_revision,
         s,

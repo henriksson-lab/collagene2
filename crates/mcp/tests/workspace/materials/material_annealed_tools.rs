@@ -106,7 +106,7 @@ async fn two_role_adapter_requires_exact_small_source_handles_and_replays_after_
     let (text, encoding) = artifact(&c, &preview["artifact_id"]).await;
     assert_eq!(encoding, "utf-8");
     let evidence: Value = serde_json::from_str(&text).unwrap();
-    let report: native::AnnealedOligosPreview =
+    let report: native::annealing::AnnealedOligosPreview =
         serde_json::from_value(evidence["preview"].clone()).unwrap();
     report
         .validate_binding(preview["context_revision"].as_str().unwrap())

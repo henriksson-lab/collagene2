@@ -137,34 +137,7 @@ fn design_id(id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.'))
 }
-fn entity_id(library: &Library, id: &str, kind: &str) -> bool {
-    id.len() <= 48
-        && id
-            .strip_prefix(&format!("{}-{kind}-", library.id))
-            .and_then(|n| n.parse::<u64>().ok())
-            .is_some_and(|n| n > 0 && n < library.next_id)
-}
-fn allocate(library: &mut Library, kind: &str) -> Result<String, String> {
-    let value = library.next_id;
-    library.next_id = value
-        .checked_add(1)
-        .ok_or("The assembly alternative identifier counter is exhausted.")?;
-    Ok(format!("{}-{kind}-{value}", library.id))
-}
-fn active(library: &Library) -> Result<&Construct, String> {
-    library
-        .rows
-        .iter()
-        .find(|r| r.id == library.active_row)
-        .ok_or_else(|| "The active construct row is unavailable.".into())
-}
-fn active_mut(library: &mut Library) -> Result<&mut Construct, String> {
-    library
-        .rows
-        .iter_mut()
-        .find(|r| r.id == library.active_row)
-        .ok_or_else(|| "The active construct row is unavailable.".into())
-}
+
 fn chosen<'a>(bins: &'a [Bin], choices: &[String]) -> Result<Vec<&'a Choice>, String> {
     if choices.len() != bins.len() {
         return Err("Choose exactly one source alternative from every bin.".into());
@@ -179,62 +152,38 @@ fn chosen<'a>(bins: &'a [Bin], choices: &[String]) -> Result<Vec<&'a Choice>, St
         })
         .collect()
 }
-fn roles(library: &Library, row: &Construct) -> Result<Vec<Role>, String> {
-    chosen(&library.bins, &row.choices)?;
-    library
-        .bins
-        .iter()
-        .zip(&row.choices)
-        .map(|(bin, choice)| {
-            let (input_id, role) = collagene_core::planning::combinatorial::source_role_ids(
-                &library.id,
-                &row.id,
-                &bin.id,
-                choice,
-            )
-            .map_err(|e| e.to_string())?;
-            Ok(Role { input_id, role })
-        })
-        .collect()
-}
+
 pub fn roles_for_active(draft: &Draft) -> Result<Option<Vec<Role>>, String> {
     draft
         .alternatives
         .as_ref()
-        .map(|library| roles(library, active(library)?))
+        .map(|library| library.roles(library.active()?))
         .transpose()
 }
 pub fn identity(draft: &Draft) -> Option<(String, String, Vec<String>)> {
     let library = draft.alternatives.as_ref()?;
-    let row = active(library).ok()?;
+    let row = library.active().ok()?;
     Some((library.id.clone(), row.id.clone(), row.choices.clone()))
 }
 
-fn same_geometry(a: &Slot, b: &Slot) -> bool {
-    a.captured == b.captured
-        && a.anneal_bottom == b.anneal_bottom
-        && a.selector == b.selector
-        && a.digest_geometry == b.digest_geometry
-        && a.material_origin == b.material_origin
-}
 /// Source choice authority is explicit; an unfinished working source edit may be
 /// persisted, but must not silently inherit the previously chosen source ID.
 pub fn require_active_choice_match(draft: &Draft) -> Result<(), String> {
     let Some(library) = &draft.alternatives else {
         return Ok(());
     };
-    let row = active(library)?;
+    let row = library.active()?;
     let choices = chosen(&library.bins, &row.choices)?;
     if choices.len() != draft.slots.len()
         || draft
             .slots
             .iter()
             .zip(choices)
-            .any(|(slot, choice)| !same_geometry(slot, &choice.slot))
+            .any(|(slot, choice)| !slot.same_source_geometry(&choice.slot))
     {
         return Err("Working source, interval, strand or digest geometry differs from the selected alternatives. Explicitly capture each changed source as a new choice before saving or switching constructs or running preparation.".into());
     }
-    if draft.methods.source_roles.as_ref() != Some(&roles(library, row)?) {
+    if draft.methods.source_roles.as_ref() != Some(&library.roles(row)?) {
         return Err("Working preparation identities differ from the active construct and selected alternatives.".into());
     }
     Ok(())
@@ -289,6 +238,107 @@ impl Construct {
     }
 }
 impl Library {
+    fn entity_id(&self, id: &str, kind: &str) -> bool {
+        id.len() <= 48
+            && id
+                .strip_prefix(&format!("{}-{kind}-", self.id))
+                .and_then(|n| n.parse::<u64>().ok())
+                .is_some_and(|n| n > 0 && n < self.next_id)
+    }
+    fn allocate(&mut self, kind: &str) -> Result<String, String> {
+        let value = self.next_id;
+        self.next_id = value
+            .checked_add(1)
+            .ok_or("The assembly alternative identifier counter is exhausted.")?;
+        Ok(format!("{}-{kind}-{value}", self.id))
+    }
+    fn active(&self) -> Result<&Construct, String> {
+        self.rows
+            .iter()
+            .find(|r| r.id == self.active_row)
+            .ok_or_else(|| "The active construct row is unavailable.".into())
+    }
+    fn active_mut(&mut self) -> Result<&mut Construct, String> {
+        self.rows
+            .iter_mut()
+            .find(|r| r.id == self.active_row)
+            .ok_or_else(|| "The active construct row is unavailable.".into())
+    }
+    fn roles(&self, row: &Construct) -> Result<Vec<Role>, String> {
+        chosen(&self.bins, &row.choices)?;
+        self.bins
+            .iter()
+            .zip(&row.choices)
+            .map(|(bin, choice)| {
+                let (input_id, role) = collagene_core::planning::combinatorial::source_role_ids(
+                    &self.id, &row.id, &bin.id, choice,
+                )
+                .map_err(|e| e.to_string())?;
+                Ok(Role { input_id, role })
+            })
+            .collect()
+    }
+    // Matrix display carries only bounded stable IDs. It neither copies nor attests
+    // source models; mutation/preparation still uses the complete draft validation.
+    fn matrix_counts(&self) -> Result<Vec<usize>, String> {
+        if !design_id(&self.id)
+            || self.next_id == 0
+            || self.bins.is_empty()
+            || self.bins.len() > MAX_BINS
+        {
+            return Err("Invalid bounded alternative matrix.".into());
+        }
+        let mut ids = BTreeSet::new();
+        let mut counts = Vec::new();
+        let mut total = 0usize;
+        for bin in &self.bins {
+            if !self.entity_id(&bin.id, "bin")
+                || !ids.insert(&bin.id)
+                || bin.choices.is_empty()
+                || bin.choices.len() > MAX_CHOICES_PER_BIN
+            {
+                return Err("Invalid alternative matrix bin.".into());
+            }
+            total = total
+                .checked_add(bin.choices.len())
+                .filter(|n| *n <= MAX_CHOICES)
+                .ok_or("Alternative matrix choice limit exceeded.")?;
+            for choice in &bin.choices {
+                if !self.entity_id(&choice.id, "choice") || !ids.insert(&choice.id) {
+                    return Err("Invalid alternative matrix choice identity.".into());
+                }
+            }
+            counts.push(bin.choices.len());
+        }
+        Ok(counts)
+    }
+    pub fn matrix_size(&self) -> Result<u128, String> {
+        collagene_core::planning::combinatorial::cartesian_size(&self.matrix_counts()?)
+            .map_err(|e| e.to_string())
+    }
+    pub fn combinations_page(
+        &self,
+        offset: u128,
+        limit: usize,
+    ) -> Result<Vec<Vec<String>>, String> {
+        collagene_core::planning::combinatorial::cartesian_page(
+            &self.matrix_counts()?,
+            offset,
+            limit,
+        )
+        .map_err(|e| e.to_string())
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| {
+                    row.into_iter()
+                        .enumerate()
+                        .map(|(i, choice)| self.bins[i].choices[choice].id.clone())
+                        .collect()
+                })
+                .collect()
+        })
+    }
+
     pub(crate) fn sync_source_order(&mut self) -> Result<(), String> {
         // Choice templates own actual captured events, never construct-local bottom ordinals.
         for bin in &mut self.bins {
@@ -315,7 +365,7 @@ impl Library {
         let mut ids = BTreeSet::new();
         let mut total = 0usize;
         for (index, bin) in self.bins.iter().enumerate() {
-            if !entity_id(self, &bin.id, "bin")
+            if !self.entity_id(&bin.id, "bin")
                 || !ids.insert(&bin.id)
                 || !token(&bin.label, 80)
                 || bin.choices.is_empty()
@@ -328,7 +378,7 @@ impl Library {
                 .filter(|n| *n <= MAX_CHOICES)
                 .ok_or("Assembly alternatives exceed 256 retained choices.")?;
             for choice in &bin.choices {
-                if !entity_id(self, &choice.id, "choice") || !ids.insert(&choice.id) {
+                if !self.entity_id(&choice.id, "choice") || !ids.insert(&choice.id) {
                     return Err("Invalid or duplicate assembly choice identity.".into());
                 }
                 model::validate_slot(&choice.slot, &choice.row, index)?;
@@ -345,7 +395,7 @@ impl Library {
             }
         }
         for row in &self.rows {
-            if !entity_id(self, &row.id, "row") || !ids.insert(&row.id) {
+            if !self.entity_id(&row.id, "row") || !ids.insert(&row.id) {
                 return Err("Invalid or duplicate construct row identity.".into());
             }
             model::validate_controls(
@@ -363,11 +413,11 @@ impl Library {
                 &row.edits.edits,
             )?;
             row.validate_selected_sources(&self.bins)?;
-            if row.edits.methods.source_roles.as_ref() != Some(&roles(self, row)?) {
+            if row.edits.methods.source_roles.as_ref() != Some(&self.roles(row)?) {
                 return Err("Saved construct preparation roles differ from its stable selected alternatives.".into());
             }
         }
-        active(self)?;
+        self.active()?;
         Ok(())
     }
 }
@@ -413,7 +463,7 @@ fn save_inner(draft: &mut Draft) -> Result<(), String> {
         for (bin, label) in library.bins.iter_mut().zip(labels) {
             bin.label = label;
         }
-        active_mut(library)?.edits = saved;
+        library.active_mut()?.edits = saved;
     }
     Ok(())
 }
@@ -433,8 +483,8 @@ pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
         active_row: String::new(),
     };
     for (slot, row) in next.slots.iter().zip(&next.methods.rows) {
-        let bin = allocate(&mut library, "bin")?;
-        let choice = allocate(&mut library, "choice")?;
+        let bin = library.allocate("bin")?;
+        let choice = library.allocate("choice")?;
         library.bins.push(Bin {
             id: bin,
             label: slot.label.clone(),
@@ -445,7 +495,7 @@ pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
             }],
         });
     }
-    let row_id = allocate(&mut library, "row")?;
+    let row_id = library.allocate("row")?;
     let mut row = Construct {
         id: row_id.clone(),
         choices: library
@@ -456,7 +506,7 @@ pub fn enable(draft: &Draft, id: &str) -> Result<Draft, String> {
         edits: edits(&next),
     };
     let old_roles = next.methods.role_ids(next.slots.len())?;
-    let new_roles = roles(&library, &row)?;
+    let new_roles = library.roles(&row)?;
     for (old, new) in old_roles.iter().zip(&new_roles) {
         for edit in &mut row.edits.substitutions {
             if edit.role == old.role {
@@ -539,16 +589,16 @@ pub fn capture_active_choice(draft: &Draft) -> Result<Draft, String> {
     {
         return Err("Assembly alternative choice limit reached.".into());
     }
-    let id = allocate(library, "choice")?;
+    let id = library.allocate("choice")?;
     library.bins[index].choices.push(Choice {
         id: id.clone(),
         ..choice
     });
-    let saved = active_mut(library)?;
+    let saved = library.active_mut()?;
     saved.choices[index] = id;
     saved.edits.methods.rows[index] = next.methods.rows[index].clone();
-    let expected = roles(library, active(library)?)?;
-    active_mut(library)?.edits.methods.source_roles = Some(expected);
+    let expected = library.roles(library.active()?)?;
+    library.active_mut()?.edits.methods.source_roles = Some(expected);
     next.methods.source_roles = roles_for_active(&next)?;
     if require_active_choice_match(&next).is_ok() {
         save_inner(&mut next)?;
@@ -619,13 +669,13 @@ pub fn add_row(draft: &Draft, selection: Vec<String>) -> Result<Draft, String> {
         .into_iter()
         .map(|choice| choice.row.clone())
         .collect();
-    let id = allocate(library, "row")?;
+    let id = library.allocate("row")?;
     let mut row = Construct {
         id: id.clone(),
         choices: selection,
         edits: saved,
     };
-    row.edits.methods.source_roles = Some(roles(library, &row)?);
+    row.edits.methods.source_roles = Some(library.roles(&row)?);
     library.rows.push(row);
     apply_row(&mut next, &id)?;
     finish(next)
@@ -679,62 +729,6 @@ pub fn remove_row(draft: &Draft, id: &str) -> Result<Draft, String> {
         apply_row(&mut next, &replacement)?;
     }
     finish(next)
-}
-// Matrix display carries only bounded stable IDs. It neither copies nor attests
-// source models; mutation/preparation still uses the complete draft validation.
-fn matrix_counts(library: &Library) -> Result<Vec<usize>, String> {
-    if !design_id(&library.id)
-        || library.next_id == 0
-        || library.bins.is_empty()
-        || library.bins.len() > MAX_BINS
-    {
-        return Err("Invalid bounded alternative matrix.".into());
-    }
-    let mut ids = BTreeSet::new();
-    let mut counts = Vec::new();
-    let mut total = 0usize;
-    for bin in &library.bins {
-        if !entity_id(library, &bin.id, "bin")
-            || !ids.insert(&bin.id)
-            || bin.choices.is_empty()
-            || bin.choices.len() > MAX_CHOICES_PER_BIN
-        {
-            return Err("Invalid alternative matrix bin.".into());
-        }
-        total = total
-            .checked_add(bin.choices.len())
-            .filter(|n| *n <= MAX_CHOICES)
-            .ok_or("Alternative matrix choice limit exceeded.")?;
-        for choice in &bin.choices {
-            if !entity_id(library, &choice.id, "choice") || !ids.insert(&choice.id) {
-                return Err("Invalid alternative matrix choice identity.".into());
-            }
-        }
-        counts.push(bin.choices.len());
-    }
-    Ok(counts)
-}
-pub fn matrix_size(library: &Library) -> Result<u128, String> {
-    collagene_core::planning::combinatorial::cartesian_size(&matrix_counts(library)?)
-        .map_err(|e| e.to_string())
-}
-pub fn combinations_page(
-    library: &Library,
-    offset: u128,
-    limit: usize,
-) -> Result<Vec<Vec<String>>, String> {
-    collagene_core::planning::combinatorial::cartesian_page(&matrix_counts(library)?, offset, limit)
-        .map_err(|e| e.to_string())
-        .map(|rows| {
-            rows.into_iter()
-                .map(|row| {
-                    row.into_iter()
-                        .enumerate()
-                        .map(|(i, choice)| library.bins[i].choices[choice].id.clone())
-                        .collect()
-                })
-                .collect()
-        })
 }
 pub fn all_captures(draft: &Draft) -> impl Iterator<Item = &CapturedSource> {
     draft
@@ -972,7 +966,7 @@ mod tests {
         assert_ne!(original, second.methods.source_roles.clone().unwrap());
         assert!(first.slots == second.slots);
         assert_eq!(
-            matrix_size(second.alternatives.as_ref().unwrap()).unwrap(),
+            second.alternatives.as_ref().unwrap().matrix_size().unwrap(),
             1
         );
         require_active_choice_match(&second).unwrap();
@@ -1063,12 +1057,12 @@ mod tests {
         replace_insert(&mut draft);
         draft = capture_active_choice(&draft).unwrap();
         let library = draft.alternatives.as_ref().unwrap();
-        assert_eq!(matrix_size(library).unwrap(), 2);
-        let first = combinations_page(library, 0, 1).unwrap();
-        let second = combinations_page(library, 1, 1).unwrap();
+        assert_eq!(library.matrix_size().unwrap(), 2);
+        let first = library.combinations_page(0, 1).unwrap();
+        let second = library.combinations_page(1, 1).unwrap();
         assert_eq!(first[0][1], initial_id);
         assert_ne!(first, second);
-        assert!(combinations_page(library, 2, 1).unwrap().is_empty());
+        assert!(library.combinations_page(2, 1).unwrap().is_empty());
         let old_counter = library.next_id;
         let removed = remove_choice(&draft, &initial_id).unwrap();
         assert_eq!(removed.alternatives.as_ref().unwrap().next_id, old_counter);

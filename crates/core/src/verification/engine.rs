@@ -1952,7 +1952,7 @@ impl Execution<'_> {
                         )?;
                         step_evidence_bytes = step_evidence_bytes.checked_add(evidence_bytes(&evidence,32*1024*1024)?).filter(|n|*n<=32*1024*1024).ok_or_else(||Error::Unsupported("Complete ligation outcomes plus prior processing evidence exceed the32MiB plan evidence bound; reduce explicit outcome bounds before capturing this plan. The intended chemistry was not rejected and no alternatives were silently dropped.".into()))?;
                         let outcomes_receipt = (
-                            crate::cloning::assembly::recipe::hash(&evidence)?,
+                            crate::encoding::bounded_json::hash(&evidence)?,
                             evidence.report.context_revision.clone(),
                         );
                         findings.push(format!("Step {} retains the declared intended ligation and {} alternative one-copy paths; enumeration complete {}, exhaustive within that scope {}. Alternative existence does not invalidate the intended path or establish isolation; other copy numbers and incomplete assemblies remain outside this scope.",index+1,evidence.report.alternatives.len(),evidence.report.enumeration_complete,evidence.report.exhaustive_within_scope));

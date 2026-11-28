@@ -72,7 +72,7 @@ fn guard(
         || plan.inputs.len() > assembly_recipe::MAX_ROWS
         || report.products.len() > plan.steps.len()
         || report.target_revision != plan.target_revision
-        || report.plan_revision != assembly_recipe::hash(plan)?
+        || report.plan_revision != crate::encoding::bounded_json::hash(plan)?
         || report.status == Status::ConsistentUnderAssumptions
             && report.products.len() != plan.steps.len()
     {
@@ -88,7 +88,7 @@ fn guard(
             return Err(bad("invalid or duplicate original input role"));
         }
         input.molecule.validate()?;
-        if input.revision != assembly_recipe::hash(&input.molecule)? {
+        if input.revision != crate::encoding::bounded_json::hash(&input.molecule)? {
             return Err(bad("stale original input revision"));
         }
     }
@@ -150,7 +150,9 @@ fn prepared_binding(
         let shown = prepared
             .get(count)
             .ok_or_else(|| bad("missing retained prepared-prefix row"))?;
-        if assembly_recipe::hash(actual)? != assembly_recipe::hash(shown)? {
+        if crate::encoding::bounded_json::hash(actual)?
+            != crate::encoding::bounded_json::hash(shown)?
+        {
             return Err(bad("prepared row is not its actual reconstructed source"));
         }
         count += 1;
@@ -287,7 +289,7 @@ fn finish(
         findings: verification.findings.clone(),
         warnings,
     };
-    assembly_recipe::hash(&result)?;
+    crate::encoding::bounded_json::hash(&result)?;
     Ok(result)
 }
 fn span_matches(

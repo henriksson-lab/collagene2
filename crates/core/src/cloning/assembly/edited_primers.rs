@@ -748,7 +748,7 @@ pub fn preflight(
     Ok(())
 }
 fn context(inputs: &[PlanInput], r: &Request) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         inputs
@@ -1323,8 +1323,8 @@ impl Report {
         {
             return Err(bad("whole proposal source/request context changed"));
         }
-        if assembly_recipe::hash(&self.intent.request)?
-            != assembly_recipe::hash(&self.request.intent)?
+        if crate::encoding::bounded_json::hash(&self.intent.request)?
+            != crate::encoding::bounded_json::hash(&self.request.intent)?
         {
             return Err(bad("independent typed intent declaration changed"));
         }
@@ -1348,8 +1348,8 @@ impl Report {
             || self.recipe.circular != base.circular
             || self.recipe.overlaps
                 != vec![self.request.overlap; n - 1 + usize::from(base.circular)]
-            || assembly_recipe::hash(&self.recipe.options)?
-                != assembly_recipe::hash(&self.request.profile_options)?
+            || crate::encoding::bounded_json::hash(&self.recipe.options)?
+                != crate::encoding::bounded_json::hash(&self.request.profile_options)?
         {
             return Err(bad(
                 "whole recipe topology/junction/profile declaration changed",
@@ -1368,8 +1368,8 @@ impl Report {
                 || row.input_id != derived.fragment.input_id
                 || row.input_revision != original.revision()
                 || row.template_strand != source.template_strand
-                || assembly_recipe::hash(&row.fragment)?
-                    != assembly_recipe::hash(&derived.fragment)?
+                || crate::encoding::bounded_json::hash(&row.fragment)?
+                    != crate::encoding::bounded_json::hash(&derived.fragment)?
                 || row.edits != derived.edits
                 || fragment.role != row.role
                 || fragment.input_id != row.input_id
@@ -1417,7 +1417,8 @@ impl Report {
             {
                 preparation = from_origin(preparation, &origin.origin)?;
             }
-            if assembly_recipe::hash(&preparation)? != assembly_recipe::hash(&fragment.preparation)?
+            if crate::encoding::bounded_json::hash(&preparation)?
+                != crate::encoding::bounded_json::hash(&fragment.preparation)?
             {
                 return Err(bad(
                     "recipe differs from its exact selected oligos or closed-origin declaration",
@@ -1470,10 +1471,10 @@ impl Report {
         });
         if self.preview.compiled.assembly_step != assembly_step
             || self.preview.compiled.plan.name != self.recipe.name
-            || assembly_recipe::hash(&expected_rows)?
-                != assembly_recipe::hash(&self.preview.compiled.rows)?
-            || assembly_recipe::hash(&expected_steps)?
-                != assembly_recipe::hash(&self.preview.compiled.plan.steps)?
+            || crate::encoding::bounded_json::hash(&expected_rows)?
+                != crate::encoding::bounded_json::hash(&self.preview.compiled.rows)?
+            || crate::encoding::bounded_json::hash(&expected_steps)?
+                != crate::encoding::bounded_json::hash(&self.preview.compiled.plan.steps)?
         {
             return Err(bad(
                 "whole compiled graph differs from its declared original-source recipe",

@@ -108,7 +108,7 @@ fn preflight(source: &Molecule, request: &Request, reject_imported: bool) -> Res
     Ok(())
 }
 fn context(source_revision: &str, request: &Request) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         restriction_inspection::ENGINE_VERSION,
@@ -239,7 +239,7 @@ impl Preview {
             (None, None) if self.pcr_geometries.len() != 1 => {}
             _ => return Err(bad("only unique PCR may expose digest fragments")),
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
@@ -255,7 +255,7 @@ impl Preview {
 // The inner preview remains documentary and never supplies physical stock.
 dto! {pub struct MaterialPreview {pub context_revision:String,pub origin_revision:String,pub origin_incomplete:bool,pub origin_findings_total:usize,pub origin_findings_truncated:bool,pub preview:Preview}}
 fn material_context(origin_revision: &str, preview_revision: &str) -> Result<String, Error> {
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "saved-material-pcr-digest-inspection-1",
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
@@ -288,7 +288,7 @@ pub fn inspection_revision_from_material(
 ) -> Result<String, Error> {
     preflight_from_material(source, origin, request, workspace)?;
     material_context(
-        &assembly_recipe::hash(origin)?,
+        &crate::encoding::bounded_json::hash(origin)?,
         &context(&source.revision(), request)?,
     )
 }
@@ -321,7 +321,7 @@ pub fn inspect_from_material(
     preview.findings.extend(material.findings().iter().cloned());
     let report = MaterialPreview {
         context_revision,
-        origin_revision: assembly_recipe::hash(origin)?,
+        origin_revision: crate::encoding::bounded_json::hash(origin)?,
         origin_incomplete: material.incomplete(),
         origin_findings_total: material.findings_total(),
         origin_findings_truncated: material.findings_truncated(),

@@ -8,6 +8,9 @@ pub(crate) struct ShellState {
     pub(crate) modal_error: RwSignal<String>,
 }
 impl ShellState {
+    pub(crate) fn workspace_replaced(&self) {
+        self.modal.set("");
+    }
     pub(crate) fn new() -> Self {
         Self {
             panel: RwSignal::new(""),

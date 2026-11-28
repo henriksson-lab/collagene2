@@ -9,3 +9,10 @@ pub(crate) struct ViewerSelection {
     pub(crate) molecule: Memo<Molecule>,
     pub(crate) has_open_document: Memo<bool>,
 }
+
+impl ViewerSelection {
+    pub(crate) fn clear(&self) {
+        self.selection.set(None);
+        self.selected_feature.set(None);
+    }
+}

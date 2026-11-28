@@ -90,7 +90,9 @@ fn literal_outer_product_installs_without_a_target_then_replays_from_worker_arch
     let original = workspace::save_workspace(&w).unwrap();
     let origin = native::SourceOrigin::OriginalReference;
     let prep = preparation();
-    let context = native::overlap_extension_preview_revision(&w, &event, &origin, &prep).unwrap();
+    let context =
+        native::overlap_extension::overlap_extension_preview_revision(&w, &event, &origin, &prep)
+            .unwrap();
     let job = AnalysisJob::InspectMaterialOverlapExtension {
         workspace: w.clone(),
         source: event.clone(),
@@ -144,7 +146,9 @@ fn stale_context_foreign_event_and_forged_reply_are_refused_before_material_inst
     let (w, event) = fixture();
     let origin = native::SourceOrigin::OriginalReference;
     let prep = preparation();
-    let context = native::overlap_extension_preview_revision(&w, &event, &origin, &prep).unwrap();
+    let context =
+        native::overlap_extension::overlap_extension_preview_revision(&w, &event, &origin, &prep)
+            .unwrap();
     let mut changed = prep.clone();
     changed.outer.forward.tail = "AAAA".into();
     let q = Request {
@@ -174,7 +178,8 @@ fn stale_context_foreign_event_and_forged_reply_are_refused_before_material_inst
         },
     };
     assert!(protocol::request::Request::encode(&q).is_err());
-    let preview = native::preview_overlap_extension(&w, &event, &origin, &prep).unwrap();
+    let preview =
+        native::overlap_extension::preview_overlap_extension(&w, &event, &origin, &prep).unwrap();
     let mut response = Response {
         id: 3,
         revision: context,
@@ -185,7 +190,8 @@ fn stale_context_foreign_event_and_forged_reply_are_refused_before_material_inst
     };
     report.context_revision = "0".repeat(64);
     assert!(protocol::response::Response::decode(&wire(&response)).is_err());
-    let preview = native::preview_overlap_extension(&w, &event, &origin, &prep).unwrap();
+    let preview =
+        native::overlap_extension::preview_overlap_extension(&w, &event, &origin, &prep).unwrap();
     let mut selection = preview.selection().unwrap();
     selection.expected_product_revision = "0".repeat(64);
     let request = native::Request {

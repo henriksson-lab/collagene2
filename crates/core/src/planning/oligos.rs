@@ -1065,7 +1065,7 @@ pub fn export_revision(
     delimiter: Delimiter,
 ) -> Result<String, Error> {
     preflight(plan, target, options)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         "plan-oligo-export-2",
         crate::planning::plan::DesignPlan::revision(plan),
         target.revision(),

@@ -2,7 +2,6 @@
 //! Historical batch summaries never authorize outputs. Each row is compiled afresh
 //! and cloning_outputs::finalize performs the only scientific verifier pass here.
 use crate::{
-    cloning::assembly::recipe as assembly_recipe,
     documents::workspace::{
         self, RevisionEvent, Workspace, WorkspaceAttachment, WorkspaceDocument,
     },
@@ -220,7 +219,7 @@ fn attest_original_sources(
 }
 pub fn request_revision(request: &Request) -> Result<String, Error> {
     request.validate()?;
-    assembly_recipe::hash(&(CONTRACT, "request", request))
+    crate::encoding::bounded_json::hash(&(CONTRACT, "request", request))
 }
 pub fn preflight(workspace: &Workspace, request: &Request) -> Result<(), Error> {
     request.validate()?;
@@ -231,7 +230,7 @@ pub fn preflight(workspace: &Workspace, request: &Request) -> Result<(), Error> 
 }
 pub fn revision(workspace: &Workspace, request: &Request) -> Result<String, Error> {
     preflight(workspace, request)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         CONTRACT,
         crate::verification::ENGINE_VERSION,
         cloning_outputs::ENGINE_VERSION,
@@ -283,7 +282,7 @@ fn target_event(
     {
         return Err(Error::TooLarge);
     }
-    let key = assembly_recipe::hash(&(
+    let key = crate::encoding::bounded_json::hash(&(
         CONTRACT,
         "intent",
         &resolved.construct_id,
@@ -385,7 +384,7 @@ impl ReleaseSession {
                 .ok_or_else(|| bad("aggregate release work limit reached; no outputs published"))?;
             // Compile + native finalization. Do NOT call evaluate here: finalization
             // freshly verifies once and records exact operation products itself.
-            let plan = design::compile_resolved(&resolved)?;
+            let plan = resolved.compile()?;
             let compiled = design::Compiled { resolved, plan };
             let target = target_event(working, &compiled.resolved)?;
             if target.revision != compiled.plan.target_revision {
@@ -715,7 +714,7 @@ impl Manifest {
                 }
             }
             costs.insert(row.construct_id.clone(), resolved.declared_work());
-            let plan = design::compile_resolved(&resolved)?;
+            let plan = resolved.compile()?;
             let asset = workspace
                 .attachments
                 .get(&row.output.run.attachment_hash)

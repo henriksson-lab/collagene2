@@ -137,7 +137,7 @@ fn project(
     let mut seen = BTreeSet::new();
     let mut features = Vec::with_capacity(product.features.len());
     for feature in product.features.drain(..) {
-        if seen.insert(assembly_recipe::hash(&feature)?) {
+        if seen.insert(crate::encoding::bounded_json::hash(&feature)?) {
             features.push(feature);
         }
     }

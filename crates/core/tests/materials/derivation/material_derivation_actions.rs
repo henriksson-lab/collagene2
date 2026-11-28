@@ -57,7 +57,7 @@ fn mismatch_request(
     name: &str,
 ) -> d::Request {
     let m = &w.revisions[&source.revision];
-    let preview = d::preview_mismatch_pcr(m, &origin, &f, &r, &o).unwrap();
+    let preview = d::pcr::preview_mismatch_pcr(m, &origin, &f, &r, &o).unwrap();
     assert!(preview.reusable(), "{:?}", preview.preview.report.warnings);
     d::Request {
         sources: vec![collagene_core::material::derivation::BoundSource {
@@ -94,7 +94,7 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
     let w = Workspace::from_documents("No intended target for derivation", vec![source.clone()], 0)
         .unwrap();
     let (f, r) = oligos();
-    let preview = d::preview_mismatch_pcr(
+    let preview = d::pcr::preview_mismatch_pcr(
         &source,
         &d::SourceOrigin::OriginalReference,
         &f,
@@ -109,7 +109,7 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
     let mut detached_preview = preview.preview.documents[0].clone();
     detached_preview.metadata.remove("duplex_model");
     assert!(
-        d::preview_pcr(
+        d::pcr::preview_pcr(
             &detached_preview,
             &d::SourceOrigin::OriginalReference,
             &f,
@@ -333,7 +333,7 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
     let f = Primer::new("New F", "AATCC", "").unwrap();
     let r = Primer::new("New R", "ATCTG", "").unwrap();
     assert!(
-        d::preview_mismatch_pcr(
+        d::pcr::preview_mismatch_pcr(
             source,
             &d::SourceOrigin::Saved(origin.clone()),
             &f,
@@ -342,7 +342,7 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
         )
         .is_err()
     );
-    let preview = d::preview_repair(
+    let preview = d::end_repair::preview_repair(
         source,
         &d::SourceOrigin::Saved(origin.clone()),
         EndRepairMethod::FillFivePrimeOverhangs,
@@ -352,7 +352,7 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
     let mut detached_preview = preview.molecule.clone();
     detached_preview.metadata.remove("duplex_model");
     assert!(
-        d::preview_pcr(
+        d::pcr::preview_pcr(
             &detached_preview,
             &d::SourceOrigin::OriginalReference,
             &f,
@@ -454,7 +454,7 @@ fn capped_singleton_search_remains_conditional_and_competing_products_cannot_be_
         .unwrap();
     let f = Primer::new("F", "AGACCGAT", "").unwrap();
     let r = Primer::new("R", "TCCAGGTC", "").unwrap();
-    let full = d::preview_mismatch_pcr(
+    let full = d::pcr::preview_mismatch_pcr(
         &source,
         &d::SourceOrigin::OriginalReference,
         &f,
@@ -486,7 +486,7 @@ fn capped_singleton_search_remains_conditional_and_competing_products_cannot_be_
     assert!(d::prepare_install(&w, &forged).is_err());
     let mut capped = options();
     capped.max_products = 1;
-    let preview = d::preview_mismatch_pcr(
+    let preview = d::pcr::preview_mismatch_pcr(
         &source,
         &d::SourceOrigin::OriginalReference,
         &f,
@@ -677,7 +677,7 @@ fn end_repair_preserves_real_internal_nick_and_does_not_enable_unsupported_nicke
     )
     .unwrap();
     let source = &saved.workspace.revisions[&event.revision];
-    let preview = d::preview_repair(
+    let preview = d::end_repair::preview_repair(
         source,
         &d::SourceOrigin::Saved(MaterialOrigin::Run(origin.clone())),
         EndRepairMethod::Blunt,
@@ -716,7 +716,7 @@ fn end_repair_preserves_real_internal_nick_and_does_not_enable_unsupported_nicke
         d::capsule(&repaired.workspace, &repaired.receipt.product).unwrap(),
     ));
     assert!(
-        d::preview_mismatch_pcr(
+        d::pcr::preview_mismatch_pcr(
             fresh.reference(),
             &origin,
             &Primer::new("F", "AGTCCG", "").unwrap(),

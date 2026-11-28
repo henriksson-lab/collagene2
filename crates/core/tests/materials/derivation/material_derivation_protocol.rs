@@ -143,7 +143,8 @@ fn current_install_and_digest_jobs_bind_actual_material() {
     let options = Default::default();
     let role = collagene_core::cloning::restriction::history::source_role(&product).unwrap();
     let context =
-        native::digest_inspection_revision(&role, &source, &origin, &selection, &options).unwrap();
+        native::digest::digest_inspection_revision(&role, &source, &origin, &selection, &options)
+            .unwrap();
     let response = call(
         AnalysisJob::InspectMaterialDigest {
             source_role: role,
@@ -219,7 +220,7 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
         &source
     ));
     assert!(
-        native::preview_pcr(
+        native::pcr::preview_pcr(
             &source,
             &native::SourceOrigin::OriginalReference,
             &Primer::new("F", "ACGAC", "").unwrap(),
@@ -253,7 +254,7 @@ fn dropping_only_duplex_summary_cannot_launder_native_material_into_a_plain_sour
             .contains_key(collagene_core::cloning::pcr::material::ORIGIN_METADATA)
     );
     assert!(
-        native::preview_pcr(
+        native::pcr::preview_pcr(
             &reference,
             &native::SourceOrigin::OriginalReference,
             &Primer::new("F", "ACGAC", "").unwrap(),

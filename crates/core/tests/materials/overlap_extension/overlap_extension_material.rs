@@ -67,7 +67,9 @@ fn request(
     origin: native::SourceOrigin,
     preparation: Preparation,
 ) -> native::Request {
-    let preview = native::preview_overlap_extension(w, &source, &origin, &preparation).unwrap();
+    let preview =
+        native::overlap_extension::preview_overlap_extension(w, &source, &origin, &preparation)
+            .unwrap();
     native::Request {
         sources: vec![collagene_core::material::derivation::BoundSource {
             role: collagene_core::material::derivation::SourceRole::Template,
@@ -88,7 +90,7 @@ fn literal_edited_tailed_outer_product_and_all_six_new_oligos_survive_restart_an
     let source = pin(&w, 0);
     let before = workspace::save_workspace(&w).unwrap();
     let prep = preparation();
-    let preview = native::preview_overlap_extension(
+    let preview = native::overlap_extension::preview_overlap_extension(
         &w,
         &source,
         &native::SourceOrigin::OriginalReference,
@@ -97,7 +99,7 @@ fn literal_edited_tailed_outer_product_and_all_six_new_oligos_survive_restart_an
     .unwrap();
     preview
         .validate_binding(
-            &native::overlap_extension_preview_revision(
+            &native::overlap_extension::overlap_extension_preview_revision(
                 &w,
                 &source,
                 &native::SourceOrigin::OriginalReference,
@@ -170,7 +172,7 @@ fn literal_edited_tailed_outer_product_and_all_six_new_oligos_survive_restart_an
     let catalog = collagene_core::cloning::restriction::catalog::builtin_catalog().unwrap();
     let selected =
         collagene_core::cloning::restriction::catalog::select(&catalog, &["ecori".into()]).unwrap();
-    let digest = native::inspect_digest(
+    let digest = native::digest::inspect_digest(
         "outer-product",
         fresh.reference(),
         &native::SourceOrigin::Saved(MaterialOrigin::Derived(capsule)),
@@ -195,7 +197,8 @@ fn competing_pcrs_withhold_material_and_stale_or_altered_previews_do_not_authori
     let source = pin(&w, 0);
     let prep = preparation();
     let origin = native::SourceOrigin::OriginalReference;
-    let preview = native::preview_overlap_extension(&w, &source, &origin, &prep).unwrap();
+    let preview =
+        native::overlap_extension::preview_overlap_extension(&w, &source, &origin, &prep).unwrap();
     let mut altered = preview.clone();
     altered.preparation.outer.forward.tail.push('A');
     assert!(altered.validate_binding(&preview.context_revision).is_err());
@@ -220,15 +223,21 @@ fn competing_pcrs_withhold_material_and_stale_or_altered_previews_do_not_authori
         0,
     )
     .unwrap();
-    let preview =
-        native::preview_overlap_extension(&repeated, &pin(&repeated, 0), &origin, &prep).unwrap();
+    let preview = native::overlap_extension::preview_overlap_extension(
+        &repeated,
+        &pin(&repeated, 0),
+        &origin,
+        &prep,
+    )
+    .unwrap();
     assert!(preview.incomplete);
     assert!(preview.product.is_none());
     assert!(preview.selection().is_err());
     assert!(preview.pcr_stages[0].geometries.len() > 1);
     let mut prep = prep;
     prep.outer = pair("Competing outer", "T", "", "A", "");
-    let preview = native::preview_overlap_extension(&w, &source, &origin, &prep).unwrap();
+    let preview =
+        native::overlap_extension::preview_overlap_extension(&w, &source, &origin, &prep).unwrap();
     assert!(preview.incomplete);
     assert!(preview.product.is_none());
     assert!(preview.selection().is_err());
@@ -332,7 +341,7 @@ fn saved_run_and_derived_origins_keep_ownership_and_do_not_reexport_historical_p
     );
     let foreign = original();
     assert!(
-        native::preview_overlap_extension(
+        native::overlap_extension::preview_overlap_extension(
             &foreign,
             &source,
             &native::SourceOrigin::Saved(origin.clone()),
@@ -341,7 +350,7 @@ fn saved_run_and_derived_origins_keep_ownership_and_do_not_reexport_historical_p
         .is_err()
     );
     assert!(
-        native::preview_overlap_extension(
+        native::overlap_extension::preview_overlap_extension(
             &w,
             &source,
             &native::SourceOrigin::OriginalReference,
@@ -352,7 +361,7 @@ fn saved_run_and_derived_origins_keep_ownership_and_do_not_reexport_historical_p
     let mut alias = source.clone();
     alias.event_id = pin(&w, 0).event_id;
     assert!(
-        native::preview_overlap_extension(
+        native::overlap_extension::preview_overlap_extension(
             &w,
             &alias,
             &native::SourceOrigin::Saved(origin),
@@ -387,7 +396,7 @@ fn saved_run_and_derived_origins_keep_ownership_and_do_not_reexport_historical_p
     );
     let request_source = first.workspace.revisions[&source.revision].clone();
     assert!(
-        native::preview_overlap_extension(
+        native::overlap_extension::preview_overlap_extension(
             &original(),
             &source,
             &native::SourceOrigin::OriginalReference,
@@ -406,9 +415,13 @@ fn inherited_origin_and_terminal_search_limits_remain_conditional_after_selectio
         native::SourceOrigin::Saved(origin),
         preparation(),
     );
-    let preview =
-        native::preview_overlap_extension(&w, &source, &req.sources[0].origin, &preparation())
-            .unwrap();
+    let preview = native::overlap_extension::preview_overlap_extension(
+        &w,
+        &source,
+        &req.sources[0].origin,
+        &preparation(),
+    )
+    .unwrap();
     assert!(preview.origin_incomplete);
     assert!(preview.incomplete);
     assert!(preview.reusable());

@@ -53,7 +53,8 @@ fn exact_two_role_preview_install_archive_and_corrupt_reply_refusal() {
         min_paired_bases: 6,
         ..Default::default()
     };
-    let context = native::annealed_oligos_preview_revision(&w, &top, &bottom, &options).unwrap();
+    let context =
+        native::annealing::annealed_oligos_preview_revision(&w, &top, &bottom, &options).unwrap();
     let job = AnalysisJob::InspectMaterialAnnealedOligos {
         workspace: w.clone(),
         top: top.clone(),

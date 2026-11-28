@@ -1,14 +1,11 @@
 //! Choose one actual catalog-digested fragment by explicit cut instances/free ends.
 //! This adapter never merges reference pieces into a purported physical product.
-use crate::cloning::{
-    assembly::recipe as assembly_recipe,
-    restriction::{
-        catalog::{
-            self as catalog_digest, CatalogDigestProduct, CatalogRestrictionInspection,
-            CatalogSelection, catalog,
-        },
-        inspection::{FragmentSummary, InspectionOptions, RestrictionInspection},
+use crate::cloning::restriction::{
+    catalog::{
+        self as catalog_digest, CatalogDigestProduct, CatalogRestrictionInspection,
+        CatalogSelection, catalog,
     },
+    inspection::{FragmentSummary, InspectionOptions, RestrictionInspection},
 };
 use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
@@ -50,7 +47,7 @@ fn context(batch: &str, choice: &Choice) -> Result<String, Error> {
     if !hex(batch) {
         return Err(bad("invalid expected catalog inspection batch revision"));
     }
-    assembly_recipe::hash(&(ENGINE_VERSION, batch, choice))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, batch, choice))
 }
 #[allow(clippy::too_many_arguments)]
 pub fn selection_revision(
@@ -387,13 +384,14 @@ impl Report {
         }
         let actual = selected(&self.inspection, &self.choice)?;
         if actual.index != p.fragment_index
-            || assembly_recipe::hash(actual)? != assembly_recipe::hash(&p.summary)?
+            || crate::encoding::bounded_json::hash(actual)?
+                != crate::encoding::bounded_json::hash(&p.summary)?
         {
             return Err(bad(
                 "returned product differs from the actual selected two-strand fragment",
             ));
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {

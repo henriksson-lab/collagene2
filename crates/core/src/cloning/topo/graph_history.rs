@@ -1,7 +1,7 @@
 //! Exact native elementary TOPO graphs. Documentary records never restore a
 //! supplied ProductGraph or ordinary duplex; actual calls/transfers replay fresh.
 use crate::{
-    cloning::{assembly::recipe as assembly_recipe, topo},
+    cloning::topo,
     documents::workspace::{Workspace, WorkspaceAttachment},
     material::{
         lineage::{self as run_lineage, EventBinding},
@@ -180,7 +180,7 @@ impl Record {
             return Err(bad("unsupported graph record schema/binding"));
         }
         bound(self, MAX_RECORD_BYTES - 44)?;
-        let context = assembly_recipe::hash(&(
+        let context = crate::encoding::bounded_json::hash(&(
             &self.engine_version,
             &self.scientific_engine,
             &self.source_workspace_fingerprint,
@@ -443,7 +443,10 @@ fn state(report: &topo::TopoReport) -> Result<(String, StateSummary), Error> {
             .map(|s| s.chars().take(4096).collect())
             .collect(),
     };
-    Ok((assembly_recipe::hash(&(ENGINE_VERSION, p))?, s))
+    Ok((
+        crate::encoding::bounded_json::hash(&(ENGINE_VERSION, p))?,
+        s,
+    ))
 }
 fn summary(hash: &str, r: &Record) -> Result<Summary, Error> {
     Ok(Summary {
@@ -515,7 +518,7 @@ pub fn preflight(w: &Workspace, r: &CaptureRequest) -> Result<(), Error> {
 }
 pub fn revision(w: &Workspace, r: &CaptureRequest) -> Result<String, Error> {
     preflight(w, r)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         run_lineage::workspace_fingerprint(w)?,
@@ -614,7 +617,8 @@ pub fn replay(c: &Capsule) -> Result<FreshGraph, Error> {
         topo::simulate_bound(&c.source_snapshots, &r.request.request, &r.request.bindings)?;
     let (revision, found) = state(&report)?;
     if revision != c.selection.state_revision
-        || assembly_recipe::hash(&found)? != assembly_recipe::hash(&r.state)?
+        || crate::encoding::bounded_json::hash(&found)?
+            != crate::encoding::bounded_json::hash(&r.state)?
         || report.incomplete != r.incomplete
     {
         return Err(bad(
@@ -637,7 +641,7 @@ pub fn list_revision(w: &Workspace) -> Result<String, Error> {
     if hashes.len() > MAX_RECORDS {
         return Err(Error::TooLarge);
     }
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "list",
         run_lineage::workspace_fingerprint(w)?,
@@ -664,7 +668,7 @@ pub fn list(w: &Workspace) -> Result<Listed, Error> {
 }
 pub fn inspect_revision(w: &Workspace, s: &Selection) -> Result<String, Error> {
     documentary_capsule_parts(w, s)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "inspect",
         verification::ENGINE_VERSION,
@@ -811,7 +815,8 @@ impl Inspection {
             || self.selection != self.summary.selection
             || self.record.state_revision != self.selection.state_revision
             || state != self.selection.state_revision
-            || assembly_recipe::hash(&summary)? != assembly_recipe::hash(&self.record.state)?
+            || crate::encoding::bounded_json::hash(&summary)?
+                != crate::encoding::bounded_json::hash(&self.record.state)?
         {
             return Err(bad("graph inspection correspondence changed"));
         }

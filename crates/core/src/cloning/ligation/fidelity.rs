@@ -9,7 +9,6 @@
 //! once per unique pair only when every pair is estimable. Counts are interpreted
 //! literally as directed observations; no transpose, pseudocount or abundance
 //! weighting is invented. Correct complementarity is not an efficiency estimate.
-use crate::cloning::assembly::recipe as assembly_recipe;
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -235,7 +234,7 @@ fn cells(data: &Dataset) -> Result<BTreeMap<(&str, &str), u64>, Error> {
 /// content_revision itself. Conditions and attribution are part of its binding.
 pub fn content_revision(data: &Dataset) -> Result<String, Error> {
     let map = cells(data)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         MODEL,
         data.schema_version,
         data.overhang_length,
@@ -288,7 +287,7 @@ fn context(
     p: &Provenance,
     ends: &[String],
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(MODEL, data_revision, k, c, p, ends))
+    crate::encoding::bounded_json::hash(&(MODEL, data_revision, k, c, p, ends))
 }
 pub fn revision(data: &Dataset, ends: &[String]) -> Result<String, Error> {
     data.validate()?;
@@ -624,7 +623,7 @@ fn competition_context(
     joins: &[String],
     extras: &[String],
 ) -> Result<String, Error> {
-    assembly_recipe::hash(&(COMPETITION_MODEL, revision, k, c, p, joins, extras))
+    crate::encoding::bounded_json::hash(&(COMPETITION_MODEL, revision, k, c, p, joins, extras))
 }
 pub fn competition_revision(
     data: &Dataset,

@@ -142,7 +142,7 @@ impl Request {
                 reverse,
                 options,
             } => {
-                crate::material::derivation::mismatch_pcr_preview_revision(
+                crate::material::derivation::pcr::mismatch_pcr_preview_revision(
                     source, origin, forward, reverse, options,
                 )?;
             }
@@ -151,7 +151,9 @@ impl Request {
                 origin,
                 method,
             } => {
-                crate::material::derivation::repair_preview_revision(source, origin, *method)?;
+                crate::material::derivation::end_repair::repair_preview_revision(
+                    source, origin, *method,
+                )?;
             }
             AnalysisJob::InspectMaterialOverlapExtension {
                 workspace,
@@ -159,7 +161,7 @@ impl Request {
                 origin,
                 preparation,
             } => {
-                crate::material::derivation::overlap_extension_preview_revision(
+                crate::material::derivation::overlap_extension::overlap_extension_preview_revision(
                     workspace,
                     source,
                     origin,
@@ -172,7 +174,7 @@ impl Request {
                 origin,
                 action,
             } => {
-                crate::material::derivation::terminal_processing_preview_revision(
+                crate::material::derivation::terminal::terminal_processing_preview_revision(
                     workspace, source, origin, action,
                 )?;
             }
@@ -182,7 +184,7 @@ impl Request {
                 bottom,
                 options,
             } => {
-                crate::material::derivation::annealed_oligos_preview_revision(
+                crate::material::derivation::annealing::annealed_oligos_preview_revision(
                     workspace, top, bottom, options,
                 )?;
             }
@@ -250,7 +252,7 @@ impl Request {
                 selection,
                 options,
             } => {
-                crate::material::derivation::digest_inspection_revision(
+                crate::material::derivation::digest::digest_inspection_revision(
                     source_role,
                     source,
                     origin,

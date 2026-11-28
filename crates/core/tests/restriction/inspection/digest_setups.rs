@@ -11,7 +11,7 @@ use collagene_core::{
         workspace::{self, Workspace, WorkspaceAttachment},
     },
     material::{
-        derivation::{self, DigestPreview, SourceOrigin},
+        derivation::{self, SourceOrigin, digest::DigestPreview},
         lineage::EventBinding,
     },
 };
@@ -46,7 +46,7 @@ fn fixture() -> (catalog::Catalog, Workspace, EventBinding, DigestPreview) {
         Workspace::from_documents("saved digests", vec![molecule.clone(), molecule], 0).unwrap();
     let source = binding(&frame, 0);
     let selection = catalog_digest::select(&catalog, &["ecori".into(), "bamhi".into()]).unwrap();
-    let report = derivation::inspect_digest(
+    let report = derivation::digest::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
         &SourceOrigin::OriginalReference,
@@ -190,7 +190,7 @@ fn historical_setup_survives_head_advance_and_does_not_alias_equal_dna_events() 
         .is_err()
     );
     assert_eq!(serde_json::to_value(&later).unwrap(), original);
-    let alias_report = derivation::inspect_digest(
+    let alias_report = derivation::digest::inspect_digest(
         &restriction_history::source_role(&alias).unwrap(),
         &later.revisions[&alias.revision],
         &SourceOrigin::OriginalReference,
@@ -217,7 +217,7 @@ fn gel_recipe_retains_actual_ordered_geometry_catalog_and_limits() {
     let mut options = report.inspection.options.clone();
     options.max_comparisons = 12345;
     let selected = catalog_digest::select(&catalog, &["bamhi".into(), "ecori".into()]).unwrap();
-    let report = derivation::inspect_digest(
+    let report = derivation::digest::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
         &SourceOrigin::OriginalReference,
@@ -253,7 +253,7 @@ fn partial_scan_can_be_saved_without_inventing_determined_products() {
         max_comparisons: 1,
         ..Default::default()
     };
-    let report = derivation::inspect_digest(
+    let report = derivation::digest::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
         &SourceOrigin::OriginalReference,
@@ -531,7 +531,7 @@ fn unrelated_large_annotation_document_does_not_restrict_saved_digest_operations
             .unwrap();
     frame.validate().unwrap();
     let source = binding(&frame, 0);
-    let report = derivation::inspect_digest(
+    let report = derivation::digest::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
         &SourceOrigin::OriginalReference,

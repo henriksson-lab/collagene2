@@ -3,7 +3,6 @@
 //! desired target supplies their bases, chemistry or source authority.
 use crate::{
     chemistry::Strand,
-    cloning::assembly::recipe as assembly_recipe,
     documents::workspace::Workspace,
     material::{
         lineage::EventBinding,
@@ -228,7 +227,7 @@ pub fn preflight(
     crate::material::capsule::material_origins_preflight(
         r.material_bindings.iter().map(|b| &b.origin),
     )?;
-    assembly_recipe::hash(&(inputs, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, r))?;
     let mut seen = BTreeSet::new();
     let mut bases = 0usize;
     for (id, m) in inputs {
@@ -313,7 +312,7 @@ pub fn intent_revision(
             return Err(bad("original source content changed"));
         }
     }
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         crate::verification::ENGINE_VERSION,
         inputs
@@ -431,7 +430,7 @@ pub(crate) fn resolve<'a>(
     let mut descriptors = vec![];
     let mut warnings=vec!["Independently declared reference only. Native source replay identifies actual input strand calls; no planned digest/PCR/assembly product or desired target selects these bases. This is not a PCR/digest/assembly prediction, physical material or experimental success.".into()];
     for b in &r.material_bindings {
-        let key = assembly_recipe::hash(&(&b.event, b.origin.selection()))?;
+        let key = crate::encoding::bounded_json::hash(&(&b.event, b.origin.selection()))?;
         if !cache.contains_key(&key) {
             let source = &inputs
                 .iter()
@@ -454,7 +453,7 @@ pub(crate) fn resolve<'a>(
             input_id: b.input_id.clone(),
             event: b.event.clone(),
             selection: b.origin.selection(),
-            origin_revision: assembly_recipe::hash(&b.origin)?,
+            origin_revision: crate::encoding::bounded_json::hash(&b.origin)?,
             state_revision: state,
             top_length: d.top.len(),
             bottom_start: d.bottom_start,
@@ -508,7 +507,7 @@ pub(crate) fn resolve<'a>(
                     .iter()
                     .find(|b| b.input_id == f.input_id)
                     .ok_or_else(|| bad("missing native binding"))?;
-                let key = assembly_recipe::hash(&(&b.event, b.origin.selection()))?;
+                let key = crate::encoding::bounded_json::hash(&(&b.event, b.origin.selection()))?;
                 let fresh = &cache[&key];
                 let d = &fresh.tracked().duplex;
                 let descriptor = descriptors
@@ -677,7 +676,7 @@ pub(crate) fn request_json(r: &Request) -> Result<String, Error> {
                     b.input_id.as_str(),
                     &b.event,
                     b.origin.selection(),
-                    assembly_recipe::hash(&b.origin)?,
+                    crate::encoding::bounded_json::hash(&b.origin)?,
                 ))
             })
             .collect::<Result<Vec<_>, Error>>()?,
@@ -908,7 +907,7 @@ pub(crate) fn validate_material_descriptors(
         if d.input_id != b.input_id
             || d.event != b.event
             || d.selection != b.origin.selection()
-            || d.origin_revision != assembly_recipe::hash(&b.origin)?
+            || d.origin_revision != crate::encoding::bounded_json::hash(&b.origin)?
         {
             return Err(bad(
                 "material descriptor differs from exact native source binding",

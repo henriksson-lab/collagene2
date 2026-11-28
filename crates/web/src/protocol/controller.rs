@@ -85,3 +85,107 @@ impl ProtocolController {
         )
     }
 }
+
+/// Retained run summaries and their current workspace presentation.
+#[derive(Clone, Copy)]
+pub(crate) struct RunHistoryState {
+    pub(crate) recorded_runs: RwSignal<Vec<collagene_core::material::lineage::RunSummary>>,
+    pub(crate) run_page: RwSignal<usize>,
+    pub(crate) pending_run_event:
+        RwSignal<Option<std::sync::Arc<crate::history::run_event_model::Snapshot>>>,
+    pub(crate) hidden_products: RwSignal<std::collections::BTreeSet<String>>,
+    pub(crate) show_prepared_history: RwSignal<bool>,
+}
+impl RunHistoryState {
+    pub(crate) fn new() -> Self {
+        Self {
+            recorded_runs: RwSignal::new(
+                Vec::<collagene_core::material::lineage::RunSummary>::new(),
+            ),
+            run_page: RwSignal::new(0usize),
+            pending_run_event: RwSignal::new(
+                None::<std::sync::Arc<crate::history::run_event_model::Snapshot>>,
+            ),
+            hidden_products: RwSignal::new(std::collections::BTreeSet::<String>::new()),
+            show_prepared_history: RwSignal::new(false),
+        }
+    }
+    pub(crate) fn restore(
+        &self,
+        runs: Vec<collagene_core::material::lineage::RunSummary>,
+        hidden_products: std::collections::BTreeSet<String>,
+    ) {
+        self.recorded_runs.set(runs);
+        self.hidden_products.set(hidden_products);
+        self.run_page.set(0);
+        self.pending_run_event.set(None);
+        self.show_prepared_history.set(false);
+    }
+}
+
+/// Candidate declarations and transient source-bound verification evidence.
+#[derive(Clone, Copy)]
+pub(crate) struct PlanState {
+    pub(crate) candidate: RwSignal<Option<collagene_core::documents::transfer::Candidate>>,
+    pub(crate) stored_candidates: RwSignal<Vec<collagene_core::documents::transfer::Candidate>>,
+    pub(crate) candidate_events: RwSignal<
+        Option<(
+            String,
+            u64,
+            collagene_core::material::lineage::EventBinding,
+            Vec<collagene_core::material::lineage::InputEventBinding>,
+        )>,
+    >,
+    pub(crate) plan_report:
+        RwSignal<Option<collagene_core::verification::evidence::VerificationReport>>,
+    pub(crate) last_plan: RwSignal<
+        Option<(
+            collagene_core::planning::plan::DesignPlan,
+            collagene_model::Molecule,
+        )>,
+    >,
+    pub(crate) last_plan_target:
+        RwSignal<Option<(String, u64, collagene_core::material::lineage::EventBinding)>>,
+    pub(crate) plan_generation: RwSignal<u32>,
+}
+impl PlanState {
+    pub(crate) fn new() -> Self {
+        Self {
+            candidate: RwSignal::new(None::<transfer::Candidate>),
+            stored_candidates: RwSignal::new(Vec::<transfer::Candidate>::new()),
+            candidate_events: RwSignal::new(
+                None::<(
+                    String,
+                    u64,
+                    collagene_core::material::lineage::EventBinding,
+                    Vec<collagene_core::material::lineage::InputEventBinding>,
+                )>,
+            ),
+            plan_report: RwSignal::new(
+                None::<collagene_core::verification::evidence::VerificationReport>,
+            ),
+            last_plan: RwSignal::new(None::<(DesignPlan, Molecule)>),
+            last_plan_target: RwSignal::new(
+                None::<(String, u64, collagene_core::material::lineage::EventBinding)>,
+            ),
+            plan_generation: RwSignal::new(0u32),
+        }
+    }
+    pub(crate) fn invalidate_evidence(&self) {
+        self.plan_generation
+            .update(|generation| *generation = generation.wrapping_add(1));
+        self.plan_report.set(None);
+        self.last_plan.set(None);
+        self.last_plan_target.set(None);
+    }
+    pub(crate) fn restore(
+        &self,
+        candidate: Option<collagene_core::documents::transfer::Candidate>,
+        candidates: Vec<collagene_core::documents::transfer::Candidate>,
+    ) {
+        self.invalidate_evidence();
+        self.stored_candidates.set(candidates);
+        self.candidate_events.set(None);
+        self.candidate.set(candidate);
+    }
+}

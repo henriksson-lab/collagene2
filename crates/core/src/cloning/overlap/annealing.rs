@@ -32,7 +32,7 @@ dto! {pub struct SourcePlacement {
 dto! {pub struct Options {
     pub overlaps:Vec<usize>,pub topology:Topology,pub cuts:Vec<Cuts>,
     pub min_paired_bases:usize,pub max_comparisons:usize,pub max_candidates:usize,
-    #[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]
+    #[serde(deserialize_with="crate::encoding::required_option")]
     pub planned_rescue:Option<PlannedRescue>,
 }}
 // A whole surviving covalent strand. Reference coordinates increase on top,

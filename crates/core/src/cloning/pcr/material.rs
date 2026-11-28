@@ -59,7 +59,7 @@ pub fn revision(
     template_strand: crate::chemistry::Strand,
 ) -> Result<String, Error> {
     preflight(source, origin, forward, reverse)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         verification::ENGINE_VERSION,
         source,
@@ -95,7 +95,7 @@ fn evidence(
         engine_version: ENGINE_VERSION.into(),
         context_revision: context,
         source_revision: source.revision(),
-        origin_revision: crate::cloning::assembly::recipe::hash(origin)?,
+        origin_revision: crate::encoding::bounded_json::hash(origin)?,
         selection: origin.selection(),
         origin_incomplete: incomplete,
         origin_findings: findings,
@@ -199,7 +199,7 @@ pub fn outputs_revision(
 ) -> Result<String, Error> {
     preflight(&request.source, origin, &request.forward, &request.reverse)?;
     pcr_outputs::revision(request)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         "outputs",
         verification::ENGINE_VERSION,

@@ -73,7 +73,7 @@ struct Inputs {
 #[derive(Clone)]
 struct Bound {
     origin: Option<PinnedOrigin>,
-    inspection: Arc<collagene_core::material::derivation::DigestPreview>,
+    inspection: Arc<collagene_core::material::derivation::digest::DigestPreview>,
     source: SourceInfo,
     molecule: Arc<Molecule>,
     inputs: Inputs,
@@ -94,7 +94,7 @@ impl Bound {
     }
     fn saved_inspection(
         &self,
-    ) -> Option<&Arc<collagene_core::material::derivation::DigestPreview>> {
+    ) -> Option<&Arc<collagene_core::material::derivation::digest::DigestPreview>> {
         self.origin.as_ref().map(|_| &self.inspection)
     }
     fn material_domain(&self) -> Option<crate::assembly::draft::model::MaterialDomain> {
@@ -185,7 +185,7 @@ pub fn DigestPanel(
         (
             String,
             SavedRecipe,
-            collagene_core::material::derivation::DigestPreview,
+            collagene_core::material::derivation::digest::DigestPreview,
         ),
         Result<(), String>,
     >,
@@ -1100,7 +1100,7 @@ pub fn DigestPanel(
             authority: &'static str,
             source: &'a SourceInfo,
             recipe: &'a SavedRecipe,
-            inspection: &'a collagene_core::material::derivation::DigestPreview,
+            inspection: &'a collagene_core::material::derivation::digest::DigestPreview,
         }
         let recipe = data.recipe();
         let artifact = Evidence {

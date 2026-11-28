@@ -1,7 +1,6 @@
 //! Immutable historical multi-parent reference graphs, separately bound to exact run events.
 //! Reading this attachment never restores fresh scientific/material authority.
 use crate::{
-    cloning::assembly::recipe as assembly_recipe,
     documents::workspace::{Workspace, WorkspaceAttachment},
     material::lineage::{
         self as run_lineage, EventBinding, InputEventBinding, ProductBinding, RunRecord,
@@ -347,8 +346,8 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
     // All nested model/location shapes have been bounded above. Count the whole
     // attachment before rich hashes or selected-document cloning.
     serde_json::to_writer(Counter(0), e).map_err(|_| Error::TooLarge)?;
-    if assembly_recipe::hash(&(&e.target, &e.inputs, &e.products))?
-        != assembly_recipe::hash(&(&r.target, &r.inputs, &r.products))?
+    if crate::encoding::bounded_json::hash(&(&e.target, &e.inputs, &e.products))?
+        != crate::encoding::bounded_json::hash(&(&r.target, &r.inputs, &r.products))?
     {
         return Err(bad("exact source/target/product events differ"));
     }
@@ -382,7 +381,8 @@ fn validate(e: &Evidence, r: &RunRecord) -> Result<(), Error> {
             || selection.candidate_id != declared.candidate_id
             || selection.component_id != declared.component_id
             || batch.batch_revision != selection.batch_revision
-            || assembly_recipe::hash(request)? != assembly_recipe::hash(&batch.request)?
+            || crate::encoding::bounded_json::hash(request)?
+                != crate::encoding::bounded_json::hash(&batch.request)?
             || sources.len() != batch.sources.len()
         {
             return Err(bad("reference step declaration or selection changed"));

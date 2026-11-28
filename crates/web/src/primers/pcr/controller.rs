@@ -47,6 +47,12 @@ pub(crate) struct PcrState {
     pub(crate) pcr_alive: StoredValue<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 impl PcrState {
+    pub(crate) fn workspace_replaced(&self) {
+        // Invalidate in-flight callbacks immediately, before the epoch effect
+        // clears displayed evidence and closes the existing output worker.
+        self.pcr_generation
+            .update(|generation| *generation = generation.wrapping_add(1));
+    }
     pub(crate) fn new(
         session: WorkspaceSession,
         pending_pcr_source: RwSignal<Option<crate::primers::pcr::pcr_source_view::Snapshot>>,
@@ -956,5 +962,30 @@ impl PcrController {
                 Ok(())
             },
         )
+    }
+}
+
+/// Editable primer-pair intent and pending primer/mutagenesis seeds.
+#[derive(Clone, Copy)]
+pub(crate) struct PrimerDesignState {
+    pub(crate) pair_draft: RwSignal<crate::primers::primer_pair_model::PairDraft>,
+    pub(crate) primer_seed: RwSignal<Option<collagene_core::sequence::analysis::Primer>>,
+    pub(crate) mutation_seed:
+        RwSignal<Option<crate::cloning::methods::mutagenesis::MutationSelection>>,
+}
+impl PrimerDesignState {
+    pub(crate) fn new() -> Self {
+        Self {
+            pair_draft: RwSignal::new(crate::primers::primer_pair_model::PairDraft::default()),
+            primer_seed: RwSignal::new(None::<Primer>),
+            mutation_seed: RwSignal::new(
+                None::<crate::cloning::methods::mutagenesis::MutationSelection>,
+            ),
+        }
+    }
+    pub(crate) fn restore(&self, draft: crate::primers::primer_pair_model::PairDraft) {
+        self.pair_draft.set(draft);
+        self.primer_seed.set(None);
+        self.mutation_seed.set(None);
     }
 }

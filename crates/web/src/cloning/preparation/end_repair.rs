@@ -250,7 +250,7 @@ pub fn EndRepairPanel(
                     None,
                 )?;
                 let revision =
-                    collagene_core::material::derivation::annealed_oligos_preview_revision(
+                    collagene_core::material::derivation::annealing::annealed_oligos_preview_revision(
                         &frame,
                         &top_info.binding,
                         &bottom_info.binding,

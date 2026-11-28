@@ -126,7 +126,7 @@ async fn terminal(c: &Client, w: &Value, source: &EventBinding, action: Value) -
     let (text, encoding) = artifact(c, &preview["artifact_id"]).await;
     assert_eq!(encoding, "utf-8");
     let evidence: Value = serde_json::from_str(&text).unwrap();
-    let report: native::TerminalProcessingPreview =
+    let report: native::terminal::TerminalProcessingPreview =
         serde_json::from_value(evidence["preview"].clone()).unwrap();
     report
         .validate_binding(preview["context_revision"].as_str().unwrap())
@@ -365,7 +365,8 @@ fn conditional_oe_stock() -> (Workspace, EventBinding) {
     };
     let origin = native::SourceOrigin::OriginalReference;
     let source = binding(&w, 0);
-    let preview = native::preview_overlap_extension(&w, &source, &origin, &prep).unwrap();
+    let preview =
+        native::overlap_extension::preview_overlap_extension(&w, &source, &origin, &prep).unwrap();
     assert!(preview.incomplete);
     assert!(preview.reusable());
     let result = native::prepare_install(

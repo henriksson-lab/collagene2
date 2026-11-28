@@ -140,7 +140,7 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
     assert_eq!(mods.unknown_eligible, 0);
     let pcr_capsule = d::capsule(&w, &pcr_pin).unwrap();
     let origin = d::SourceOrigin::Saved(MaterialOrigin::Derived(pcr_capsule));
-    let preview = d::inspect_digest(
+    let preview = d::digest::inspect_digest(
         "literal-derived-source",
         &source(&w, &pcr_pin),
         &origin,

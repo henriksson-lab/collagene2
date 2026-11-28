@@ -163,7 +163,8 @@ pub(crate) fn retained_pin(
     let enzymes = selection.resolved_enzymes(catalog)?;
     if enzymes.len() != 1
         || selection.enzymes[0].id != enzyme.profile().name.to_ascii_lowercase()
-        || assembly_recipe::hash(&enzymes[0])? != assembly_recipe::hash(&enzyme.profile())?
+        || crate::encoding::bounded_json::hash(&enzymes[0])?
+            != crate::encoding::bounded_json::hash(&enzyme.profile())?
     {
         return Err(bad(
             "retained enzyme pin differs from the chosen Type IIS profile",
@@ -305,7 +306,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
             }
         }
     }
-    assembly_recipe::hash(&(inputs, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, r))?;
     Ok(())
 }
 pub fn source_preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error> {
@@ -336,7 +337,7 @@ pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Erro
             .collect::<Vec<_>>(),
         r,
     )?;
-    assembly_recipe::hash(&(ENGINE_VERSION, pins(inputs)?, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, pins(inputs)?, r))
 }
 fn segments(r: &Request, fusion: String, inserted: String) -> TailSegments {
     TailSegments {
@@ -362,7 +363,8 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         catalog_digest::select(&catalog, &[r.enzyme.profile().name.to_ascii_lowercase()])?;
     let enzymes = selection.resolved_enzymes(&catalog)?;
     if enzymes.len() != 1
-        || assembly_recipe::hash(&enzymes[0])? != assembly_recipe::hash(&r.enzyme.profile())?
+        || crate::encoding::bounded_json::hash(&enzymes[0])?
+            != crate::encoding::bounded_json::hash(&r.enzyme.profile())?
     {
         return Err(bad("builtin selected enzyme geometry changed"));
     }
@@ -497,8 +499,8 @@ impl Report {
         }
         self.intent
             .validate_binding(&self.intent.context_revision)?;
-        if assembly_recipe::hash(&self.request.base)?
-            != assembly_recipe::hash(&self.intent.base_request)?
+        if crate::encoding::bounded_json::hash(&self.request.base)?
+            != crate::encoding::bounded_json::hash(&self.intent.base_request)?
             || self.request.edits != self.intent.edits
             || self.recipe.name != self.request.base.name
             || self.recipe.circular != self.request.base.circular
@@ -515,7 +517,8 @@ impl Report {
             .ok_or_else(|| bad("missing source revision pins"))?;
         let pins: Vec<(String, String)> =
             serde_json::from_str(raw).map_err(|_| bad("invalid source pins"))?;
-        if assembly_recipe::hash(&(ENGINE_VERSION, &pins, &self.request))? != self.context_revision
+        if crate::encoding::bounded_json::hash(&(ENGINE_VERSION, &pins, &self.request))?
+            != self.context_revision
         {
             return Err(bad("source/request context changed"));
         }
@@ -538,7 +541,8 @@ impl Report {
                 Row::Retain(original) => {
                     retained_pin(original, &catalog, self.request.enzyme)?;
                     if design.is_some()
-                        || assembly_recipe::hash(original)? != assembly_recipe::hash(row)?
+                        || crate::encoding::bounded_json::hash(original)?
+                            != crate::encoding::bounded_json::hash(row)?
                     {
                         return Err(bad("retained preparation, treatment or repair changed"));
                     }
@@ -586,8 +590,8 @@ impl Report {
                         || evidence.input_id != f.input_id
                         || evidence.input_revision != f.input_revision
                         || evidence.fragment_index != 1
-                        || assembly_recipe::hash(&evidence.selection)?
-                            != assembly_recipe::hash(&expected_selection)?
+                        || crate::encoding::bounded_json::hash(&evidence.selection)?
+                            != crate::encoding::bounded_json::hash(&expected_selection)?
                         || row.source.role != f.role
                         || row.source.input_id != f.input_id
                         || row.source.reverse != geometry.reverse
@@ -623,9 +627,10 @@ impl Report {
                             rc(&inserted[i])?
                         },
                     );
-                    if assembly_recipe::hash(&ft)? != assembly_recipe::hash(&evidence.forward_tail)?
-                        || assembly_recipe::hash(&rt)?
-                            != assembly_recipe::hash(&evidence.reverse_tail)?
+                    if crate::encoding::bounded_json::hash(&ft)?
+                        != crate::encoding::bounded_json::hash(&evidence.forward_tail)?
+                        || crate::encoding::bounded_json::hash(&rt)?
+                            != crate::encoding::bounded_json::hash(&evidence.reverse_tail)?
                     {
                         return Err(bad("fusion/insert segmentation changed"));
                     }
@@ -666,11 +671,12 @@ impl Report {
                             "selected preparation must remain PCR→pinned digest without implicit repair",
                         ));
                     };
-                    if assembly_recipe::hash(forward)? != assembly_recipe::hash(&evidence.forward)?
-                        || assembly_recipe::hash(reverse)?
-                            != assembly_recipe::hash(&evidence.reverse)?
-                        || assembly_recipe::hash(selection)?
-                            != assembly_recipe::hash(&evidence.selection)?
+                    if crate::encoding::bounded_json::hash(forward)?
+                        != crate::encoding::bounded_json::hash(&evidence.forward)?
+                        || crate::encoding::bounded_json::hash(reverse)?
+                            != crate::encoding::bounded_json::hash(&evidence.reverse)?
+                        || crate::encoding::bounded_json::hash(selection)?
+                            != crate::encoding::bounded_json::hash(&evidence.selection)?
                         || *fragment_index != evidence.fragment_index
                     {
                         return Err(bad(
@@ -686,7 +692,7 @@ impl Report {
         {
             return Err(bad("invalid retained-index or warning receipt"));
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

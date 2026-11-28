@@ -112,16 +112,16 @@ impl<'a> Index<'a> {
         graph.edge()?;
         graph.kept_assets.insert(owner.attachment.clone());
         graph.binding(&record.product)?;
-        for binding in native::source_bindings(&record)? {
+        for binding in record.source_bindings()? {
             graph.binding(&binding)?;
         }
-        for selection in native::required_graph_records(&record)? {
+        for selection in record.required_graph_records()? {
             graph.topo_graph(&selection)?;
         }
-        for run in native::required_run_ids(&record)? {
+        for run in record.required_run_ids()? {
             graph.run(&run)?;
         }
-        for binding in native::required_derivation_products(&record)? {
+        for binding in record.required_derivation_products()? {
             let expected = self
                 .owners
                 .get(&binding.event_id)

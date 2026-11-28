@@ -274,3 +274,28 @@ impl ReferenceController {
         )
     }
 }
+
+/// Workspace-bound reference clipboard and pending paste declaration.
+#[derive(Clone, Copy)]
+pub(crate) struct ReferenceTransferState {
+    pub(crate) internal_clipboard:
+        RwSignal<Option<std::sync::Arc<crate::workspace::reference_transfer_view::Copied>>>,
+    pub(crate) pending_reference_paste:
+        RwSignal<Option<crate::workspace::reference_transfer_view::PasteOpen>>,
+}
+impl ReferenceTransferState {
+    pub(crate) fn new() -> Self {
+        Self {
+            internal_clipboard: RwSignal::new(
+                None::<std::sync::Arc<crate::workspace::reference_transfer_view::Copied>>,
+            ),
+            pending_reference_paste: RwSignal::new(
+                None::<crate::workspace::reference_transfer_view::PasteOpen>,
+            ),
+        }
+    }
+    pub(crate) fn restore(&self) {
+        self.internal_clipboard.set(None);
+        self.pending_reference_paste.set(None);
+    }
+}

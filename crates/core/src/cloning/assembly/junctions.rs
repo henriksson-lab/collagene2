@@ -3,7 +3,6 @@
 //! experimental ligation, or reading-frame intent from feature labels.
 use crate::{
     chemistry::{Duplex, DuplexSummary, End, Nick},
-    cloning::assembly::recipe as assembly_recipe,
     planning::plan::{DesignPlan, Operation, OrientedSource, Source},
     sequence::translation::{self, InitiationPolicy, TranslationOptions, TranslationReport},
     verification::{self, evidence::VerificationReport},
@@ -109,7 +108,7 @@ pub fn source_preflight(plan: &DesignPlan, target: &Molecule) -> Result<(), Erro
         return Err(bad("invalid original/target revision shape"));
     }
     verification::sources::validate_reference_steps(plan)?;
-    assembly_recipe::hash(&(plan, target))?;
+    crate::encoding::bounded_json::hash(&(plan, target))?;
     Ok(())
 }
 pub fn inspection_revision(
@@ -119,7 +118,7 @@ pub fn inspection_revision(
 ) -> Result<String, Error> {
     options.validate()?;
     source_preflight(plan, target)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, plan, target, options))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, plan, target, options))
 }
 fn resolve<'a>(
     plan: &'a DesignPlan,
@@ -425,7 +424,8 @@ fn geometry(
                 })
                 .ok_or_else(|| bad("annealing physical strand evidence is unavailable"))?;
             native.validate_documentary()?;
-            if assembly_recipe::hash(&native.options)? != assembly_recipe::hash(policy)?
+            if crate::encoding::bounded_json::hash(&native.options)?
+                != crate::encoding::bounded_json::hash(policy)?
                 || native.reference != product.sequence
                 || policy.topology != product.topology
             {
@@ -465,7 +465,8 @@ fn geometry(
                 })
                 .ok_or_else(|| bad("native homology strand evidence is unavailable"))?;
             native.validate_documentary()?;
-            if assembly_recipe::hash(&native.options)? != assembly_recipe::hash(policy)?
+            if crate::encoding::bounded_json::hash(&native.options)?
+                != crate::encoding::bounded_json::hash(policy)?
                 || native.source_geometry_revisions.len() != fragments.len()
                 || native.product.as_ref().is_none_or(|duplex| {
                     duplex.top != product.sequence || duplex.topology != product.topology
@@ -868,7 +869,7 @@ pub fn inspect_plan(
     let context_revision = inspection_revision(plan, target, options)?;
     let (verification, trace, golden_gate) =
         verification::engine::verify_with_golden_gate_trace(plan, target);
-    let mut report=Report{engine_version:ENGINE_VERSION.into(),context_revision,plan_revision:assembly_recipe::hash(plan)?,target_revision:assembly_recipe::hash(target)?,options:options.clone(),verification,product_revision:None,product_length:None,product_topology:None,method:None,junctions:vec![],complete:false,omitted_junctions:0,warnings:vec!["Junction DNA is the expected reconstructed product, not measured material. Window-relative translations do not establish a CDS reading frame, fusion function or experimental success.".into(),"Frames0/1/2 skip calls at the beginning of each explicitly oriented WINDOW; they are not product-origin frames. CDS windows, when available, instead use explicit feature-directed coding geometry and the existing genetic-code engine.".into()]};
+    let mut report=Report{engine_version:ENGINE_VERSION.into(),context_revision,plan_revision:crate::encoding::bounded_json::hash(plan)?,target_revision:crate::encoding::bounded_json::hash(target)?,options:options.clone(),verification,product_revision:None,product_length:None,product_topology:None,method:None,junctions:vec![],complete:false,omitted_junctions:0,warnings:vec!["Junction DNA is the expected reconstructed product, not measured material. Window-relative translations do not establish a CDS reading frame, fusion function or experimental success.".into(),"Frames0/1/2 skip calls at the beginning of each explicitly oriented WINDOW; they are not product-origin frames. CDS windows, when available, instead use explicit feature-directed coding geometry and the existing genetic-code engine.".into()]};
     if report.verification.products.len() != plan.steps.len() {
         report.warnings.push("Final operation did not reconstruct a product. Earlier preparation products are retained in verification evidence but are never presented as final junction DNA.".into());
         report.validate()?;
@@ -880,7 +881,7 @@ pub fn inspect_plan(
         .last()
         .ok_or_else(|| bad("missing final reconstructed product"))?;
     collagene_model::bounds::model_preflight(&[product])?;
-    let product_revision = assembly_recipe::hash(product)?;
+    let product_revision = crate::encoding::bounded_json::hash(product)?;
     report.product_revision = Some(product_revision.clone());
     report.product_length = Some(product.sequence.len());
     report.product_topology = Some(product.topology);
@@ -1064,7 +1065,7 @@ impl Report {
                 .products
                 .last()
                 .ok_or_else(|| bad("product receipt has no actual reconstructed DNA"))?;
-            if assembly_recipe::hash(product)? != *revision
+            if crate::encoding::bounded_json::hash(product)? != *revision
                 || Some(product.sequence.len()) != self.product_length
                 || Some(product.topology) != self.product_topology
             {
@@ -1281,7 +1282,7 @@ impl Report {
                 return Err(Error::TooLarge);
             }
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {

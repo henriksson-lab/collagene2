@@ -182,7 +182,7 @@ fn json<T: Serialize>(value: &T) -> Result<String, Error> {
     serde_json::to_string(value).map_err(|_| Error::TooLarge)
 }
 fn context(source: &str, base: &assembly_intent::Request, edits: &[Edit]) -> Result<String, Error> {
-    assembly_recipe::hash(&(ENGINE_VERSION, source, base, edits))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, source, base, edits))
 }
 pub fn intent_preflight(
     inputs: &[(&str, &Molecule)],
@@ -475,7 +475,7 @@ pub fn preflight(inputs: &[(&str, &Molecule)], r: &Request) -> Result<(), Error>
             .filter(|n| *n <= 100_000_000)
             .ok_or(Error::TooLarge)?;
     }
-    assembly_recipe::hash(&(inputs, r))?;
+    crate::encoding::bounded_json::hash(&(inputs, r))?;
     Ok(())
 }
 pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Error> {
@@ -486,7 +486,7 @@ pub fn design_revision(inputs: &[PlanInput], r: &Request) -> Result<String, Erro
             .collect::<Vec<_>>(),
         r,
     )?;
-    assembly_recipe::hash(&(ENGINE_VERSION, "design", pins(inputs)?, r))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "design", pins(inputs)?, r))
 }
 pub(crate) fn prefix(m: &Molecule, f: &Fragment, h: usize) -> Result<String, Error> {
     let n = m.sequence.len();
@@ -605,7 +605,9 @@ impl Intent {
                 .map(|f| f.source_length)
                 .collect::<Vec<_>>(),
         )?;
-        if assembly_recipe::hash(&adjusted)? != assembly_recipe::hash(&self.adjusted_fragments)? {
+        if crate::encoding::bounded_json::hash(&adjusted)?
+            != crate::encoding::bounded_json::hash(&self.adjusted_fragments)?
+        {
             return Err(bad("adjusted fragment selectors changed"));
         }
         for (i, (f, (a, b))) in self.fragments.iter().zip(layout).enumerate() {
@@ -709,14 +711,14 @@ impl Report {
             .ok_or_else(|| bad("missing design source pins"))?;
         let pins: Vec<(String, String)> =
             serde_json::from_str(raw).map_err(|_| bad("invalid design source pins"))?;
-        if assembly_recipe::hash(&(ENGINE_VERSION, "design", &pins, &self.request))?
+        if crate::encoding::bounded_json::hash(&(ENGINE_VERSION, "design", &pins, &self.request))?
             != self.context_revision
         {
             return Err(bad("design request/source context changed"));
         }
 
-        if assembly_recipe::hash(&self.request.base)?
-            != assembly_recipe::hash(&self.intent.base_request)?
+        if crate::encoding::bounded_json::hash(&self.request.base)?
+            != crate::encoding::bounded_json::hash(&self.intent.base_request)?
             || self.request.edits != self.intent.edits
             || self.recipe.name != self.request.base.name
             || self.recipe.circular != self.request.base.circular
@@ -776,8 +778,10 @@ impl Report {
             options.forward_tail = forward.tail.clone();
             options.reverse_tail = reverse.tail.clone();
             if options != d.options
-                || assembly_recipe::hash(forward)? != assembly_recipe::hash(&pair.forward.primer)?
-                || assembly_recipe::hash(reverse)? != assembly_recipe::hash(&pair.reverse.primer)?
+                || crate::encoding::bounded_json::hash(forward)?
+                    != crate::encoding::bounded_json::hash(&pair.forward.primer)?
+                || crate::encoding::bounded_json::hash(reverse)?
+                    != crate::encoding::bounded_json::hash(&pair.reverse.primer)?
             {
                 return Err(bad(
                     "recipe oligos disagree with the actually ranked pair/options",
@@ -831,7 +835,7 @@ impl Report {
             warning_guard(&d.warnings)?;
         }
         warning_guard(&self.warnings)?;
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
 }

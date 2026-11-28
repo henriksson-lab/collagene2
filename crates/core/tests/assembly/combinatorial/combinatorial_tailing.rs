@@ -245,7 +245,7 @@ fn explicit_actions_are_complete_unique_profile_bound_and_bin_bound() {
             actions: bad_actions,
             allow_nicked: false,
         };
-        assert!(design::validate_design(&bad).is_err());
+        assert!(bad.validate().is_err());
     }
 }
 fn saved_tailed_vector(w: Workspace) -> (Workspace, LibraryMaterialBinding) {

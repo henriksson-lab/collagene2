@@ -168,7 +168,7 @@ async fn actual_saved_template_inspection_attests_origin_and_preserves_independe
     let origin = native::SourceOrigin::Saved(run_material::MaterialOrigin::Run(run_origin));
     let forward = Primer::new("New derived F", "CACCA", "").unwrap();
     let reverse = Primer::new("New derived R", "CGTCA", "").unwrap();
-    let preview = native::preview_pcr(
+    let preview = native::pcr::preview_pcr(
         source,
         &origin,
         &forward,

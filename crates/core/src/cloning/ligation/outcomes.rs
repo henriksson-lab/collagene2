@@ -172,7 +172,7 @@ fn sources<'a>(
 /// Full native material identities plus literal path/bounds; no target input.
 pub fn revision(operands: &[Operand<'_>], request: &Request) -> Result<String, Error> {
     let (sources, _, _) = sources(operands, request)?;
-    crate::cloning::assembly::recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         crate::verification::ENGINE_VERSION,
         modified_duplex::ENGINE_VERSION,
@@ -186,7 +186,7 @@ fn context(
     science: &str,
     material: &str,
 ) -> Result<String, Error> {
-    crate::cloning::assembly::recipe::hash(&(ENGINE_VERSION, science, material, sources, request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, science, material, sources, request))
 }
 struct Search<'a> {
     keys: Vec<String>,

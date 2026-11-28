@@ -51,7 +51,7 @@ fn request(
     bottom: EventBinding,
     options: AnnealOptions,
 ) -> native::Request {
-    let preview = native::preview_annealed_oligos(w, &top, &bottom, &options).unwrap();
+    let preview = native::annealing::preview_annealed_oligos(w, &top, &bottom, &options).unwrap();
     let selection = preview
         .selection(&preview.preview.annealing.candidates[0].id)
         .unwrap();
@@ -187,7 +187,8 @@ fn swapped_roles_changed_selection_and_detached_physical_previews_cannot_authori
     let mut changed = request;
     changed.save_primers = true;
     assert!(native::preflight(&w, &changed).is_err());
-    let preview = native::preview_annealed_oligos(&w, &top, &bottom, &options()).unwrap();
+    let preview =
+        native::annealing::preview_annealed_oligos(&w, &top, &bottom, &options()).unwrap();
     let mut detached = preview.products[0].clone();
     detached.metadata.remove("duplex_model");
     let detached = Workspace::from_documents(
@@ -197,7 +198,7 @@ fn swapped_roles_changed_selection_and_detached_physical_previews_cannot_authori
     )
     .unwrap();
     assert!(
-        native::preview_annealed_oligos(
+        native::annealing::preview_annealed_oligos(
             &detached,
             &event(&detached, 0),
             &event(&detached, 1),
@@ -232,7 +233,8 @@ fn selecting_a_repeated_or_capped_geometry_retains_alternatives_and_incompletene
             ..options()
         };
         let preview =
-            native::preview_annealed_oligos(&w, &event(&w, 0), &event(&w, 1), &o).unwrap();
+            native::annealing::preview_annealed_oligos(&w, &event(&w, 0), &event(&w, 1), &o)
+                .unwrap();
         assert!(preview.incomplete);
         assert!(!preview.preview.annealing.unique);
         if max_candidates > 1 {

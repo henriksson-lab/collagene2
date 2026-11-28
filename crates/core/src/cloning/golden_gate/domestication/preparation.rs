@@ -2,7 +2,6 @@
 //! A reference-only recoded target never becomes an invented PCR template.
 use crate::{
     cloning::{
-        assembly::recipe as assembly_recipe,
         golden_gate::domestication,
         pcr::mutagenesis::{self, InversePcrOptions},
     },
@@ -36,7 +35,7 @@ dto! {pub struct RoundEvidence {
     pub forward:crate::sequence::analysis::Primer,pub reverse:crate::sequence::analysis::Primer,
     pub forward_location:collagene_model::Location,pub reverse_location:collagene_model::Location,pub retained_template_length:usize,
 }}
-dto! {pub struct Request {pub design:domestication::Request,pub selection:domestication::Selection,pub route:Route,#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]pub origin:Option<MaterialOrigin>}}
+dto! {pub struct Request {pub design:domestication::Request,pub selection:domestication::Selection,pub route:Route,#[serde(deserialize_with="crate::encoding::required_option")]pub origin:Option<MaterialOrigin>}}
 dto! {pub enum MethodEvidence {
     InversePcr {options:InversePcrOptions,forward:crate::sequence::analysis::Primer,reverse:crate::sequence::analysis::Primer,forward_location:collagene_model::Location,reverse_location:collagene_model::Location,retained_template_length:usize},
     OverlapExtension {context_revision:String,source_frame:crate::cloning::overlap::extension::primers::SourceFrame,preparation:crate::cloning::overlap::extension::pcr::Request,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]designs:Vec<crate::cloning::pcr::primers::DesignReport>,search:Vec<crate::cloning::overlap::extension::primers::PairSearch>},
@@ -265,7 +264,7 @@ pub fn preflight(
 }
 fn documentary_revision(input: &PlanInput, request: &Request) -> Result<String, Error> {
     documentary_preflight(input, request)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, input, request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, input, request))
 }
 pub fn revision(
     input: &PlanInput,
@@ -273,7 +272,7 @@ pub fn revision(
     workspace: Option<&Workspace>,
 ) -> Result<String, Error> {
     preflight(input, request, workspace)?;
-    assembly_recipe::hash(&(ENGINE_VERSION, input, request))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, input, request))
 }
 pub(crate) fn append_origin(
     input: &str,
@@ -655,15 +654,16 @@ impl Prepared {
                     self.request.origin.as_ref(),
                     &desired,
                 )?;
-                if assembly_recipe::hash(&self.plan)? != assembly_recipe::hash(&compiled.plan)?
-                    || assembly_recipe::hash(&(
+                if crate::encoding::bounded_json::hash(&self.plan)?
+                    != crate::encoding::bounded_json::hash(&compiled.plan)?
+                    || crate::encoding::bounded_json::hash(&(
                         actual,
                         forward,
                         reverse,
                         forward_location,
                         reverse_location,
                         retained_template_length,
-                    ))? != assembly_recipe::hash(&(
+                    ))? != crate::encoding::bounded_json::hash(&(
                         &compiled.options,
                         &compiled.forward,
                         &compiled.reverse,
@@ -721,7 +721,8 @@ impl Prepared {
                 }
                 if self.plan.name
                     != format!("Overlap-extension domestication of {}", input.molecule.name)
-                    || assembly_recipe::hash(&steps)? != assembly_recipe::hash(&self.plan.steps)?
+                    || crate::encoding::bounded_json::hash(&steps)?
+                        != crate::encoding::bounded_json::hash(&self.plan.steps)?
                 {
                     return Err(bad(
                         "OE physical branch/extension/outer/closure graph changed",
@@ -744,8 +745,10 @@ impl Prepared {
                         "Sequential inverse-PCR domestication of {}",
                         input.molecule.name
                     )
-                    || assembly_recipe::hash(&self.plan.steps)? != assembly_recipe::hash(&steps)?
-                    || assembly_recipe::hash(evidence)? != assembly_recipe::hash(&expected_rounds)?
+                    || crate::encoding::bounded_json::hash(&self.plan.steps)?
+                        != crate::encoding::bounded_json::hash(&steps)?
+                    || crate::encoding::bounded_json::hash(evidence)?
+                        != crate::encoding::bounded_json::hash(&expected_rounds)?
                 {
                     return Err(bad(
                         "sequential original-coordinate rounds, oligos or preceding-product graph changed",

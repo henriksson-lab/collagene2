@@ -223,7 +223,7 @@ pub fn preview_revision(
         r,
     )?;
     let t = assembly_recipe::bound_revisions(inputs, target)?;
-    assembly_recipe::hash(&(
+    crate::encoding::bounded_json::hash(&(
         ENGINE_VERSION,
         inputs
             .iter()
@@ -261,7 +261,9 @@ pub fn design(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<Re
     let profile = r.enzyme.profile();
     let selection = catalog_digest::select(&catalog, &[profile.name.to_ascii_lowercase()])?;
     let enzymes = selection.resolved_enzymes(&catalog)?;
-    if enzymes.len() != 1 || assembly_recipe::hash(&enzymes[0])? != assembly_recipe::hash(&profile)?
+    if enzymes.len() != 1
+        || crate::encoding::bounded_json::hash(&enzymes[0])?
+            != crate::encoding::bounded_json::hash(&profile)?
     {
         return Err(bad(
             "embedded catalog geometry differs from declared enzyme profile",
@@ -598,14 +600,17 @@ impl Report {
                 ));
             };
             if *fragment_index != row.fragment_index
-                || assembly_recipe::hash(forward)? != assembly_recipe::hash(&row.forward)?
-                || assembly_recipe::hash(reverse)? != assembly_recipe::hash(&row.reverse)?
-                || assembly_recipe::hash(selection)? != assembly_recipe::hash(&row.selection)?
+                || crate::encoding::bounded_json::hash(forward)?
+                    != crate::encoding::bounded_json::hash(&row.forward)?
+                || crate::encoding::bounded_json::hash(reverse)?
+                    != crate::encoding::bounded_json::hash(&row.reverse)?
+                || crate::encoding::bounded_json::hash(selection)?
+                    != crate::encoding::bounded_json::hash(&row.selection)?
             {
                 return Err(bad("preparation disagrees with row"));
             }
         }
-        assembly_recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {

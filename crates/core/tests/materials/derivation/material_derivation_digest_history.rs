@@ -193,17 +193,20 @@ fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and
     let record =
         d::load_record(&reopened.attachments[&prepared.receipt.record_hash].bytes).unwrap();
     assert!(
-        d::source_bindings(&record)
+        record
+            .source_bindings()
             .unwrap()
             .contains(&request.sources[0].event)
     );
     assert!(
-        d::source_bindings(&record)
+        record
+            .source_bindings()
             .unwrap()
             .contains(&origin.target_event)
     );
     assert!(
-        d::required_run_ids(&record)
+        record
+            .required_run_ids()
             .unwrap()
             .contains(&origin.selection.run_id)
     );

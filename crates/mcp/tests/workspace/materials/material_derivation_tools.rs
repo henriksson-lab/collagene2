@@ -288,7 +288,7 @@ async fn ordinary_pcr_native_install_redigest_and_derived_discovery_preserve_imm
     assert_eq!(digest["products_determined"], true);
     assert_eq!(digest["fragment_count"], 2);
     let full = json_artifact(&c, &digest["artifact_id"]).await;
-    let report: native::DigestPreview = serde_json::from_value(full).unwrap();
+    let report: native::digest::DigestPreview = serde_json::from_value(full).unwrap();
     report
         .validate_binding(digest["context_revision"].as_str().unwrap())
         .unwrap();
@@ -363,7 +363,7 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
     let full = json_artifact(&c, &preview["artifact_id"]).await;
     assert_eq!(full["workspace"], input);
     assert_eq!(full["source"], json!(pin));
-    let native_preview: native::MismatchPreview =
+    let native_preview: native::pcr::MismatchPreview =
         serde_json::from_value(full["preview"].clone()).unwrap();
     native_preview
         .validate_binding(preview["context_revision"].as_str().unwrap())
@@ -492,7 +492,8 @@ async fn mismatch_and_saved_fragment_repair_use_same_target_free_tool_and_exact_
     assert_eq!(preview["repair"]["bottom_added_3prime"], "AATT");
     let full = json_artifact(&c, &preview["artifact_id"]).await;
     assert_eq!(full["source"], json!(receipt.product));
-    let full: native::RepairPreview = serde_json::from_value(full["preview"].clone()).unwrap();
+    let full: native::end_repair::RepairPreview =
+        serde_json::from_value(full["preview"].clone()).unwrap();
     full.validate_binding(preview["context_revision"].as_str().unwrap())
         .unwrap();
     reject(&c,json!({"workspace":reference(&cut),"task":{"PreviewRepair":{"source":receipt.product,"origin":"OriginalReference","method":"Blunt"}}})).await;

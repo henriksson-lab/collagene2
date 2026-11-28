@@ -86,7 +86,7 @@ pub fn revision(
     {
         return Err(bad("matching DNA or RNA alphabets are required"));
     }
-    crate::cloning::assembly::recipe::hash(&(ENGINE_VERSION, reference, query, options))
+    crate::encoding::bounded_json::hash(&(ENGINE_VERSION, reference, query, options))
 }
 pub fn compare(reference: &Molecule, query: &Molecule, options: &Options) -> Result<Report, Error> {
     let context_revision = revision(reference, query, options)?;
@@ -216,7 +216,7 @@ impl Report {
             }
         }
         validate_alignment(a, self.reference_length, self.query_length)?;
-        crate::cloning::assembly::recipe::hash(self)?;
+        crate::encoding::bounded_json::hash(self)?;
         Ok(())
     }
     /// Bind letters, native coordinate systems and options to actual source models.

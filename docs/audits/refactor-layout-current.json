@@ -1,0 +1,217 @@
+{
+  "scope": "Current tracked and unignored Rust source, including uncommitted citation work; source audit only, not scientific verification.",
+  "files": 1247,
+  "directories": 215,
+  "largest_files": [
+    {
+      "path": "crates/web/src/app/mod.rs",
+      "lines": 2869
+    },
+    {
+      "path": "crates/topo/src/lib.rs",
+      "lines": 2315
+    },
+    {
+      "path": "crates/core/src/review/contigs/mod.rs",
+      "lines": 2252
+    },
+    {
+      "path": "crates/web/src/viewer/sequence/sequence_view.rs",
+      "lines": 2244
+    },
+    {
+      "path": "crates/core/src/cloning/assembly/recipe.rs",
+      "lines": 2240
+    },
+    {
+      "path": "crates/web/src/assembly/review/assembly_review.rs",
+      "lines": 2144
+    },
+    {
+      "path": "crates/core/src/planning/combinatorial/mod.rs",
+      "lines": 2105
+    },
+    {
+      "path": "crates/core/src/verification/engine.rs",
+      "lines": 2071
+    },
+    {
+      "path": "crates/desktop-host/src/catalog_backup.rs",
+      "lines": 2069
+    },
+    {
+      "path": "crates/core/src/output/pdf.rs",
+      "lines": 2051
+    },
+    {
+      "path": "crates/web/src/assembly/draft/assembly_workspace.rs",
+      "lines": 1961
+    },
+    {
+      "path": "crates/server/tests/router.rs",
+      "lines": 1939
+    },
+    {
+      "path": "crates/core/src/cloning/topo/mod.rs",
+      "lines": 1892
+    },
+    {
+      "path": "crates/core/src/sequence/codon_design.rs",
+      "lines": 1833
+    },
+    {
+      "path": "crates/web/src/viewer/map/renderer.rs",
+      "lines": 1755
+    },
+    {
+      "path": "crates/web/src/genomes/genomes.rs",
+      "lines": 1733
+    },
+    {
+      "path": "crates/web/src/assembly/library/assembly_batch_projection.rs",
+      "lines": 1653
+    },
+    {
+      "path": "crates/core/src/chemistry/tracked_duplex.rs",
+      "lines": 1651
+    },
+    {
+      "path": "crates/mcp/src/tools/analysis/mod.rs",
+      "lines": 1641
+    },
+    {
+      "path": "crates/core/src/material/derivation/mod.rs",
+      "lines": 1611
+    },
+    {
+      "path": "crates/web/src/restriction/material_derivation_model.rs",
+      "lines": 1587
+    },
+    {
+      "path": "crates/web/src/assembly/draft/model/mod.rs",
+      "lines": 1575
+    },
+    {
+      "path": "crates/core/src/formats/annotations/mod.rs",
+      "lines": 1565
+    },
+    {
+      "path": "crates/recombination/src/lib.rs",
+      "lines": 1550
+    },
+    {
+      "path": "crates/web/src/cloning/preparation/cloning_methods_model.rs",
+      "lines": 1533
+    }
+  ],
+  "largest_directories": [
+    {
+      "path": "crates/core/tests/formats/sequences",
+      "files": 17
+    },
+    {
+      "path": "crates/core/tests/analysis/reads",
+      "files": 16
+    },
+    {
+      "path": "crates/core/tests/materials/derivation",
+      "files": 16
+    },
+    {
+      "path": "crates/core/tests/sequence/annotations",
+      "files": 16
+    },
+    {
+      "path": "crates/core/tests/sequence/protein",
+      "files": 16
+    },
+    {
+      "path": "crates/library-sharing/tests",
+      "files": 16
+    },
+    {
+      "path": "crates/mcp/tests/analysis",
+      "files": 16
+    },
+    {
+      "path": "crates/mcp/tests/cloning",
+      "files": 16
+    },
+    {
+      "path": "crates/web/src/cloning/methods",
+      "files": 16
+    },
+    {
+      "path": "crates/web/src/cloning/preparation",
+      "files": 16
+    },
+    {
+      "path": "crates/web/src/workspace",
+      "files": 16
+    },
+    {
+      "path": "crates/core/tests/assembly/recipes",
+      "files": 15
+    },
+    {
+      "path": "crates/core/tests/materials/recipes",
+      "files": 15
+    },
+    {
+      "path": "crates/core/tests/restriction/inspection",
+      "files": 15
+    },
+    {
+      "path": "crates/web/src/library",
+      "files": 15
+    },
+    {
+      "path": "crates/web/src/viewer/sequence",
+      "files": 15
+    },
+    {
+      "path": "crates/core/src/protocol/execution",
+      "files": 14
+    },
+    {
+      "path": "crates/core/tests/analysis/alignment",
+      "files": 14
+    },
+    {
+      "path": "crates/core/tests/assembly/intent",
+      "files": 14
+    },
+    {
+      "path": "crates/core/tests/cloning/ligation",
+      "files": 14
+    },
+    {
+      "path": "crates/core/tests/cloning/topo/chemistry",
+      "files": 14
+    },
+    {
+      "path": "crates/core/tests/analysis/search",
+      "files": 13
+    },
+    {
+      "path": "crates/core/tests/verification/preparation",
+      "files": 13
+    },
+    {
+      "path": "crates/mcp/tests/assembly",
+      "files": 13
+    },
+    {
+      "path": "crates/web/src/assembly/library",
+      "files": 13
+    }
+  ],
+  "violations": 0,
+  "size_warnings": 0,
+  "rust_refactor": {
+    "command": "module-size-check --include-generated --format json",
+    "production_files": 664,
+    "status": "compliant",
+    "semantic_scatter_run": false
+  }
+}

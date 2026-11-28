@@ -49,44 +49,30 @@ not remove outstanding features or weaken the final completion requirements.
 
 ## Current execution order — cloning first, 24 November 2026
 
-**Current refactor audit, 28 November:** three parallel reviewers refreshed
-the ownership review against the current working tree. The repository-wide gate
-passes **1,238 Rust files / 212 directories**, at most **17 direct Rust files per
-directory**, and no file at or above **3,000 lines**. This does not close the
-ownership work: finish the prioritized [current refactor plan](audits/REFACTOR_PLAN.md)
-before growing the affected owners. Items 1–4 are implemented and pass native/WASM checks plus 495 focused cases; see the
-[implementation record](audits/ownership-implementation-2026-11-28.md). It replaces the earlier remaining-work queue;
-completed historical moves below are evidence, not work to repeat. No broad
-rewrite or automatic split of every large file is planned. The audit introduces
-no new build, release or browser check cycle.
+**Current organization audit, 28 November:** three parallel reviewers inspected
+web/worker, scientific core/model, and native/MCP/repository ownership against the
+current working tree. The [current refactor plan](audits/REFACTOR_PLAN.md) is the
+single remaining-work queue. The [full source inventory](audits/refactor-layout-current.json)
+covers **1,247 Rust files / 215 directories**, at most **17 direct Rust files per
+directory**, and a largest file of **2,869 lines**. There are no size violations
+or 3,000-line warnings. The existing `rust_refactor` binary independently passed
+its production-file size check; no tool build, rewrite or compiler run was needed.
 
+The next ownership batches move App's plan-verification and domain callbacks to
+existing controllers, preparation declaration helpers onto `Preparation`, and
+naturally owned tracked-duplex operations onto `TrackedDuplex`. Review renderer State methods and
+contig identity methods with their next related changes. Group growing domains
+before adding more sibling files. Keep completed proposal/pool, Draft,
+combinatorial, TreeJob and annotation-owner work closed. The citation batch passes native/WASM checks and 427 selected cases, including
+14 new fixtures. Desktop dispatch is now colocated with `NativeState` and passes
+the desktop compiler check. Exact-source cross-platform CI remains required.
 
-**28 November priority update: the ownership and source-layout refactor is
-implemented and verified locally and in cross-platform CI at `416b26c`; the next
-connected cloning batch proceeds with its own integration checks.** Follow the current
-[code organization and refactoring plan](audits/CODE_ORGANIZATION.md), based on
-three parallel audits. Every directory must have at most 20 direct Rust files;
-every Rust file at most 5,000 lines, with an ownership review at 3,000. Colocate
-types and meaningful implementations, prefer natural methods, and move domain
-families into cohesive subtrees. Preserve scientific behavior, test discovery,
-one current internal representation, unfinished work and the full product scope.
-No compatibility facades or forwarding APIs are permitted. The layout gate now reports zero violations or size warnings. Native/WASM
-checks, complete executable discovery and 1,034 focused tests pass; cross-platform
-CI passed for the refactor; current-source validation and the remaining product
-gates remain separate requirements.
-
-**Current ownership follow-up:** parallel workers implemented typed worker domain
-execution, complete material-preview owners, narrow restoration owners, natural
-planning/record/library methods and a shared bounded-encoding owner. Native/WASM checks and 1,745 focused cases pass locally;
-exact-source CI remains required for that implementation checkpoint. Its
-[ownership tracking](audits/organization-followup-2026-11-28.md) records completed
-moves. The fresh [refactor plan](audits/REFACTOR_PLAN.md) now owns the remaining
-proposal/pool, natural-method, import-facade and growth-review work. Current layout
-passes across 1,245 Rust files/215 directories; the largest directory has 17
-direct Rust files and no file reaches 3,000 lines. The paired-oligo base `ded0067` passed scientific CI
-on Windows/macOS/Linux and desktop packaging. Current-source checks and the
-full existing delivery gates remain required. No superseded internal API or
-second plan representation is retained.
+These are focused ownership changes, not a general rewrite. Keep types and their
+meaningful implementations cohesive, update callers directly, preserve test
+discovery and scientific behavior, and introduce no compatibility scaffolding.
+The limits and method/ownership policy are recorded in [AGENTS.md](../AGENTS.md).
+Browser checks remain deferred until all in-scope implementation is complete.
+Audit success does not establish scientific correctness or product completion.
 
 Saved-material digest export, named setups and gel handoff are implemented and
 locally verified, including recognition-only scans without physical authority.
@@ -100,9 +86,10 @@ connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) moves the
 canonical projection/codec owner down into the model, preserves native edit
 envelopes and unifies paste/strand-curation policy. Native/WASM checks and 1,349
 selected cases pass, including both-strand circular/compound continuity and
-100,000-feature capacity. The next connected editor gap is source-only handling
-of legal but non-positional GenBank citations and deleted citation coverage; see
-the [current audit](DELIVERY_AUDIT.md#next-connected-citation-batch). Retain exact-source CI gates. See
+100,000-feature capacity. The connected citation/edit-log batch passes native/WASM checks and 427 selected
+cases: legal non-positional references remain source-only, and numeric
+coverage follows surviving original bases. See the
+[current audit](DELIVERY_AUDIT.md#connected-citation-and-edit-log-batch). Retain exact-source CI gates. See
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
 
 This order supersedes the older milestone order and any format-first expansion.

@@ -34,6 +34,129 @@ struct NativeState {
     sources: Arc<sources::Gateway<sources::NativeBackend>>,
     source_scope: [u8; 32],
 }
+impl NativeState {
+    fn dispatch_catalog_backup(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        use collagene_desktop_protocol::{self as wire, CatalogBackupCommand as Command};
+        let request = wire::decode_request(bytes)
+            .map_err(|_| "Invalid catalog recovery frame.".to_owned())?;
+        let wire::Command::CatalogBackup(command) = &request.command else {
+            return Err("Expected a catalog backup command.".into());
+        };
+        if matches!(
+            command,
+            Command::AdoptRecovery { .. } | Command::CancelActivation { .. }
+        ) {
+            let adoption = self
+                .catalog_gate
+                .adoption()
+                .map_err(catalog_admission_error)?;
+            let result = self.catalog_backups.dispatch_raw(&self.access, bytes);
+            // Durable native state is authoritative even if response delivery fails.
+            // Fail closed on an unreadable selector; editor files remain available.
+            if !self.catalog_backups.catalog_session_ready() {
+                adoption.mark_pending();
+            }
+            return result.map_err(|_|"Catalog selection did not return a usable receipt. Check native recovery status before retrying; do not assume the library is active or the switch was cancelled.".into());
+        }
+        let _catalog = if matches!(command, Command::ActivationStatus) {
+            self.catalog_gate.status()
+        } else {
+            self.catalog_gate.read()
+        }
+        .map_err(catalog_admission_error)?;
+        self.catalog_backups.dispatch_raw(&self.access,bytes).map_err(|_|"Catalog backup could not complete; retain its operation ID and inspect known backup records before retrying.".into())
+    }
+    fn dispatch_sync(&self, bytes: &[u8]) -> Result<Vec<u8>, String> {
+        let _catalog = self.catalog_gate.read().map_err(catalog_admission_error)?;
+        let request =
+            sync::decode_request(bytes).map_err(|_| "Invalid native database frame.".to_owned())?;
+        // Hash the whole validated frame, including its DSQ namespace. DTQ uses the
+        // same registry; identical payload tags from different protocols must not alias.
+        let digest = sync::library::Digest::of(bytes);
+        let job = match self
+            .control
+            .begin_job(&self.access, &request.operation_id, digest)
+        {
+            Ok(JobStart::Cached(reply)) => {
+                sync::decode_response_for(&reply, &request)
+                    .map_err(|_| "Cached database reply did not match its request.".to_owned())?;
+                return Ok(reply);
+            }
+            Ok(JobStart::Run(job)) => job,
+            Err(error) => {
+                let cancelled = matches!(error, collagene_desktop_host::HostError::Cancelled);
+                return sync::encode_response_for_frame(&sync_failure(&request, cancelled), bytes)
+                    .map_err(|_| "Cannot encode native database failure.".into());
+            }
+        };
+        let result = self
+            .sync
+            .as_ref()
+            .ok_or_else(|| {
+                "Saved library is unavailable; working-editor autosave remains available."
+                    .to_owned()
+            })?
+            .lock()
+            .map_err(|_| "Native database service is unavailable.".to_owned())?
+            .dispatch_raw(bytes, &mut || job.accept().is_ok());
+        let mut response = match result {
+            Ok(reply) => sync::decode_response_for(&reply, &request)
+                .map_err(|_| "Native database reply did not match its request.".to_owned())?,
+            Err(_) => sync_failure(&request, false),
+        };
+        if job.cancelled_before_acceptance() {
+            response = sync_failure(&request, true);
+        }
+        response
+            .validate_for(&request)
+            .map_err(|_| "Native database response binding failed.".to_owned())?;
+        let terminal = match &response.outcome {
+            sync::Outcome::Success(_) => OperationState::Completed,
+            sync::Outcome::Failure(sync::Failure::Error {
+                code: sync::ErrorCode::Cancelled,
+                ..
+            }) => OperationState::Cancelled,
+            _ => OperationState::Failed,
+        };
+        let reply = sync::encode_response_for_frame(&response, bytes)
+            .map_err(|_| "Cannot encode native database response.".to_owned())?;
+        job.finish(terminal, &reply).map_err(|_| {
+            "Native database status could not be retained; review its durable job.".to_owned()
+        })?;
+        Ok(reply)
+    }
+    async fn dispatch_source(&self, bytes: &[u8]) -> Result<tauri::ipc::Response, String> {
+        self.control
+            .check_window(&self.access)
+            .map_err(|_| "Native source window access is invalid".to_owned())?;
+        let mut request = source_wire::decode_request(bytes)
+            .map_err(|_| "Invalid native source frame".to_owned())?;
+        if request.client == [0; 32] {
+            return Err("A private source session is required".into());
+        }
+        let control = matches!(
+            request.operation,
+            source_wire::Operation::Cancel { .. } | source_wire::Operation::DisposeCatalog { .. }
+        );
+        let _lease = if control {
+            None
+        } else {
+            Some(JobLease::acquire(&self.source_active)?)
+        };
+        // A client nonce is correlation, never authority. Bind it to this native
+        // host instance so catalogs cannot be replayed into a different instance.
+        request.client = *blake3::keyed_hash(&self.source_scope, &request.client).as_bytes();
+        let cancellation = sources::Cancellation::default();
+        let _cancel_on_drop = CancelSourceOnDrop(cancellation.clone());
+        let response = self.sources.execute(request, cancellation).await;
+        let frame =
+            tauri::async_runtime::spawn_blocking(move || source_wire::encode_response(&response))
+                .await
+                .map_err(|_| "Native source response was interrupted".to_owned())?
+                .map_err(|_| "Native source response exceeds its format limit".to_owned())?;
+        bounded_response(frame, source_wire::MAX_RESPONSE)
+    }
+}
 struct JobLease(Arc<AtomicUsize>);
 impl JobLease {
     fn acquire(active: &Arc<AtomicUsize>) -> Result<Self, String> {
@@ -83,135 +206,11 @@ fn catalog_admission_error(error: catalog_gate::Error) -> String {
         catalog_gate::Error::Unavailable=>"Saved-library admission is unavailable. Retain local work and restart Collagene.".into(),
     }
 }
-fn dispatch_catalog_backup(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
-    use collagene_desktop_protocol::{self as wire, CatalogBackupCommand as Command};
-    let request =
-        wire::decode_request(bytes).map_err(|_| "Invalid catalog recovery frame.".to_owned())?;
-    let wire::Command::CatalogBackup(command) = &request.command else {
-        return Err("Expected a catalog backup command.".into());
-    };
-    if matches!(
-        command,
-        Command::AdoptRecovery { .. } | Command::CancelActivation { .. }
-    ) {
-        let adoption = state
-            .catalog_gate
-            .adoption()
-            .map_err(catalog_admission_error)?;
-        let result = state.catalog_backups.dispatch_raw(&state.access, bytes);
-        // Durable native state is authoritative even if response delivery fails.
-        // Fail closed on an unreadable selector; editor files remain available.
-        if !state.catalog_backups.catalog_session_ready() {
-            adoption.mark_pending();
-        }
-        return result.map_err(|_|"Catalog selection did not return a usable receipt. Check native recovery status before retrying; do not assume the library is active or the switch was cancelled.".into());
-    }
-    let _catalog = if matches!(command, Command::ActivationStatus) {
-        state.catalog_gate.status()
-    } else {
-        state.catalog_gate.read()
-    }
-    .map_err(catalog_admission_error)?;
-    state.catalog_backups.dispatch_raw(&state.access,bytes).map_err(|_|"Catalog backup could not complete; retain its operation ID and inspect known backup records before retrying.".into())
-}
-fn dispatch_sync(state: &NativeState, bytes: &[u8]) -> Result<Vec<u8>, String> {
-    let _catalog = state.catalog_gate.read().map_err(catalog_admission_error)?;
-    let request =
-        sync::decode_request(bytes).map_err(|_| "Invalid native database frame.".to_owned())?;
-    // Hash the whole validated frame, including its DSQ namespace. DTQ uses the
-    // same registry; identical payload tags from different protocols must not alias.
-    let digest = sync::library::Digest::of(bytes);
-    let job = match state
-        .control
-        .begin_job(&state.access, &request.operation_id, digest)
-    {
-        Ok(JobStart::Cached(reply)) => {
-            sync::decode_response_for(&reply, &request)
-                .map_err(|_| "Cached database reply did not match its request.".to_owned())?;
-            return Ok(reply);
-        }
-        Ok(JobStart::Run(job)) => job,
-        Err(error) => {
-            let cancelled = matches!(error, collagene_desktop_host::HostError::Cancelled);
-            return sync::encode_response_for_frame(&sync_failure(&request, cancelled), bytes)
-                .map_err(|_| "Cannot encode native database failure.".into());
-        }
-    };
-    let result = state
-        .sync
-        .as_ref()
-        .ok_or_else(|| {
-            "Saved library is unavailable; working-editor autosave remains available.".to_owned()
-        })?
-        .lock()
-        .map_err(|_| "Native database service is unavailable.".to_owned())?
-        .dispatch_raw(bytes, &mut || job.accept().is_ok());
-    let mut response = match result {
-        Ok(reply) => sync::decode_response_for(&reply, &request)
-            .map_err(|_| "Native database reply did not match its request.".to_owned())?,
-        Err(_) => sync_failure(&request, false),
-    };
-    if job.cancelled_before_acceptance() {
-        response = sync_failure(&request, true);
-    }
-    response
-        .validate_for(&request)
-        .map_err(|_| "Native database response binding failed.".to_owned())?;
-    let terminal = match &response.outcome {
-        sync::Outcome::Success(_) => OperationState::Completed,
-        sync::Outcome::Failure(sync::Failure::Error {
-            code: sync::ErrorCode::Cancelled,
-            ..
-        }) => OperationState::Cancelled,
-        _ => OperationState::Failed,
-    };
-    let reply = sync::encode_response_for_frame(&response, bytes)
-        .map_err(|_| "Cannot encode native database response.".to_owned())?;
-    job.finish(terminal, &reply).map_err(|_| {
-        "Native database status could not be retained; review its durable job.".to_owned()
-    })?;
-    Ok(reply)
-}
 struct CancelSourceOnDrop(sources::Cancellation);
 impl Drop for CancelSourceOnDrop {
     fn drop(&mut self) {
         self.0.cancel();
     }
-}
-async fn dispatch_source(
-    state: &NativeState,
-    bytes: &[u8],
-) -> Result<tauri::ipc::Response, String> {
-    state
-        .control
-        .check_window(&state.access)
-        .map_err(|_| "Native source window access is invalid".to_owned())?;
-    let mut request =
-        source_wire::decode_request(bytes).map_err(|_| "Invalid native source frame".to_owned())?;
-    if request.client == [0; 32] {
-        return Err("A private source session is required".into());
-    }
-    let control = matches!(
-        request.operation,
-        source_wire::Operation::Cancel { .. } | source_wire::Operation::DisposeCatalog { .. }
-    );
-    let _lease = if control {
-        None
-    } else {
-        Some(JobLease::acquire(&state.source_active)?)
-    };
-    // A client nonce is correlation, never authority. Bind it to this native
-    // host instance so catalogs cannot be replayed into a different instance.
-    request.client = *blake3::keyed_hash(&state.source_scope, &request.client).as_bytes();
-    let cancellation = sources::Cancellation::default();
-    let _cancel_on_drop = CancelSourceOnDrop(cancellation.clone());
-    let response = state.sources.execute(request, cancellation).await;
-    let frame =
-        tauri::async_runtime::spawn_blocking(move || source_wire::encode_response(&response))
-            .await
-            .map_err(|_| "Native source response was interrupted".to_owned())?
-            .map_err(|_| "Native source response exceeds its format limit".to_owned())?;
-    bounded_response(frame, source_wire::MAX_RESPONSE)
 }
 #[tauri::command]
 async fn collagene_rpc(
@@ -229,7 +228,7 @@ async fn collagene_rpc(
         if bytes.len() > source_wire::MAX_REQUEST {
             return Err("Native source request exceeds its limit".into());
         }
-        return dispatch_source(state.inner(), bytes).await;
+        return state.dispatch_source(bytes).await;
     }
     let syncing = match bytes.get(..4) {
         Some(b"DSQ\0") => true,
@@ -283,10 +282,10 @@ async fn collagene_rpc(
     let response = tauri::async_runtime::spawn_blocking(move || {
         let _lease = lease;
         if syncing {
-            return dispatch_sync(&state, &bytes);
+            return state.dispatch_sync(&bytes);
         }
         if backing_up {
-            return dispatch_catalog_backup(&state, &bytes);
+            return state.dispatch_catalog_backup(&bytes);
         }
         if exporting {
             return state

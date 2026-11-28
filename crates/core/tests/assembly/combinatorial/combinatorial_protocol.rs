@@ -70,6 +70,7 @@ fn fixture() -> (Workspace, batch::Request) {
                     id: bin.into(),
                     label: bin.into(),
                     choices: vec![Choice {
+                        anneal_bottom: None,
                         generation: None,
                         id: id.into(),
                         label: id.into(),

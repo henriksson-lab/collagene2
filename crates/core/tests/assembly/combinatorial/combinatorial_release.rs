@@ -86,6 +86,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
                 id: format!("bin-{i}"),
                 label: format!("Bin {i}"),
                 choices: vec![Choice {
+                    anneal_bottom: None,
                     generation: None,
                     id: format!("choice-{i}"),
                     label: format!("Choice {i}"),
@@ -167,13 +168,13 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
         .collect::<Vec<_>>();
     let engine = "archived uncomputed request".to_string();
     let context = blake3::hash(
-        &serde_json::to_vec(&("combinatorial-batch-record-2", &engine, &request, &evidence))
+        &serde_json::to_vec(&("combinatorial-batch-record-3", &engine, &request, &evidence))
             .unwrap(),
     )
     .to_hex()
     .to_string();
     let record = batch::Record {
-        schema_version: 2,
+        schema_version: 3,
         context_revision: context,
         engine_version: engine,
         request,
@@ -307,6 +308,138 @@ fn all_selected_rows_release_atomically_with_source_run_and_primer_links() {
         );
     }
 }
+
+#[test]
+fn paired_oligo_release_keeps_primary_then_bottom_roles_in_fresh_runs_and_current_manifests() {
+    use collagene_core::{chemistry::AnnealOptions, cloning::assembly::recipe};
+    let (mut workspace, mut request) = fixture(false, false, false);
+    let mut record = batch::load(&workspace, &request.batch_hash).unwrap();
+    let mut options = AnnealOptions::default();
+    options.min_paired_bases = 4;
+    options.top_chemistry = Terminus::CLEAVED;
+    options.bottom_chemistry = Terminus::CLEAVED;
+    let batch::RowRequest::Ready(first_row) = &record.request.rows[0] else {
+        unreachable!()
+    };
+    let construct_id = first_row.id.clone();
+    let design = record.request.design.as_mut().unwrap();
+    for (index, bin) in design.bins.iter_mut().enumerate() {
+        let choice = &mut bin.choices[0];
+        let primary = collagene_core::planning::combinatorial::source_role_ids(
+            &design.id,
+            &construct_id,
+            &bin.id,
+            &choice.id,
+        )
+        .unwrap()
+        .0;
+        choice.anneal_bottom = Some(binding(&workspace, if index == 0 { 2 } else { 1 }));
+        choice.preparation = Some(Preparation::AnnealedOligos {
+            bottom_input_id: recipe::anneal_bottom_input_id(&primary).unwrap(),
+            options: options.clone(),
+            candidate_index: 0,
+        });
+    }
+    workspace.attachments.remove(&request.batch_hash).unwrap();
+    let mut evaluated = batch::Session::begin(workspace.clone(), record.request).unwrap();
+    let progress = evaluated.summary();
+    for index in 0..progress.total_rows {
+        evaluated
+            .advance(&progress.context_revision, index)
+            .unwrap();
+    }
+    let captured = evaluated.into_capture(&progress.context_revision).unwrap();
+    workspace = captured.workspace;
+    request.batch_hash = captured.attachment_hash;
+    let before = serde_json::to_value(&workspace).unwrap();
+    let mut session = ReleaseSession::begin(workspace.clone(), request).unwrap();
+    let context = session.summary().context_revision;
+    session.advance(&context, 0).unwrap();
+    assert_eq!(
+        session.inspect(0).unwrap().product.sequence.as_str(),
+        "AACCTTAA"
+    );
+    session.advance(&context, 1).unwrap();
+    let released = session.finish_to(&workspace, &context).unwrap();
+    let manifest = release::load(&released.workspace, &released.manifest_hash).unwrap();
+    manifest
+        .validate_current_declarations(&released.workspace)
+        .unwrap();
+    for row in &manifest.rows {
+        assert_eq!(row.inputs.len(), 4);
+        assert_eq!(
+            row.inputs
+                .iter()
+                .map(|i| i.event.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                binding(&workspace, 0),
+                binding(&workspace, 1),
+                binding(&workspace, 2),
+                binding(&workspace, 1)
+            ]
+        );
+        assert_ne!(row.inputs[1].input_id, row.inputs[3].input_id);
+        let run = run_lineage::load_run(&released.workspace, &row.output.run.run_id).unwrap();
+        assert_eq!(
+            run.inputs
+                .iter()
+                .map(|i| (&i.input_id, &i.event))
+                .collect::<Vec<_>>(),
+            row.inputs
+                .iter()
+                .map(|i| (&i.input_id, &i.event))
+                .collect::<Vec<_>>()
+        );
+        let target = released
+            .workspace
+            .history
+            .iter()
+            .find(|e| e.id == row.target.event_id)
+            .unwrap();
+        assert_eq!(
+            target.parents,
+            vec![
+                binding(&workspace, 0).event_id,
+                binding(&workspace, 1).event_id,
+                binding(&workspace, 2).event_id
+            ]
+        );
+    }
+    let mut obsolete = manifest.clone();
+    obsolete.schema_version = 1;
+    assert!(obsolete.validate(&released.workspace).is_err());
+    let mut unsupported = released.workspace.clone();
+    unsupported
+        .attachments
+        .get_mut(&released.manifest_hash)
+        .unwrap()
+        .kind = "combinatorial-release-v1".into();
+    assert!(release::list(&unsupported).is_err());
+    assert!(release::load(&unsupported, &released.manifest_hash).is_err());
+    // Wire capacity is 24 roles, independent of the 12 contribution limit.
+    // These synthetic rows are decode checks, never fresh release authority.
+    let mut encoded = serde_json::to_value(&manifest.rows[0]).unwrap();
+    let inputs = (0..24)
+        .map(|index| {
+            let mut input = encoded["inputs"][index % 4].clone();
+            input["input_id"] = serde_json::json!(format!("role-{index}"));
+            input
+        })
+        .collect::<Vec<_>>();
+    encoded["inputs"] = serde_json::json!(inputs);
+    assert_eq!(
+        serde_json::from_value::<release::ReleasedRow>(encoded.clone())
+            .unwrap()
+            .inputs
+            .len(),
+        24
+    );
+    let extra = encoded["inputs"][0].clone();
+    encoded["inputs"].as_array_mut().unwrap().push(extra);
+    assert!(serde_json::from_value::<release::ReleasedRow>(encoded).is_err());
+    assert_eq!(serde_json::to_value(&workspace).unwrap(), before);
+}
 #[test]
 fn a_late_wrong_target_failure_discards_the_entire_successful_prefix() {
     let (workspace, request) = fixture(true, false, false);
@@ -405,7 +538,7 @@ fn actual_selected_rich_source_still_receives_scientific_bounds() {
     record.request.design.as_mut().unwrap().bins[0].choices[0].source = binding(&workspace, 3);
     record.context_revision = blake3::hash(
         &serde_json::to_vec(&(
-            "combinatorial-batch-record-2",
+            "combinatorial-batch-record-3",
             &record.engine_version,
             &record.request,
             &record.rows,

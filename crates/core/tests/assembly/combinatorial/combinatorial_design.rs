@@ -31,6 +31,7 @@ fn fixture() -> (Workspace, Design) {
     )
     .unwrap();
     let choice = |id: &str, index| Choice {
+        anneal_bottom: None,
         id: id.into(),
         label: id.into(),
         source: binding(&w, index),
@@ -420,6 +421,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
             id: "part".into(),
             label: "Part".into(),
             choices: vec![Choice {
+                anneal_bottom: None,
                 id: "crossing".into(),
                 label: "Crossing".into(),
                 source: binding(&w, 0),

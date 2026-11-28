@@ -12,9 +12,9 @@ use crate::{
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
-pub const KIND: &str = "combinatorial-batch-record-v2";
+pub const KIND: &str = "combinatorial-batch-record-v3";
 pub const ENGINE_VERSION: &str = verification::ENGINE_VERSION;
-const CONTRACT: &str = "combinatorial-batch-3";
+const CONTRACT: &str = "combinatorial-batch-4";
 pub const MAX_RECORD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 /// Aggregate declared DNA-search/repeat work, not a measured CPU-time claim.
@@ -72,6 +72,16 @@ pub struct Session {
 }
 fn bad(message: &str) -> Error {
     Error::Format(format!("Combinatorial batch: {message}"))
+}
+fn attachment_versions(workspace: &Workspace) -> Result<(), Error> {
+    if workspace
+        .attachments
+        .values()
+        .any(|asset| asset.kind.starts_with("combinatorial-batch-record-") && asset.kind != KIND)
+    {
+        return Err(bad("unsupported batch attachment version"));
+    }
+    Ok(())
 }
 fn digest(value: &str) -> bool {
     value.len() == 64
@@ -370,7 +380,7 @@ impl RowEvidence {
         if self.index >= design::MAX_SELECTED
             || !identifier(&self.construct_id)
             || !label(&self.name)
-            || self.input_bindings.len() > design::MAX_BINS
+            || self.input_bindings.len() > design::MAX_INPUTS
             || self.completed_steps > self.planned_steps
             || self.planned_steps > 128
             || self.findings.len() > 4096
@@ -611,7 +621,7 @@ impl Session {
         }
         let context_revision = record_revision(ENGINE_VERSION, &self.request, &self.rows)?;
         let record = Record {
-            schema_version: 2,
+            schema_version: 3,
             context_revision,
             engine_version: ENGINE_VERSION.into(),
             request: self.request.clone(),
@@ -642,32 +652,9 @@ impl Session {
 }
 fn record_revision(engine: &str, request: &Request, rows: &[RowEvidence]) -> Result<String, Error> {
     count(&(engine, request, rows), MAX_RECORD_BYTES - 1024)?;
-    assembly_recipe::hash(&("combinatorial-batch-record-2", engine, request, rows))
+    assembly_recipe::hash(&("combinatorial-batch-record-3", engine, request, rows))
 }
-fn expected_inputs(
-    design: &Design,
-    row: &SelectedConstruct,
-) -> Result<Vec<InputEventBinding>, Error> {
-    let mut bindings = vec![];
-    for bin in &design.bins {
-        let selected = row
-            .choices
-            .iter()
-            .find(|c| c.bin_id == bin.id)
-            .ok_or_else(|| bad("evaluated row lacks a selected bin"))?;
-        let choice = bin
-            .choices
-            .iter()
-            .find(|c| c.id == selected.choice_id)
-            .ok_or_else(|| bad("evaluated row source choice is unavailable"))?;
-        let (input_id, _) = design::source_role_ids(&design.id, &row.id, &bin.id, &choice.id)?;
-        bindings.push(InputEventBinding {
-            input_id,
-            event: choice.source.clone(),
-        });
-    }
-    Ok(bindings)
-}
+
 impl Record {
     /// Explicit indivisible documentary publication must attest every embedded
     /// closed source, including unselected choices and diagnostic/error rows.
@@ -716,7 +703,7 @@ impl Record {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), Error> {
-        if self.schema_version != 2
+        if self.schema_version != 3
             || !digest(&self.context_revision)
             || self.engine_version.is_empty()
             || self.engine_version.len() > 256
@@ -759,7 +746,7 @@ impl Record {
                         }
                         (_, None) => {}
                     }
-                    let expected = expected_inputs(design, construct)?;
+                    let expected = design.selected_input_bindings(construct)?;
                     if row.input_bindings.len() != expected.len()
                         || row
                             .input_bindings
@@ -804,7 +791,8 @@ impl Record {
     }
 }
 fn source_guard(workspace: &Workspace, record: &Record) -> Result<(), Error> {
-    record.validate()?;
+    attachment_versions(workspace)?;
+    record.validate_source_closure(workspace)?;
     for row in &record.rows {
         for input in &row.input_bindings {
             design::resolve_event(workspace, &input.event)?;
@@ -885,6 +873,7 @@ fn install(
     })
 }
 pub fn load(workspace: &Workspace, hash: &str) -> Result<Record, Error> {
+    attachment_versions(workspace)?;
     design::workspace_guard(workspace)?;
     load_validated(workspace, hash)
 }
@@ -908,6 +897,7 @@ fn load_validated(workspace: &Workspace, hash: &str) -> Result<Record, Error> {
     Ok(record)
 }
 pub fn list(workspace: &Workspace) -> Result<Vec<Summary>, Error> {
+    attachment_versions(workspace)?;
     design::workspace_guard(workspace)?;
     if workspace
         .attachments

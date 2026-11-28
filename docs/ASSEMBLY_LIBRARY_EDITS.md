@@ -54,7 +54,7 @@ working fields and saved construct settings. The ordinary normalized encoder is
 not used for these snapshots. Application draft autosave uses the same raw encoder,
 so restored unsaved text is not silently normalized by a subsequent save.
 
-The native `assembly-library-history-v2` record retains exact before bytes,
+The native `assembly-library-history-v3` record retains exact before bytes,
 persisted-active/raw/after hashes, proposal and source-workspace revisions, source
 event pins, typed impacts and allocation counters. Its Postcard attachment avoids
 expanding raw JSON into integer arrays. Native validation checks structure,

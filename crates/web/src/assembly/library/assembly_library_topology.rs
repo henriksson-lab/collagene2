@@ -494,6 +494,7 @@ pub fn propose(current: &Draft, change: Change) -> Result<Proposal, String> {
             .expect("existing row");
         library.rows[position] = row;
     }
+    library.sync_source_order()?;
     install_active(&mut after)?;
     after.version = crate::assembly::draft::model::CURRENT_VERSION;
     after.validate()?;

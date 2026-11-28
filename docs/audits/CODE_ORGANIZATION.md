@@ -4,6 +4,14 @@
 
 ## Current execution checklist
 
+The [working-tree ownership follow-up](organization-followup-2026-11-28.md)
+records the new parallel audit and current action queue. The original domain
+move is complete; remaining work concerns worker dispatch, material preview
+owners, restoration/proposal lifecycles and natural methods. Current limits pass
+across 1,213 Rust files, with worker execution and App composition close to the
+3,000-line review threshold. Historical measurements below describe the completed
+refactor checkpoint, not the latest working tree.
+
 | Batch | Implementation status | Verification still required |
 | --- | --- | --- |
 | R1: inventory and ownership | Implemented. Source destinations, current tool/schema identities and test inventory are recorded; real state owners and shared integration boundaries are explicit. | Passed: all 1,935 integration and 401 web unit cases are discoverable; layout gate passes. |

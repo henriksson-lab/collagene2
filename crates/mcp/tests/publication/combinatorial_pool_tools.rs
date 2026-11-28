@@ -76,7 +76,7 @@ fn fixture() -> (Workspace, Value, Value) {
     .unwrap();
     let bindings = w.documents.iter().map(|d| json!({"document_id":d.id,"event_id":d.head_event.as_ref().unwrap(),"revision":d.head})).collect::<Vec<_>>();
     let bins = (0..2).map(|i| json!({"id":format!("bin-{i}"),"label":format!("Bin {i}"),"choices":[{"generation":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"},
-        "id":format!("choice-{i}"),"label":"Whole reaction material","source":bindings[i],
+        "id":format!("choice-{i}"),"label":"Whole reaction material","source":bindings[i],"anneal_bottom":null,
         "selector":{"ReferenceRange":{"start":0,"end":w.revisions[&w.documents[i].head].sequence.len(),"reverse":false}},"preparation_reverse":false,"preparation":null,"treatment":null
     }]})).collect::<Vec<_>>();
     let design = json!({"id":"reaction-sdk","name":"Whole reaction alternatives","circular":true,"bins":bins,"material_bindings":[],

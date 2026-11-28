@@ -63,11 +63,25 @@ checks, complete executable discovery and 1,034 focused tests pass; cross-platfo
 CI passed for the refactor; current-source validation and the remaining product
 gates remain separate requirements.
 
+**Current ownership follow-up:** three parallel reviewers checked the working
+tree against the same rules. Follow the concrete
+[ownership action queue](audits/organization-followup-2026-11-28.md): typed worker
+domain handlers, complete material-preview owners, narrow restoration and cloning
+proposal/pool owners, natural methods and a shared bounded-codec owner. Integrate
+the active scientific batch before changing these shared interfaces. The size
+gate currently passes (1,213 files; largest directory 17 direct Rust files), but
+worker execution at 2,990 lines and App at 2,945 require proactive ownership work
+before further growth. This queue extends the current plan; it does not create a
+second internal architecture or preserve superseded implementations.
+
 Saved-material digest export, named setups and gel handoff are implemented and
 locally verified, including recognition-only scans without physical authority.
 The GenBank feature codec is locally verified with bounded parsing/writing and
-450 focused cases; retain its exact-commit CI gate while completing paired-oligo
-library provenance and coordinate-bearing qualifier projection. See
+450 focused cases; its scientific CI identified a numeric primer-qualifier key
+regression now corrected and verified in the original core/MCP cases. Paired-oligo
+library provenance passes native/WASM checks and 529 focused cases;
+coordinate-bearing qualifier projection remains
+a separate gap. Retain exact-source CI gates. See
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
 
 This order supersedes the older milestone order and any format-first expansion.
@@ -4282,7 +4296,7 @@ delivery gates remain in scope. Browser/application HTTP checks remain deferred.
 
 ### Unlinked coordinate files in selected-plasmid views
 
-Closure engine `library-document-closure-4` explicitly omits current native
+Closure engine `library-document-closure-5` explicitly omits current native
 PDB/mmCIF source attachments from selected public/private plasmid views. They have
 no sequence/event association and cannot block or expand the selected dependency
 scope. Whole-workspace archives preserve original bytes and the source workspace

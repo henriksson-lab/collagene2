@@ -9,10 +9,10 @@ use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
-pub const SCHEMA_VERSION: u16 = 2;
-pub const KIND: &str = "assembly-library-history-v2";
-pub const ACTIVE_DRAFT_VERSION: u32 = 19;
-pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v18";
+pub const SCHEMA_VERSION: u16 = 3;
+pub const KIND: &str = "assembly-library-history-v3";
+pub const ACTIVE_DRAFT_VERSION: u32 = 20;
+pub const ACTIVE_DRAFT_KIND: &str = "assembly-draft-v20";
 pub const MEDIA_TYPE: &str = "application/x-collagene-assembly-library-history+postcard";
 pub const MAX_RECORD_BYTES: usize = 32 << 20;
 pub const MAX_HISTORY_BYTES: usize = 32 << 20;

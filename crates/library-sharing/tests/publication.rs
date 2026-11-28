@@ -427,9 +427,18 @@ fn current_and_historical_app_state_is_local_but_future_or_scientific_schemas_ar
                 bytes,
             },
         );
-        assert!(
-            matches!(sharing::inspect_document_closure(&unsupported,&selection),Err(sharing::Error::UnsupportedAttachment(actual)) if actual==kind),
-            "{kind} was guessed to be presentation state"
-        );
+        let result = sharing::inspect_document_closure(&unsupported, &selection);
+        if kind.starts_with("assembly-draft-") {
+            assert!(
+                matches!(result, Err(sharing::Error::Native(collagene_model::Error::Format(message)))
+                if message.contains("unsupported internal assembly/library attachment version")),
+                "{kind} must fail native admission before closure traversal"
+            );
+        } else {
+            assert!(
+                matches!(result,Err(sharing::Error::UnsupportedAttachment(actual)) if actual==kind),
+                "{kind} was guessed to be presentation state"
+            );
+        }
     }
 }

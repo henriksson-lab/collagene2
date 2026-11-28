@@ -465,6 +465,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
             id: "insert".into(),
             label: "Insert".into(),
             choices: vec![Choice {
+                anneal_bottom: None,
                 generation: None,
                 id: "mutant".into(),
                 label: "Explicit mismatch and BsaI".into(),

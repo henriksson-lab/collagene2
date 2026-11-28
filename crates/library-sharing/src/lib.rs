@@ -15,7 +15,7 @@ use collagene_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-pub const ENGINE_VERSION: &str = "library-document-closure-4";
+pub const ENGINE_VERSION: &str = "library-document-closure-5";
 const MAX_REFERENCE_EDGES: usize = 1_000_000;
 
 #[derive(Debug, thiserror::Error)]

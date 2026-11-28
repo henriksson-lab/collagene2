@@ -987,10 +987,8 @@ impl MethodsState {
             return Err("Choose an active paired-oligo preparation row.".into());
         }
         let roles = self.role_ids(self.rows.len())?;
-        Ok(format!(
-            "anneal-bottom-{}",
-            blake3::hash(roles[row].input_id.as_bytes()).to_hex()
-        ))
+        collagene_core::cloning::assembly::recipe::anneal_bottom_input_id(&roles[row].input_id)
+            .map_err(|error| error.to_string())
     }
     pub(crate) fn all_input_ids(&self) -> Result<Vec<String>, String> {
         let mut ids = self

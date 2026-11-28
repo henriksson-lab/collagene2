@@ -60,6 +60,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
             id: (*id).into(),
             label: (*id).into(),
             choices: vec![Choice {
+                anneal_bottom: None,
                 generation: Some(
                     collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
                         dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,

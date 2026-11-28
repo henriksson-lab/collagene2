@@ -162,6 +162,7 @@ fn actual_bottom_pcr_work_counts_both_seventeen_base_frame_and_real_coverage_sca
             id: "insert".into(),
             label: "Real native strand".into(),
             choices: vec![library::Choice {
+                anneal_bottom: None,
                 id: "bottom-seventeen".into(),
                 label: "Bottom0..17".into(),
                 source: pin,

@@ -366,6 +366,30 @@ impl Workspace {
             {
                 return Err(bad("invalid workspace attachment metadata/hash"));
             }
+            for (prefix, current) in [
+                (
+                    "assembly-draft-",
+                    crate::cloning::assembly::library_history::ACTIVE_DRAFT_KIND,
+                ),
+                (
+                    "assembly-library-history-",
+                    crate::cloning::assembly::library_history::KIND,
+                ),
+                (
+                    "combinatorial-batch-record-",
+                    crate::planning::combinatorial::batch::KIND,
+                ),
+                (
+                    "combinatorial-release-",
+                    crate::planning::combinatorial::release::KIND,
+                ),
+            ] {
+                if attachment.kind.starts_with(prefix) && attachment.kind != current {
+                    return Err(bad(
+                        "unsupported internal assembly/library attachment version",
+                    ));
+                }
+            }
             if attachment.kind == crate::formats::alignment::WORKSPACE_ATTACHMENT_KIND {
                 if attachment.media_type != "application/json" {
                     return Err(bad("alignment attachment must use application/json"));

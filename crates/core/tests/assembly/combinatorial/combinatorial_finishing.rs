@@ -153,6 +153,7 @@ fn fixture(saved: bool) -> (Workspace, design::Design, design::SelectedConstruct
                 id: "left".into(),
                 label: "Left".into(),
                 choices: vec![design::Choice {
+                    anneal_bottom: None,
                     id: "left-choice".into(),
                     label: "Left native source".into(),
                     source: left_source,
@@ -171,6 +172,7 @@ fn fixture(saved: bool) -> (Workspace, design::Design, design::SelectedConstruct
                 id: "right".into(),
                 label: "Right".into(),
                 choices: vec![design::Choice {
+                    anneal_bottom: None,
                     id: "right-choice".into(),
                     label: "Right original".into(),
                     source: event(&w, 1),

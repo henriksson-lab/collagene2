@@ -207,8 +207,10 @@ fn typed_row(
             })
             .collect::<Result<Vec<_>, String>>()?
     } else {
-        let (_, prepared) =
-            cloning_preparations::prepared_rows(&preparation_state, library.bins.len())?;
+        let (_, prepared) = cloning_preparations::prepared_rows(
+            &preparation_state,
+            preparation_state.all_input_ids()?.len(),
+        )?;
         library
             .bins
             .iter()
@@ -246,6 +248,7 @@ fn typed_row(
 struct SourceKey<'a> {
     label: &'a str,
     source: Option<&'a EventBinding>,
+    anneal_bottom: Option<&'a EventBinding>,
     selector: &'a collagene_core::cloning::assembly::intent::Selector,
     material_origin: Option<&'a str>,
     digest_geometry: Option<&'a DigestGeometry>,
@@ -255,6 +258,10 @@ fn source_key<'a>(slot: &'a Slot, label: &'a str) -> SourceKey<'a> {
         label,
         source: slot
             .captured
+            .as_ref()
+            .map(|capture| &capture.source.binding),
+        anneal_bottom: slot
+            .anneal_bottom
             .as_ref()
             .map(|capture| &capture.source.binding),
         selector: &slot.selector,
@@ -466,7 +473,7 @@ pub fn declaration_revision(stored: &Draft) -> Result<String, String> {
     serde_json::to_writer(
         &mut output,
         &(
-            "assembly-batch-projection-2",
+            "assembly-batch-projection-3",
             crate::assembly::draft::model::CURRENT_VERSION,
             collagene_core::verification::ENGINE_VERSION,
             &library.id,
@@ -547,6 +554,11 @@ pub fn project(draft: &Draft) -> Result<Projection, String> {
                         id: choice.id.clone(),
                         label: source_label(&capture.source.name, &choice.id),
                         source: capture.source.binding.clone(),
+                        anneal_bottom: choice
+                            .slot
+                            .anneal_bottom
+                            .as_ref()
+                            .map(|capture| capture.source.binding.clone()),
                         selector: choice.slot.selector.clone(),
                         preparation_reverse: choice.row.reverse,
                         preparation: None,
@@ -1633,3 +1645,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "tests/paired_oligo_library.rs"]
+mod paired_oligo_library;

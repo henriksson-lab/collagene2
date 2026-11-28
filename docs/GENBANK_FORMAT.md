@@ -36,3 +36,7 @@ workspace when a text profile cannot represent an annotation.
 GenBank text does not preserve physical duplex material or native source ancestry.
 Source comments remain unverified evidence. Native workspaces retain exact source
 bytes, immutable events and the recipes needed for fresh material reconstruction.
+
+Qualifier keys preserve explicit custom fields, including positional primer keys
+such as `5prime_tail`. ASCII digits do not introduce a field delimiter; whitespace,
+slashes, quotes and statement delimiters remain rejected.

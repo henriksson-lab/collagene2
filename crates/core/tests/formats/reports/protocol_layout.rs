@@ -41,6 +41,7 @@ fn fixture() -> (Workspace, String) {
         right: Terminus::CLEAVED,
     });
     let choice = |id: &str, index| Choice {
+        anneal_bottom: None,
         generation: None,
         id: id.into(),
         label: id.into(),

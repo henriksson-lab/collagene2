@@ -607,7 +607,10 @@ pub fn source_bindings(w: &Workspace, layout: &Layout) -> Result<Dependencies, E
         if let Some(d) = &b.request.design {
             for bin in &d.bins {
                 for choice in &bin.choices {
-                    add(&choice.source)
+                    add(&choice.source);
+                    if let Some(bottom) = &choice.anneal_bottom {
+                        add(bottom);
+                    }
                 }
             }
         }

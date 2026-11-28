@@ -29,6 +29,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
     let w = Workspace::from_documents("selected reaction format fixture", vec![source], 0).unwrap();
     let doc = &w.documents[0];
     let choice = Choice {
+        anneal_bottom: None,
         generation: Some(
             collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
                 dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,

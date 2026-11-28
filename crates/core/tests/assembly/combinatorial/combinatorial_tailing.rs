@@ -107,6 +107,7 @@ fn fixture(profile: Profile) -> (Workspace, Design, SelectedConstruct) {
                 id: if i == 0 { "left" } else { "right" }.into(),
                 label: format!("Contribution {i}"),
                 choices: vec![Choice {
+                    anneal_bottom: None,
                     id: format!("choice-{i}"),
                     label: format!("Stock {i}"),
                     source: event(&w, i),

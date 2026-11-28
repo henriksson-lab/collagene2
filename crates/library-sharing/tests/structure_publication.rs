@@ -45,7 +45,7 @@ fn unlinked_originals_survive_full_backup_but_do_not_block_or_expand_selected_pu
     assert_eq!(loaded.attachments[&hashes[0]].bytes, PDB);
     assert_eq!(loaded.attachments[&hashes[1]].bytes, CIF);
     let inventory = sharing::inspect_document_closure(&w, &selection).unwrap();
-    assert_eq!(inventory.engine_version, "library-document-closure-4");
+    assert_eq!(inventory.engine_version, "library-document-closure-5");
     assert!(inventory.attachments.is_empty());
     assert_eq!(inventory.documents.len(), 1);
     assert_eq!(inventory.omitted.attachments, 2);

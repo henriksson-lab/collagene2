@@ -485,7 +485,7 @@ fn equal_dna_different_bottom_event_and_changed_options_clear_candidate() {
 }
 
 #[test]
-fn collisions_non_ligation_libraries_and_unbounded_oligos_are_rejected() {
+fn collisions_non_ligation_and_unbounded_oligos_are_rejected() {
     let mut draft = paired();
     let secondary = draft.methods.bottom_input_id(1).unwrap();
     draft.methods.source_roles.as_mut().unwrap()[0].input_id = secondary;
@@ -493,12 +493,6 @@ fn collisions_non_ligation_libraries_and_unbounded_oligos_are_rejected() {
     let mut wrong = paired();
     wrong.methods.mode = Mode::Overlap;
     assert!(wrong.validate().is_err());
-    let mut library =
-        crate::assembly::draft::assembly_alternatives::enable(&Draft::default(), "pair-ban")
-            .unwrap();
-    library.slots[0].anneal_bottom = paired().slots[1].anneal_bottom.clone();
-    library.sync_rows();
-    assert!(library.validate().unwrap_err().contains("libraries"));
     let mut too_long = paired();
     too_long.slots[1].anneal_bottom = Some(captured(
         "Oversized oligo",

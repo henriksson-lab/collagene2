@@ -21,8 +21,9 @@ use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
-const VERSION: &str = "combinatorial-source-design-3";
+const VERSION: &str = "combinatorial-source-design-4";
 pub const MAX_BINS: usize = 12;
+pub const MAX_INPUTS: usize = 24;
 pub const MAX_CHOICES: usize = 256;
 pub const MAX_SELECTED: usize = 256;
 pub const MAX_PAGE: usize = 64;
@@ -30,6 +31,10 @@ const MAX_BYTES: usize = 32 * 1024 * 1024;
 macro_rules! dto {($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Choice {
     pub id:String,pub label:String,pub source:EventBinding,
+    /// Independent ordered bottom input, even when its event or DNA equals the top.
+    #[serde(deserialize_with="assembly_recipe::required_option")]
+    #[cfg_attr(feature="json-schema",schemars(required))]
+    pub anneal_bottom:Option<EventBinding>,
     /// Explicit independent contribution domain. Stored native strand offsets
     /// are distinct from original-reference coordinates and physical orientation.
     pub selector:assembly_intent::Selector,pub preparation_reverse:bool,
@@ -109,6 +114,83 @@ pub enum Recipe {
         source_revision: String,
         sources: Vec<crate::planning::plan::TopoSource>,
     },
+}
+impl Choice {
+    fn pairing_shape(
+        &self,
+        preparation: Option<&assembly_recipe::Preparation>,
+    ) -> Result<(), Error> {
+        match preparation {
+            Some(assembly_recipe::Preparation::AnnealedOligos {
+                bottom_input_id,
+                options,
+                candidate_index,
+            }) => {
+                if self.anneal_bottom.is_none() {
+                    return Err(bad("paired preparation requires an exact bottom event"));
+                }
+                assembly_recipe::anneal_shape(bottom_input_id, options, *candidate_index)?;
+            }
+            Some(_) if self.anneal_bottom.is_some() => {
+                return Err(bad(
+                    "declared bottom oligo cannot be ignored by a different preparation",
+                ));
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+    /// Bind a reusable preparation template to this construct's distinct input roles.
+    /// The exact bottom event belongs to Choice; a template-local input label is
+    /// deliberately replaced when entering the canonical executable recipe.
+    pub fn preparation_for_input(
+        &self,
+        preparation: &assembly_recipe::Preparation,
+        primary: &str,
+    ) -> Result<assembly_recipe::Preparation, Error> {
+        self.pairing_shape(Some(preparation))?;
+        let mut preparation = preparation.clone();
+        if let assembly_recipe::Preparation::AnnealedOligos {
+            bottom_input_id, ..
+        } = &mut preparation
+        {
+            *bottom_input_id = assembly_recipe::anneal_bottom_input_id(primary)?;
+        }
+        Ok(preparation)
+    }
+}
+impl Design {
+    /// One current ordered binding list: every primary first, then paired bottoms.
+    /// Equal DNA and equal events retain independent input identities and roles.
+    pub fn selected_input_bindings(
+        &self,
+        construct: &SelectedConstruct,
+    ) -> Result<Vec<InputEventBinding>, Error> {
+        validate_design(self)?;
+        construct_shape(self, construct)?;
+        let choices = selected(self, &construct.choices)?;
+        let mut bindings = Vec::with_capacity(choices.len() * 2);
+        for (bin, choice) in &choices {
+            let (input_id, _) = source_role_ids(&self.id, &construct.id, &bin.id, &choice.id)?;
+            bindings.push(InputEventBinding {
+                input_id,
+                event: choice.source.clone(),
+            });
+        }
+        for (bin, choice) in &choices {
+            if let Some(event) = &choice.anneal_bottom {
+                let (primary, _) = source_role_ids(&self.id, &construct.id, &bin.id, &choice.id)?;
+                bindings.push(InputEventBinding {
+                    input_id: assembly_recipe::anneal_bottom_input_id(&primary)?,
+                    event: event.clone(),
+                });
+            }
+        }
+        if bindings.len() > MAX_INPUTS {
+            return Err(Error::TooLarge);
+        }
+        Ok(bindings)
+    }
 }
 pub struct Resolved {
     pub construct_id: String,
@@ -363,6 +445,10 @@ pub fn source_preflight(design: &Design, workspace: &Workspace) -> Result<(), Er
         if m.sequence.alphabet() != collagene_model::Alphabet::Dna {
             return Err(bad("DNA source required"));
         }
+        if let Some(bottom) = &c.anneal_bottom {
+            let bottom = resolve_event(workspace, bottom)?;
+            assembly_recipe::anneal_sources(m, bottom)?;
+        }
         if let assembly_intent::Selector::ReferenceRange { start, end, .. } = &c.selector {
             let n = m.sequence.len();
             if *start >= n
@@ -385,10 +471,12 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
             origin,
             preparation,
         } => assembly_recipe::from_derived_shape(origin, preparation)?,
-        assembly_recipe::Preparation::AnnealedOligos { .. } => {
-            return Err(bad(
-                "paired oligo preparation requires separately bound original inputs and is not supported by library projection",
-            ));
+        assembly_recipe::Preparation::AnnealedOligos {
+            bottom_input_id,
+            options,
+            candidate_index,
+        } => {
+            assembly_recipe::anneal_shape(bottom_input_id, options, *candidate_index)?;
         }
         assembly_recipe::Preparation::ExactPcr {
             forward, reverse, ..
@@ -670,6 +758,15 @@ pub fn validate_design(design: &Design) -> Result<(), Error> {
                 ));
             }
             binding(&choice.source)?;
+            if let Some(bottom) = &choice.anneal_bottom {
+                binding(bottom)?;
+                if choice.generation.is_some() {
+                    return Err(bad(
+                        "paired original oligos cannot receive a duplex generation reset",
+                    ));
+                }
+            }
+            choice.pairing_shape(choice.preparation.as_ref())?;
             if let assembly_intent::Selector::MaterialStrandRange {
                 expected_state_revision,
                 ..
@@ -755,6 +852,33 @@ fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(),
     selected(design, &construct.choices)?;
     let (method, circular) = effective(design, construct);
     method_shape(method, design.bins.len(), circular)?;
+    for (bin, choice) in selected(design, &construct.choices)? {
+        let replacement = preparation_override(construct, &bin.id);
+        let preparation = replacement
+            .map(|p| p.preparation.as_ref())
+            .unwrap_or(choice.preparation.as_ref());
+        choice.pairing_shape(preparation)?;
+        if choice.anneal_bottom.is_some() {
+            if replacement.is_some() && preparation.is_none() {
+                return Err(bad(
+                    "preparation override cannot discard a declared bottom oligo",
+                ));
+            }
+            if replacement.is_some_and(|p| p.generation.is_some()) {
+                return Err(bad(
+                    "paired original oligos cannot receive a duplex generation reset",
+                ));
+            }
+            if matches!(method, Method::MultiSiteReference { .. })
+                || matches!(method, Method::GoldenGatePool { substrates, .. }
+                    if substrates.iter().any(|row| row.bin_id == bin.id && matches!(row.kind, PoolSubstrateKind::WholeSource)))
+            {
+                return Err(bad(
+                    "paired oligos require explicit physical preparation, not whole reference parents",
+                ));
+            }
+        }
+    }
     pool_bins(method, &design.bins)?;
     if matches!(
         method,
@@ -898,7 +1022,17 @@ fn resolved_work(
                         ..
                     }
             );
-            if let Some(fresh) = sources.material(id).filter(|_| framed) {
+            if matches!(preparation, P::AnnealedOligos { .. }) {
+                let preparation = choice.preparation_for_input(preparation, id)?;
+                let bottom_id = assembly_recipe::anneal_bottom_input_id(id)?;
+                let bottom = &sources
+                    .inputs
+                    .iter()
+                    .find(|input| input.id == bottom_id)
+                    .ok_or_else(|| bad("resolved bottom oligo input is absent"))?
+                    .molecule;
+                assembly_recipe::preparation_work_for_annealing(source, bottom, id, &preparation)?
+            } else if let Some(fresh) = sources.material(id).filter(|_| framed) {
                 let frame = crate::cloning::pcr::source::Template::fresh(
                     source,
                     fresh.tracked(),
@@ -1075,9 +1209,8 @@ pub fn resolve(
     construct: &SelectedConstruct,
     workspace: &Workspace,
 ) -> Result<Resolved, Error> {
-    validate_design(design)?;
+    source_preflight(design, workspace)?;
     construct_shape(design, construct)?;
-    workspace_guard(workspace)?;
     let resolved = resolve_validated(design, construct, workspace)?;
     preflight_resolved(&resolved)?;
     Ok(resolved)
@@ -1170,6 +1303,13 @@ pub(crate) fn resolve_validated(
         }
     }
     let mut borrowed = originals.clone();
+    for (_, choice) in &choices {
+        if let Some(bottom) = &choice.anneal_bottom {
+            let bottom = resolve_event(workspace, bottom)?;
+            assembly_recipe::anneal_sources(resolve_event(workspace, &choice.source)?, bottom)?;
+            borrowed.push(bottom);
+        }
+    }
     if let Some(target) = existing {
         borrowed.push(target);
     }
@@ -1207,11 +1347,16 @@ pub(crate) fn resolve_validated(
             })
             .collect(),
     };
-    let native = ids
+    let bindings = design.selected_input_bindings(construct)?;
+    let native = bindings
         .iter()
-        .zip(&originals)
-        .map(|(id, m)| (id.as_str(), *m))
-        .collect::<Vec<_>>();
+        .map(|binding| {
+            Ok((
+                binding.input_id.as_str(),
+                resolve_event(workspace, &binding.event)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, Error>>()?;
     let edited_request = match &construct.target {
         TargetDeclaration::OriginalRegions {
             junction_edits,
@@ -1232,21 +1377,12 @@ pub(crate) fn resolve_validated(
     } else {
         assembly_intent::preflight(&native, &request, Some(workspace))?;
     }
-    let inputs = ids
+    let inputs = native
         .iter()
-        .zip(&originals)
-        .map(|(id, m)| PlanInput {
-            id: id.clone(),
-            revision: m.revision(),
-            molecule: (**m).clone(),
-        })
-        .collect::<Vec<_>>();
-    let bindings = ids
-        .iter()
-        .zip(&choices)
-        .map(|(id, (_, choice))| InputEventBinding {
-            input_id: id.clone(),
-            event: choice.source.clone(),
+        .map(|(id, molecule)| PlanInput {
+            id: (*id).to_owned(),
+            revision: molecule.revision(),
+            molecule: (**molecule).clone(),
         })
         .collect::<Vec<_>>();
     let source_context = assembly_intent::resolve(&inputs, &request, Some(workspace))?;
@@ -1393,6 +1529,7 @@ pub(crate) fn resolve_validated(
                             .unwrap_or(&choice.preparation)
                             .clone()
                             .ok_or_else(|| bad("prepared reaction substrate needs an explicit preparation"))?;
+                        let preparation = choice.preparation_for_input(&preparation, id)?;
                         crate::cloning::golden_gate::reaction::Substrate::Prepared { preparation, treatment }
                     }
                 };
@@ -1443,6 +1580,7 @@ pub(crate) fn resolve_validated(
                 .unwrap_or(&choice.preparation)
                 .clone()
                 .ok_or_else(|| bad("chosen alternative has no explicit preparation"))?;
+            let preparation = choice.preparation_for_input(&preparation, id)?;
             rows.push(assembly_recipe::FragmentSpec {
                 generation: preparation_override(construct, &bin.id)
                     .map(|o| o.generation.clone())

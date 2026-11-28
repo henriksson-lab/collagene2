@@ -180,19 +180,20 @@ fn original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unres
             }],
             _ => vec![],
         };
-        let d = library::Design {
-            material_bindings,
-            id: "cost-library".into(),
-            name: "Bounded actual preparation costs".into(),
-            circular: false,
-            method: library::Method::Ligation {
-                allow_nicked: false,
-            },
-            bins: vec![
-                library::Bin {
-                    id: "large".into(),
-                    label: "Large source".into(),
-                    choices: vec![library::Choice {
+        let d =
+            library::Design {
+                material_bindings,
+                id: "cost-library".into(),
+                name: "Bounded actual preparation costs".into(),
+                circular: false,
+                method: library::Method::Ligation {
+                    allow_nicked: false,
+                },
+                bins: vec![
+                    library::Bin {
+                        id: "large".into(),
+                        label: "Large source".into(),
+                        choices: vec![library::Choice { anneal_bottom: None,
                         id: "large-choice".into(),
                         label: "Explicit oversized OE".into(),
                         source: pin,
@@ -207,11 +208,11 @@ fn original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unres
                         treatment: None,
                         preparation: Some(preparation),
                     }],
-                },
-                library::Bin {
-                    id: "small".into(),
-                    label: "Other".into(),
-                    choices: vec![library::Choice {
+                    },
+                    library::Bin {
+                        id: "small".into(),
+                        label: "Other".into(),
+                        choices: vec![library::Choice { anneal_bottom: None,
                         id: "small-choice".into(),
                         label: "Other".into(),
                         source: event(&w, 2),
@@ -226,9 +227,9 @@ fn original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unres
                         treatment: None,
                         preparation: Some(Preparation::WholeLinear),
                     }],
-                },
-            ],
-        };
+                    },
+                ],
+            };
         let rows = (0..20)
             .map(|i| {
                 batch::RowRequest::Ready(library::SelectedConstruct {

@@ -79,7 +79,7 @@ fn archive(name: &str) -> Vec<u8> {
     frame.attachments.insert(
         Digest::of(&bytes).as_str().into(),
         workspace::WorkspaceAttachment {
-            kind: "assembly-draft-v10".into(),
+            kind: "test-private-working-state".into(),
             name: "Private draft".into(),
             media_type: "application/json".into(),
             bytes,

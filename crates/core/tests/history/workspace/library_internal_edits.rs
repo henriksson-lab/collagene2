@@ -109,6 +109,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
                 id: "vector".into(),
                 label: "Vector".into(),
                 choices: vec![library::Choice {
+                    anneal_bottom: None,
                     id: "vector-choice".into(),
                     label: "Vector".into(),
                     source: event(&w, 0),
@@ -131,6 +132,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
                 id: "insert".into(),
                 label: "Insert".into(),
                 choices: vec![library::Choice {
+                    anneal_bottom: None,
                     id: "insert-choice".into(),
                     label: "Saved insert".into(),
                     source: product,

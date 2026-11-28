@@ -15,8 +15,8 @@ use crate::{
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
-pub const KIND: &str = "combinatorial-release-v1";
-pub const CONTRACT: &str = "combinatorial-release-1";
+pub const KIND: &str = "combinatorial-release-v2";
+pub const CONTRACT: &str = "combinatorial-release-2";
 pub const MAX_MANIFEST_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_INSPECTION_BYTES: usize = 32 * 1024 * 1024;
 const MAX_ROW_BYTES: usize = 256 * 1024;
@@ -87,7 +87,7 @@ fn decode_rows<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<ReleasedRow
 fn decode_inputs<'de, D: serde::Deserializer<'de>>(
     d: D,
 ) -> Result<Vec<InputEventBinding>, D::Error> {
-    bounded::<D, InputEventBinding, 12>(d)
+    bounded::<D, InputEventBinding, { design::MAX_INPUTS }>(d)
 }
 /// Private, non-serializable all-or-nothing state. A failed row destroys the
 /// private working frame; no caller can extract a successful prefix workspace.
@@ -103,6 +103,16 @@ pub struct ReleaseSession {
 }
 fn bad(message: &str) -> Error {
     Error::Format(format!("Combinatorial release: {message}"))
+}
+fn attachment_versions(workspace: &Workspace) -> Result<(), Error> {
+    if workspace
+        .attachments
+        .values()
+        .any(|asset| asset.kind.starts_with("combinatorial-release-") && asset.kind != KIND)
+    {
+        return Err(bad("unsupported release attachment version"));
+    }
+    Ok(())
 }
 fn digest(value: &str) -> bool {
     value.len() == 64
@@ -241,13 +251,14 @@ fn target_event(
         return Err(bad("missing independent target declaration"));
     }
     let expected_revision = resolved.target.revision();
-    let parents = resolved
-        .bindings
-        .iter()
-        .map(|b| b.event.event_id.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
+    // Event graphs name each parent once; input bindings separately retain all
+    // ordered roles, including a self-complementary oligo used on both strands.
+    let mut parents = Vec::new();
+    for binding in &resolved.bindings {
+        if !parents.contains(&binding.event.event_id) {
+            parents.push(binding.event.event_id.clone());
+        }
+    }
     for input in &resolved.bindings {
         design::resolve_event(workspace, &input.event)?;
     }
@@ -486,7 +497,7 @@ impl ReleaseSession {
             .take()
             .ok_or_else(|| bad("private release state was discarded"))?;
         let manifest = Manifest {
-            schema_version: 1,
+            schema_version: 2,
             context_revision: self.context_revision.clone(),
             source_workspace_fingerprint: self.source_workspace_fingerprint.clone(),
             batch_hash: self.request.batch_hash.clone(),
@@ -541,15 +552,13 @@ impl ReleasedRow {
                 .is_some_and(digest)
             || !digest(&self.declaration_revision)
             || self.inputs.is_empty()
-            || self.inputs.len() > design::MAX_BINS
+            || self.inputs.len() > design::MAX_INPUTS
         {
             return Err(bad("invalid released row identity or dimensions"));
         }
         let mut ids = BTreeSet::new();
         for input in &self.inputs {
-            if !input.input_id.strip_prefix("source-").is_some_and(digest)
-                || !ids.insert(&input.input_id)
-            {
+            if !identifier(&input.input_id, 128) || !ids.insert(&input.input_id) {
                 return Err(bad(
                     "released row source identities are invalid or duplicate",
                 ));
@@ -723,8 +732,9 @@ impl Manifest {
     /// Read-only linkage validation. Imported manifests never restore a live
     /// ReleaseSession or grant product/experimental authority.
     pub fn validate(&self, workspace: &Workspace) -> Result<(), Error> {
+        attachment_versions(workspace)?;
         self.request.validate()?;
-        if self.schema_version != 1
+        if self.schema_version != 2
             || !digest(&self.context_revision)
             || !digest(&self.source_workspace_fingerprint)
             || self.batch_hash != self.request.batch_hash
@@ -760,27 +770,15 @@ impl Manifest {
             {
                 return Err(bad("release source-choice identity changed"));
             }
-            if row.inputs.len() != design.bins.len() {
-                return Err(bad("released input count differs from source bins"));
-            }
-            for (bin, input) in design.bins.iter().zip(&row.inputs) {
-                let selected = declared
-                    .choices
-                    .iter()
-                    .find(|choice| choice.bin_id == bin.id)
-                    .ok_or_else(|| bad("missing declared choice"))?;
-                let choice = bin
-                    .choices
-                    .iter()
-                    .find(|choice| choice.id == selected.choice_id)
-                    .ok_or_else(|| bad("missing declared source alternative"))?;
-                let (input_id, _) =
-                    design::source_role_ids(&design.id, &declared.id, &bin.id, &choice.id)?;
-                if input.input_id != input_id || input.event != choice.source {
-                    return Err(bad(
-                        "released plan is not bound to the selected source alternatives",
-                    ));
-                }
+            let expected = design.selected_input_bindings(declared)?;
+            if row.inputs.len() != expected.len()
+                || row.inputs.iter().zip(&expected).any(|(actual, expected)| {
+                    actual.input_id != expected.input_id || actual.event != expected.event
+                })
+            {
+                return Err(bad(
+                    "released inputs differ from the ordered selected primary/paired source bindings",
+                ));
             }
             for input in &row.inputs {
                 design::resolve_event(workspace, &input.event)?;
@@ -916,6 +914,7 @@ impl Commit {
 }
 /// Historical manifests only. Loading never reconstructs a private release session.
 pub fn load(workspace: &Workspace, hash: &str) -> Result<Manifest, Error> {
+    attachment_versions(workspace)?;
     design::workspace_guard(workspace)?;
     if !digest(hash) {
         return Err(bad("invalid release manifest hash"));
@@ -937,6 +936,7 @@ pub fn load(workspace: &Workspace, hash: &str) -> Result<Manifest, Error> {
     Ok(manifest)
 }
 pub fn list(workspace: &Workspace) -> Result<Vec<Summary>, Error> {
+    attachment_versions(workspace)?;
     design::workspace_guard(workspace)?;
     workspace
         .attachments

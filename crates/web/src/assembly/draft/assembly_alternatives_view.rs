@@ -191,9 +191,11 @@ fn AlternativeBins(
                         let used=library.rows.iter().filter(|row|row.choices.iter().any(|chosen|chosen==&choice.id)).count();
                         let selected=current==Some(&choice.id);
                         let reference=choice.slot.captured.as_ref().map(|capture|format!("Document {} · event {} · revision {}",capture.source.binding.document_id,capture.source.binding.event_id,capture.source.binding.revision));
+                        let bottom=choice.slot.anneal_bottom.as_ref().map(|capture|format!("Ordered bottom oligo: {} · document {} · event {} · revision {}",clipped(&capture.source.name,120),capture.source.binding.document_id,capture.source.binding.event_id,capture.source.binding.revision));
                         view!{<details class="assembly-alternative-choice"><summary>{format!("{}{} · {} selected constructs",choice_label(choice),if selected{" · current choice"}else{""},used)}</summary>
                             <p><code>{choice.id.clone()}</code></p><p>{clipped(&choice.row.summary(),600)}</p>
                             {reference.map(|reference|view!{<p class="helper">{reference}</p>})}
+                            {bottom.map(|bottom|view!{<p class="helper">{bottom}</p>})}
                             <button class="text-tool" disabled={used>0||bin.choices.len()<=1} on:click=move|_|action.run(Action::RemoveChoice(id.clone()))>"Remove unused alternative"</button>
                         </details>}
                     }).collect_view()}

@@ -329,6 +329,20 @@ pub(crate) fn hash(v: &impl Serialize) -> Result<String, Error> {
     serde_json::to_writer(&mut w, v).map_err(|_| Error::TooLarge)?;
     Ok(w.hash.finalize().to_hex().to_string())
 }
+/// Stable secondary-input identity shared by ordinary and library paired-oligo recipes.
+pub fn anneal_bottom_input_id(primary: &str) -> Result<String, Error> {
+    if primary.is_empty()
+        || primary.len() > 1000
+        || primary.trim() != primary
+        || primary.chars().any(char::is_control)
+    {
+        return Err(bad("invalid primary input identity for paired oligos"));
+    }
+    Ok(format!(
+        "anneal-bottom-{}",
+        blake3::hash(primary.as_bytes()).to_hex()
+    ))
+}
 /// Borrowed bounds only: candidate availability is reconstructed by the verifier.
 pub(crate) fn anneal_shape(
     bottom: &str,
@@ -348,7 +362,7 @@ pub(crate) fn anneal_shape(
     }
     Ok(())
 }
-fn anneal_sources(top: &Molecule, bottom: &Molecule) -> Result<(), Error> {
+pub(crate) fn anneal_sources(top: &Molecule, bottom: &Molecule) -> Result<(), Error> {
     for source in [top, bottom] {
         if source.sequence.is_empty()
             || source.sequence.len() > crate::chemistry::MAX_ANNEAL_OLIGO_BASES
@@ -1017,6 +1031,25 @@ pub(crate) fn preparation_work(
         None,
     )
     .map(|(work, _)| work)
+}
+/// Account for both ordered oligos and the actual bounded annealing search.
+/// Uses the same admission/cost kernel as recipe compilation, without enumeration.
+pub(crate) fn preparation_work_for_annealing(
+    top: &Molecule,
+    bottom: &Molecule,
+    primary: &str,
+    preparation: &Preparation,
+) -> Result<usize, Error> {
+    let Preparation::AnnealedOligos {
+        bottom_input_id, ..
+    } = preparation
+    else {
+        return Err(bad("paired work requires an annealed-oligo preparation"));
+    };
+    let lookup = BTreeMap::from([(primary, top), (bottom_input_id.as_str(), bottom)]);
+    let (work, secondary_bases) =
+        preparation_cost(top, preparation, primary, &lookup, &[], None, None)?;
+    work.checked_add(secondary_bases).ok_or(Error::TooLarge)
 }
 /// Actual already-resolved source accounting. No origin replay or model clone;
 /// callers which own a native context must not budget Bottom work as top length.

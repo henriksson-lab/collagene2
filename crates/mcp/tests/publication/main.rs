@@ -5,3 +5,4 @@ mod combinatorial_pool_tools;
 mod combinatorial_release_tools;
 mod combinatorial_tailing_tools;
 mod combinatorial_tools;
+mod paired_library_tools;

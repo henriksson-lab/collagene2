@@ -348,7 +348,7 @@ async fn sdk_library_multisite_freezes_original_intent_before_explicit_network_s
             json!({"id":format!("bin-{i}"),"label":format!("Original contribution {i}"),"choices":[{"generation":null,
                 "id":format!("choice-{i}"),"label":format!("Parent {i}"),
                 "source":{"document_id":d.id,"event_id":event.id,"revision":event.revision},
-                "selector":{"ReferenceRange":{"start":start,"end":end,"reverse":false}},"preparation_reverse":false,"preparation":null,"treatment":null
+                "anneal_bottom":null,"selector":{"ReferenceRange":{"start":start,"end":end,"reverse":false}},"preparation_reverse":false,"preparation":null,"treatment":null
             }]})
         })
         .collect::<Vec<_>>();

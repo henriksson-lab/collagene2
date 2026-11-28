@@ -153,6 +153,7 @@ pub fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
             id: "insert".into(),
             label: "Sticky native insert".into(),
             choices: vec![library::Choice {
+                anneal_bottom: None,
                 id: "actual-bottom".into(),
                 label: "Actual stored bottom0..10".into(),
                 source,

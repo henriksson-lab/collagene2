@@ -50,6 +50,7 @@ fn fixture() -> (Workspace, Request) {
                 id: "left-bin".into(),
                 label: "Left".into(),
                 choices: vec![Choice {
+                    anneal_bottom: None,
                     generation: None,
                     id: "left-choice".into(),
                     label: "Left choice".into(),
@@ -68,6 +69,7 @@ fn fixture() -> (Workspace, Request) {
                 id: "right-bin".into(),
                 label: "Right".into(),
                 choices: vec![Choice {
+                    anneal_bottom: None,
                     generation: None,
                     id: "right-choice".into(),
                     label: "Right choice".into(),
@@ -148,6 +150,113 @@ fn run(workspace: Workspace, request: Request) -> Session {
         session.advance(&context, index).unwrap();
     }
     session
+}
+
+#[test]
+fn paired_oligo_rows_capture_both_ordered_operands_including_a_shared_original_event() {
+    use collagene_core::{chemistry::AnnealOptions, cloning::assembly::recipe};
+    let (workspace, mut request) = fixture();
+    request.rows.truncate(1);
+    let RowRequest::Ready(row) = &request.rows[0] else {
+        unreachable!()
+    };
+    let row_id = row.id.clone();
+    let design = request.design.as_mut().unwrap();
+    let mut options = AnnealOptions::default();
+    options.min_paired_bases = 4;
+    options.top_chemistry = Terminus::CLEAVED;
+    options.bottom_chemistry = Terminus::CLEAVED;
+    for (index, bin) in design.bins.iter_mut().enumerate() {
+        let choice = &mut bin.choices[0];
+        let primary = collagene_core::planning::combinatorial::source_role_ids(
+            &design.id, &row_id, &bin.id, &choice.id,
+        )
+        .unwrap()
+        .0;
+        choice.anneal_bottom = Some(binding(&workspace, if index == 0 { 2 } else { 1 }));
+        choice.preparation = Some(Preparation::AnnealedOligos {
+            bottom_input_id: recipe::anneal_bottom_input_id(&primary).unwrap(),
+            options: options.clone(),
+            candidate_index: 0,
+        });
+    }
+    let mut missing = serde_json::to_value(&request).unwrap();
+    missing["design"]["bins"][0]["choices"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("anneal_bottom");
+    assert!(serde_json::from_value::<Request>(missing).is_err());
+    let before = serde_json::to_value(&workspace).unwrap();
+    let session = run(workspace.clone(), request);
+    let record = session.finish_record().unwrap();
+    let row = &record.rows[0];
+    assert_eq!(row.state, RowState::Evaluated);
+    assert_eq!(row.status, Some(Status::ConsistentUnderAssumptions));
+    assert_eq!(row.input_bindings.len(), 4);
+    assert_eq!(
+        row.input_bindings
+            .iter()
+            .map(|b| b.event.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            binding(&workspace, 0),
+            binding(&workspace, 1),
+            binding(&workspace, 2),
+            binding(&workspace, 1)
+        ]
+    );
+    assert_ne!(
+        row.input_bindings[1].input_id,
+        row.input_bindings[3].input_id
+    );
+    let token = session.summary().context_revision;
+    let saved = session.into_capture(&token).unwrap();
+    let retained = batch::load(&saved.workspace, &saved.attachment_hash).unwrap();
+    retained.validate_source_closure(&saved.workspace).unwrap();
+    let mut obsolete = saved.workspace.clone();
+    obsolete
+        .attachments
+        .get_mut(&saved.attachment_hash)
+        .unwrap()
+        .kind = "combinatorial-batch-record-v2".into();
+    assert!(batch::list(&obsolete).is_err());
+    assert!(batch::load(&obsolete, &saved.attachment_hash).is_err());
+    let replay = batch::replay(&saved.workspace, &saved.attachment_hash, 0).unwrap();
+    assert_eq!(replay.current.input_bindings.len(), 4);
+    assert_eq!(serde_json::to_value(&workspace).unwrap(), before);
+}
+
+#[test]
+fn unselected_paired_operands_remain_part_of_the_indivisible_record_source_closure() {
+    let (workspace, mut request) = fixture();
+    request.rows.truncate(1);
+    let mut extra = request.design.as_ref().unwrap().bins[0].choices[0].clone();
+    extra.id = "unselected-pair".into();
+    extra.anneal_bottom = Some(binding(&workspace, 2));
+    extra.preparation = None;
+    request.design.as_mut().unwrap().bins[0].choices.push(extra);
+    let mut record = run(workspace.clone(), request).finish_record().unwrap();
+    record.validate_source_closure(&workspace).unwrap();
+    record.request.design.as_mut().unwrap().bins[0].choices[1]
+        .anneal_bottom
+        .as_mut()
+        .unwrap()
+        .event_id = format!("event-{}", "0".repeat(64));
+    record.context_revision = blake3::hash(
+        &serde_json::to_vec(&(
+            "combinatorial-batch-record-3",
+            &record.engine_version,
+            &record.request,
+            &record.rows,
+        ))
+        .unwrap(),
+    )
+    .to_hex()
+    .to_string();
+    record.validate().unwrap();
+    assert!(record.validate_source_closure(&workspace).is_err());
+    record.schema_version = 2;
+    assert!(record.validate().is_err());
 }
 #[test]
 fn exact_rows_continue_after_wrong_target_and_unprepared_edits() {
@@ -268,7 +377,7 @@ fn native_records_deduplicate_and_archived_assertions_need_fresh_replay() {
     record.rows[1].status = Some(Status::ConsistentUnderAssumptions);
     record.context_revision = blake3::hash(
         &serde_json::to_vec(&(
-            "combinatorial-batch-record-2",
+            "combinatorial-batch-record-3",
             &record.engine_version,
             &record.request,
             &record.rows,
@@ -351,7 +460,7 @@ fn identical_choices_keep_per_construct_topology_and_method_overrides() {
     );
 }
 #[test]
-fn unavailable_event_owner_is_a_local_error_and_not_a_saved_source_attestation() {
+fn unavailable_event_owner_is_a_local_error_but_cannot_enter_a_closed_capture() {
     let (w, mut r) = fixture();
     let mut bad = r.design.as_ref().unwrap().bins[0].choices[0].clone();
     bad.id = "wrong-owner-choice".into();
@@ -365,11 +474,13 @@ fn unavailable_event_owner_is_a_local_error_and_not_a_saved_source_attestation()
     r.rows = vec![r.rows[0].clone(), RowRequest::Ready(row)];
     let session = run(w, r);
     let token = session.summary().context_revision;
-    let commit = session.into_capture(&token).unwrap();
-    let record = batch::load(&commit.workspace, &commit.attachment_hash).unwrap();
+    let record = session.finish_record().unwrap();
     assert_eq!(record.rows[0].state, RowState::Evaluated);
     assert_eq!(record.rows[1].state, RowState::Error);
     assert!(record.rows[1].input_bindings.is_empty());
+    // Preview errors remain row-local, but an immutable native capture cannot
+    // retain a design whose exact declared sources are unavailable or forged.
+    assert!(session.into_capture(&token).is_err());
 }
 #[test]
 fn all_draft_errors_and_aggregate_budget_exhaustion_remain_explicit() {

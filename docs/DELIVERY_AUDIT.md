@@ -8,6 +8,7 @@ until in-scope implementation is complete.
 | Area | Current source evidence | Remaining delivery work |
 | --- | --- | --- |
 | Saved-material digest continuation | Implemented in the current batch: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Worker schema 122; closure engine 4. | Native/WASM compilation and 823 affected regression cases pass; cross-platform scientific CI and desktop packaging passed at `83eb6c4`. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
+| Paired-oligo source libraries | Both ordered source events survive choice projection, immutable batch capture, release, native run records, protocol output and complete plate publication. Current draft 20, batch 3, release 2, worker 123 and sharing closure 5. | Focused native/WASM checks and 529 cases pass; exact-source CI and deferred graphical/platform acceptance remain. |
 | Protected codon ranges | `codon_design::ConstrainedPolicy` includes protected ranges and allowed codons; its independent checker reports violations | Current platform/workflow acceptance; the older blanket “protected ranges missing” entry is obsolete |
 | Plate layouts | `protocol_layout` plus web/MCP capture and CSV/HTML/PDF export | Broader workflow acceptance; this is documentary cloning layout, not inventory or instruments |
 | Lab comments/review | Native collaboration store, individual member registry, discussion SDK and shared browser/Tauri remote controls | Exact-source CI, graphical acceptance and deliberate deployment cutover; no automatic offline comment queue |
@@ -46,17 +47,27 @@ assertion passes unchanged. Formatting and layout checks pass; browser/applicati
 HTTP and installed-platform acceptance remain deferred. The refactor checkpoint
 separately passed all native platforms and desktop packaging at `416b26c`.
 
-Paired-oligo combinatorial choices remain a separate connected gap: ordinary
-annealed inserts work, but library choices retain only one source identity.
-Add an explicitly present nullable bottom-source binding to each current choice,
-then use one canonical ordered input list throughout projection, batch identity,
-verification and release. Twelve contributions may require twenty-four input
-bindings. Both ordered events must survive capture, replay, sharing and protocol
-output; equal DNA or repeated events in distinct roles must not be deduplicated.
-Update stale-preview identities when either oligo changes and require explicit
-annealing-candidate selection. Merely lifting the draft validation refusal would
-lose provenance. Advance affected current schemas together and reject superseded
-encodings.
+Paired-oligo combinatorial choices now retain an explicitly present nullable
+bottom-source binding and one canonical ordered input vector. Twelve target
+contributions can use twenty-four physical inputs; bottom operands are not
+additional target fragments. Equal DNA and repeated events retain distinct roles.
+Capture, release, native run records, plate sharing and protocol output use those
+same bindings. Web candidate contexts pin both ordered events and options while
+allowing construct-local role namespaces to change without losing a still-valid
+explicit choice. Current schemas advance together without fallback decoders.
+See the [paired-library contract](PAIRED_OLIGO_LIBRARIES.md).
+
+Integrated native harness compilation and current web/worker WASM checks pass.
+Focused execution passed 529 unique cases: 407 web state, 66 assembly, 14 history,
+eight material, nine protocol-layout format, one core primer, five qualifier
+owner-unit, ten public MCP and nine sharing cases. The revised capture case
+preserves row-local preview errors while rejecting an immutable capture with
+unavailable declared sources; the new version-refusal boundary retains explicit
+native errors. Unchanged passing cases were retained while the revised case and
+remaining harnesses completed. Layout, formatting, whitespace and current document
+links pass. Current Rust layout remains 1,213 files/210 directories, no violations
+or 3,000-line warnings. Exact-source CI remains required; browser/application HTTP
+and installed-platform acceptance stay deferred.
 
 Coordinate-bearing qualifier projection is also incomplete. Supported local
 `transl_except`/`anticodon` locations need bounded, fully consumed parsing and
@@ -76,7 +87,12 @@ formatting and layout checks pass. Focused verification covers 450 unique cases:
 166 format, 255 sequence, 20 MCP sequence and nine owner-unit cases. The 19 failed
 cases were corrected and rerun, alongside the changed owner checks, without
 repeating unrelated passing cases. All 18 new public integrity cases are
-discoverable. Exact-commit cross-platform CI remains required for this batch.
+discoverable. Exact-commit web and desktop packaging CI passed at `3553cdb`;
+scientific CI exposed a shared qualifier-key regression affecting saved primer
+`5prime_tail` fields on all three platforms. The current fix admits safe numeric
+custom keys while retaining delimiter/injection rejection. The two original
+core/MCP primer regression cases and five qualifier-owner cases now pass;
+exact-source CI remains required.
 [Profile](GENBANK_FORMAT.md).
 
 ## Antibody analysis acceptance scope

@@ -39,6 +39,7 @@ pub fn fixture() -> (Workspace, layout::Request) {
                 id: "insert".into(),
                 label: "Insert".into(),
                 choices: vec![Choice {
+                    anneal_bottom: None,
                     id: "stock".into(),
                     label: "Stock".into(),
                     source,

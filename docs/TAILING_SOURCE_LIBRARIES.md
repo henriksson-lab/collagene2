@@ -10,4 +10,4 @@ The final native Ligate operation retains its bounded finite alternative-path ev
 
 `crates/core/tests/assembly/combinatorial/combinatorial_tailing.rs` covers independently literal TA and GC scarred circles, complete explicit-action validation, retained Run tails with a Derived insert after native archive restart, equal-DNA wrong-owner refusal, separated geometry/target verdicts, and batch/release rollback. These fixtures exercise existing native compilers rather than a second TA/GC implementation.
 
-Current immutable batch records use `combinatorial-batch-record-v2`, record schema 2 and the `combinatorial-batch-3` context contract. The required nullable profile evidence is part of this one current representation; superseded batch kinds and schemas are refused.
+Current immutable batch records use `combinatorial-batch-record-v3`, record schema 3 and the `combinatorial-batch-4` context contract. The required nullable profile evidence is part of this one current representation; superseded batch kinds and schemas are refused.

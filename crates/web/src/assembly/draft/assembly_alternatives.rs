@@ -8,6 +8,7 @@ use crate::assembly::draft::model::Draft;
 use crate::assembly::draft::model::Slot;
 use crate::cloning::preparation::cloning_methods_model::MethodsState;
 use crate::cloning::preparation::cloning_methods_model::OverlapInput;
+use crate::cloning::preparation::cloning_methods_model::OverlapPreparation;
 use collagene_core::cloning::assembly::junction_edit as assembly_junction_edit;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -164,13 +165,11 @@ fn active_mut(library: &mut Library) -> Result<&mut Construct, String> {
         .find(|r| r.id == library.active_row)
         .ok_or_else(|| "The active construct row is unavailable.".into())
 }
-fn chosen<'a>(library: &'a Library, choices: &[String]) -> Result<Vec<&'a Choice>, String> {
-    if choices.len() != library.bins.len() {
+fn chosen<'a>(bins: &'a [Bin], choices: &[String]) -> Result<Vec<&'a Choice>, String> {
+    if choices.len() != bins.len() {
         return Err("Choose exactly one source alternative from every bin.".into());
     }
-    library
-        .bins
-        .iter()
+    bins.iter()
         .zip(choices)
         .map(|(bin, id)| {
             bin.choices
@@ -181,7 +180,7 @@ fn chosen<'a>(library: &'a Library, choices: &[String]) -> Result<Vec<&'a Choice
         .collect()
 }
 fn roles(library: &Library, row: &Construct) -> Result<Vec<Role>, String> {
-    chosen(library, &row.choices)?;
+    chosen(&library.bins, &row.choices)?;
     library
         .bins
         .iter()
@@ -213,6 +212,7 @@ pub fn identity(draft: &Draft) -> Option<(String, String, Vec<String>)> {
 
 fn same_geometry(a: &Slot, b: &Slot) -> bool {
     a.captured == b.captured
+        && a.anneal_bottom == b.anneal_bottom
         && a.selector == b.selector
         && a.digest_geometry == b.digest_geometry
         && a.material_origin == b.material_origin
@@ -224,7 +224,7 @@ pub fn require_active_choice_match(draft: &Draft) -> Result<(), String> {
         return Ok(());
     };
     let row = active(library)?;
-    let choices = chosen(library, &row.choices)?;
+    let choices = chosen(&library.bins, &row.choices)?;
     if choices.len() != draft.slots.len()
         || draft
             .slots
@@ -240,7 +240,67 @@ pub fn require_active_choice_match(draft: &Draft) -> Result<(), String> {
     Ok(())
 }
 
+impl Construct {
+    fn sync_source_order(&mut self, bins: &[Bin]) -> Result<(), String> {
+        let selected = chosen(bins, &self.choices)?;
+        if selected.len() != self.edits.methods.rows.len() {
+            return Err("Construct preparation rows differ from selected source bins.".into());
+        }
+        let mut bottom = selected.len();
+        for (index, (choice, raw)) in selected
+            .iter()
+            .zip(&mut self.edits.methods.rows)
+            .enumerate()
+        {
+            raw.document = index;
+            raw.anneal_bottom_document = if raw.preparation == OverlapPreparation::AnnealedOligos
+                && choice.slot.anneal_bottom.is_some()
+            {
+                let index = bottom;
+                bottom += 1;
+                Some(index)
+            } else {
+                None
+            };
+        }
+        Ok(())
+    }
+    fn validate_selected_sources(&self, bins: &[Bin]) -> Result<(), String> {
+        let selected = chosen(bins, &self.choices)?;
+        let mut bottom = selected.len();
+        for (index, (choice, raw)) in selected.iter().zip(&self.edits.methods.rows).enumerate() {
+            model::validate_slot(&choice.slot, raw, index)?;
+            if raw.preparation == OverlapPreparation::AnnealedOligos {
+                let expected = choice.slot.anneal_bottom.as_ref().map(|_| {
+                    let at = bottom;
+                    bottom += 1;
+                    at
+                });
+                if raw.anneal_bottom_document != expected
+                    || (raw.anneal_candidate.is_some()
+                        && (choice.slot.anneal_context(raw).is_none()
+                            || raw.anneal_source_context != choice.slot.anneal_context(raw)))
+                {
+                    return Err("Construct annealing selection differs from its ordered original source events or options.".into());
+                }
+            }
+        }
+        Ok(())
+    }
+}
 impl Library {
+    pub(crate) fn sync_source_order(&mut self) -> Result<(), String> {
+        // Choice templates own actual captured events, never construct-local bottom ordinals.
+        for bin in &mut self.bins {
+            for choice in &mut bin.choices {
+                choice.row.anneal_bottom_document = None;
+            }
+        }
+        for row in &mut self.rows {
+            row.sync_source_order(&self.bins)?;
+        }
+        Ok(())
+    }
     pub fn validate(&self) -> Result<(), String> {
         if !design_id(&self.id)
             || self.next_id == 0
@@ -272,13 +332,22 @@ impl Library {
                     return Err("Invalid or duplicate assembly choice identity.".into());
                 }
                 model::validate_slot(&choice.slot, &choice.row, index)?;
+                if choice.row.anneal_bottom_document.is_some() {
+                    return Err("Source alternatives must not retain construct-local bottom input ordinals.".into());
+                }
+                if choice.row.anneal_candidate.is_some()
+                    && (choice.slot.anneal_context(&choice.row).is_none()
+                        || choice.row.anneal_source_context
+                            != choice.slot.anneal_context(&choice.row))
+                {
+                    return Err("Captured alternative annealing selection differs from its ordered source events or options.".into());
+                }
             }
         }
         for row in &self.rows {
             if !entity_id(self, &row.id, "row") || !ids.insert(&row.id) {
                 return Err("Invalid or duplicate construct row identity.".into());
             }
-            let selected = chosen(self, &row.choices)?;
             model::validate_controls(
                 &row.edits.name,
                 row.edits.circular,
@@ -293,13 +362,7 @@ impl Library {
                 &row.edits.substitutions,
                 &row.edits.edits,
             )?;
-            for (index, (choice, input)) in selected
-                .into_iter()
-                .zip(&row.edits.methods.rows)
-                .enumerate()
-            {
-                model::validate_slot_link(&choice.slot, input, index)?;
-            }
+            row.validate_selected_sources(&self.bins)?;
             if row.edits.methods.source_roles.as_ref() != Some(&roles(self, row)?) {
                 return Err("Saved construct preparation roles differ from its stable selected alternatives.".into());
             }
@@ -325,9 +388,13 @@ fn stage(draft: &Draft) -> Result<Draft, String> {
     Ok(draft.clone())
 }
 fn finish(mut draft: Draft) -> Result<Draft, String> {
+    if let Some(library) = &mut draft.alternatives {
+        library.sync_source_order()?;
+    }
     if draft.alternatives.is_some() {
         draft.methods.source_roles = roles_for_active(&draft)?;
     }
+    draft.sync_rows();
     draft.validate()?;
     Ok(draft)
 }
@@ -498,7 +565,7 @@ fn apply_row(draft: &mut Draft, id: &str) -> Result<(), String> {
         .iter()
         .find(|r| r.id == id)
         .ok_or("The selected construct row is unavailable.")?;
-    let slots = chosen(library, &row.choices)?
+    let slots = chosen(&library.bins, &row.choices)?
         .into_iter()
         .zip(&library.bins)
         .map(|(choice, bin)| {
@@ -547,7 +614,7 @@ pub fn add_row(draft: &Draft, selection: Vec<String>) -> Result<Draft, String> {
     if library.rows.len() >= MAX_ROWS {
         return Err("The selected construct matrix is limited to 256 rows.".into());
     }
-    let selected = chosen(library, &selection)?;
+    let selected = chosen(&library.bins, &selection)?;
     saved.methods.rows = selected
         .into_iter()
         .map(|choice| choice.row.clone())

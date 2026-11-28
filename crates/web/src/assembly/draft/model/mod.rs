@@ -81,6 +81,34 @@ impl Slot {
             anneal_bottom: None,
         }
     }
+    /// Documentary explicit-candidate context; fresh annealing is still required on use.
+    pub(crate) fn anneal_context(&self, row: &OverlapInput) -> Option<String> {
+        if row.preparation != OverlapPreparation::AnnealedOligos {
+            return None;
+        }
+        let top = &self.captured.as_ref()?.source.binding;
+        let bottom = &self.anneal_bottom.as_ref()?.source.binding;
+        let mut hasher = blake3::Hasher::new();
+        for value in [
+            collagene_core::chemistry::ANNEAL_ENGINE_VERSION,
+            "ordered-oligo-choice-2",
+            &top.document_id,
+            &top.event_id,
+            &top.revision,
+            &bottom.document_id,
+            &bottom.event_id,
+            &bottom.revision,
+        ] {
+            if value.len() > 512 {
+                return None;
+            }
+            hasher.update(&(value.len() as u64).to_le_bytes());
+            hasher.update(value.as_bytes());
+        }
+        let options = serde_json::to_vec(&row.anneal_options).ok()?;
+        hasher.update(&options);
+        Some(hasher.finalize().to_hex().to_string())
+    }
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -826,8 +854,8 @@ impl Draft {
     /// unrelated intent remains literal. Every mutation is transactional.
     pub(crate) fn swap_oligo_roles(&self, index: usize) -> Result<Draft, String> {
         self.validate()?;
-        if self.methods.mode != Mode::Ligation || self.alternatives.is_some() {
-            return Err("Swap ordered oligos requires an ordinary ligation draft.".into());
+        if self.methods.mode != Mode::Ligation {
+            return Err("Swap ordered oligos requires an ordered ligation draft.".into());
         }
         let row = self
             .methods
@@ -884,67 +912,11 @@ impl Draft {
         Ok(next)
     }
 
-    fn uses_paired_fields(&self) -> bool {
-        self.slots.iter().any(|slot| slot.anneal_bottom.is_some())
-            || self.methods.rows.iter().any(|row| {
-                row.preparation == OverlapPreparation::AnnealedOligos
-                    || row.anneal_options != Default::default()
-                    || row.anneal_candidate.is_some()
-                    || row.anneal_bottom_document.is_some()
-                    || row.anneal_source_context.is_some()
-            })
-            || self.alternatives.as_ref().is_some_and(|library| {
-                library.bins.iter().any(|bin| {
-                    bin.choices
-                        .iter()
-                        .any(|choice| choice.slot.anneal_bottom.is_some())
-                }) || library.rows.iter().any(|saved| {
-                    saved.edits.methods.rows.iter().any(|row| {
-                        row.preparation == OverlapPreparation::AnnealedOligos
-                            || row.anneal_options != Default::default()
-                            || row.anneal_candidate.is_some()
-                            || row.anneal_bottom_document.is_some()
-                            || row.anneal_source_context.is_some()
-                    })
-                })
-            })
-    }
-    /// A documentary pin for an explicit candidate index, never physical evidence.
+    /// Selection intent follows ordered oligo events and chemistry, not a construct namespace.
     pub(crate) fn anneal_context(&self, index: usize) -> Option<String> {
-        let row = self.methods.rows.get(index)?;
-        if row.preparation != OverlapPreparation::AnnealedOligos {
-            return None;
-        }
-        let slot = self.slots.get(index)?;
-        let top = &slot.captured.as_ref()?.source.binding;
-        let bottom = &slot.anneal_bottom.as_ref()?.source.binding;
-        let input_id = self
-            .methods
-            .role_ids(self.slots.len())
-            .ok()?
+        self.slots
             .get(index)?
-            .input_id
-            .clone();
-        let mut hasher = blake3::Hasher::new();
-        for value in [
-            collagene_core::chemistry::ANNEAL_ENGINE_VERSION,
-            input_id.as_str(),
-            &top.document_id,
-            &top.event_id,
-            &top.revision,
-            &bottom.document_id,
-            &bottom.event_id,
-            &bottom.revision,
-        ] {
-            if value.len() > 512 {
-                return None;
-            }
-            hasher.update(&(value.len() as u64).to_le_bytes());
-            hasher.update(value.as_bytes());
-        }
-        let options = serde_json::to_vec(&row.anneal_options).ok()?;
-        hasher.update(&options);
-        Some(hasher.finalize().to_hex().to_string())
+            .anneal_context(self.methods.rows.get(index)?)
     }
     /// Structural/bounded source consistency only. Historical event IDs require
     /// the host workspace to attest them before installing any candidate.
@@ -958,12 +930,6 @@ impl Draft {
             &self.substitutions,
             &self.edits,
         )?;
-
-        if self.alternatives.is_some() && self.uses_paired_fields() {
-            return Err(
-                "Paired-oligo sources/settings are not supported in assembly libraries.".into(),
-            );
-        }
 
         validate_controls(
             &self.name,

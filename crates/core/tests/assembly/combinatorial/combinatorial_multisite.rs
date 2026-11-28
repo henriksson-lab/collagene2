@@ -108,6 +108,7 @@ fn fixture(existing: bool) -> (Workspace, Design, SelectedConstruct) {
             id: format!("parent-{i}"),
             label: format!("Parent {i}"),
             choices: vec![Choice {
+                anneal_bottom: None,
                 generation: None,
                 id: format!("parent-{i}-choice"),
                 label: format!("Original parent {i} with explicit intended contribution"),

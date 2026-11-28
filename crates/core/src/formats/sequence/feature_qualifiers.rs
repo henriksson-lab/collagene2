@@ -16,12 +16,13 @@ pub(super) fn validate_key(key: &str) -> Result<(), Error> {
     if key.len() > MAX_KEY_BYTES {
         return Err(Error::TooLarge);
     }
+    // Digits retain positional names such as the saved-primer `5prime_tail`.
     // ':' '.' '-' retain the application's explicit custom namespaces;
     // whitespace, quotes, slashes and structural delimiters are refused.
     if !key
         .as_bytes()
         .first()
-        .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+        .is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
         || !key
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b':' | b'.' | b'-'))
@@ -218,7 +219,7 @@ impl Parser<'_> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_QUALIFIERS, MAX_VALUE_BYTES, parse};
+    use super::{MAX_QUALIFIERS, MAX_VALUE_BYTES, parse, validate_key};
 
     fn lines(values: &[&str]) -> Vec<String> {
         values.iter().map(|line| (*line).to_owned()).collect()
@@ -250,6 +251,21 @@ mod tests {
                 ("label".into(), Some("".into())),
             ]
         );
+    }
+
+    #[test]
+    fn positional_primer_keys_are_safe_custom_fields() {
+        let parsed = parse(&lines(&["/5prime_tail=\"GG\"", "/3prime_tail=\"AA\""])).unwrap();
+        assert_eq!(
+            parsed,
+            vec![
+                ("5prime_tail".into(), Some("GG".into())),
+                ("3prime_tail".into(), Some("AA".into()))
+            ]
+        );
+        for key in ["5prime tail", "5prime/tail", "5prime=tail", "5prime\ntail"] {
+            assert!(validate_key(key).is_err(), "{key:?}");
+        }
     }
 
     #[test]

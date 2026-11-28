@@ -11,7 +11,7 @@ use crate::{
 use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-pub const ENGINE_VERSION: &str = "source-cds-domestication-2";
+pub const ENGINE_VERSION: &str = "source-cds-domestication-3";
 pub const MAX_SITES: usize = 4096;
 pub const MAX_FEATURES: usize = 256;
 pub const MAX_PATCHES: usize = 256;

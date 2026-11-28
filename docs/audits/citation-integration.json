@@ -1,0 +1,115 @@
+{
+  "scope": "Citation/edit-log ownership and exact retained-source coverage; not whole-product acceptance.",
+  "previous_checkpoint": "1ca0b268a9cc446e359a34e497ee6ffb32f63605",
+  "compilation": {
+    "native": "passed, existing shared Cargo cache, offline locked j2",
+    "wasm": "passed, existing shared Cargo cache, offline locked j2"
+  },
+  "discovery": {
+    "previous_cases": 2495,
+    "previous_harnesses": 32,
+    "current_cases": 2509,
+    "current_harnesses": 33,
+    "removed_case_names": [
+      [
+        "core/sequence",
+        "annotations::genbank_reference_editing::same_length_substitution_keeps_numbered_scope_but_marks_ancestral_citation_support"
+      ]
+    ],
+    "semantic_rename": [
+      "core/sequence",
+      "annotations::genbank_reference_editing::same_length_substitution_excludes_replacement_bases_and_marks_ancestral_citation_support"
+    ],
+    "new_cases": [
+      [
+        "core/sequence",
+        "annotations::genbank_reference_editing::deleted_and_unscoped_sources_keep_reference_numbers_and_feature_citations"
+      ],
+      [
+        "core/sequence",
+        "annotations::genbank_reference_editing::legal_noncoordinate_sources_survive_native_reopen_without_claiming_destination_coverage"
+      ],
+      [
+        "core/sequence",
+        "annotations::genbank_reference_editing::repeated_bases_keywords_are_fully_consumed_and_projected"
+      ],
+      [
+        "core/sequence",
+        "annotations::genbank_reference_editing::rna_source_only_citation_export_uses_rna_baseline_and_clears_ancestral_accession"
+      ],
+      [
+        "core/sequence",
+        "annotations::genbank_reference_editing::source_only_citations_do_not_disable_export_proof_checks"
+      ],
+      [
+        "mcp/sequence",
+        "native_coordinate_edit_tools::native_sequence_edit_keeps_sites_and_deleted_citations_as_source_evidence"
+      ],
+      [
+        "model/citation_sources",
+        "citation_bounds_apply_to_source_only_and_mapped_descriptions"
+      ],
+      [
+        "model/citation_sources",
+        "citation_projection_work_is_bounded_independently_of_ledger_byte_size"
+      ],
+      [
+        "model/citation_sources",
+        "exact_source_coverage_representation_limit_retains_citation_as_source_only"
+      ],
+      [
+        "model/citation_sources",
+        "legal_noncoordinate_scopes_never_become_destination_claims"
+      ],
+      [
+        "model/citation_sources",
+        "numeric_scope_errors_and_invalid_reference_framing_are_rejected"
+      ],
+      [
+        "model/citation_sources",
+        "repeated_bases_keyword_has_literal_full_scope"
+      ],
+      [
+        "model/citation_sources",
+        "source_only_is_not_a_fallback_for_invalid_replay_authority"
+      ],
+      [
+        "model/citation_sources",
+        "wholly_deleted_coverage_cannot_reappear_after_later_insertion"
+      ]
+    ]
+  },
+  "focused_execution": {
+    "passed": 427,
+    "failed": 0,
+    "by_harness": {
+      "core/collagene_core": 27,
+      "core/formats": 24,
+      "core/history": 19,
+      "core/sequence": 295,
+      "mcp/cloning": 2,
+      "mcp/sequence": 28,
+      "model/citation_sources": 8,
+      "model/compatibility": 7,
+      "model/genbank_edits": 4,
+      "web/collagene-web": 13
+    }
+  },
+  "not_claimed": [
+    "all discovered cases executed",
+    "current-source cross-platform CI",
+    "installed-platform acceptance",
+    "browser or graphical acceptance"
+  ],
+  "fixture_correction": {
+    "initial_failed_cases": 2,
+    "changes": "Normalize wrapped remark text; compare parsed citation values rather than writer quote style; preserve actual large reference ID.",
+    "rerun_cases": 2,
+    "scientific_implementation_changed_after_first_execution": false
+  },
+  "source_sha256": {
+    "crates/model/src/genbank_edit.rs": "8f6bb239f7eb63e5c73a8902586d048ad9eed759f87d2fc3f4c834b5e2cb8bea",
+    "crates/core/src/formats/sequence/mod.rs": "1cf945c545a89f5f7d1a0118bb4a71ba5f4e4a1314917a7c32f36fa276406390",
+    "crates/core/tests/sequence/annotations/genbank_reference_editing.rs": "ec40df1ecb57faa40524fdcbf1f8103b5eadb4bfc84e719d9c26eaf7784af4df"
+  }
+}

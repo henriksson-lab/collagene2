@@ -1,6 +1,7 @@
 //! GenBank import/export uses the canonical model-layer INSDC location codec.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_model::annotations::insdc::location_text;
+use collagene_model::genbank_edit::{self, CitationProjection, SourceOnlyReason, VerifiedLog};
 use collagene_model::*;
 use gb_io::seq as gb;
 use serde::{Deserialize, Serialize};
@@ -902,11 +903,51 @@ fn has_unresolved(l: &Location) -> bool {
     }
 }
 
+const SOURCE_ONLY_CITATION_REVIEW: &str =
+    "Collagene: ancestral source citation only; no destination coordinate coverage is asserted.";
+
+fn citation_remark_words(text: &str) -> String {
+    let mut output = String::with_capacity(text.len());
+    for word in text.split_whitespace() {
+        if !output.is_empty() {
+            output.push(' ');
+        }
+        output.push_str(word);
+    }
+    output
+}
+
+/// The rich reader retains wrapping newlines in REMARK fields. Compare words
+/// without changing existing user text, so reopening/exporting a wrapped review
+/// does not append the same generated warning again.
+fn append_citation_review(reference: &mut gb::Reference, review: &str) -> Result<(), Error> {
+    let remark = reference.remark.get_or_insert_with(String::new);
+    if remark.len() > MAX_IMPORT_BYTES || review.len() > MAX_IMPORT_BYTES {
+        return Err(Error::TooLarge);
+    }
+    if !citation_remark_words(remark).contains(&citation_remark_words(review)) {
+        let separator = usize::from(!remark.is_empty());
+        if remark
+            .len()
+            .checked_add(separator)
+            .and_then(|n| n.checked_add(review.len()))
+            .is_none_or(|n| n > MAX_IMPORT_BYTES)
+        {
+            return Err(Error::TooLarge);
+        }
+        if separator != 0 {
+            remark.push(' ');
+        }
+        remark.push_str(review);
+    }
+    Ok(())
+}
+
 pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
     if mol
         .metadata
-        .get(GENBANK_EDIT_RECIPE_KEY)
-        .is_some_and(|raw| raw.len() > MAX_GENBANK_EDIT_RECIPE_BYTES)
+        .get(genbank_edit::KEY)
+        .is_some_and(|raw| raw.len() > genbank_edit::MAX_BYTES)
     {
         return Err(Error::TooLarge);
     }
@@ -919,6 +960,11 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
     let mut record = if let Some(original) = &mol.original_genbank {
         if original.len() > MAX_IMPORT_BYTES {
             return Err(Error::TooLarge);
+        }
+        if mol.metadata.contains_key(genbank_edit::KEY) {
+            // Admit edited source headers before rich reference allocation.
+            // Independent parsing and verified replay still establish binding.
+            genbank_edit::preflight_record(original)?;
         }
         let reader = genbank_reader::ReaderInput::new(original)?;
         let index = mol
@@ -940,7 +986,7 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
             .iter()
             .map(|&b| genbank_internal_base(b, original_alphabet))
             .eq(mol.sequence.as_str().bytes());
-    if mol.metadata.contains_key(GENBANK_EDIT_RECIPE_KEY) {
+    if mol.metadata.contains_key(genbank_edit::KEY) {
         let index = mol
             .metadata
             .get("source_record_index")
@@ -949,38 +995,64 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
             .map_err(|_| Error::Unsupported("Invalid GenBank source record index".into()))?
             .unwrap_or(0);
         let original_sequence = genbank_internal_sequence(&record.seq, original_alphabet)?;
-        let recipe = verified_genbank_edit_recipe(mol, &original_sequence, index)?
+        let verified = VerifiedLog::verify(mol, &original_sequence, index)?
             .ok_or_else(|| Error::Unsupported("Missing GenBank edit recipe".into()))?;
-        if record.references.len() > 1024 {
-            return Err(Error::TooLarge);
+        let projections = verified.project_references(
+            record
+                .references
+                .iter()
+                .map(|reference| reference.description.as_str()),
+        )?;
+        if projections.len() != record.references.len() {
+            return Err(Error::Format(
+                "GenBank citation projection count differs from source references".into(),
+            ));
         }
-        let mut spans = 0usize;
-        for reference in &record.references {
-            if reference.description.len() > 4096 {
-                return Err(Error::TooLarge);
-            }
-            spans = spans
-                .checked_add(reference.description.bytes().filter(|&b| b == b';').count() + 1)
-                .ok_or(Error::TooLarge)?;
-        }
-        if spans > 4096 || spans.saturating_mul(recipe.edits.len()) > 1_000_000 {
-            return Err(Error::TooLarge);
-        }
-        for reference in &mut record.references {
-            reference.description = remap_genbank_reference(&reference.description, &recipe)?;
-            if !recipe.edits.is_empty() {
-                let review = if mol.sequence.alphabet() == Alphabet::Rna {
-                    "Collagene: source citation retained with projected coordinate scope; citation support for edited RNA is unverified. Original record remains immutable in native source history."
-                } else {
-                    "Collagene: source citation retained with projected coordinate scope; citation support for edited DNA is unverified. Original record remains immutable in native source history."
-                };
-                let remark = reference.remark.get_or_insert_with(String::new);
-                if !remark.contains(review) {
-                    if !remark.is_empty() {
-                        remark.push(' ');
+        for (reference, projection) in record.references.iter_mut().zip(projections) {
+            let review = match projection {
+                CitationProjection::Mapped { description, .. } => {
+                    reference.description = description;
+                    if verified.edit_count() == 0 {
+                        None
+                    } else if mol.sequence.alphabet() == Alphabet::Rna {
+                        Some("Collagene: source citation retained with projected coordinate scope; citation support for edited RNA is unverified. Original record remains immutable in native source history.".into())
+                    } else {
+                        Some("Collagene: source citation retained with projected coordinate scope; citation support for edited DNA is unverified. Original record remains immutable in native source history.".into())
                     }
-                    remark.push_str(review);
                 }
+                CitationProjection::SourceOnly {
+                    number,
+                    original_description,
+                    reason,
+                } => {
+                    // A numbered bibliography item preserves /citation links;
+                    // the source scope is evidence, never destination coverage.
+                    reference.description = number.to_string();
+                    let alphabet = if mol.sequence.alphabet() == Alphabet::Rna {
+                        "RNA"
+                    } else {
+                        "DNA"
+                    };
+                    // Reimported source-only bibliography already has a bare
+                    // number and retains the earlier ancestral scope in REMARK.
+                    // This only avoids duplicate prose after fresh verification;
+                    // a producer remark never authorizes coordinate coverage.
+                    let inherited_review = matches!(reason, SourceOnlyReason::Unspecified)
+                        && reference.remark.as_deref().is_some_and(|remark| {
+                            citation_remark_words(remark).contains(SOURCE_ONLY_CITATION_REVIEW)
+                        });
+                    if inherited_review {
+                        None
+                    } else {
+                        Some(format!(
+                            "{SOURCE_ONLY_CITATION_REVIEW} Original REFERENCE description: {original_description}. Scope status: {}. Citation support for edited {alphabet} is unverified. Original record remains immutable in native source history.",
+                            reason.description(),
+                        ))
+                    }
+                }
+            };
+            if let Some(review) = review {
+                append_citation_review(reference, &review)?;
             }
         }
     } else if !record.references.is_empty() && source_differs {

@@ -184,20 +184,37 @@ and execution evidence is retained in the
 preceding `4b87ac0` passed scientific and desktop CI; exact-source CI remains
 required for this batch. Installed-platform and graphical acceptance remain open.
 
-## Next connected citation batch
+## Connected citation and edit-log batch
 
-Current native editing still rejects legal GenBank `(sites)` or unscoped reference
-descriptions, and edits that remove all cited coverage. NCBI explicitly permits
-optional parenthetical scope and `(sites)` annotation citations, including repeated
-`bases` after semicolons. [NCBI format definition](https://www.ncbi.nlm.nih.gov/genbank/-release/123/).
-These bibliography forms must not block valid DNA editing or silently become
-claims about destination coverage. The next batch needs typed mapped/source-only
-citation results, stable numbering and retained bibliographic/source-scope evidence,
-with fresh raw-source/current-DNA replay and existing tamper/resource checks.
-Prose/unknown descriptions require full consumption or explicit source-only status;
-never accept a parsed prefix or convert replay failure into ancestral evidence.
-The complete citation/edit-log owner should move with its types and meaningful
-operations into `model::genbank_edit`, without old-path facades.
+The current source supports legal GenBank `(sites)`, bare and prose references,
+repeated `bases` after semicolons, and fully deleted citation coverage. The
+[contract](GENBANK_CITATIONS.md) describes the supported grammar and strict proof
+requirements. `model::genbank_edit` owns the serialized ledger, bounded reference
+admission and runtime verified log; root forwarding APIs are removed. The current
+seven-field encoding, order, key and version remain unchanged.
+
+Citation mapping tracks exact surviving source bases through current-coordinate
+edits. Inserted/replacement DNA receives no source mapping. References with no
+surviving coverage, or exact coverage beyond the supported output representation,
+retain their bibliography and numbering as explicit source-only evidence. Numeric
+input, framing, stale binding, version, replay and resource failures remain errors.
+The native feature endpoint envelope is deliberately a different operation.
+
+Scientific engine `science-35` and affected mutation-intent, assembly-edit,
+junction-edit, domestication and reference-transfer stamps invalidate stale
+contexts. No native binary schema changes are introduced. The final exact-map
+revision passes native/WASM compilation and **427 selected cases**, including all
+**14 new model/core/actual MCP SDK fixtures**. Discovery preserves the preceding
+2,495 cases with one deliberate semantic rename and adds 14 cases, yielding
+**2,509 cases / 33 harnesses**. The two initial fixture failures concerned wrapped
+whitespace and writer quoting; assertions now compare normalized remarks and
+parsed citation identities, including the large portable reference number. Only
+those failed cases were rerun after the fixture correction. The
+[integration record](audits/citation-integration.json) separates discovery from
+execution. The complete ledger/proof owner is 733 lines; Molecule remains with
+its implementation in the 527-line model root. The prior annotation
+checkpoint `1ca0b26` passed scientific CI and desktop builds. This audit does not
+establish installed-platform or graphical acceptance.
 
 ## Antibody analysis acceptance scope
 

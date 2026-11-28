@@ -5,7 +5,7 @@ use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, To
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 
-pub const ENGINE_VERSION: &str = "reference-transfer-3";
+pub const ENGINE_VERSION: &str = "reference-transfer-4";
 pub const MAX_PARTS: usize = 4096;
 const MAX_BYTES: usize = 32 << 20;
 const EVIDENCE_CHUNK: usize = 512 << 10;

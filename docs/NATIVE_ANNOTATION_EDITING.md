@@ -89,9 +89,11 @@ publication and reference-only receipts. Results expose `review_required` and
 workspace ancestry or verified cloning result. The registry remains 209 tools;
 thin WebMCP permissions do not expand.
 
-Scientific engine `science-34` and the standalone mutation-intent, assembly-edit,
-junction-edit, domestication and reference-transfer engine stamps advance because
-annotation content can change. Current worker/candidate/plan layouts are unchanged;
+The annotation-edit batch advanced scientific engine `science-34` and the standalone
+mutation-intent, assembly-edit, junction-edit, domestication and reference-transfer
+stamps because annotation content can change. The connected
+[citation batch](GENBANK_CITATIONS.md) advances the current scientific engine to
+`science-35` and its affected edit stamps. Current worker/candidate/plan layouts are unchanged;
 stale contexts are rejected without fallback implementations.
 
 Independent fixtures cover literal forward/reverse/spliced mappings, phase and

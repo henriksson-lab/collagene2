@@ -86,11 +86,8 @@ fn derived(
     // The source-bound keyboard edit log addresses its original active header,
     // not this transformed reference. Retain it once as unverified source data;
     // later generations with no new active recipe do not create new archives.
-    if let Some(recipe) = result
-        .metadata
-        .remove(collagene_model::GENBANK_EDIT_RECIPE_KEY)
-    {
-        if recipe.len() > collagene_model::MAX_GENBANK_EDIT_RECIPE_BYTES {
+    if let Some(recipe) = result.metadata.remove(collagene_model::genbank_edit::KEY) {
+        if recipe.len() > collagene_model::genbank_edit::MAX_BYTES {
             return Err(Error::TooLarge);
         }
         retain(

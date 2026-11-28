@@ -4,17 +4,22 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-The fresh [three-part ownership audit and refactor plan](audits/REFACTOR_PLAN.md)
-identified targeted ownership work. Proposal/pool owners, Design/Draft/TreeJob
-methods and canonical import cleanup now pass native/WASM checks and 495 focused
-cases. Current layout covers 1,245 Rust files / 215 directories, maximum 17 direct
-files per directory and largest file 2,869 lines. The
-[implementation record](audits/ownership-implementation-2026-11-28.md) distinguishes
-source comparisons, execution and remaining exact-source CI. The connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) is now
-implemented and passes native/WASM checks plus 1,349 selected cases, including
-21 new core/SDK fixtures. Exact-source CI remains required for this batch.
-Future growth reviews and full-product acceptance remain open; historical
-checkpoints below retain their original scope.
+The refreshed [three-part organization audit](audits/REFACTOR_PLAN.md) records
+remaining App/controller and natural-method work, with completed refactors removed
+from the pending queue. The [current layout](audits/refactor-layout-current.json)
+covers 1,247 Rust files / 215 directories, at most 17 direct files per directory,
+and a largest file of 2,869 lines. There are no size violations or warnings.
+
+The connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) passes
+native/WASM checks and 1,349 selected cases, including 21 new core/SDK fixtures;
+its `1ca0b26` checkpoint passed scientific and desktop CI. The next
+[citation/edit-log batch](GENBANK_CITATIONS.md) is implemented in source, including
+exact surviving-source coverage and explicit source-only bibliography. Native/WASM checks and 427 focused cases pass, including 14 new independent
+model/core/SDK fixtures. Discovery preserves prior cases with one semantic rename
+and adds 14 cases (2,509 cases / 33 harnesses). The NativeState dispatch methods
+also pass the desktop compiler check. Exact-source cross-platform CI remains
+required for these changes. Full-product acceptance
+remains open; historical checkpoints retain their original scope.
 
 Scientific, MCP and web ownership refactors are implemented with direct caller
 updates and no old-path facades. The layout gate covers 1,234 Rust files with a
@@ -24,7 +29,7 @@ cases; its scientific CI and desktop packaging passed on Windows/macOS/Linux. Se
 [refactor status](audits/CODE_ORGANIZATION.md) for scope and evidence.
 
 Current source uses worker schema 123, candidate schema 31, draft schema 20,
-scientific engine science-34 and 209 native MCP tools. Native sequence edits,
+scientific engine science-35 and 209 native MCP tools. Native sequence edits,
 paste and annotation-only strand flips now share annotation proofs and bounded
 source-evidence handling; MCP receipts expose annotation review counts. The
 preceding projection/ownership checkpoint `4b87ac0` passed scientific CI on all

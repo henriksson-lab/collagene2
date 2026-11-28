@@ -168,3 +168,55 @@ async fn invalid_native_edit_requests_and_active_unmappable_claims_publish_nothi
     drop(client);
     server.abort();
 }
+
+#[tokio::test]
+async fn native_sequence_edit_keeps_sites_and_deleted_citations_as_source_evidence() {
+    let (client, server) = setup().await;
+    for description in ["1  (sites)", "1  (bases 3 to 4)"] {
+        let raw = format!(
+            "LOCUS       reference                 12 bp    DNA     linear   SYN 01-JAN-2026\nREFERENCE   {description}\n  AUTHORS   Example,A.\n  TITLE     Literal source\n  JOURNAL   Unpublished\nORIGIN\n        1 aaaaccccgg gg\n//\n"
+        );
+        let source = document(&call(&client, "import_document", json!({"text":raw})).await);
+        let original = bytes(
+            &client,
+            &call(&client, "export_document", source.clone()).await,
+        )
+        .await;
+        let changed = call(
+            &client,
+            "edit_reference_document",
+            json!({
+                "document":source,
+                "operation":{"ReplaceSequence":{"start":2,"end":4,"replacement":""}}
+            }),
+        )
+        .await;
+        assert_eq!(changed["reference_only"], true);
+        let product_ref = document(&changed);
+        let product = load(&client, product_ref.clone()).await;
+        assert_eq!(product.sequence.as_str(), "AACCCCGGGG");
+        assert_eq!(product.original_genbank.as_deref(), Some(raw.as_str()));
+        let exported = call(
+            &client,
+            "export_annotated_sequence",
+            json!({
+                "document":product_ref,"format":"GenBank","accept_omissions":true
+            }),
+        )
+        .await;
+        let genbank = text(&client, &exported).await;
+        let reference = genbank
+            .lines()
+            .find(|line| line.starts_with("REFERENCE"))
+            .unwrap();
+        assert_eq!(reference.trim(), "REFERENCE   1");
+        let restored = document(&call(&client, "import_document", json!({"text":genbank})).await);
+        assert_eq!(load(&client, restored).await.sequence, product.sequence);
+        assert_eq!(
+            bytes(&client, &call(&client, "export_document", source).await).await,
+            original
+        );
+    }
+    drop(client);
+    server.abort();
+}

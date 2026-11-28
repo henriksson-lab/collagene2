@@ -1,0 +1,36 @@
+{
+  "checks": {
+    "shape_validation_body_preserved": true,
+    "sequence_hash_body_preserved": true,
+    "record_index_body_preserved": true,
+    "sequence_edit_field_order_and_types_preserved": true,
+    "ledger_field_order_and_types_preserved": true,
+    "metadata_key_preserved": true,
+    "current_version_only": true
+  },
+  "new_ownership": {
+    "root_lines": 527,
+    "owner_lines": 733,
+    "serialized_ledger": "EditLog, same ordered fields/version1",
+    "authority": "VerifiedLog private owned EditLog; no Serialize/Deserialize",
+    "aggregate_projection": "bounded iterator before retaining1025threference; mappedspan/work bounds inowner",
+    "rich_parser_admission": "preflight_record reuses rawframe/logical-reference extraction before structured header allocation; no authority",
+    "exact_map": "one lazy monotone retained-source segment map per all-reference call; no inserted or replacement bases mapped",
+    "mapping_work_limit": 2000000
+  },
+  "changed_semantics": [
+    "Sites/Unspecified/UnsupportedScope/Deleted source-only outcomes",
+    "fully consumed repeated-bases grammar",
+    "u64 citation IDs and endpoint parse for native/WASM parity",
+    "logical wrapped REFERENCE descriptions",
+    "source-only never bypasses version/hash/index/currentDNA replay",
+    "deleted intervals do not resurrect under later insertions",
+    "single-record actual index0 required even ifmetadata/log/caller forgery allalign",
+    "unknownscope syntax fully classified before u64 numericrange interpretation",
+    "iterator admission before retaining nextreference beyond1024",
+    "exact source-base coverage replaces citation endpoint envelopes",
+    "whole and incremental replacement/deletion cannot leave inserted-only coverage mapped",
+    "numeric outputs normalized by destination set; >256spans or4Kbytes yields explicit RepresentationLimit",
+    "bounded map construction, source-range sort/search/intersections; format limits never hide replay/resource/input errors"
+  ]
+}

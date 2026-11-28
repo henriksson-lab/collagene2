@@ -3,7 +3,7 @@ use crate::sequence::annotations;
 use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-pub const ENGINE_VERSION: &str = "mutation-intent-2";
+pub const ENGINE_VERSION: &str = "mutation-intent-3";
 const MAX_SOURCE: usize = 8 << 20;
 const MAX_INSERTED: usize = 100_000;
 const REFERENCE_MODEL: &str =

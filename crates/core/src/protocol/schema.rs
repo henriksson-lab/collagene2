@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 121;
+pub const WORKER_SCHEMA_VERSION: u16 = 122;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -966,6 +966,10 @@ pub enum AnalysisJob {
         limits: crate::antibody_numbering::domain_candidates::Limits,
         selection: crate::antibody_numbering::domain_tracks::Selection,
     },
+    MaterializeMaterialDigestFragment {
+        source: Molecule,
+        request: crate::material::derivation::digest_export::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1161,6 +1165,7 @@ pub enum AnalysisResult {
     ProteinLiabilities(crate::protein_liabilities::Report),
     Antibody(crate::antibody_numbering::domain_tracks::Report),
     AlignmentAntibody(crate::protein::antibody_alignment::Report),
+    MaterialDigestProduct(crate::material::derivation::digest_export::Product),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

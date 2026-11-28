@@ -197,6 +197,132 @@ fn actual_pcr_digest_fragment_public_and_private_closure_preserve_fresh_material
     }
     assert_eq!(serde_json::to_value(&w).unwrap(), before);
 }
+
+#[test]
+fn named_digest_setup_closure_retains_exact_run_and_derived_origins_without_private_setups() {
+    use collagene_core::cloning::restriction::{catalog, inspection::InspectionOptions, setups};
+    use collagene_core::material::{capsule, derivation::SourceOrigin};
+    let (workspace, derived, _, private_revision, _) = fixture();
+    let run_record = workspace
+        .attachments
+        .values()
+        .find(|asset| asset.kind == run_lineage::WORKSPACE_ATTACHMENT_KIND)
+        .map(|asset| run_lineage::load_run_record(&asset.bytes).unwrap())
+        .unwrap();
+    let run_product = &run_record.products[0];
+    let run_event = EventBinding {
+        document_id: run_product.document_id.clone(),
+        event_id: run_product.event_id.clone(),
+        revision: run_product.revision.clone(),
+    };
+    let selections = [
+        run_material::MaterialSelection::Run(run_material::Selection {
+            run_id: run_record.run_id.clone(),
+            step_index: run_product.step_index,
+            event: run_event,
+        }),
+        run_material::MaterialSelection::Derived(derived),
+    ];
+    let embedded = catalog::builtin_catalog().unwrap();
+    let enzymes = catalog::select(&embedded, &["ecori".into()]).unwrap();
+    for selection in selections {
+        let mut origins =
+            capsule::documentary_origins(&workspace, &[selection.clone()], &[]).unwrap();
+        let recipe = setups::Recipe {
+            source: selection.event().clone(),
+            origin: SourceOrigin::Saved(origins.materials.remove(0)),
+            selection: enzymes.clone(),
+            options: InspectionOptions::default(),
+            cleavage_mode: setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+        };
+        let source = &workspace.revisions[&recipe.source.revision];
+        let inspection = recipe.inspect(source).unwrap();
+        let (mut staged, hash) = setups::capture(
+            &embedded,
+            &workspace,
+            &recipe,
+            "Reusable saved digest",
+            &inspection,
+        )
+        .unwrap();
+        let private_document = staged
+            .documents
+            .iter()
+            .find(|doc| doc.head == private_revision)
+            .unwrap();
+        let private_recipe = setups::Recipe {
+            source: EventBinding {
+                document_id: private_document.id.clone(),
+                event_id: private_document.head_event.clone().unwrap(),
+                revision: private_revision.clone(),
+            },
+            origin: SourceOrigin::OriginalReference,
+            selection: enzymes.clone(),
+            options: InspectionOptions::default(),
+            cleavage_mode: setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+        };
+        let private_report = private_recipe
+            .inspect(&staged.revisions[&private_revision])
+            .unwrap();
+        let (with_private, private_setup) = setups::capture(
+            &embedded,
+            &staged,
+            &private_recipe,
+            "Private unrelated digest",
+            &private_report,
+        )
+        .unwrap();
+        staged = with_private;
+        let before = serde_json::to_value(&staged).unwrap();
+        for projection in [
+            sharing::project_document_closure(&staged, &pin(&recipe.source)).unwrap(),
+            sharing::project_private_document_closure(&staged, &pin(&recipe.source)).unwrap(),
+        ] {
+            assert!(projection.inventory.attachments.contains(&hash));
+            assert!(!projection.inventory.attachments.contains(&private_setup));
+            assert!(
+                !projection
+                    .workspace
+                    .revisions
+                    .contains_key(&private_revision)
+            );
+            let restored = workspace::load_workspace(
+                &workspace::save_workspace(&projection.workspace).unwrap(),
+            )
+            .unwrap();
+            let record = setups::load(&restored, &hash).unwrap();
+            record.recipe.validate_for_workspace(&restored).unwrap();
+            let fresh = record
+                .recipe
+                .inspect(&restored.revisions[&record.recipe.source.revision])
+                .unwrap();
+            assert_eq!(fresh.context_revision, inspection.context_revision);
+            assert_eq!(
+                serde_json::to_value(&restored.attachments[&hash]).unwrap(),
+                serde_json::to_value(&staged.attachments[&hash]).unwrap()
+            );
+        }
+        assert_eq!(serde_json::to_value(&staged).unwrap(), before);
+    }
+}
+
+#[test]
+fn obsolete_named_digest_setup_kind_cannot_enter_document_publication() {
+    let (mut workspace, product, _, _, _) = fixture();
+    let bytes = b"{}".to_vec();
+    workspace.attachments.insert(
+        blake3::hash(&bytes).to_hex().to_string(),
+        WorkspaceAttachment {
+            kind: "named-digest-setup-v1".into(),
+            name: "Obsolete setup".into(),
+            media_type: "application/json".into(),
+            bytes,
+        },
+    );
+    assert!(sharing::inspect_document_closure(&workspace, &pin(&product)).is_err());
+    assert!(sharing::inspect_private_document_closure(&workspace, &pin(&product)).is_err());
+    assert!(workspace::save_workspace(&workspace).is_err());
+}
 #[test]
 fn unrelated_selected_document_never_publishes_derived_record_or_its_private_origin_runs() {
     let (w, _, record, private, _) = fixture();

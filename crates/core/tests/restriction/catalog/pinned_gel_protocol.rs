@@ -20,6 +20,7 @@ fn request(pinned: bool) -> Request {
     let frame = Workspace::from_documents("source", vec![molecule.clone()], 0).unwrap();
     let doc = &frame.documents[0];
     let recipe = Recipe {
+        origin: collagene_core::material::derivation::SourceOrigin::OriginalReference,
         source: EventBinding {
             document_id: doc.id.clone(),
             event_id: doc.head_event.clone().unwrap(),

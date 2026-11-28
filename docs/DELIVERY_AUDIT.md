@@ -7,7 +7,7 @@ until in-scope implementation is complete.
 
 | Area | Current source evidence | Remaining delivery work |
 | --- | --- | --- |
-| Saved-material digest continuation | Fresh saved-origin inspection, fragment opening and assembly handoff exist; `DigestPanel` explicitly blocks saved-origin fragment GenBank export, named setups and gel handoff. `cloning::restriction::setups::Recipe` records only an event binding. | Carry exact material origin through the current recipe, fresh fragment reconstruction, setup capture/reopening, and diagnostic gel recipes. Preserve ancestry, original assumptions, source/epoch/options guards and explicit export losses; do not treat saved reports as fresh authority. Highest-priority connected cloning gap. |
+| Saved-material digest continuation | Implemented in the current batch: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Worker schema 122; closure engine 4. | Native/WASM compilation and 823 affected regression cases pass; exact-commit cross-platform CI remains required. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
 | Protected codon ranges | `codon_design::ConstrainedPolicy` includes protected ranges and allowed codons; its independent checker reports violations | Current platform/workflow acceptance; the older blanket “protected ranges missing” entry is obsolete |
 | Plate layouts | `protocol_layout` plus web/MCP capture and CSV/HTML/PDF export | Broader workflow acceptance; this is documentary cloning layout, not inventory or instruments |
 | Lab comments/review | Native collaboration store, individual member registry, discussion SDK and shared browser/Tauri remote controls | Exact-source CI, graphical acceptance and deliberate deployment cutover; no automatic offline comment queue |
@@ -23,19 +23,40 @@ organizational reporting and mobile expansion retain their exclusions/deferrals.
 
 ## Next connected cloning batch
 
-After exact-source refactor CI closes, complete saved-material digest export,
-named setups and gel handoff together. Use the existing `MaterialOrigin` and
-fresh replay machinery in one current recipe representation; update schemas,
-worker transport, persistence, native MCP, UI and fixtures in one integration
-batch. Reject superseded internal record versions explicitly. A fragment export
-must state any lost strand/modification/history evidence instead of presenting
-GenBank as a physical-material archive.
+Saved-material digest export, named setups and gel handoff are implemented in
+one current recipe representation. `MaterialOrigin` retains exact Run/Derived
+ancestry; fresh reconstruction supplies products and gel lengths. Current named
+setup schema 2 and worker schema 122 reject superseded internal encodings.
+GenBank exports state lost physical/history evidence in both comments and export
+warnings. Exact source, origin, options, workspace epoch and generation guards
+remain in place. A reference fork cannot inherit a saved physical origin.
+
+Recognition-only reference inspections retain sites and diagnostics when actual
+strand material cannot be established. Their required `source_material` field is
+explicitly null; products and fragment chemistry are withheld. Saved-origin
+replay failures propagate and cannot become reference hypotheses. Historical
+setups remain documentary and can reopen without installed catalog membership.
+
+Native compilation and web/worker WASM checks pass. Focused execution covers 823
+unique affected cases: 224 material, 118 restriction, 402 web, 60 MCP and 19
+sharing cases. One export assertion was corrected for recognition-only reimports;
+all four export cases were rerun, while 220 unchanged material cases retained
+their passing result against unchanged production code. The prior gel withholding
+assertion passes unchanged. Formatting and layout checks pass; browser/application
+HTTP and installed-platform acceptance remain deferred. The refactor checkpoint
+separately passed all native platforms and desktop packaging at `416b26c`.
 
 Paired-oligo combinatorial choices remain a separate connected gap: ordinary
 annealed inserts work, but library choices retain only one source identity.
-Supporting them requires both original events and ordered strand declarations
-through capture, replay, release, sharing and protocol output. Merely lifting
-the draft validation refusal would lose provenance.
+Add an explicitly present nullable bottom-source binding to each current choice,
+then use one canonical ordered input list throughout projection, batch identity,
+verification and release. Twelve contributions may require twenty-four input
+bindings. Both ordered events must survive capture, replay, sharing and protocol
+output; equal DNA or repeated events in distinct roles must not be deduplicated.
+Update stale-preview identities when either oligo changes and require explicit
+annealing-candidate selection. Merely lifting the draft validation refusal would
+lose provenance. Advance affected current schemas together and reject superseded
+encodings.
 
 Coordinate-bearing qualifier projection is also incomplete. Supported local
 `transl_except`/`anticodon` locations need bounded, fully consumed parsing and
@@ -43,6 +64,15 @@ biological-order-preserving remapping. The current gb-io location wrapper ignore
 unconsumed suffixes, so its result alone cannot validate an embedded location.
 Native model edits, destination paste and annotation-only strand flips have
 distinct refusal boundaries; changing projection alone must not bypass them.
+
+Location parsing needs an integrity fix before broader qualifier projection:
+gb-io discards unconsumed suffixes and performs signed coordinate arithmetic
+before the core's range checks. A delimiter wrapper alone is insufficient:
+`A(:1..3)junk` can escape it through the dependency's permissive accession token.
+Use checked positive coordinates, explicit node/depth/work limits and complete
+consumption; retain full remote/unresolved source evidence without inventing
+precise local ranges. Address this core GenBank import boundary before the next
+library expansion.
 
 ## Antibody analysis acceptance scope
 

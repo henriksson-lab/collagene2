@@ -401,6 +401,7 @@ impl Workspace {
         crate::material::lineage::validate_workspace_runs(self)?;
         crate::material::derivation::validate_workspace_records(self)?;
         crate::cloning::topo::graph_history::validate_workspace_records(self)?;
+        crate::cloning::restriction::setups::validate_workspace_records(self)?;
         crate::material::reference_evidence::validate_workspace(self)?;
         crate::review::contigs::history::validate_workspace_assemblies(self)?;
         Ok(())

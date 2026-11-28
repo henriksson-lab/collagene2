@@ -100,8 +100,8 @@ impl RestrictionController {
     ) -> Callback<
         (
             String,
-            collagene_core::cloning::restriction::catalog::CatalogRestrictionInspection,
-            crate::sources::identity::SourceInfo,
+            collagene_core::cloning::restriction::setups::Recipe,
+            collagene_core::material::derivation::DigestPreview,
         ),
         Result<(), String>,
     > {
@@ -115,10 +115,10 @@ impl RestrictionController {
         } = self.session;
         let ShellState { message, .. } = self.shell;
         Callback::new(
-            move |(name, report, source): (
+            move |(name, recipe, report): (
                 String,
-                collagene_core::cloning::restriction::catalog::CatalogRestrictionInspection,
-                crate::sources::identity::SourceInfo,
+                collagene_core::cloning::restriction::setups::Recipe,
+                collagene_core::material::derivation::DigestPreview,
             )|
                   -> Result<(), String> {
                 if workspace_restoring.get_untracked() {
@@ -126,7 +126,7 @@ impl RestrictionController {
                 }
                 if documents
                     .with_untracked(|docs| current_event_binding(&docs[active.get_untracked()]))
-                    != source.binding
+                    != recipe.source
                 {
                     return Err(
                         "The active digest source event changed; inspect again before saving."
@@ -138,7 +138,7 @@ impl RestrictionController {
                 let (staged, _) = collagene_core::cloning::restriction::setups::capture(
                     &catalog,
                     &contig_snapshot.run(())?,
-                    &source.binding,
+                    &recipe,
                     &name,
                     &report,
                 )

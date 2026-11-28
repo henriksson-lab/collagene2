@@ -1,6 +1,6 @@
 # Domain ownership refactor checkpoint
 
-28 November 2026. Implementation and local native/WASM verification are complete. Exact-commit cross-platform CI remains required after publication; full-product and visual acceptance remain open.
+28 November 2026. Implementation and local native/WASM verification are complete. Exact-commit cross-platform CI and desktop packaging passed at `416b26c`; full-product and visual acceptance remain open.
 
 | Area | Current ownership |
 | --- | --- |
@@ -12,7 +12,7 @@
 | Web | App composes feature controllers and rendering. `WorkspaceSession` owns six document/workspace handles and guarded admission/edit/export context. `PcrState` owns PCR lifecycle/evidence handles; `PcrController` owns PCR actions. `ExportArtifact`/`ExportService` own bounded download reservation, guarded completion and lifecycle cleanup. |
 | Tests | Core and MCP integration tests use nine and eight explicit domain harnesses with nested module registration. Fixture paths and current API imports have been updated directly. |
 
-The refactor does not introduce another internal plan, migration path or compatibility decoder. Current versions remain scientific engine `science-32`, worker schema `121` and candidate schema `31`. Mechanical moves preserve serialized enum ordering and scientific assumptions; the local checks and independent review below verify those contracts within their stated scope.
+The refactor does not introduce another internal plan, migration path or compatibility decoder. The refactor checkpoint retained scientific engine `science-32`, worker schema `121` and candidate schema `31`. Mechanical moves preserve serialized enum ordering and scientific assumptions; the local checks and independent review below verify those contracts within their stated scope.
 
 ## Why some implementations remain distributed
 
@@ -30,7 +30,7 @@ A static inventory at this checkpoint found a maximum of 16 direct Rust files in
 
 ## Remaining acceptance
 
-Exact-commit Windows/macOS/Linux CI remains required for this tree. Installed
+Exact-commit Windows/macOS/Linux CI and desktop packaging passed for this refactor tree. Installed
 platform and full-product/visual acceptance remain separate product gates;
 browser/application HTTP checks stay deferred under the user's instruction.
 
@@ -51,6 +51,6 @@ application HTTP, screenshot or release-build checks were run.
 
 Formatting, whitespace and local documentation-link checks pass. The strict
 layout check covers 1,202 Rust files and reports zero violations and zero warnings.
-Exact-commit Windows/macOS/Linux CI remains required after publication. Earlier
+Exact-commit Windows/macOS/Linux CI and desktop packaging passed at `416b26c`. Earlier
 intermediate diagnostics above describe the integration process, not remaining
 source failures.

@@ -637,6 +637,7 @@ async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_so
         .await;
     let recipe = Recipe {
         source: binding.clone(),
+        origin: collagene_core::material::derivation::SourceOrigin::OriginalReference,
         selection: catalog_digest::select(
             &catalog_digest::builtin_catalog().unwrap(),
             &["alui".into()],

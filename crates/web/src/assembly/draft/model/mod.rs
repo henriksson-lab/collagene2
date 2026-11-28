@@ -1227,32 +1227,21 @@ pub fn set_digest_fragment(
     }
     if fragment.fragment_index >= fragment.options.max_fragments
         || !hex(&fragment.batch_revision)
-        || fragment
-            .origin
-            .as_ref()
-            .map_or_else(
-                || {
-                    catalog_digest::batch_revision(
-                        &catalog,
-                        &fragment.selection,
-                        &role,
-                        &fragment.molecule,
-                        &fragment.options,
-                    )
-                },
+        || collagene_core::material::derivation::digest_inspection_revision(
+            &role,
+            &fragment.molecule,
+            &fragment.origin.as_ref().map_or(
+                collagene_core::material::derivation::SourceOrigin::OriginalReference,
                 |origin| {
-                    collagene_core::material::derivation::digest_inspection_revision(
-                        &role,
-                        &fragment.molecule,
-                        &collagene_core::material::derivation::SourceOrigin::Saved(
-                            origin.as_ref().clone(),
-                        ),
-                        &fragment.selection,
-                        &fragment.options,
+                    collagene_core::material::derivation::SourceOrigin::Saved(
+                        origin.as_ref().clone(),
                     )
                 },
-            )
-            .map_err(|e| e.to_string())?
+            ),
+            &fragment.selection,
+            &fragment.options,
+        )
+        .map_err(|e| e.to_string())?
             != fragment.batch_revision
     {
         return Err("Digest selection/source/options changed; run the digest again".into());

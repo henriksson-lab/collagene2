@@ -1,5 +1,6 @@
 //! Target-free native PCR, reciprocal extension, catalog-digest and end-repair derivations. Opaque, bounded recipe
 //! packages break typed recursion; only fresh native execution yields material.
+pub mod digest_export;
 use crate::{
     chemistry::{
         self,
@@ -116,7 +117,12 @@ pub struct PreparedInstallation {
     pub receipt: Receipt,
 }
 dto! {pub struct Installed{pub archive:Vec<u8>,pub receipt:Receipt}}
-dto! {pub struct DigestPreview{pub engine_version:String,pub context_revision:String,pub selection:CatalogSelection,pub inspection:RestrictionInspection,pub source_duplex:chemistry::DuplexSummary,pub source_modifications:ModificationSummary,pub fragment_modifications:Vec<ModificationSummary>,pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool}}
+/// Summaries from actual private native source construction/replay, never input authority.
+dto! {pub struct DigestSourceMaterial{pub duplex:chemistry::DuplexSummary,pub modifications:ModificationSummary}}
+dto! {pub struct DigestPreview{pub engine_version:String,pub context_revision:String,pub selection:CatalogSelection,pub inspection:RestrictionInspection,
+#[serde(deserialize_with="crate::cloning::assembly::recipe::required_option")]
+#[cfg_attr(feature="json-schema",schemars(required))]
+pub source_material:Option<DigestSourceMaterial>,pub fragment_modifications:Vec<ModificationSummary>,pub incomplete:bool,pub findings:Vec<String>,pub findings_total:usize,pub findings_truncated:bool}}
 /// Not serializable, not publicly constructible, and never reconstructed from summaries.
 #[derive(Debug)]
 pub struct FreshMaterial {
@@ -1463,9 +1469,9 @@ pub fn digest_inspection_revision(
     let catalog = catalog_digest::builtin_catalog()?;
     catalog_digest::source_preflight(&catalog, selection, role, source, options)?;
     match origin {
-        SourceOrigin::OriginalReference => {
-            original_source(source)?;
-        }
+        // Recognition applies to a bounded DNA reference even when no intact
+        // physical substrate can be established. Actual admission remains below.
+        SourceOrigin::OriginalReference => {}
         SourceOrigin::Saved(origin) => {
             origin.validate_documentary()?;
             if origin.event().revision != source.revision() {
@@ -1473,6 +1479,17 @@ pub fn digest_inspection_revision(
             }
         }
     }
+    digest_inspection_context(role, source, origin, selection, options)
+}
+/// Current digest declaration identity shared by live admission and historical evidence.
+/// Callers establish their own current-catalog or documentary guards first.
+pub(crate) fn digest_inspection_context(
+    role: &str,
+    source: &Molecule,
+    origin: &SourceOrigin,
+    selection: &CatalogSelection,
+    options: &InspectionOptions,
+) -> Result<String, Error> {
     crate::cloning::assembly::recipe::hash(&(
         ENGINE_VERSION,
         "digest-inspection",
@@ -1484,6 +1501,7 @@ pub fn digest_inspection_revision(
         options,
     ))
 }
+
 pub fn inspect_digest(
     role: &str,
     source: &Molecule,
@@ -1492,9 +1510,42 @@ pub fn inspect_digest(
     options: &InspectionOptions,
 ) -> Result<DigestPreview, Error> {
     let context_revision = digest_inspection_revision(role, source, origin, selection, options)?;
-    let fresh = fresh_source(source, origin)?;
     let catalog = catalog_digest::builtin_catalog()?;
     let enzymes = selection.resolved_enzymes(&catalog)?;
+    let fresh = match fresh_source(source, origin) {
+        Ok(fresh) => fresh,
+        Err(Error::Unsupported(reason)) if matches!(origin, SourceOrigin::OriginalReference) => {
+            let inspection = restriction_inspection::inspect_with_digest(
+                role,
+                source,
+                &enzymes,
+                options,
+                || Err(Error::Unsupported(reason.clone())),
+            )?;
+            let (findings, findings_total, findings_truncated) = limitations(
+                vec![format!(
+                    "Recognition-only reference: actual source material is unavailable ({reason}). No physical products or source chemistry are asserted."
+                )],
+                1,
+                false,
+            );
+            let report = DigestPreview {
+                engine_version: ENGINE_VERSION.into(),
+                context_revision,
+                selection: selection.clone(),
+                inspection,
+                source_material: None,
+                fragment_modifications: Vec::new(),
+                incomplete: true,
+                findings,
+                findings_total,
+                findings_truncated,
+            };
+            report.validate_binding(&report.context_revision)?;
+            return Ok(report);
+        }
+        Err(error) => return Err(error),
+    };
     let mut fragment_modifications = Vec::new();
     let inspection = restriction_inspection::inspect_with_digest_for_source(
         role,
@@ -1522,8 +1573,10 @@ pub fn inspect_digest(
         engine_version: ENGINE_VERSION.into(),
         context_revision,
         selection: selection.clone(),
-        source_duplex: fresh.tracked.duplex.summary()?,
-        source_modifications: modified_duplex::summary(&fresh.tracked)?,
+        source_material: Some(DigestSourceMaterial {
+            duplex: fresh.tracked.duplex.summary()?,
+            modifications: modified_duplex::summary(&fresh.tracked)?,
+        }),
         fragment_modifications,
         incomplete: fresh.incomplete || !inspection.scan_complete || !inspection.limits.is_empty(),
         inspection,
@@ -1540,10 +1593,13 @@ impl DigestPreview {
         choice: &crate::cloning::restriction::cut_selection::Choice,
     ) -> Result<&crate::cloning::restriction::inspection::FragmentSummary, Error> {
         self.validate_binding(&self.context_revision)?;
+        let material = self.source_material.as_ref().ok_or_else(|| {
+            bad("recognition-only reference has no established source material or fragment")
+        })?;
         crate::cloning::restriction::cut_selection::selected_fragment_raw_with_source(
             &self.inspection,
             choice,
-            &self.source_duplex,
+            &material.duplex,
         )
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
@@ -1558,7 +1614,6 @@ impl DigestPreview {
             return Err(bad("digest preview binding/bounds differ"));
         }
         self.selection.validate()?;
-        self.inspection.validate_with_source(&self.source_duplex)?;
         if self.inspection.enzymes
             != self
                 .selection
@@ -1571,13 +1626,28 @@ impl DigestPreview {
                 "Inspection enzyme geometry differs from its pinned catalog selection.",
             ));
         }
-        summary_shape(&self.source_modifications)?;
+        let Some(material) = &self.source_material else {
+            self.inspection.validate()?;
+            if !self.incomplete
+                || self.inspection.products_determined
+                || !self.inspection.fragments.is_empty()
+                || !self.fragment_modifications.is_empty()
+            {
+                return Err(bad(
+                    "recognition-only source cannot assert actual material or fragments",
+                ));
+            }
+            encoded(self, MAX_RECORD_BYTES)?;
+            return Ok(());
+        };
+        summary_shape(&material.modifications)?;
+        self.inspection.validate_with_source(&material.duplex)?;
         crate::cloning::restriction::cut_selection::source_geometry_preflight(
             &self.inspection,
-            &self.source_duplex,
+            &material.duplex,
         )?;
-        if self.source_modifications.top_length != self.inspection.source_length
-            || self.source_modifications.bottom_length != self.source_duplex.bottom_length
+        if material.modifications.top_length != self.inspection.source_length
+            || material.modifications.bottom_length != material.duplex.bottom_length
         {
             return Err(bad(
                 "Source chemistry summaries differ from the actual source geometry.",
@@ -1602,7 +1672,7 @@ impl DigestPreview {
             summary_shape(s)?;
             if s.top_length != f.duplex.top_length
                 || s.bottom_length != f.duplex.bottom_length
-                || s.generation != self.source_modifications.generation
+                || s.generation != material.modifications.generation
             {
                 return Err(bad("fragment summary coordinate lengths differ"));
             }

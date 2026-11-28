@@ -1,6 +1,7 @@
 //! Nonmutating selected-document publication, never a whole-workspace fallback.
 //! Native immutable events, run declarations and origin capsules remain exact.
 //! This module computes documentary dependency scope, not scientific authority.
+mod digest_setup_closure;
 pub mod import;
 mod material_derivation_closure;
 mod sbol_source;
@@ -14,7 +15,7 @@ use collagene_core::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-pub const ENGINE_VERSION: &str = "library-document-closure-3";
+pub const ENGINE_VERSION: &str = "library-document-closure-4";
 const MAX_REFERENCE_EDGES: usize = 1_000_000;
 
 #[derive(Debug, thiserror::Error)]
@@ -95,7 +96,6 @@ fn workspace_only(kind: &str) -> bool {
             "cloning-output-visibility-v1"
             | "oligo-table-v1"
             | "restriction-enzyme-sets-v1"
-            | "named-digest-setup-v1"
             | collagene_core::cloning::assembly::library_history::KIND
             // Named working designs, unfinished primer text and visibility
             // preferences produce no immutable plasmid/run event themselves.
@@ -182,6 +182,9 @@ impl<'a> Graph<'a> {
                 }
                 g.run_assets.insert(header.run_id.clone(), hash.clone());
                 g.run_headers.insert(header.run_id);
+            } else if a.kind == collagene_core::cloning::restriction::setups::KIND {
+                // Exact source-event ownership and retained material origins are
+                // indexed separately. Unrelated named setups are not published.
             } else if a.kind == collagene_core::material::derivation::WORKSPACE_ATTACHMENT_KIND {
                 // Exact typed ownership is indexed in resolve. Merely having
                 // an unrelated derivation never publishes its sources/assets.
@@ -279,6 +282,7 @@ impl<'a> Graph<'a> {
     }
     fn resolve(&mut self) -> Result<(), Error> {
         let material = material_derivation_closure::Index::new(self.source)?;
+        let digest_setups = digest_setup_closure::Index::new(self.source)?;
         material.validate_existing_owners(&self.owners)?;
         let mut selected_run_choices =
             BTreeMap::<String, Vec<collagene_core::material::run::Selection>>::new();
@@ -295,6 +299,7 @@ impl<'a> Graph<'a> {
                     return Err(Error::Unresolved("event revision"));
                 }
                 self.kept_revisions.insert(event.revision.clone());
+                digest_setups.follow_event(self, &id)?;
                 if let Some(assets) = self.event_declarations.get(&id) {
                     self.kept_assets.extend(assets.iter().cloned());
                 }

@@ -23,7 +23,7 @@ impl Response {
             bytes,
             &[
                 20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162,
-                163, 164, 165, 166, 168, 169, 171, 174, 176, 178, 179, 180, 182,
+                163, 164, 165, 166, 168, 169, 171, 174, 176, 178, 179, 180, 182, 187,
             ],
         )?;
 
@@ -104,6 +104,14 @@ impl Response {
             }
             AnalysisResult::MaterialDigestInspection(report) => {
                 report.validate_binding(&response.revision)?;
+            }
+            AnalysisResult::MaterialDigestProduct(report) => {
+                report.validate()?;
+                if report.context_revision != response.revision {
+                    return Err(Error::Format(
+                        "Digest export response context changed".into(),
+                    ));
+                }
             }
             AnalysisResult::SequenceExportAssessment(report) => {
                 report.validate_binding(&response.revision)?;

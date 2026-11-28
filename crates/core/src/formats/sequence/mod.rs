@@ -223,7 +223,8 @@ pub fn import_bytes(bytes: &[u8]) -> Result<ImportReport, Error> {
     import_text(text)
 }
 
-const PROVENANCE_KEYS: [&str; 12] = [
+const PROVENANCE_KEYS: [&str; 13] = [
+    "source:material_digest_export:losses",
     "source:provider",
     "source:canonical_url",
     "source:identifier",
@@ -608,6 +609,18 @@ pub fn export_with_report(molecule: &Molecule, format: TextFormat) -> Result<Exp
             .contains_key("source:restriction_catalog:selection")
     {
         warnings.push("Catalog-pinned digest comments retain bounded unverified edition/hash/identity/geometry producer claims only. Text import does not restore supplier facts, physical chemistry or fresh catalog matching; retain native source history and recompute. FASTA is sequence-only.".into());
+    }
+    if let Some(losses) = molecule
+        .metadata
+        .get("source:material_digest_export:losses")
+    {
+        warnings.push(
+            losses
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(8192)
+                .collect(),
+        );
     }
     Ok(ExportReport { text, warnings })
 }

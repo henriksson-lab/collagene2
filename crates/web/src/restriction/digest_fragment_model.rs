@@ -16,7 +16,7 @@ pub struct AssemblyFragment {
     pub selection: CatalogSelection,
     pub options: InspectionOptions,
     pub fragment_index: usize,
-    /// Ordinary catalog batch, or full origin-bound inspection context.
+    /// Full source-origin inspection context, including explicit original-reference declarations.
     pub batch_revision: String,
     pub top_start: usize,
     pub top_length: usize,
@@ -43,6 +43,80 @@ mod tests {
         planning::plan::{DesignPlan, Operation, PlanInput, Source},
     };
     use collagene_model::Topology;
+    #[test]
+    fn original_reference_fragment_handoff_binds_the_common_source_origin_inspection() {
+        use collagene_core::{
+            cloning::restriction::{
+                catalog,
+                setups::{CleavageMode, Recipe},
+            },
+            material::derivation::SourceOrigin,
+        };
+        let molecule =
+            Molecule::dna("Original reference", "AAAGAATTCTTT", Topology::Circular).unwrap();
+        let document = DocumentHistory::new("original-reference", molecule.clone()).unwrap();
+        let source = SourceInfo {
+            binding: EventBinding {
+                document_id: document.id.clone(),
+                event_id: document.head_event().into(),
+                revision: molecule.revision(),
+            },
+            name: molecule.name.clone(),
+            length: molecule.sequence.len(),
+            alphabet: molecule.sequence.alphabet(),
+            topology: molecule.topology,
+        };
+        let catalog = catalog::builtin_catalog().unwrap();
+        let enzyme = catalog
+            .edition()
+            .enzymes
+            .iter()
+            .find(|enzyme| enzyme.name == "EcoRI")
+            .unwrap();
+        let recipe = Recipe {
+            source: source.binding.clone(),
+            origin: SourceOrigin::OriginalReference,
+            selection: catalog::select(&catalog, &[enzyme.id.clone()]).unwrap(),
+            options: InspectionOptions::default(),
+            cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+        };
+        let inspected = recipe.inspect(&molecule).unwrap();
+        let fragment = &inspected.inspection.fragments[0];
+        let payload = AssemblyFragment {
+            source,
+            molecule: Arc::new(molecule),
+            selection: recipe.selection,
+            options: recipe.options,
+            fragment_index: 0,
+            batch_revision: inspected.context_revision.clone(),
+            top_start: fragment.top_start,
+            top_length: fragment.duplex.top_length,
+            bottom_start: fragment.bottom_start,
+            bottom_length: fragment.duplex.bottom_length,
+            epoch: 0,
+            origin: None,
+            material_domain: None,
+        };
+        let mut draft = Draft::default();
+        model::set_digest_fragment(&mut draft, payload.clone()).unwrap();
+        assert_eq!(
+            draft.slots[0].captured.as_ref().unwrap().source.binding,
+            payload.source.binding
+        );
+        let geometry = draft.slots[0].digest_geometry.as_ref().unwrap();
+        assert_eq!((geometry.top_start, geometry.bottom_start), (4, 8));
+        assert!(geometry.material.is_none());
+        assert!(draft.methods.rows[0].preparation == OverlapPreparation::CatalogDigest);
+        assert!(draft.methods.rows[0].run_origin.is_none());
+        let before = draft.clone();
+        let mut changed_event = payload;
+        changed_event.source.binding.event_id.push_str("-different");
+        assert!(model::set_digest_fragment(&mut draft, changed_event).is_err());
+        assert!(
+            draft == before,
+            "a stale source binding must not alter the draft"
+        );
+    }
     fn fixture() -> AssemblyFragment {
         let chosen = from_sources(
             vec![Molecule::dna("Original circle", "AAAGAATTCTTT", Topology::Circular).unwrap()],
@@ -163,11 +237,37 @@ mod tests {
                 options,
                 fragment_index,
                 material_domain: Some(crate::assembly::draft::model::MaterialDomain {
-                    top_length: inspected.source_duplex.top_length,
-                    bottom_start: inspected.source_duplex.bottom_start,
-                    bottom_length: inspected.source_duplex.bottom_length,
-                    topology: inspected.source_duplex.topology,
-                    state_revision: inspected.source_modifications.state_revision.clone(),
+                    top_length: inspected
+                        .source_material
+                        .as_ref()
+                        .expect("saved digest has actual source material")
+                        .duplex
+                        .top_length,
+                    bottom_start: inspected
+                        .source_material
+                        .as_ref()
+                        .expect("saved digest has actual source material")
+                        .duplex
+                        .bottom_start,
+                    bottom_length: inspected
+                        .source_material
+                        .as_ref()
+                        .expect("saved digest has actual source material")
+                        .duplex
+                        .bottom_length,
+                    topology: inspected
+                        .source_material
+                        .as_ref()
+                        .expect("saved digest has actual source material")
+                        .duplex
+                        .topology,
+                    state_revision: inspected
+                        .source_material
+                        .as_ref()
+                        .expect("saved digest has actual source material")
+                        .modifications
+                        .state_revision
+                        .clone(),
                 }),
                 batch_revision: inspected.context_revision,
                 top_start: f.top_start,
@@ -679,11 +779,37 @@ mod tests {
             epoch: 4,
             origin: Some(PinnedOrigin::from_material(derived_origin).unwrap()),
             material_domain: Some(model::MaterialDomain {
-                top_length: derived_preview.source_duplex.top_length,
-                bottom_start: derived_preview.source_duplex.bottom_start,
-                bottom_length: derived_preview.source_duplex.bottom_length,
-                topology: derived_preview.source_duplex.topology,
-                state_revision: derived_preview.source_modifications.state_revision.clone(),
+                top_length: derived_preview
+                    .source_material
+                    .as_ref()
+                    .expect("saved digest has actual source material")
+                    .duplex
+                    .top_length,
+                bottom_start: derived_preview
+                    .source_material
+                    .as_ref()
+                    .expect("saved digest has actual source material")
+                    .duplex
+                    .bottom_start,
+                bottom_length: derived_preview
+                    .source_material
+                    .as_ref()
+                    .expect("saved digest has actual source material")
+                    .duplex
+                    .bottom_length,
+                topology: derived_preview
+                    .source_material
+                    .as_ref()
+                    .expect("saved digest has actual source material")
+                    .duplex
+                    .topology,
+                state_revision: derived_preview
+                    .source_material
+                    .as_ref()
+                    .expect("saved digest has actual source material")
+                    .modifications
+                    .state_revision
+                    .clone(),
             }),
         };
         let mut derived_draft = Draft::default();

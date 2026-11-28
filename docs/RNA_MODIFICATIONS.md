@@ -188,7 +188,7 @@ Whole-workspace saves, browser autosave and offline desktop storage retain these
 attachments. A single-document `.cg2`, GenBank or FASTA export contains the reference
 document, not these separately named hypotheses; use a workspace file or native
 selected-library package to retain them. Selected-document sharing uses closure engine
-`library-document-closure-3`: declarations follow only their exact retained source
+`library-document-closure-4`: declarations follow only their exact retained source
 events, including retained ancestry. A declaration for another document with equal
 content is omitted. There is no automatic application of a declaration to a newly
 edited sequence and no compatibility reader for previous internal versions.

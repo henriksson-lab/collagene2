@@ -2,19 +2,22 @@
 //! Capture and reopening never scan DNA or restore a fresh scientific assessment.
 use crate::{
     cloning::restriction::{
-        catalog::{CatalogRestrictionInspection, CatalogSelection, catalog},
+        catalog::{CatalogSelection, catalog},
         history as restriction_history,
         inspection::InspectionOptions,
     },
     documents::workspace::{self, Workspace, WorkspaceAttachment},
-    material::lineage::EventBinding,
+    material::{
+        derivation::{self, DigestPreview, SourceOrigin},
+        lineage::EventBinding,
+    },
 };
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
-pub const KIND: &str = "named-digest-setup-v1";
-pub const SCHEMA_VERSION: u16 = 1;
+pub const KIND: &str = "named-digest-setup-v2";
+pub const SCHEMA_VERSION: u16 = 2;
 pub const MAX_SAVED_BYTES: usize = workspace::MAX_ENTRY_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -25,11 +28,13 @@ pub enum CleavageMode {
     AssumedCompleteMethylationUnassessed,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct Recipe {
     pub source: EventBinding,
+    /// Explicit reference interpretation or exact saved native material ancestry.
+    pub origin: SourceOrigin,
     /// Exact catalog edition, content hash, canonical IDs and ordered geometry.
     pub selection: CatalogSelection,
     pub options: InspectionOptions,
@@ -44,7 +49,7 @@ pub struct Record {
     pub name: String,
     pub recipe: Recipe,
     /// Historical producer evidence only, including incomplete scans/products.
-    pub report: CatalogRestrictionInspection,
+    pub report: DigestPreview,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -79,8 +84,70 @@ impl Recipe {
     /// membership or grant a measured methylation/cleavage interpretation.
     pub fn validate(&self) -> Result<(), Error> {
         restriction_history::source_role(&self.source)?;
+        self.origin.validate_shallow_for(&self.source)?;
+        if let SourceOrigin::Saved(origin) = &self.origin {
+            origin.validate_documentary()?;
+        }
         self.selection.validate()?;
         self.options.validate()
+    }
+    pub fn validate_for_workspace(&self, frame: &Workspace) -> Result<(), Error> {
+        self.validate()?;
+        resolve(frame, &self.source)?;
+        if let SourceOrigin::Saved(origin) = &self.origin {
+            match origin {
+                crate::material::run::MaterialOrigin::Run(capsule) => {
+                    crate::material::capsule::validate_run_capsule_origins(frame, capsule)?;
+                }
+                crate::material::run::MaterialOrigin::Derived(capsule) => {
+                    derivation::validate_capsule_for_workspace(frame, capsule, &self.source)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    fn source_binding(&self, molecule: &Molecule) -> Result<String, Error> {
+        self.validate()?;
+        if molecule.revision() != self.source.revision {
+            return Err(bad(
+                "recipe source differs from the exact lane/event molecule",
+            ));
+        }
+        restriction_history::source_role(&self.source)
+    }
+    /// Current compute binding: resolves the installed catalog without reconstructing material.
+    pub fn inspection_revision(&self, molecule: &Molecule) -> Result<String, Error> {
+        let role = self.source_binding(molecule)?;
+        derivation::digest_inspection_revision(
+            &role,
+            molecule,
+            &self.origin,
+            &self.selection,
+            &self.options,
+        )
+    }
+    /// Freshly reconstruct the declared source and digest its actual strand material.
+    pub fn inspect(&self, molecule: &Molecule) -> Result<DigestPreview, Error> {
+        let role = self.source_binding(molecule)?;
+        derivation::inspect_digest(
+            &role,
+            molecule,
+            &self.origin,
+            &self.selection,
+            &self.options,
+        )
+    }
+    /// The same declared compute identity, without requiring current catalog availability.
+    /// Documentary validation never scans, replays material, or grants freshness.
+    fn documentary_revision(&self, molecule: &Molecule) -> Result<String, Error> {
+        let role = self.source_binding(molecule)?;
+        derivation::digest_inspection_context(
+            &role,
+            molecule,
+            &self.origin,
+            &self.selection,
+            &self.options,
+        )
     }
 }
 
@@ -149,9 +216,18 @@ fn historical_binding(frame: &Workspace, record: &Record) -> Result<(), Error> {
     if record.schema_version != SCHEMA_VERSION || !name_valid(&record.name) {
         return Err(bad("unsupported record version or invalid name"));
     }
-    record.recipe.validate()?;
+    record.recipe.validate_for_workspace(frame)?;
+    if matches!(&record.recipe.origin, SourceOrigin::Saved(_))
+        && record.report.source_material.is_none()
+    {
+        return Err(bad(
+            "saved material digest requires freshly replayed source material evidence",
+        ));
+    }
     let source = resolve(frame, &record.recipe.source)?;
-    record.report.validate()?;
+    record
+        .report
+        .validate_binding(&record.recipe.documentary_revision(source)?)?;
     let inspection = &record.report.inspection;
     if record.report.selection != record.recipe.selection
         || inspection.options != record.recipe.options
@@ -162,8 +238,8 @@ fn historical_binding(frame: &Workspace, record: &Record) -> Result<(), Error> {
     {
         return Err(bad("retained report differs from exact source/recipe"));
     }
-    // Intentionally do not require the current engine or installed catalog here.
-    // Old documentary pins remain inspectable; a new worker run must resolve the
+    // Current internal report schemas are validated without installed catalog membership.
+    // External documentary catalog pins remain inspectable; a new worker run must resolve the
     // exact catalog and apply current source/chemistry rules before any reuse.
     Ok(())
 }
@@ -187,9 +263,9 @@ impl Write for Limited {
 pub fn capture(
     catalog: &catalog::Catalog,
     frame: &Workspace,
-    source: &EventBinding,
+    recipe: &Recipe,
     name: &str,
-    report: &CatalogRestrictionInspection,
+    report: &DigestPreview,
 ) -> Result<(Workspace, String), Error> {
     if !name_valid(name) {
         return Err(bad(
@@ -197,26 +273,26 @@ pub fn capture(
         ));
     }
     workspace_guard(frame)?;
-    let molecule = resolve(frame, source)?;
-    report.validate_bindings_for(
-        catalog,
-        &report.selection,
-        &restriction_history::source_role(source)?,
-        molecule,
-        &report.inspection.options,
-    )?;
-    let recipe = Recipe {
-        source: source.clone(),
-        selection: report.selection.clone(),
-        options: report.inspection.options.clone(),
-        cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
-    };
+    recipe.validate_for_workspace(frame)?;
+    if matches!(&recipe.origin, SourceOrigin::Saved(_)) && report.source_material.is_none() {
+        return Err(bad(
+            "saved material digest requires freshly replayed source material evidence",
+        ));
+    }
+    recipe.selection.validate_for(catalog)?;
+    let molecule = resolve(frame, &recipe.source)?;
+    report.validate_binding(&recipe.inspection_revision(molecule)?)?;
+    if report.selection != recipe.selection || report.inspection.options != recipe.options {
+        return Err(bad(
+            "current digest report differs from the declared recipe",
+        ));
+    }
     #[derive(Serialize)]
     struct Borrowed<'a> {
         schema_version: u16,
         name: &'a str,
         recipe: &'a Recipe,
-        report: &'a CatalogRestrictionInspection,
+        report: &'a DigestPreview,
     }
     let mut encoded = Limited(Vec::new());
     serde_json::to_writer(
@@ -224,7 +300,7 @@ pub fn capture(
         &Borrowed {
             schema_version: SCHEMA_VERSION,
             name,
-            recipe: &recipe,
+            recipe,
             report,
         },
     )
@@ -278,6 +354,19 @@ fn load_guarded(frame: &Workspace, hash: &str) -> Result<Record, Error> {
     }
     Ok(record)
 }
+/// Nonrecursive current-format validation for the workspace persistence boundary.
+/// This never calls Workspace::validate, scans a source, or replays material.
+pub fn validate_workspace_records(frame: &Workspace) -> Result<(), Error> {
+    for (hash, asset) in &frame.attachments {
+        if asset.kind.starts_with("named-digest-setup-") {
+            if asset.kind != KIND {
+                return Err(bad("unsupported named digest setup version"));
+            }
+            load_guarded(frame, hash)?;
+        }
+    }
+    Ok(())
+}
 /// Historical evidence only. Neither opening nor listing establishes freshness,
 /// catalog availability, reaction conditions, or current digest validity.
 pub fn load(frame: &Workspace, hash: &str) -> Result<Record, Error> {
@@ -289,6 +378,9 @@ pub fn list(frame: &Workspace) -> Result<Vec<Summary>, Error> {
     let mut summaries = Vec::new();
     for (hash, asset) in &frame.attachments {
         if asset.kind != KIND {
+            if asset.kind.starts_with("named-digest-setup-") {
+                return Err(bad("unsupported named digest setup version"));
+            }
             continue;
         }
         let record = load_guarded(frame, hash)?;
@@ -298,7 +390,7 @@ pub fn list(frame: &Workspace) -> Result<Vec<Summary>, Error> {
             source_name: resolve(frame, &record.recipe.source)?.name.clone(),
             source: record.recipe.source,
             catalog_edition: record.recipe.selection.catalog_edition,
-            batch_revision: record.report.batch_revision,
+            batch_revision: record.report.context_revision,
             scan_complete: record.report.inspection.scan_complete,
             products_determined: record.report.inspection.products_determined,
         });

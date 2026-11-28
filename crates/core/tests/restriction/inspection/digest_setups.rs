@@ -1,7 +1,7 @@
 //! Retained digest recipes are historical evidence, never a freshness receipt.
 use collagene_core::{
     cloning::restriction::{
-        catalog::{self as catalog_digest, CatalogRestrictionInspection, catalog},
+        catalog::{self as catalog_digest, catalog},
         history as restriction_history,
         inspection::InspectionOptions,
         setups::{self as digest_setups, CleavageMode, Record},
@@ -10,7 +10,10 @@ use collagene_core::{
         history::DocumentHistory,
         workspace::{self, Workspace, WorkspaceAttachment},
     },
-    material::lineage::EventBinding,
+    material::{
+        derivation::{self, DigestPreview, SourceOrigin},
+        lineage::EventBinding,
+    },
 };
 use collagene_model::{Molecule, Topology};
 
@@ -22,12 +25,16 @@ fn binding(frame: &Workspace, index: usize) -> EventBinding {
         revision: doc.head.clone(),
     }
 }
-fn fixture() -> (
-    catalog::Catalog,
-    Workspace,
-    EventBinding,
-    CatalogRestrictionInspection,
-) {
+fn recipe(source: &EventBinding, report: &DigestPreview) -> digest_setups::Recipe {
+    digest_setups::Recipe {
+        source: source.clone(),
+        origin: SourceOrigin::OriginalReference,
+        selection: report.selection.clone(),
+        options: report.inspection.options.clone(),
+        cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+    }
+}
+fn fixture() -> (catalog::Catalog, Workspace, EventBinding, DigestPreview) {
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let molecule = Molecule::dna(
         "original template",
@@ -39,11 +46,11 @@ fn fixture() -> (
         Workspace::from_documents("saved digests", vec![molecule.clone(), molecule], 0).unwrap();
     let source = binding(&frame, 0);
     let selection = catalog_digest::select(&catalog, &["ecori".into(), "bamhi".into()]).unwrap();
-    let report = catalog_digest::inspect(
-        &catalog,
-        &selection,
+    let report = derivation::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
+        &SourceOrigin::OriginalReference,
+        &selection,
         &InspectionOptions::default(),
     )
     .unwrap();
@@ -94,7 +101,7 @@ fn capture_roundtrips_native_archive_and_changes_only_one_attachment() {
     let (saved, hash) = digest_setups::capture(
         &catalog,
         &frame,
-        &source,
+        &recipe(&source, &report),
         "Diagnostic double digest",
         &report,
     )
@@ -129,7 +136,7 @@ fn capture_roundtrips_native_archive_and_changes_only_one_attachment() {
     let (deduplicated, again) = digest_setups::capture(
         &catalog,
         &saved,
-        &source,
+        &recipe(&source, &report),
         "Diagnostic double digest",
         &report,
     )
@@ -141,8 +148,14 @@ fn capture_roundtrips_native_archive_and_changes_only_one_attachment() {
 #[test]
 fn historical_setup_survives_head_advance_and_does_not_alias_equal_dna_events() {
     let (catalog, frame, source, report) = fixture();
-    let (saved, hash) =
-        digest_setups::capture(&catalog, &frame, &source, "Original digest", &report).unwrap();
+    let (saved, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Original digest",
+        &report,
+    )
+    .unwrap();
     let later = advance(&saved);
     assert_ne!(later.documents[0].head, source.revision);
     assert_eq!(
@@ -155,23 +168,44 @@ fn historical_setup_survives_head_advance_and_does_not_alias_equal_dna_events() 
     );
     let original = serde_json::to_value(&later).unwrap();
     assert!(
-        digest_setups::capture(&catalog, &later, &binding(&later, 0), "Wrong head", &report)
-            .is_err()
+        digest_setups::capture(
+            &catalog,
+            &later,
+            &recipe(&binding(&later, 0), &report),
+            "Wrong head",
+            &report
+        )
+        .is_err()
     );
     let alias = binding(&later, 1);
     assert_eq!(alias.revision, source.revision);
-    assert!(digest_setups::capture(&catalog, &later, &alias, "Wrong event", &report).is_err());
+    assert!(
+        digest_setups::capture(
+            &catalog,
+            &later,
+            &recipe(&alias, &report),
+            "Wrong event",
+            &report
+        )
+        .is_err()
+    );
     assert_eq!(serde_json::to_value(&later).unwrap(), original);
-    let alias_report = catalog_digest::inspect(
-        &catalog,
-        &report.selection,
+    let alias_report = derivation::inspect_digest(
         &restriction_history::source_role(&alias).unwrap(),
         &later.revisions[&alias.revision],
+        &SourceOrigin::OriginalReference,
+        &report.selection,
         &report.inspection.options,
     )
     .unwrap();
-    let (both, alias_hash) =
-        digest_setups::capture(&catalog, &later, &alias, "Original digest", &alias_report).unwrap();
+    let (both, alias_hash) = digest_setups::capture(
+        &catalog,
+        &later,
+        &recipe(&alias, &alias_report),
+        "Original digest",
+        &alias_report,
+    )
+    .unwrap();
     assert_ne!(alias_hash, hash);
     assert_eq!(digest_setups::list(&both).unwrap().len(), 2);
     assert_eq!(both.documents[0].head, later.documents[0].head);
@@ -183,16 +217,22 @@ fn gel_recipe_retains_actual_ordered_geometry_catalog_and_limits() {
     let mut options = report.inspection.options.clone();
     options.max_comparisons = 12345;
     let selected = catalog_digest::select(&catalog, &["bamhi".into(), "ecori".into()]).unwrap();
-    let report = catalog_digest::inspect(
-        &catalog,
-        &selected,
+    let report = derivation::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
+        &SourceOrigin::OriginalReference,
+        &selected,
         &options,
     )
     .unwrap();
-    let (saved, hash) =
-        digest_setups::capture(&catalog, &frame, &source, "Gel lane recipe", &report).unwrap();
+    let (saved, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Gel lane recipe",
+        &report,
+    )
+    .unwrap();
     let recipe = digest_setups::gel_recipe(&saved, &hash).unwrap();
     assert_eq!(recipe.source, source);
     assert_eq!(recipe.selection, selected);
@@ -213,18 +253,23 @@ fn partial_scan_can_be_saved_without_inventing_determined_products() {
         max_comparisons: 1,
         ..Default::default()
     };
-    let report = catalog_digest::inspect(
-        &catalog,
-        &prior.selection,
+    let report = derivation::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
+        &SourceOrigin::OriginalReference,
+        &prior.selection,
         &options,
     )
     .unwrap();
     assert!(!report.inspection.scan_complete && !report.inspection.products_determined);
-    let (saved, hash) =
-        digest_setups::capture(&catalog, &frame, &source, "Incomplete exploration", &report)
-            .unwrap();
+    let (saved, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Incomplete exploration",
+        &report,
+    )
+    .unwrap();
     let loaded = digest_setups::load(&saved, &hash).unwrap();
     assert!(!loaded.report.inspection.scan_complete);
     assert!(!loaded.report.inspection.products_determined);
@@ -235,13 +280,28 @@ fn partial_scan_can_be_saved_without_inventing_determined_products() {
 #[test]
 fn historical_catalog_pins_remain_readable_but_cannot_rebind_to_another_catalog() {
     let (catalog, frame, source, report) = fixture();
-    let (saved, hash) =
-        digest_setups::capture(&catalog, &frame, &source, "Old catalog recipe", &report).unwrap();
+    let (saved, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Old catalog recipe",
+        &report,
+    )
+    .unwrap();
     let mut edition = catalog.edition().clone();
     edition.edition = "future catalog".into();
     let future = catalog::Catalog::from_edition(catalog::seal(edition).unwrap()).unwrap();
     assert!(digest_setups::load(&saved, &hash).is_ok());
-    assert!(digest_setups::capture(&future, &saved, &source, "Changed catalog", &report).is_err());
+    assert!(
+        digest_setups::capture(
+            &future,
+            &saved,
+            &recipe(&source, &report),
+            "Changed catalog",
+            &report
+        )
+        .is_err()
+    );
     assert!(
         digest_setups::gel_recipe(&saved, &hash)
             .unwrap()
@@ -252,14 +312,77 @@ fn historical_catalog_pins_remain_readable_but_cannot_rebind_to_another_catalog(
 }
 
 #[test]
+fn external_catalog_documentary_setup_loads_without_installed_membership_but_cannot_compute() {
+    let (catalog, frame, source, report) = fixture();
+    let (saved, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Documentary external pin",
+        &report,
+    )
+    .unwrap();
+    let mut record = digest_setups::load(&saved, &hash).unwrap();
+    let mut edition = catalog.edition().clone();
+    edition.edition = "independent unavailable catalog edition".into();
+    let unavailable = catalog::Catalog::from_edition(catalog::seal(edition).unwrap()).unwrap();
+    record.recipe.selection =
+        catalog_digest::select(&unavailable, &["ecori".into(), "bamhi".into()]).unwrap();
+    record.report.selection = record.recipe.selection.clone();
+    // Documentary declaration identity is independent of installed-catalog lookup.
+    record.report.context_revision = blake3::hash(
+        &serde_json::to_vec(&(
+            derivation::ENGINE_VERSION,
+            "digest-inspection",
+            collagene_core::verification::ENGINE_VERSION,
+            restriction_history::source_role(&source).unwrap().as_str(),
+            &frame.revisions[&source.revision],
+            &record.recipe.origin,
+            &record.recipe.selection,
+            &record.recipe.options,
+        ))
+        .unwrap(),
+    )
+    .to_hex()
+    .to_string();
+    let (documentary, external_hash) = insert(&frame, &serde_json::to_value(&record).unwrap());
+    let reopened = digest_setups::load(&documentary, &external_hash).unwrap();
+    assert_eq!(
+        reopened.recipe.selection.catalog_edition,
+        "independent unavailable catalog edition"
+    );
+    assert!(
+        reopened
+            .recipe
+            .inspection_revision(&frame.revisions[&source.revision])
+            .is_err()
+    );
+    assert!(
+        reopened
+            .recipe
+            .inspect(&frame.revisions[&source.revision])
+            .is_err()
+    );
+    let restored =
+        workspace::load_workspace(&workspace::save_workspace(&documentary).unwrap()).unwrap();
+    assert!(digest_setups::load(&restored, &external_hash).is_ok());
+}
+
+#[test]
 fn tampered_source_options_geometry_version_mode_and_evidence_flags_fail() {
     let (catalog, frame, source, report) = fixture();
-    let (saved, hash) =
-        digest_setups::capture(&catalog, &frame, &source, "Recorded digest", &report).unwrap();
+    let (saved, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Recorded digest",
+        &report,
+    )
+    .unwrap();
     let original = serde_json::to_value(digest_setups::load(&saved, &hash).unwrap()).unwrap();
     let mut cases = Vec::new();
     let mut value = original.clone();
-    value["schema_version"] = serde_json::json!(2);
+    value["schema_version"] = serde_json::json!(1);
     cases.push(value);
     let mut value = original.clone();
     value["fresh"] = serde_json::json!(true);
@@ -298,8 +421,11 @@ fn tampered_source_options_geometry_version_mode_and_evidence_flags_fail() {
 #[test]
 fn delete_only_removes_valid_setup_and_keeps_original_document_history() {
     let (catalog, frame, source, report) = fixture();
-    let (one, hash) = digest_setups::capture(&catalog, &frame, &source, "One", &report).unwrap();
-    let (two, other) = digest_setups::capture(&catalog, &one, &source, "Two", &report).unwrap();
+    let (one, hash) =
+        digest_setups::capture(&catalog, &frame, &recipe(&source, &report), "One", &report)
+            .unwrap();
+    let (two, other) =
+        digest_setups::capture(&catalog, &one, &recipe(&source, &report), "Two", &report).unwrap();
     let deleted = digest_setups::delete(&two, &hash).unwrap();
     assert!(digest_setups::load(&deleted, &hash).is_err());
     assert!(digest_setups::load(&deleted, &other).is_ok());
@@ -322,8 +448,14 @@ fn delete_only_removes_valid_setup_and_keeps_original_document_history() {
 #[test]
 fn workspace_attachment_capacity_is_atomic_and_idempotent_capture_still_works() {
     let (catalog, frame, source, report) = fixture();
-    let (mut full, hash) =
-        digest_setups::capture(&catalog, &frame, &source, "Existing", &report).unwrap();
+    let (mut full, hash) = digest_setups::capture(
+        &catalog,
+        &frame,
+        &recipe(&source, &report),
+        "Existing",
+        &report,
+    )
+    .unwrap();
     for index in 1..workspace::MAX_ATTACHMENTS {
         let bytes = format!("unrelated {index}").into_bytes();
         let id = blake3::hash(&bytes).to_hex().to_string();
@@ -343,21 +475,39 @@ fn workspace_attachment_capacity_is_atomic_and_idempotent_capture_still_works() 
         digest_setups::capture(
             &catalog,
             &full,
-            &source,
+            &recipe(&source, &report),
             "Would exceed native capacity",
             &report
         )
         .is_err()
     );
     assert_eq!(serde_json::to_value(&full).unwrap(), before);
-    let (retry, repeated) =
-        digest_setups::capture(&catalog, &full, &source, "Existing", &report).unwrap();
+    let (retry, repeated) = digest_setups::capture(
+        &catalog,
+        &full,
+        &recipe(&source, &report),
+        "Existing",
+        &report,
+    )
+    .unwrap();
     assert_eq!(repeated, hash);
     assert_eq!(retry.attachments.len(), workspace::MAX_ATTACHMENTS);
     for name in ["", " ", "ends with space ", "bad\nname"] {
-        assert!(digest_setups::capture(&catalog, &frame, &source, name, &report).is_err());
+        assert!(
+            digest_setups::capture(&catalog, &frame, &recipe(&source, &report), name, &report)
+                .is_err()
+        );
     }
-    assert!(digest_setups::capture(&catalog, &frame, &source, &"x".repeat(257), &report).is_err());
+    assert!(
+        digest_setups::capture(
+            &catalog,
+            &frame,
+            &recipe(&source, &report),
+            &"x".repeat(257),
+            &report
+        )
+        .is_err()
+    );
     let _: Record = digest_setups::load(&retry, &hash).unwrap();
 }
 
@@ -381,18 +531,18 @@ fn unrelated_large_annotation_document_does_not_restrict_saved_digest_operations
             .unwrap();
     frame.validate().unwrap();
     let source = binding(&frame, 0);
-    let report = catalog_digest::inspect(
-        &catalog,
-        &report.selection,
+    let report = derivation::inspect_digest(
         &restriction_history::source_role(&source).unwrap(),
         &frame.revisions[&source.revision],
+        &SourceOrigin::OriginalReference,
+        &report.selection,
         &report.inspection.options,
     )
     .unwrap();
     let (saved, hash) = digest_setups::capture(
         &catalog,
         &frame,
-        &source,
+        &recipe(&source, &report),
         "Unrelated features preserved",
         &report,
     )
@@ -417,4 +567,271 @@ fn unrelated_large_annotation_document_does_not_restrict_saved_digest_operations
             .attachments
             .is_empty()
     );
+}
+
+fn saved_material_recipe(derived: bool) -> (Workspace, digest_setups::Recipe) {
+    use collagene_core::{
+        chemistry::Strand,
+        material::{
+            capsule,
+            lineage::InputEventBinding,
+            outputs,
+            run::{MaterialOrigin, Selection},
+        },
+        planning::plan::{DesignPlan, Operation, PlanInput, Source},
+        sequence::analysis::Primer,
+    };
+    let source = Molecule::dna("Original six bases", "AAACCC", Topology::Linear).unwrap();
+    let forward = Primer::new("Forward", "AAA", "CCGAATTC").unwrap();
+    let reverse = Primer::new("Reverse", "GGG", "GGCTCGAG").unwrap();
+    let (frame, event, origin) = if derived {
+        let frame =
+            Workspace::from_documents("Target-free material", vec![source.clone()], 0).unwrap();
+        let previews = collagene_core::verification::pcr::simulate_pcr_documents(
+            &source,
+            &forward,
+            &reverse,
+            Strand::Top,
+        )
+        .unwrap();
+        assert_eq!(previews.len(), 1);
+        let request = derivation::Request {
+            sources: vec![derivation::BoundSource {
+                role: derivation::SourceRole::Template,
+                event: binding(&frame, 0),
+                origin: SourceOrigin::OriginalReference,
+            }],
+            derivation: derivation::Derivation::ExactPcr {
+                forward,
+                reverse,
+                template_strand: Strand::Top,
+                selection: derivation::PcrSelection {
+                    selected_index: 0,
+                    expected_preview_revision: previews[0].molecule.revision(),
+                    geometry: previews[0].geometry.clone(),
+                },
+            },
+            name: "Derived digest substrate".into(),
+            save_primers: false,
+        };
+        let prepared = derivation::prepare_install(&frame, &request).unwrap();
+        let event = prepared.receipt.product;
+        let origin =
+            MaterialOrigin::Derived(derivation::capsule(&prepared.workspace, &event).unwrap());
+        (prepared.workspace, event, origin)
+    } else {
+        let target = Molecule::dna(
+            "Independent target",
+            "CCGAATTCAAACCCCTCGAGCC",
+            Topology::Linear,
+        )
+        .unwrap();
+        let plan = DesignPlan {
+            name: "Source-backed PCR".into(),
+            target_revision: target.revision(),
+            inputs: vec![PlanInput {
+                id: "template".into(),
+                revision: source.revision(),
+                molecule: source.clone(),
+            }],
+            steps: vec![Operation::Pcr {
+                template: Source::Input("template".into()),
+                forward,
+                reverse,
+                template_strand: Strand::Top,
+            }],
+        };
+        let frame = Workspace::from_documents("Run substrate", vec![source, target], 1).unwrap();
+        let prepared = outputs::finalize(
+            &frame,
+            &plan,
+            binding(&frame, 1),
+            vec![InputEventBinding {
+                input_id: "template".into(),
+                event: binding(&frame, 0),
+            }],
+            &outputs::Options {
+                name: "Saved digest substrate".into(),
+                show_prepared: false,
+                save_primers: false,
+                allow_incomplete: false,
+            },
+        )
+        .unwrap();
+        let event = prepared.receipt.construct;
+        let origin = MaterialOrigin::Run(
+            capsule::capsule(
+                &prepared.workspace,
+                &Selection {
+                    run_id: prepared.receipt.run.run_id,
+                    step_index: 0,
+                    event: event.clone(),
+                },
+            )
+            .unwrap(),
+        );
+        (prepared.workspace, event, origin)
+    };
+    assert_eq!(
+        frame.revisions[&event.revision].sequence.as_str(),
+        "CCGAATTCAAACCCCTCGAGCC"
+    );
+    let selected = catalog_digest::select(
+        &catalog_digest::builtin_catalog().unwrap(),
+        &["ecori".into()],
+    )
+    .unwrap();
+    (
+        frame,
+        digest_setups::Recipe {
+            source: event,
+            origin: SourceOrigin::Saved(origin),
+            selection: selected,
+            options: InspectionOptions::default(),
+            cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+        },
+    )
+}
+
+#[test]
+fn saved_run_and_target_free_material_setup_restart_gel_uses_literal_real_strand_lengths() {
+    use collagene_core::output::gel::{
+        self, Calibration, CalibrationPoint, LaneInput, Preparation,
+    };
+    for derived in [false, true] {
+        let (frame, recipe) = saved_material_recipe(derived);
+        let source = &frame.revisions[&recipe.source.revision];
+        assert!(collagene_core::chemistry::Duplex::from_molecule(source).is_err());
+        let report = recipe.inspect(source).unwrap();
+        assert_eq!(report.inspection.fragments.len(), 2);
+        assert_eq!(
+            report
+                .inspection
+                .fragments
+                .iter()
+                .map(|f| (f.duplex.top_length, f.duplex.bottom_length))
+                .collect::<Vec<_>>(),
+            vec![(3, 7), (19, 15)]
+        );
+        let (saved, hash) = digest_setups::capture(
+            &catalog_digest::builtin_catalog().unwrap(),
+            &frame,
+            &recipe,
+            "Saved source diagnostic",
+            &report,
+        )
+        .unwrap();
+        let restarted =
+            workspace::load_workspace(&workspace::save_workspace(&saved).unwrap()).unwrap();
+        let retained = digest_setups::load(&restarted, &hash).unwrap();
+        assert_eq!(
+            serde_json::to_value(&retained.recipe.origin).unwrap(),
+            serde_json::to_value(&recipe.origin).unwrap()
+        );
+        let lane = LaneInput {
+            label: "Fresh saved material".into(),
+            molecule: restarted.revisions[&recipe.source.revision].clone(),
+            preparation: Preparation::CatalogDigest {
+                recipe: digest_setups::gel_recipe(&restarted, &hash).unwrap(),
+            },
+            mass_ng: Some(22.),
+        };
+        let gel = gel::predict_gel(
+            &[lane],
+            &Calibration {
+                label: "Literal ladder".into(),
+                resolution: 0.01,
+                points: vec![
+                    CalibrationPoint {
+                        size_bp: 1.,
+                        migration: 0.9,
+                    },
+                    CalibrationPoint {
+                        size_bp: 1000.,
+                        migration: 0.1,
+                    },
+                ],
+            },
+        )
+        .unwrap();
+        assert!(gel.lanes[0].error.is_none(), "{:?}", gel.lanes[0].error);
+        assert_eq!(
+            gel.lanes[0]
+                .fragments
+                .iter()
+                .map(|f| f.size_bp)
+                .collect::<Vec<_>>(),
+            vec![5., 17.]
+        );
+        let mut reference_only = retained.recipe.clone();
+        reference_only.origin = SourceOrigin::OriginalReference;
+        let recognition_only = reference_only
+            .inspect(&restarted.revisions[&recipe.source.revision])
+            .unwrap();
+        assert!(recognition_only.source_material.is_none());
+        assert!(recognition_only.incomplete);
+        assert!(!recognition_only.inspection.products_determined);
+        assert!(recognition_only.inspection.fragments.is_empty());
+        assert!(recognition_only.fragment_modifications.is_empty());
+        assert!(
+            digest_setups::capture(
+                &catalog_digest::builtin_catalog().unwrap(),
+                &restarted,
+                &reference_only,
+                "No material shortcut",
+                &retained.report
+            )
+            .is_err()
+        );
+    }
+}
+
+#[test]
+fn saved_setup_requires_exact_origin_event_and_retained_ancestry() {
+    for derived in [false, true] {
+        let (frame, recipe) = saved_material_recipe(derived);
+        let report = recipe
+            .inspect(&frame.revisions[&recipe.source.revision])
+            .unwrap();
+        let mut no_material = report.clone();
+        no_material.source_material = None;
+        no_material.incomplete = true;
+        no_material.inspection.products_determined = false;
+        no_material.inspection.fragments.clear();
+        no_material.fragment_modifications.clear();
+        no_material
+            .validate_binding(&no_material.context_revision)
+            .unwrap();
+        assert!(
+            digest_setups::capture(
+                &catalog_digest::builtin_catalog().unwrap(),
+                &frame,
+                &recipe,
+                "Saved replay cannot be recognition-only",
+                &no_material,
+            )
+            .is_err()
+        );
+        let before = workspace::save_workspace(&frame).unwrap();
+        let mut wrong_event = recipe.clone();
+        wrong_event.source.event_id = binding(&frame, 0).event_id;
+        assert!(wrong_event.validate_for_workspace(&frame).is_err());
+        assert!(
+            digest_setups::capture(
+                &catalog_digest::builtin_catalog().unwrap(),
+                &frame,
+                &wrong_event,
+                "Wrong event",
+                &report
+            )
+            .is_err()
+        );
+        let mut missing_parent = frame.clone();
+        let parent_event = binding(&frame, 0).event_id;
+        missing_parent
+            .history
+            .retain(|event| event.id != parent_event);
+        assert!(recipe.validate_for_workspace(&missing_parent).is_err());
+        assert_eq!(workspace::save_workspace(&frame).unwrap(), before);
+    }
 }

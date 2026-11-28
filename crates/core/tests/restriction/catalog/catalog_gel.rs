@@ -32,6 +32,7 @@ fn recipe(molecule: &Molecule, ids: &[&str], options: InspectionOptions) -> Reci
     let frame = Workspace::from_documents("gel source", vec![molecule.clone()], 0).unwrap();
     let doc = &frame.documents[0];
     Recipe {
+        origin: collagene_core::material::derivation::SourceOrigin::OriginalReference,
         source: EventBinding {
             document_id: doc.id.clone(),
             event_id: doc.head_event.clone().unwrap(),

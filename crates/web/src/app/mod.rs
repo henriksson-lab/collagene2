@@ -2007,7 +2007,9 @@ pub fn App() -> impl IntoView {
                 if workspace_restoring.get_untracked() {
                     return Err("Wait for the workspace update to finish.".into());
                 }
-                recipe.validate().map_err(|e| e.to_string())?;
+                recipe
+                    .validate_for_workspace(&contig_snapshot.run(())?)
+                    .map_err(|e| e.to_string())?;
                 resolve_retained_source.run(recipe.source.clone())?;
                 if gel_digest_seeds.with_untracked(Vec::len) >= 32 {
                     return Err("The pending gel queue reached its 32-lane limit.".into());

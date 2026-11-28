@@ -8,6 +8,7 @@ mod material_derivation_actions;
 mod material_derivation_digest_history;
 mod material_derivation_preparation;
 mod material_derivation_protocol;
+mod material_digest_export;
 mod material_pcr;
 mod material_pcr_staggered;
 mod material_processing_protocol;

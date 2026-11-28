@@ -147,7 +147,7 @@ See the current verification checkpoint in [the plan](PROJECT_PLAN.md).
 
 ## Unlinked structure coordinates
 
-Current closure engine `library-document-closure-3` recognizes the native
+Current closure engine `library-document-closure-4` recognizes the native
 `structure-source-pdb` and `structure-source-mmcif` attachment roles as unlinked
 workspace data. They neither block nor accompany selected-plasmid publication or
 selected native-local reopen. Their coordinates and metadata do not establish a
@@ -155,3 +155,7 @@ sequence/event relationship, and no owner is guessed from names or raw content.
 Full workspace archives preserve the exact originals; selected views report their
 omission through the existing counts. Unknown attachment contracts still refuse
 publication. Event-bound RNA declarations retain their separate exact-owner rules.
+
+## Named digest recipes
+
+Current `named-digest-setup-v2` attachments follow their exact retained source event in public and native-private document projections. Their explicit original-reference or saved Run/Derived origin remains part of the retained recipe. Saved origins retain the same native run/derivation dependency closure as the source event; no attachment, report, or displayed fragment restores reusable material without fresh replay. Unrelated named setups and their private source documents are omitted. Unsupported previous setup encodings are rejected by native workspace persistence and publication.

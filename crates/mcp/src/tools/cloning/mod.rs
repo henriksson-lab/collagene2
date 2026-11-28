@@ -502,6 +502,7 @@ impl CollageneServer {
                     if original != &lane.molecule || lane.molecule.revision() != source.revision {
                         return Err(bad("session lane document differs from the exact historical pinned gel source"));
                     }
+                    recipe.validate_for_workspace(&frame).map_err(bad)?;
                 }
             }
             let report=collagene_core::output::gel::predict_gel(&lanes,&args.calibration).map_err(bad)?;

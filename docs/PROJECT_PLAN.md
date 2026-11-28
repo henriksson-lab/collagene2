@@ -50,8 +50,8 @@ not remove outstanding features or weaken the final completion requirements.
 ## Current execution order — cloning first, 24 November 2026
 
 **28 November priority update: the ownership and source-layout refactor is
-implemented and locally verified; finish its exact-commit cross-platform CI
-before resuming feature expansion.** Follow the current
+implemented and verified locally and in cross-platform CI at `416b26c`; the next
+connected cloning batch proceeds with its own integration checks.** Follow the current
 [code organization and refactoring plan](audits/CODE_ORGANIZATION.md), based on
 three parallel audits. Every directory must have at most 20 direct Rust files;
 every Rust file at most 5,000 lines, with an ownership review at 3,000. Colocate
@@ -60,11 +60,13 @@ families into cohesive subtrees. Preserve scientific behavior, test discovery,
 one current internal representation, unfinished work and the full product scope.
 No compatibility facades or forwarding APIs are permitted. The layout gate now reports zero violations or size warnings. Native/WASM
 checks, complete executable discovery and 1,034 focused tests pass; cross-platform
-CI and the remaining product gates remain separate requirements.
+CI passed for the refactor; current-source validation and the remaining product
+gates remain separate requirements.
 
-The follow-up parallel audit identifies saved-material digest export, named
-setups and gel handoff as the next connected cloning batch. Paired-oligo library
-provenance and coordinate-bearing qualifier projection follow separately; see
+Saved-material digest export, named setups and gel handoff are implemented and
+locally verified, including recognition-only scans without physical authority.
+Next fix the GenBank location-parser integrity boundary, then paired-oligo library
+provenance and coordinate-bearing qualifier projection; see
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
 
 This order supersedes the older milestone order and any format-first expansion.
@@ -4279,7 +4281,7 @@ delivery gates remain in scope. Browser/application HTTP checks remain deferred.
 
 ### Unlinked coordinate files in selected-plasmid views
 
-Closure engine `library-document-closure-3` explicitly omits current native
+Closure engine `library-document-closure-4` explicitly omits current native
 PDB/mmCIF source attachments from selected public/private plasmid views. They have
 no sequence/event association and cannot block or expand the selected dependency
 scope. Whole-workspace archives preserve original bytes and the source workspace

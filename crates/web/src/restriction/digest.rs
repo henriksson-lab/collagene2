@@ -73,14 +73,41 @@ struct Inputs {
 #[derive(Clone)]
 struct Bound {
     origin: Option<PinnedOrigin>,
-    origin_inspection: Option<Arc<collagene_core::material::derivation::DigestPreview>>,
+    inspection: Arc<collagene_core::material::derivation::DigestPreview>,
     source: SourceInfo,
     molecule: Arc<Molecule>,
     inputs: Inputs,
-    report: Arc<RestrictionInspection>,
-    catalog_revision: String,
-    catalog_engine_version: String,
     epoch: u64,
+}
+impl Bound {
+    fn recipe(&self) -> SavedRecipe {
+        SavedRecipe {
+            source: self.source.binding.clone(),
+            origin: self.origin.as_ref().map_or(
+                collagene_core::material::derivation::SourceOrigin::OriginalReference,
+                |pin| collagene_core::material::derivation::SourceOrigin::Saved(pin.as_ref().clone()),
+            ),
+            selection: self.inputs.selection.clone(),
+            options: self.inputs.limits.options(),
+            cleavage_mode: collagene_core::cloning::restriction::setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+        }
+    }
+    fn saved_inspection(
+        &self,
+    ) -> Option<&Arc<collagene_core::material::derivation::DigestPreview>> {
+        self.origin.as_ref().map(|_| &self.inspection)
+    }
+    fn material_domain(&self) -> Option<crate::assembly::draft::model::MaterialDomain> {
+        self.origin.as_ref()?;
+        let material = self.inspection.source_material.as_ref()?;
+        Some(crate::assembly::draft::model::MaterialDomain {
+            top_length: material.duplex.top_length,
+            bottom_start: material.duplex.bottom_start,
+            bottom_length: material.duplex.bottom_length,
+            topology: material.duplex.topology,
+            state_revision: material.modifications.state_revision.clone(),
+        })
+    }
 }
 fn number<T: std::str::FromStr>(text: &str, name: &str) -> Result<T, String> {
     text.trim()
@@ -157,8 +184,8 @@ pub fn DigestPanel(
     on_save: Callback<
         (
             String,
-            catalog_digest::CatalogRestrictionInspection,
-            SourceInfo,
+            SavedRecipe,
+            collagene_core::material::derivation::DigestPreview,
         ),
         Result<(), String>,
     >,
@@ -309,8 +336,9 @@ pub fn DigestPanel(
                 return;
             };
             if !current.run(data.clone())
-                || !data.report.scan_complete
-                || !data.report.products_determined
+                || !data.inspection.inspection.scan_complete
+                || data.inspection.source_material.is_none()
+                || !data.inspection.inspection.products_determined
             {
                 status.set(
                     "A fresh complete digest must determine the selected fragment first.".into(),
@@ -321,14 +349,17 @@ pub fn DigestPanel(
                 Boundary::SourceStart | Boundary::SourceEnd => {
                     data.source.topology == Topology::Linear
                 }
-                Boundary::Cut { site_index } => {
-                    data.report.sites.get(*site_index).is_some_and(|s| {
+                Boundary::Cut { site_index } => data
+                    .inspection
+                    .inspection
+                    .sites
+                    .get(*site_index)
+                    .is_some_and(|s| {
                         s.index == *site_index
                             && s.certain
                             && s.top_cut.is_some()
                             && s.bottom_cut.is_some()
-                    })
-                }
+                    }),
             };
             if !available {
                 status.set("This boundary is uncertain, unavailable or outside the linear source. Choose a certain cut or an actual linear DNA end.".into());
@@ -371,14 +402,17 @@ pub fn DigestPanel(
             return;
         }
         stop.run(());
-        if !data.report.scan_complete || !data.report.products_determined {
+        if !data.inspection.inspection.scan_complete
+            || data.inspection.source_material.is_none()
+            || !data.inspection.inspection.products_determined
+        {
             status.set("Complete the digest before selecting cut boundaries; recognition alone does not determine a physical fragment.".into());
             return;
         }
-        let site = data.report.sites.iter().find(|site| {
+        let site = data.inspection.inspection.sites.iter().find(|site| {
             site.recognition_start == pick.recognition_start
                 && site.reverse == pick.reverse
-                && data.report.enzymes.get(site.enzyme_index) == Some(&pick.enzyme)
+                && data.inspection.inspection.enzymes.get(site.enzyme_index) == Some(&pick.enzyme)
         });
         let Some(site) = site else {
             status.set(format!("The picked {} site is not in this digest. Select the enzyme and explicitly run the digest.",pick.enzyme.name));
@@ -415,7 +449,6 @@ pub fn DigestPanel(
                 let molecule = get_molecule.run(());
                 let role =
                     restriction_history::source_role(&source.binding).map_err(|e| e.to_string())?;
-                let bound_catalog = catalog.get_value()?;
                 let origin_snapshot = origin.get_untracked();
                 if molecule.revision() != source.binding.revision
                     || origin_snapshot
@@ -424,35 +457,18 @@ pub fn DigestPanel(
                 {
                     return Err("The source document/event changed. Run the digest again.".into());
                 }
-                let revision = if let Some(pin) = &origin_snapshot {
-                    collagene_core::material::derivation::digest_inspection_revision(
-                        &role,
-                        &molecule,
-                        &collagene_core::material::derivation::SourceOrigin::Saved(
-                            pin.as_ref().clone(),
-                        ),
-                        &selection,
-                        &options,
-                    )
-                } else {
-                    catalog_digest::source_preflight(
-                        &bound_catalog,
-                        &selection,
-                        &role,
-                        &molecule,
-                        &options,
-                    )
-                    .and_then(|()| {
-                        catalog_digest::batch_revision(
-                            &bound_catalog,
-                            &selection,
-                            &role,
-                            &molecule,
-                            &options,
-                        )
-                    })
-                }
-                .map_err(|e| e.to_string())?;
+                let recipe = SavedRecipe {
+                    source: source.binding.clone(),
+                    origin: origin_snapshot.as_ref().map_or(
+                        collagene_core::material::derivation::SourceOrigin::OriginalReference,
+                        |pin| collagene_core::material::derivation::SourceOrigin::Saved(pin.as_ref().clone()),
+                    ),
+                    selection: selection.clone(), options: options.clone(),
+                    cleavage_mode: collagene_core::cloning::restriction::setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+                };
+                let revision = recipe
+                    .inspection_revision(&molecule)
+                    .map_err(|e| e.to_string())?;
                 stop.run(());
                 let w = Rc::new(CachedWorker::new()?);
                 worker.set_value(Some(w.clone()));
@@ -500,23 +516,13 @@ pub fn DigestPanel(
                     .ask(Request {
                         id: 1,
                         revision: revision.clone(),
-                        job: if let Some(pin) = &origin_snapshot {
-                            AnalysisJob::InspectMaterialDigest {
-                                source_role: role.clone(),
-                                source: molecule.clone(),
-                                origin: collagene_core::material::derivation::SourceOrigin::Saved(
-                                    pin.as_ref().clone(),
-                                ),
-                                selection: selection.clone(),
-                                options: options.clone(),
-                            }
-                        } else {
-                            AnalysisJob::InspectCatalogRestriction {
-                                source_role: role.clone(),
-                                molecule: molecule.clone(),
-                                selection: selection.clone(),
-                                options: options.clone(),
-                            }
+                        job: AnalysisJob::InspectMaterialDigest {
+                            source_role: role.clone(), source: molecule.clone(),
+                            origin: origin_snapshot.as_ref().map_or(
+                                collagene_core::material::derivation::SourceOrigin::OriginalReference,
+                                |pin| collagene_core::material::derivation::SourceOrigin::Saved(pin.as_ref().clone()),
+                            ),
+                            selection: selection.clone(), options: options.clone(),
                         },
                     })
                     .await;
@@ -532,89 +538,53 @@ pub fn DigestPanel(
                 w.close();
                 worker.set_value(None);
                 busy.set(false);
-                let bound_catalog = match catalog.get_value() {
-                    Ok(c) => c,
-                    Err(e) => {
-                        status.set(e);
+                let inspection = match response {
+                    Ok(response) if response.id == 1 && response.revision == revision => {
+                        match response.result {
+                            AnalysisResult::MaterialDigestInspection(report) => {
+                                if origin_snapshot.is_some() && report.source_material.is_none() {
+                                    status.set("Saved-material digest response omitted its reconstructed source state.".into());
+                                    return;
+                                }
+                                if let Err(error) = report.validate_binding(&revision) {
+                                    status.set(format!("Digest binding failed: {error}"));
+                                    return;
+                                }
+                                if serde_json::to_vec(&report.selection).ok()
+                                    != serde_json::to_vec(&selection).ok()
+                                {
+                                    status.set("Digest catalog selection changed.".into());
+                                    return;
+                                }
+                                Arc::new(report)
+                            }
+                            AnalysisResult::Error(error) => {
+                                status.set(error);
+                                return;
+                            }
+                            _ => {
+                                status.set("Unexpected digest inspection response.".into());
+                                return;
+                            }
+                        }
+                    }
+                    Ok(_) => {
+                        status.set("Digest response does not match this request.".into());
+                        return;
+                    }
+                    Err(error) => {
+                        status.set(error);
                         return;
                     }
                 };
-                let (report, origin_inspection, catalog_revision, catalog_engine_version) =
-                    match response {
-                        Ok(response) if response.id == 1 && response.revision == revision => {
-                            match response.result {
-                                AnalysisResult::CatalogRestrictionInspection(report)
-                                    if origin_snapshot.is_none() =>
-                                {
-                                    if let Err(e) = report.validate_bindings_for(
-                                        &bound_catalog,
-                                        &selection,
-                                        &role,
-                                        &molecule,
-                                        &options,
-                                    ) {
-                                        status.set(format!("Digest report binding failed: {e}"));
-                                        return;
-                                    }
-                                    (
-                                        report.inspection,
-                                        None,
-                                        report.batch_revision,
-                                        report.engine_version,
-                                    )
-                                }
-                                AnalysisResult::MaterialDigestInspection(report)
-                                    if origin_snapshot.is_some() =>
-                                {
-                                    if let Err(e) = report.validate_binding(&revision) {
-                                        status.set(format!("Saved digest binding failed: {e}"));
-                                        return;
-                                    }
-                                    if serde_json::to_vec(&report.selection).ok()
-                                        != serde_json::to_vec(&selection).ok()
-                                    {
-                                        status.set("Saved digest catalog changed.".into());
-                                        return;
-                                    }
-                                    (
-                                        report.inspection.clone(),
-                                        Some(Arc::new(report.clone())),
-                                        report.context_revision,
-                                        report.engine_version,
-                                    )
-                                }
-                                AnalysisResult::Error(e) => {
-                                    status.set(e);
-                                    return;
-                                }
-                                _ => {
-                                    status
-                                        .set("Unexpected restriction inspection response.".into());
-                                    return;
-                                }
-                            }
-                        }
-                        Ok(_) => {
-                            status.set(
-                                "Restriction response envelope does not match this request.".into(),
-                            );
-                            return;
-                        }
-                        Err(e) => {
-                            status.set(e);
-                            return;
-                        }
-                    };
+                let report = &inspection.inspection;
                 status.set(if report.products_determined{format!("{} recognition sites · {} virtual fragment(s), assuming complete cleavage.",report.sites.len(),report.fragments.len())}else if report.scan_complete{"Recognition scan finished; a unique complete product set is not determined. Review the evidence below.".into()}else{"Recognition scan is incomplete. Unsearched sequence cannot establish absence or a complete product set.".into()});
                 bound.set(Some(Arc::new(Bound {
                     origin: origin_snapshot,
-                    origin_inspection,
+                    inspection,
                     source: source_snapshot,
                     molecule: Arc::new(molecule),
                     inputs: settings,
-                    report: Arc::new(report),
-                    catalog_revision,
-                    catalog_engine_version,
                     epoch: expected_epoch,
                 })));
             });
@@ -628,7 +598,7 @@ pub fn DigestPanel(
             status.set("Source or digest options changed. Recompute before navigation.".into());
             return;
         }
-        if let Some(site) = data.report.sites.get(index) {
+        if let Some(site) = data.inspection.inspection.sites.get(index) {
             on_navigate.run(Navigation {
                 source: data.source.binding.clone(),
                 epoch: data.epoch,
@@ -641,8 +611,9 @@ pub fn DigestPanel(
             return;
         };
         if !current.run(data.clone())
-            || !data.report.products_determined
-            || data.report.fragments.get(index).is_none()
+            || data.inspection.source_material.is_none()
+            || !data.inspection.inspection.products_determined
+            || data.inspection.inspection.fragments.get(index).is_none()
         {
             status
                 .set("A fresh current digest must determine this fragment before opening.".into());
@@ -680,13 +651,14 @@ pub fn DigestPanel(
         };
         if busy.get_untracked()
             || !current.run(data.clone())
-            || !data.report.scan_complete
-            || !data.report.products_determined
+            || !data.inspection.inspection.scan_complete
+            || data.inspection.source_material.is_none()
+            || !data.inspection.inspection.products_determined
         {
             status.set("Run a fresh complete digest before choosing an assembly fragment.".into());
             return;
         }
-        let Some(fragment) = data.report.fragments.get(index) else {
+        let Some(fragment) = data.inspection.inspection.fragments.get(index) else {
             status.set("This digest fragment is unavailable.".into());
             return;
         };
@@ -706,12 +678,13 @@ pub fn DigestPanel(
             return;
         }
         if fragment.duplex.bottom_length == 0
-            || fragment.duplex.bottom_length
-                > data
-                    .origin_inspection
-                    .as_ref()
-                    .map(|saved| saved.source_duplex.bottom_length)
-                    .unwrap_or(n)
+            || data
+                .inspection
+                .source_material
+                .as_ref()
+                .is_none_or(|material| {
+                    fragment.duplex.bottom_length > material.duplex.bottom_length
+                })
             || i64::try_from(fragment.top_start)
                 .ok()
                 .and_then(|top| fragment.bottom_start.checked_sub(top))
@@ -721,22 +694,14 @@ pub fn DigestPanel(
             return;
         }
         let payload = AssemblyFragment {
-            material_domain: data.origin_inspection.as_ref().map(|preview| {
-                crate::assembly::draft::model::MaterialDomain {
-                    top_length: preview.source_duplex.top_length,
-                    bottom_start: preview.source_duplex.bottom_start,
-                    bottom_length: preview.source_duplex.bottom_length,
-                    topology: preview.source_duplex.topology,
-                    state_revision: preview.source_modifications.state_revision.clone(),
-                }
-            }),
+            material_domain: data.material_domain(),
             origin: data.origin.clone(),
             source: data.source.clone(),
             molecule: data.molecule.clone(),
             selection: data.inputs.selection.clone(),
             options: data.inputs.limits.options(),
             fragment_index: index,
-            batch_revision: data.catalog_revision.clone(),
+            batch_revision: data.inspection.context_revision.clone(),
             top_start: fragment.top_start,
             top_length: fragment.duplex.top_length,
             bottom_start: fragment.bottom_start,
@@ -757,7 +722,7 @@ pub fn DigestPanel(
             status.set("Source or digest settings changed; run the digest again.".into());
             return;
         }
-        let Some(fragment) = data.report.fragments.get(index) else {
+        let Some(fragment) = data.inspection.inspection.fragments.get(index) else {
             return;
         };
         let n = data.molecule.sequence.len();
@@ -794,8 +759,9 @@ pub fn DigestPanel(
             return;
         };
         if !current.run(data.clone())
-            || !data.report.scan_complete
-            || !data.report.products_determined
+            || !data.inspection.inspection.scan_complete
+            || data.inspection.source_material.is_none()
+            || !data.inspection.inspection.products_determined
         {
             status.set("Run a complete current digest before using cut boundaries.".into());
             return;
@@ -812,7 +778,8 @@ pub fn DigestPanel(
             second,
             complement: complement.get_untracked(),
         };
-        if let Some(saved) = &data.origin_inspection {
+        {
+            let saved = &data.inspection;
             let summary = match saved.selected_fragment(&choice) {
                 Ok(fragment) => fragment,
                 Err(error) => {
@@ -821,22 +788,14 @@ pub fn DigestPanel(
                 }
             };
             let payload = AssemblyFragment {
-                material_domain: data.origin_inspection.as_ref().map(|preview| {
-                    crate::assembly::draft::model::MaterialDomain {
-                        top_length: preview.source_duplex.top_length,
-                        bottom_start: preview.source_duplex.bottom_start,
-                        bottom_length: preview.source_duplex.bottom_length,
-                        topology: preview.source_duplex.topology,
-                        state_revision: preview.source_modifications.state_revision.clone(),
-                    }
-                }),
+                material_domain: data.material_domain(),
                 origin: data.origin.clone(),
                 source: data.source.clone(),
                 molecule: data.molecule.clone(),
                 selection: data.inputs.selection.clone(),
                 options: data.inputs.limits.options(),
                 fragment_index: summary.index,
-                batch_revision: data.catalog_revision.clone(),
+                batch_revision: data.inspection.context_revision.clone(),
                 top_start: summary.top_start,
                 top_length: summary.duplex.top_length,
                 bottom_start: summary.bottom_start,
@@ -846,183 +805,9 @@ pub fn DigestPanel(
             if !current.run(data.clone()) {
                 return;
             }
-            match on_assembly.run(payload){Ok(())=>status.set("Saved-material cut fragment assigned with its exact origin; assembly will reconstruct it again.".into()),Err(error)=>status.set(error)};
+            match on_assembly.run(payload){Ok(())=>status.set("Cut fragment assigned with its exact source and origin; assembly will reconstruct it again.".into()),Err(error)=>status.set(error)};
             return;
         }
-        let selected_catalog = match catalog.get_value() {
-            Ok(c) => c,
-            Err(e) => {
-                status.set(e);
-                return;
-            }
-        };
-        let role = match restriction_history::source_role(&data.source.binding) {
-            Ok(v) => v,
-            Err(e) => {
-                status.set(e.to_string());
-                return;
-            }
-        };
-        let selection = data.inputs.selection.clone();
-        let options = data.inputs.limits.options();
-        let revision = match collagene_core::cloning::restriction::cut_selection::selection_revision(
-            &selected_catalog,
-            &selection,
-            &role,
-            &data.molecule,
-            &options,
-            &data.catalog_revision,
-            &choice,
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                status.set(e.to_string());
-                return;
-            }
-        };
-        stop.run(());
-        let w = match CachedWorker::new() {
-            Ok(v) => Rc::new(v),
-            Err(e) => {
-                status.set(e);
-                return;
-            }
-        };
-        worker.set_value(Some(w.clone()));
-        busy.set(true);
-        let token = generation.get_untracked();
-        status.set(
-            "Reconstructing the selected cut-defined fragment before assigning it to assembly…"
-                .into(),
-        );
-        let alive = selection_alive.clone();
-        spawn_local(async move {
-            let result = w
-                .ask(Request {
-                    id: token as u32,
-                    revision: revision.clone(),
-                    job: AnalysisJob::SelectDigestFragment {
-                        selection: selection.clone(),
-                        source_role: role.clone(),
-                        molecule: data.molecule.as_ref().clone(),
-                        options: options.clone(),
-                        expected_batch_revision: data.catalog_revision.clone(),
-                        choice: choice.clone(),
-                    },
-                })
-                .await;
-            w.close();
-            if !alive.load(Ordering::Relaxed)
-                || generation.get_untracked() != token
-                || !current.run(data.clone())
-                || first_boundary.get_untracked() != Some(choice.first.clone())
-                || second_boundary.get_untracked() != Some(choice.second.clone())
-                || complement.get_untracked() != choice.complement
-            {
-                return;
-            }
-            worker.set_value(None);
-            busy.set(false);
-            let chosen = match result {
-                Ok(response) => match response.result {
-                    AnalysisResult::DigestFragmentSelected(value) => value,
-                    AnalysisResult::Error(error) => {
-                        status.set(error);
-                        return;
-                    }
-                    _ => {
-                        status.set("Unexpected cut-boundary selection response.".into());
-                        return;
-                    }
-                },
-                Err(error) => {
-                    status.set(error);
-                    return;
-                }
-            };
-            if let Err(error) = chosen.validate_binding(&revision) {
-                status.set(error.to_string());
-                return;
-            }
-            if chosen.choice != choice || chosen.inspection.batch_revision != data.catalog_revision
-            {
-                status.set(
-                    "Selected fragment belongs to a different digest or boundary pair.".into(),
-                );
-                return;
-            }
-            let index = chosen.product.product.fragment_index;
-            if let Err(error) = chosen.inspection.validate_bindings_for(
-                &selected_catalog,
-                &selection,
-                &role,
-                &data.molecule,
-                &options,
-            ) {
-                status.set(error.to_string());
-                return;
-            }
-            if let Err(error) = chosen.product.validate_bindings_for(
-                &selected_catalog,
-                &selection,
-                &role,
-                &data.molecule,
-                &options,
-                index,
-            ) {
-                status.set(error.to_string());
-                return;
-            }
-            let summary = &chosen.product.product.summary;
-            let n = data.molecule.sequence.len();
-            let end = summary.top_start.checked_add(summary.duplex.top_length);
-            if summary.index != index
-                || summary.duplex.topology != Topology::Linear
-                || summary.top_start >= n
-                || summary.duplex.top_length == 0
-                || summary.duplex.top_length > n
-                || summary.duplex.bottom_length == 0
-                || summary.duplex.bottom_length > n
-                || end.is_none_or(|end| data.source.topology == Topology::Linear && end > n)
-                || i64::try_from(summary.top_start)
-                    .ok()
-                    .and_then(|top| summary.bottom_start.checked_sub(top))
-                    != Some(summary.duplex.bottom_start)
-            {
-                status.set(
-                    "The selected path does not describe one supported linear digest fragment."
-                        .into(),
-                );
-                return;
-            }
-            let payload = AssemblyFragment {
-                material_domain: data.origin_inspection.as_ref().map(|preview| {
-                    crate::assembly::draft::model::MaterialDomain {
-                        top_length: preview.source_duplex.top_length,
-                        bottom_start: preview.source_duplex.bottom_start,
-                        bottom_length: preview.source_duplex.bottom_length,
-                        topology: preview.source_duplex.topology,
-                        state_revision: preview.source_modifications.state_revision.clone(),
-                    }
-                }),
-                origin: data.origin.clone(),
-                source: data.source.clone(),
-                molecule: data.molecule.clone(),
-                selection,
-                options,
-                fragment_index: index,
-                batch_revision: chosen.inspection.batch_revision,
-                top_start: summary.top_start,
-                top_length: summary.duplex.top_length,
-                bottom_start: summary.bottom_start,
-                bottom_length: summary.duplex.bottom_length,
-                epoch: data.epoch,
-            };
-            if !current.run(data.clone()) || generation.get_untracked() != token {
-                return;
-            }
-            match on_assembly.run(payload){Ok(())=>status.set("Cut-defined fragment assigned to the active assembly slot. Its original source, exact enzyme selection and both strand boundaries are retained.".into()),Err(error)=>status.set(error)}
-        });
     });
     let clear_boundaries = move |_| {
         stop.run(());
@@ -1037,58 +822,37 @@ pub fn DigestPanel(
     let export_product = {
         let alive = alive.clone();
         Callback::new(move |index: usize| {
-            if origin.get_untracked().is_some() {
-                status.set("Saved-material GenBank export is unavailable; use origin-preserving assembly output.".into());
-                return;
-            }
             let Some(data) = bound.get_untracked() else {
                 return;
             };
             if busy.get_untracked()
                 || !current.run(data.clone())
-                || !data.report.products_determined
-                || data.report.fragments.get(index).is_none()
+                || data.inspection.source_material.is_none()
+                || !data.inspection.inspection.products_determined
+                || data.inspection.inspection.fragments.get(index).is_none()
             {
                 status.set(
                     "Run a current digest that determines this fragment before exporting.".into(),
                 );
                 return;
             }
-            let role = match restriction_history::source_role(&data.source.binding) {
-                Ok(v) => v,
-                Err(e) => {
-                    status.set(e.to_string());
-                    return;
-                }
+            let request = collagene_core::material::derivation::digest_export::Request {
+                recipe: data.recipe(),
+                fragment_index: index,
+                name: format!("Digest fragment {}", index + 1),
             };
-            let selection = data.inputs.selection.clone();
-            let bound_catalog = match catalog.get_value() {
-                Ok(c) => c,
-                Err(e) => {
-                    status.set(e);
-                    return;
-                }
-            };
-            let options = data.inputs.limits.options();
-            let revision = match catalog_digest::product_revision(
-                &bound_catalog,
-                &selection,
-                &role,
-                &data.molecule,
-                &options,
-                index,
-            ) {
-                Ok(v) => v,
-                Err(e) => {
-                    status.set(e.to_string());
+            let revision = match request.revision(&data.molecule) {
+                Ok(revision) => revision,
+                Err(error) => {
+                    status.set(error.to_string());
                     return;
                 }
             };
             stop.run(());
             let w = match CachedWorker::new() {
-                Ok(w) => Rc::new(w),
-                Err(e) => {
-                    status.set(e);
+                Ok(worker) => Rc::new(worker),
+                Err(error) => {
+                    status.set(error);
                     return;
                 }
             };
@@ -1097,18 +861,15 @@ pub fn DigestPanel(
             product_busy.set(Some(index));
             let expected_generation = generation.get_untracked();
             let alive = alive.clone();
-            status.set("Reconstructing this fragment afresh before GenBank export…".into());
+            status.set("Reconstructing exact-origin fragment before GenBank export…".into());
             spawn_local(async move {
                 let response = w
                     .ask(Request {
                         id: 2,
                         revision: revision.clone(),
-                        job: AnalysisJob::MaterializeCatalogDigestFragment {
-                            source_role: role.clone(),
-                            molecule: (*data.molecule).clone(),
-                            selection: selection.clone(),
-                            options: options.clone(),
-                            fragment_index: index,
+                        job: AnalysisJob::MaterializeMaterialDigestFragment {
+                            source: (*data.molecule).clone(),
+                            request: request.clone(),
                         },
                     })
                     .await;
@@ -1125,40 +886,32 @@ pub fn DigestPanel(
                 let product = match response {
                     Ok(response) if response.id == 2 && response.revision == revision => {
                         match response.result {
-                            AnalysisResult::CatalogDigestProduct(product) => product,
-                            AnalysisResult::Error(e) => {
-                                status.set(e);
+                            AnalysisResult::MaterialDigestProduct(product) => product,
+                            AnalysisResult::Error(error) => {
+                                status.set(error);
                                 return;
                             }
                             _ => {
-                                status.set("Unexpected digest-product response.".into());
+                                status.set("Unexpected fragment export response.".into());
                                 return;
                             }
                         }
                     }
                     Ok(_) => {
-                        status.set("Digest product response does not match this request.".into());
+                        status.set("Fragment export response does not match this request.".into());
                         return;
                     }
-                    Err(e) => {
-                        status.set(e);
+                    Err(error) => {
+                        status.set(error);
                         return;
                     }
                 };
-                if let Err(e) = product.validate_bindings_for(
-                    &bound_catalog,
-                    &selection,
-                    &role,
-                    &data.molecule,
-                    &options,
-                    index,
-                ) {
-                    status.set(format!("Fresh digest product binding failed: {e}"));
+                if let Err(error) = product.validate_bindings_for(&request, &data.molecule) {
+                    status.set(format!("Fresh fragment binding failed: {error}"));
                     return;
                 }
-                let product = product.product;
-                if product.inspection_revision != data.report.batch_revision {
-                    status.set("Fresh product belongs to a different inspection.".into());
+                if product.inspection_revision != data.inspection.context_revision {
+                    status.set("Fresh fragment belongs to a different inspection.".into());
                     return;
                 }
                 match formats::export_with_report(&product.molecule, formats::TextFormat::GenBank) {
@@ -1174,10 +927,7 @@ pub fn DigestPanel(
                                     || generation.try_get_untracked() != Some(expected_generation)
                                     || !current.run(dispatch_data.clone())
                                 {
-                                    return Err(
-                                        "The digest source changed before export acceptance."
-                                            .into(),
-                                    );
+                                    return Err("Digest source/origin/options changed before export acceptance.".into());
                                 }
                                 Ok(())
                             },
@@ -1189,25 +939,21 @@ pub fn DigestPanel(
                                 }
                                 match result {
                                     Ok(()) => {
-                                        let mut findings = product.projection_findings;
+                                        let mut findings = product.findings;
                                         findings.extend(export.warnings);
-                                        status.set(format!("Exported freshly reconstructed fragment {}. GenBank producer/end comments are unverified provenance; keep the native workspace for exact source history. {}",index+1,findings.join(" ")));
+                                        status.set(format!("Exported freshly reconstructed fragment {}. GenBank is a reference/annotation export: exact duplex chemistry, modification state and source ancestry require the native workspace. {}",index+1,findings.join(" ")));
                                     }
-                                    Err(e) => status.set(e),
+                                    Err(error) => status.set(error),
                                 }
                             },
                         );
                     }
-                    Err(e) => status.set(e.to_string()),
+                    Err(error) => status.set(error.to_string()),
                 }
             });
         })
     };
     let save_setup = Callback::new(move |()| {
-        if origin.get_untracked().is_some() {
-            status.set("Saved-material mode supports origin-preserving assembly handoff. Standalone fragment output, named setups and gel recipes are not yet supported.".into());
-            return;
-        }
         let Some(data) = bound.get_untracked() else {
             status.set("Run a fresh digest before saving its setup and evidence.".into());
             return;
@@ -1216,21 +962,11 @@ pub fn DigestPanel(
             status.set("Digest source/options changed. Recompute before saving.".into());
             return;
         }
-        let report = catalog_digest::CatalogRestrictionInspection {
-            engine_version: data.catalog_engine_version.clone(),
-            selection: data.inputs.selection.clone(),
-            batch_revision: data.catalog_revision.clone(),
-            inspection: data.report.as_ref().clone(),
-        };
-        status.set(match on_save.run((setup_name.get_untracked(), report, data.source.clone())) {
-            Ok(()) => "Saved the named digest recipe and historical evidence. Reopening does not restore a current result.".into(), Err(error) => error,
+        status.set(match on_save.run((setup_name.get_untracked(), data.recipe(), (*data.inspection).clone())) {
+            Ok(()) => "Saved the exact-origin digest recipe and historical evidence. Reopening requires an explicit fresh run.".into(), Err(error)=>error,
         });
     });
     let add_current_to_gel = Callback::new(move |()| {
-        if origin.get_untracked().is_some() {
-            status.set("Saved-material mode supports origin-preserving assembly handoff. Standalone fragment output, named setups and gel recipes are not yet supported.".into());
-            return;
-        }
         let result = (|| -> Result<(), String> {
             let data = bound
                 .get_untracked()
@@ -1257,12 +993,7 @@ pub fn DigestPanel(
                 }
                 entered
             };
-            let recipe = SavedRecipe {
-                source: data.source.binding.clone(),
-                selection: data.inputs.selection.clone(),
-                options: data.report.options.clone(),
-                cleavage_mode: collagene_core::cloning::restriction::setups::CleavageMode::AssumedCompleteMethylationUnassessed,
-            };
+            let recipe = data.recipe();
             on_gel.run((name, recipe))
         })();
         status.set(match result { Ok(()) => "Added the exact current digest recipe to predicted gel. Prediction reconstructs it freshly and withholds unresolved products; cached fragment lengths are not reused.".into(), Err(error) => error });
@@ -1283,9 +1014,21 @@ pub fn DigestPanel(
                 .selection
                 .validate_for(&catalog)
                 .map_err(|e| e.to_string())?;
+            record.recipe.validate().map_err(|e| e.to_string())?;
+            let selected_origin = match &record.recipe.origin {
+                collagene_core::material::derivation::SourceOrigin::OriginalReference => None,
+                collagene_core::material::derivation::SourceOrigin::Saved(saved) => {
+                    if saved.event() != &expected_source {
+                        return Err(
+                            "Saved material cannot be retargeted to another document event.".into(),
+                        );
+                    }
+                    Some(PinnedOrigin::from_material(saved.clone())?)
+                }
+            };
             let options = &record.recipe.options;
             batch(|| {
-                origin.set(None);
+                origin.set(selected_origin);
                 names.set(
                     record
                         .recipe
@@ -1316,6 +1059,12 @@ pub fn DigestPanel(
     let fork_saved_source = Callback::new(move |record: Arc<SavedDigest>| -> Result<(), String> {
         if busy.get_untracked() {
             return Err("Cancel the current digest before forking a saved source.".into());
+        }
+        if matches!(
+            &record.recipe.origin,
+            collagene_core::material::derivation::SourceOrigin::Saved(_)
+        ) {
+            return Err("Saved material remains bound to its exact retained event. Use its original source event to reopen these settings; a reference fork cannot inherit this physical origin.".into());
         }
         let fork = on_fork.run(record.recipe.source.clone())?;
         let result = (|| -> Result<(), String> {
@@ -1350,23 +1099,16 @@ pub fn DigestPanel(
             kind: &'static str,
             authority: &'static str,
             source: &'a SourceInfo,
-            saved_origin: Option<&'a collagene_core::material::run::MaterialOrigin>,
-            saved_inspection: Option<&'a collagene_core::material::derivation::DigestPreview>,
-            report: &'a RestrictionInspection,
-            catalog_pin: &'a CatalogSelection,
-            catalog_engine_version: &'a str,
-            catalog_batch_revision: &'a str,
+            recipe: &'a SavedRecipe,
+            inspection: &'a collagene_core::material::derivation::DigestPreview,
         }
+        let recipe = data.recipe();
         let artifact = Evidence {
-            kind: "virtual-digest-review-v2",
-            authority: "Sequence/geometry prediction under stated cleavage assumptions; saved evidence never restores current verification",
+            kind: "virtual-digest-review-v3",
+            authority: "Historical source-bound prediction; not measured cleavage or reusable verification authority",
             source: &data.source,
-            saved_origin: data.origin.as_ref().map(PinnedOrigin::as_ref),
-            saved_inspection: data.origin_inspection.as_deref(),
-            report: &data.report,
-            catalog_pin: &data.inputs.selection,
-            catalog_engine_version: &data.catalog_engine_version,
-            catalog_batch_revision: &data.catalog_revision,
+            recipe: &recipe,
+            inspection: &data.inspection,
         };
         let mut bytes = Json(vec![]);
         match serde_json::to_writer_pretty(&mut bytes, &artifact) {
@@ -1387,12 +1129,12 @@ pub fn DigestPanel(
         }
     };
     view! {
-            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::history::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|*p.event()!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: assembly retains the exact originating run. Fragment opening and assembly preserve the saved origin. GenBank export, named setups and predicted-gel recipes are unavailable for saved material."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
+            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::history::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|*p.event()!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: opening, assembly handoff, named digest setups and predicted gels retain the exact origin. Fragment GenBank exports preserve a reference view; full strand chemistry and ancestry stay in the native workspace."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
             <details class="saved-digest-setups"><summary>"Named digest setups"</summary>
                 <p class="helper">"Save the exact source event, ordered catalog geometry, cleavage assumption, limits and historical evidence together. Reopening a saved setup does not move document heads or restore a current result."</p>
                 <label>"Digest name"<input aria-label="Saved digest setup name" maxlength="256" placeholder="Name this digest" prop:value=move||setup_name.get() on:input=move|e|{setup_name.set(event_target_value(&e));}/></label>
-                <button class="button secondary full" disabled=move||{busy.get()||origin.with(Option::is_some)||bound.with(Option::is_none)} on:click=move|_|{save_setup.run(());}>"Save fresh digest setup and evidence"</button>
-                <button class="button secondary full" disabled=move||{busy.get()||origin.with(Option::is_some)||bound.with(Option::is_none)} on:click=move|_|{add_current_to_gel.run(());}>"Add current digest to predicted gel"</button>
+                <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{save_setup.run(());}>"Save fresh digest setup and evidence"</button>
+                <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{add_current_to_gel.run(());}>"Add current digest to predicted gel"</button>
                 <p class="helper">"A saved setup is optional for gel prediction. The exact current recipe is reconstructed again; incomplete or undetermined products cannot supply trusted band lengths."</p>
                 {move||{
                     let entries=saved.get();let count=entries.len();let pages=count.div_ceil(100).max(1);let page=saved_page.get().min(pages-1);
@@ -1413,11 +1155,11 @@ pub fn DigestPanel(
             <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
             <p class="digest-status helper" role="status">{move||status.get()}</p>
             <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>
-            {move||bound.get().map(|data|{let sites=data.report.sites.len();let fragments=data.report.fragments.len();let first_report=data.report.clone();let second_report=data.report.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.report.scan_complete.to_string() data-products-determined=data.report.products_determined.to_string()>{data.origin_inspection.as_ref().map(|saved|{let saved=saved.clone();let total=saved.findings.len();view!{<section class="saved-digest-material"><h3>"Fresh saved-material reconstruction"</h3>{crate::cloning::preparation::end_view::summary(&saved.source_duplex)}<p>{format!("Inherited incomplete assessment: {}. Original source modifications: {} known modified · {} eligible unknown · {} known unmodified.",saved.incomplete,saved.source_modifications.known_modified,saved.source_modifications.unknown_eligible,saved.source_modifications.known_unmodified)}</p><p class="helper">"Cleavage geometry assumes complete digestion; modification susceptibility and reaction performance remain unassessed. Origin limitations remain applicable."</p>{move||saved.findings.iter().skip(origin_finding_page.get()*20).take(20).map(|finding|view!{<p class="digest-warning">{finding.clone()}</p>}).collect_view()}<div class="digest-actions"><button class="text-tool" disabled=move||origin_finding_page.get()==0 on:click=move|_|origin_finding_page.update(|page|*page=page.saturating_sub(1))>"Previous origin findings"</button><button class="text-tool" disabled={move||(origin_finding_page.get()+1)*20>=total} on:click=move|_|origin_finding_page.update(|page|*page+=1)>"Next origin findings"</button></div></section>}})}<h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.report.scan_complete{"finished"}else{"incomplete"},if data.report.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.report.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.report.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
+            {move||bound.get().map(|data|{let sites=data.inspection.inspection.sites.len();let fragments=data.inspection.inspection.fragments.len();let first_report=data.inspection.inspection.clone();let second_report=data.inspection.inspection.clone();let linear_source=data.source.topology==Topology::Linear;view!{<div class="digest-results" data-scan-complete=data.inspection.inspection.scan_complete.to_string() data-products-determined=data.inspection.inspection.products_determined.to_string()>{data.saved_inspection().map(|saved|{let saved=saved.clone();let total=saved.findings.len();view!{<section class="saved-digest-material"><h3>"Fresh saved-material reconstruction"</h3>{saved.source_material.as_ref().map(|material|view!{<div>{crate::cloning::preparation::end_view::summary(&material.duplex)}<p>{format!("Inherited incomplete assessment: {}. Original source modifications: {} known modified · {} eligible unknown · {} known unmodified.",saved.incomplete,material.modifications.known_modified,material.modifications.unknown_eligible,material.modifications.known_unmodified)}</p></div>})}<p class="helper">"Cleavage geometry assumes complete digestion; modification susceptibility and reaction performance remain unassessed. Origin limitations remain applicable."</p>{move||saved.findings.iter().skip(origin_finding_page.get()*20).take(20).map(|finding|view!{<p class="digest-warning">{finding.clone()}</p>}).collect_view()}<div class="digest-actions"><button class="text-tool" disabled=move||origin_finding_page.get()==0 on:click=move|_|origin_finding_page.update(|page|*page=page.saturating_sub(1))>"Previous origin findings"</button><button class="text-tool" disabled={move||(origin_finding_page.get()+1)*20>=total} on:click=move|_|origin_finding_page.update(|page|*page+=1)>"Next origin findings"</button></div></section>}})}{data.inspection.source_material.is_none().then(||view!{<aside class="digest-warning"><p>"Recognition-only inspection: sequence ambiguity or unsupported source chemistry prevents physical duplex reconstruction. Recognition sites remain available; fragment products, material opening and assembly are withheld."</p>{data.inspection.findings.iter().take(20).map(|finding|view!{<p>{finding.clone()}</p>}).collect_view()}<p class="helper">{format!("Showing {} of {} source findings; download digest evidence for the retained report.",data.inspection.findings.len().min(20),data.inspection.findings_total)}</p></aside>})}<h3>"Recognition and products"</h3><p>{format!("Recognition scan: {}. Product set: {}.",if data.inspection.inspection.scan_complete{"finished"}else{"incomplete"},if data.inspection.inspection.products_determined{"determined under complete-cleavage assumptions"}else{"not determined"})}</p>{data.inspection.inspection.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("{} reached. Incomplete evidence cannot establish absence or complete products.",limit_label(*limit))}</p>}).collect_view()}{data.inspection.inspection.diagnostics.iter().map(|d|view!{<p class="digest-warning">{d.clone()}</p>}).collect_view()}
             <section class="digest-cut-selection"><h3>"Choose a cut-defined assembly fragment"</h3><p class="helper">"Pick the first cut, then the second in the source sequence/map, or use the buttons below. Circular paths follow first → second; keep the opposite path for a retained backbone. A same-cut pair can describe a full circle opened at that cut. Internal selected-enzyme cuts must not split the retained path."</p><p>{move||cut_boundary_label(first_boundary.get().as_ref(),&first_report,"First")}</p><p>{move||cut_boundary_label(second_boundary.get().as_ref(),&second_report,"Second")}</p><Show when=move||linear_source><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::cloning::restriction::cut_selection::Boundary::SourceStart))>"First: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((true,collagene_core::cloning::restriction::cut_selection::Boundary::SourceEnd))>"First: source end"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::cloning::restriction::cut_selection::Boundary::SourceStart))>"Second: source start"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|choose_boundary.run((false,collagene_core::cloning::restriction::cut_selection::Boundary::SourceEnd))>"Second: source end"</button></div></Show><Show when=move||!linear_source><label class="checkbox-label"><input type="checkbox" aria-label="Keep complementary digest cut path" prop:checked=move||complement.get() on:change=move|e|{stop.run(());complement.set(event_target_checked(&e));}/>"Keep opposite path (outside selected cut interval)"</label></Show><div class="digest-actions"><button class="text-tool" on:click=clear_boundaries>"Clear boundaries / start new pair"</button><button class="button primary" disabled=move||busy.get()||first_boundary.with(Option::is_none)||second_boundary.with(Option::is_none) on:click=move|_|use_boundaries.run(())>"Use selected cut boundaries in assembly"</button></div></section>
-    <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.report.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((true,collagene_core::cloning::restriction::cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as first boundary"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((false,collagene_core::cloning::restriction::cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as second boundary"</button></div>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
-            <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.report.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
-            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.report.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p>{data.origin_inspection.as_ref().and_then(|saved|saved.fragment_modifications.get(index)).map(|mods|view!{<p class="helper">{format!("Retained positional calls: {} modified · {} eligible unknown · {} unmodified",mods.known_modified,mods.unknown_eligible,mods.known_unmodified)}</p>})}<div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get()||origin.with(Option::is_some) on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank comments preserve descriptive, unverified producer/end information; native workspace files retain full source history."</p></div>}})}
+    <h3>{format!("{sites} recognition sites")}</h3><p class="helper">"Recognition ranges are original source bases, 1-based inclusive. Strand cuts are boundaries measured from the source origin; 0 is before the first base."</p>{data.inspection.inspection.sites.iter().skip(site_page.get()*25).take(25).map(|site|{let index=site.index;view!{<article class="digest-site"><button class="result-entry" on:click=move|_|navigate.run(index)>{format!("{} · {} · {}{}",site.enzyme,span_label(site),if site.reverse{"reverse"}else{"forward"},if site.certain{""}else{" · possible"})}</button><p>{format!("Top / bottom cut boundaries: {} / {}",cut_label(site.top_cut,site.top_boundary),cut_label(site.bottom_cut,site.bottom_boundary))}</p><div class="digest-actions"><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((true,collagene_core::cloning::restriction::cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as first boundary"</button><button class="text-tool" disabled=move||busy.get() on:click=move|_|{choose_boundary.run((false,collagene_core::cloning::restriction::cut_selection::Boundary::Cut{site_index:index}));navigate.run(index);}>"Use as second boundary"</button></div>{site.diagnostics.iter().map(|d|view!{<p class="digest-warning">{site_diagnostic(*d)}</p>}).collect_view()}</article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||site_page.get()==0 on:click=move|_|site_page.update(|p|*p=p.saturating_sub(1))>"Previous digest sites"</button><button class="button secondary" disabled={move||(site_page.get()+1)*25>=sites} on:click=move|_|site_page.update(|p|*p+=1)>"Next digest sites"</button></div>
+            <h3>"Reference-strand fragment lengths"</h3><p class="fragment-sizes">{data.inspection.inspection.ref_top_lengths.as_ref().map(|lengths|lengths.iter().take(100).map(|n|format!("{n} nt")).collect::<Vec<_>>().join(" · ")).unwrap_or_else(||"Not determined from this recognition evidence.".into())}</p><p class="helper">"First 100 lengths shown, following the reference/top strand and sorted by size. The JSON evidence retains every determined length. Physical summaries below use ascending reference cut order; staggered ends can give different top and bottom lengths."</p>
+            <h3>{format!("{fragments} virtual fragment(s)")}</h3>{data.inspection.inspection.fragments.iter().skip(fragment_page.get()*25).take(25).map(|fragment|{let index=fragment.index;let circular=fragment.duplex.topology==Topology::Circular;let ends=fragment.duplex.ends.as_ref().map(|(a,b)|format!("Left: {} · right: {}",end_label(a),end_label(b))).unwrap_or_else(||"Uncut circular substrate: no free ends".into());view!{<article class="digest-fragment"><h4>{format!("Fragment {} · {}",index+1,if fragment.duplex.topology==Topology::Circular{"circular"}else{"linear"})}</h4><p>{format!("{} nt top / {} nt bottom · original reference start {}",fragment.duplex.top_length,fragment.duplex.bottom_length,fragment.top_start+1)}</p><p>{ends}</p>{data.saved_inspection().and_then(|saved|saved.fragment_modifications.get(index)).map(|mods|view!{<p class="helper">{format!("Retained positional calls: {} modified · {} eligible unknown · {} unmodified",mods.known_modified,mods.unknown_eligible,mods.known_unmodified)}</p>})}<div class="digest-actions"><button class="button secondary" disabled=move||busy.get() on:click=move|_|navigate_fragment.run(index)>"View fragment in source"</button><button class="button primary" disabled=move||busy.get()||circular on:click=move|_|use_in_assembly.run(index)>"Use in active assembly slot"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|open.run(index)>"Open fragment"</button><button class="button secondary" disabled=move||busy.get() on:click=move|_|export_product.run(index)>{move||if product_busy.get()==Some(index){"Reconstructing…"}else{"Export fragment GenBank"}}</button></div></article>}}).collect_view()}<div class="digest-actions"><button class="button secondary" disabled=move||fragment_page.get()==0 on:click=move|_|fragment_page.update(|p|*p=p.saturating_sub(1))>"Previous digest fragments"</button><button class="button secondary" disabled={move||(fragment_page.get()+1)*25>=fragments} on:click=move|_|fragment_page.update(|p|*p+=1)>"Next digest fragments"</button></div><button class="button secondary full" on:click=export_report>"Download digest evidence"</button><p class="helper">"Opening reconstructs the fragment again and retains its exact source event in the workspace. GenBank preserves a reference/annotation view. Exact duplex termini, modifications, retained source ancestry and reaction limitations require the native workspace."</p></div>}})}
             </section>
         }.into_any()
 }
@@ -1451,7 +1193,7 @@ fn SavedDigestView(
             <p class="helper">"Historical inspection evidence only. This view does not establish current freshness, measured cleavage or a verified cloning product. Source heads and current digest results are unchanged."</p>
             <details><summary>"Exact source, catalog and options"</summary>
                 <p>{bound.with_value(|r|format!("Document {} · event {} · revision {}",r.recipe.source.document_id,r.recipe.source.event_id,r.recipe.source.revision))}</p>
-                <p>{bound.with_value(|r|format!("Catalog {} · content {} · saved engine {} · batch {}",r.recipe.selection.catalog_edition,r.recipe.selection.catalog_content_hash,r.report.engine_version,r.report.batch_revision))}</p>
+                <p>{bound.with_value(|r|format!("Catalog {} · content {} · saved engine {} · batch {}",r.recipe.selection.catalog_edition,r.recipe.selection.catalog_content_hash,r.report.engine_version,r.report.context_revision))}</p>
                 <p>{bound.with_value(|r|format!("Assumed complete cleavage; methylation and reaction conditions unassessed. Limits: {} comparisons · {} sites · {} fragments · {} report bytes.",r.recipe.options.max_comparisons,r.recipe.options.max_sites,r.recipe.options.max_fragments,r.recipe.options.max_report_bytes))}</p>
                 <ul>{bound.with_value(|r|r.recipe.selection.enzymes.iter().map(|enzyme|view!{<li>{format!("{} [{}] · {} · top cut {} · bottom cut {}",enzyme.enzyme.name,enzyme.id,enzyme.enzyme.recognition,enzyme.enzyme.top_cut,enzyme.enzyme.bottom_cut)}</li>}).collect_view())}</ul>
             </details>
@@ -1461,10 +1203,10 @@ fn SavedDigestView(
             {bound.with_value(|r|r.report.inspection.diagnostics.iter().map(|diagnostic|view!{<p class="digest-warning">{diagnostic.clone()}</p>}).collect_view())}
             <div class="digest-actions">
                 <button class="button secondary" on:click=move|_|{on_settings.run(bound.get_value());}>"Use settings on exact current source"</button>
-                <button class="button secondary" on:click=move|_|{let record=bound.get_value();status.set(match on_fork.run(record){Ok(())=>"Opened the exact source fork and loaded the saved catalog pin and limits. Run virtual digest explicitly; the saved historical result is unchanged.".into(),Err(error)=>error});}>"Fork saved source and load exact settings"</button>
+                <button class="button secondary" disabled=bound.with_value(|r|matches!(&r.recipe.origin,collagene_core::material::derivation::SourceOrigin::Saved(_))) on:click=move|_|{let record=bound.get_value();status.set(match on_fork.run(record){Ok(())=>"Opened the exact source fork and loaded the saved catalog pin and limits. Run virtual digest explicitly; the saved historical result is unchanged.".into(),Err(error)=>error});}>"Fork saved source and load exact settings"</button>
                 <button class="button secondary" on:click=move|_|{let record=bound.get_value();status.set(match on_gel.run((record.name.clone(),record.recipe.clone())){Ok(())=>"Added the exact recipe to predicted gel. Prediction must freshly reconstruct this source and catalog geometry; cached fragments are not lane authority.".into(),Err(error)=>error});}>"Add recipe to predicted gel"</button>
             </div>
-            <p class="helper">"Use settings requires the same exact active source event. The explicit fork action can copy that saved version and apply its exact catalog pin and limits to the new fork; a fresh digest run is still required. Historical gel lanes retain their saved source version."</p>
+            <p class="helper">"Use settings requires the same exact active source event. Original-reference recipes may fork that saved version; saved-material recipes must retain their exact origin event and cannot inherit physical state through a reference fork. A fresh digest run is still required. Historical gel lanes retain their saved source version."</p>
             <details><summary>"Saved recognition-site evidence"</summary>
                 {move||{
                     let count=bound.with_value(|r|r.report.inspection.sites.len());let pages=count.div_ceil(100).max(1);let page=site_page.get().min(pages-1);

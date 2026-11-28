@@ -105,7 +105,7 @@ fn preparation_label(preparation: &Preparation) -> String {
             forward.name, reverse.name
         ),
         Preparation::CatalogDigest { recipe } => format!(
-            "Historical digest setup · {} · pinned catalog {} · assumed complete cleavage; methylation unassessed",
+            "Historical digest setup · {} · pinned catalog {} · {} · assumed complete cleavage; methylation unassessed",
             recipe
                 .selection
                 .enzymes
@@ -113,7 +113,13 @@ fn preparation_label(preparation: &Preparation) -> String {
                 .map(|e| e.enzyme.name.as_str())
                 .collect::<Vec<_>>()
                 .join(" + "),
-            recipe.selection.catalog_edition
+            recipe.selection.catalog_edition,
+            match &recipe.origin {
+                collagene_core::material::derivation::SourceOrigin::OriginalReference =>
+                    "original-reference source",
+                collagene_core::material::derivation::SourceOrigin::Saved(_) =>
+                    "exact saved-material origin",
+            },
         ),
     }
 }
@@ -442,7 +448,7 @@ pub fn GelPanel(
                                     == expected_labels =>
                         {
                             report.set(Some(GelEvidence {
-                                schema_version: 1,
+                                schema_version: 2,
                                 report: result,
                                 pinned_digest_lanes,
                             }));

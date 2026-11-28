@@ -240,6 +240,9 @@ impl Request {
                 crate::material::review::request_revision(workspace, run_id)?;
             }
             AnalysisJob::RenderMapSvg { request } => request.validate()?,
+            AnalysisJob::MaterializeMaterialDigestFragment { source, request } => {
+                request.revision(source)?;
+            }
             AnalysisJob::InspectMaterialDigest {
                 source_role,
                 source,
@@ -651,6 +654,8 @@ impl Request {
                 | AnalysisJob::InspectMaterialAnnealedOligos { .. }
                 | AnalysisJob::FindSimilarSequences { .. }
                 | AnalysisJob::InspectMaterialDigest { .. }
+                | AnalysisJob::PredictPinnedGel { .. }
+                | AnalysisJob::MaterializeMaterialDigestFragment { .. }
                 | AnalysisJob::PrepareSavedRunReview { .. }
                 | AnalysisJob::PreviewProtocolLayout { .. }
                 | AnalysisJob::CaptureProtocolLayout { .. }

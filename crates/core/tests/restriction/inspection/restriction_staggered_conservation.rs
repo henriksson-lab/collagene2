@@ -114,15 +114,26 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     .unwrap();
     assert!(preview.inspection.sites.is_empty());
     assert!(preview.inspection.products_determined);
-    assert_eq!(preview.source_duplex.top_length, 13);
-    assert_eq!(preview.source_duplex.bottom_length, 17);
+    assert_eq!(
+        preview.source_material.as_ref().unwrap().duplex.top_length,
+        13
+    );
+    assert_eq!(
+        preview
+            .source_material
+            .as_ref()
+            .unwrap()
+            .duplex
+            .bottom_length,
+        17
+    );
     assert!(
         preview.inspection.validate().is_err(),
         "Legacy DTO-only validation still requires full equal-length source accounting"
     );
     preview
         .inspection
-        .validate_with_source(&preview.source_duplex)
+        .validate_with_source(&preview.source_material.as_ref().unwrap().duplex)
         .unwrap();
     let selected = preview
         .selected_fragment(&Choice {
@@ -138,7 +149,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     missing_bottom.fragments[0].duplex.bottom_length = 16;
     assert!(
         missing_bottom
-            .validate_with_source(&preview.source_duplex)
+            .validate_with_source(&preview.source_material.as_ref().unwrap().duplex)
             .is_err()
     );
     let first = native::prepare_install(

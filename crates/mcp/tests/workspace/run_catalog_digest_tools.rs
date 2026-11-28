@@ -5,7 +5,7 @@ use collagene_core::{
     material::{
         lineage::{EventBinding, InputEventBinding},
         outputs::{self as cloning_outputs, Commit},
-        run::{self as run_material, Selection},
+        run::Selection,
     },
     planning::plan::{DesignPlan, Operation, PlanInput, Source},
     sequence::analysis::Primer,
@@ -122,6 +122,99 @@ fn original() -> Commit {
         },
     )
     .unwrap()
+}
+
+#[tokio::test]
+async fn predicted_catalog_gel_replays_run_and_derived_sources_with_exact_workspace_ancestry() {
+    use collagene_core::{
+        cloning::restriction::{catalog, inspection::InspectionOptions, setups},
+        material::{
+            capsule, derivation,
+            run::{MaterialOrigin, MaterialSelection},
+        },
+        output::gel::{Calibration, Preparation},
+    };
+    let commit = original();
+    let selected = Selection {
+        run_id: commit.receipt.run.run_id.clone(),
+        step_index: 0,
+        event: commit.receipt.construct.clone(),
+    };
+    let origin = capsule::capsule(&commit.workspace, &selected).unwrap();
+    let embedded = catalog::builtin_catalog().unwrap();
+    let enzymes = catalog::select(&embedded, &["ecori".into()]).unwrap();
+    let mut frame = commit.workspace;
+    frame.active_document = selected.event.document_id.clone();
+    let installed = derivation::install(
+        &frame,
+        &derivation::Request {
+            sources: vec![derivation::BoundSource {
+                role: derivation::SourceRole::Template,
+                event: selected.event.clone(),
+                origin: derivation::SourceOrigin::Saved(MaterialOrigin::Run(origin.clone())),
+            }],
+            derivation: derivation::Derivation::CatalogDigest {
+                selection: enzymes.clone(),
+                options: InspectionOptions::default(),
+                fragment_index: 0,
+            },
+            name: "Saved selected digest fragment".into(),
+            save_primers: false,
+        },
+    )
+    .unwrap();
+    let frame = workspace::load_workspace(&installed.archive).unwrap();
+    let selections = [
+        MaterialSelection::Run(selected),
+        MaterialSelection::Derived(installed.receipt.product),
+    ];
+    let (client, server) = setup().await;
+    let imported = call(
+        &client,
+        "import_workspace_archive",
+        json!({"data_base64":STANDARD.encode(workspace::save_workspace(&frame).unwrap())}),
+    )
+    .await;
+    let workspace_ref =
+        json!({"id":imported["workspace"]["id"],"revision":imported["workspace"]["revision"]});
+    let before = call(&client, "list_documents", json!({})).await;
+    for selection in selections {
+        let mut origins = capsule::documentary_origins(&frame, &[selection.clone()], &[]).unwrap();
+        let recipe = setups::Recipe {
+            source: selection.event().clone(),
+            origin: derivation::SourceOrigin::Saved(origins.materials.remove(0)),
+            selection: enzymes.clone(),
+            options: InspectionOptions::default(),
+            cleavage_mode: setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+        };
+        let query = json!({"lanes":[{"label":"Fresh saved-material prediction",
+            "document":{"id":recipe.source.revision,"revision":recipe.source.revision},"workspace":workspace_ref,
+            "preparation":Preparation::CatalogDigest{recipe:recipe.clone()},"mass_ng":null}],"calibration":Calibration::default()});
+        let predicted = call(&client, "predict_gel", query.clone()).await;
+        assert!(predicted["lanes"][0]["error"].is_null(), "{predicted}");
+        assert!(predicted["lanes"][0]["fragment_count"].as_u64().unwrap() > 0);
+        let source = frame.revisions[&recipe.source.revision].clone();
+        let unrelated =
+            Workspace::from_documents("No native material owner", vec![source], 0).unwrap();
+        let unrelated = call(
+            &client,
+            "import_workspace_archive",
+            json!({"data_base64":STANDARD.encode(workspace::save_workspace(&unrelated).unwrap())}),
+        )
+        .await;
+        let mut missing_owner = query.clone();
+        missing_owner["lanes"][0]["workspace"] = json!({"id":unrelated["workspace"]["id"],"revision":unrelated["workspace"]["revision"]});
+        reject(&client, "predict_gel", missing_owner).await;
+        let mut plain = query;
+        plain["lanes"][0]["preparation"]["CatalogDigest"]["recipe"]["origin"] =
+            json!("OriginalReference");
+        let withheld = call(&client, "predict_gel", plain).await;
+        assert_eq!(withheld["lanes"][0]["fragment_count"], 0);
+        assert_eq!(withheld["lanes"][0]["complete_under_model"], false);
+    }
+    assert_eq!(call(&client, "list_documents", json!({})).await, before);
+    client.cancel().await.unwrap();
+    server.await.unwrap();
 }
 #[tokio::test]
 async fn explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_without_publishing()

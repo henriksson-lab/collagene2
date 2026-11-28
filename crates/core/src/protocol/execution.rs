@@ -347,6 +347,14 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             }
             None
         }
+        AnalysisJob::MaterializeMaterialDigestFragment { source, request } => {
+            if request.revision(source)? != r.revision {
+                return Err(Error::Format(
+                    "Material digest export context changed".into(),
+                ));
+            }
+            None
+        }
 
         AnalysisJob::FinalizeCloningOutputs {
             workspace,
@@ -795,6 +803,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
                     if lane.molecule.revision() != recipe.source.revision {
                         return Err(Error::Format("Pinned gel source revision changed.".into()));
                     }
+                    recipe.inspection_revision(&lane.molecule)?;
                 }
             }
             Some(molecule)
@@ -1926,6 +1935,9 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             &options,
         )
         .map(AnalysisResult::MaterialDigestInspection),
+        AnalysisJob::MaterializeMaterialDigestFragment { source, request } => request
+            .materialize(&source)
+            .map(AnalysisResult::MaterialDigestProduct),
 
         AnalysisJob::InspectTopoRun {
             inputs,
@@ -2955,6 +2967,7 @@ pub fn process_request(bytes: &[u8]) -> Result<Vec<u8>, Error> {
             | AnalysisResult::MaterialAnnealedOligosPreview(_)
             | AnalysisResult::MaterialDerivationInstalled(_)
             | AnalysisResult::MaterialDigestInspection(_)
+            | AnalysisResult::MaterialDigestProduct(_)
             | AnalysisResult::SavedRunReviewPrepared(_)
             | AnalysisResult::ProtocolLayoutCaptured(_)
             | AnalysisResult::ProtocolQuantitiesCaptured(_)

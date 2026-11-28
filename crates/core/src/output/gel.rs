@@ -317,15 +317,12 @@ fn lane(
                         "Pinned digest source revision differs from the actual lane molecule; resolve its exact retained source event.",
                     ));
                 }
-                let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
-                recipe.selection.validate_for(&catalog)?;
-                let fresh = crate::cloning::restriction::catalog::inspect(
-                    &catalog,
-                    &recipe.selection,
-                    &crate::cloning::restriction::history::source_role(&recipe.source)?,
-                    molecule,
-                    &recipe.options,
-                )?;
+                let fresh = recipe.inspect(molecule)?;
+                report.complete_under_model = !fresh.incomplete;
+                report.warnings.extend(fresh.findings.iter().cloned());
+                if fresh.findings_truncated {
+                    report.warnings.push(format!("Origin findings are bounded: {} of {} retained; inspect the native origin history.", fresh.findings.len(), fresh.findings_total));
+                }
                 report.warnings.push("Assumes complete ideal cleavage; methylation remains unassessed. Supplier conditions, partial digestion, star activity and experimental cleavage are not evaluated.".into());
                 report
                     .warnings

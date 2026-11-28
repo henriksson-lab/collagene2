@@ -61,7 +61,9 @@ pub fn FeatureEditor(
             let (a, b) = selection.unwrap_or((0, molecule.sequence.len()));
             Location::range(a, b)
         });
-    let location = RwSignal::new(editing::location_text(&initial_location).unwrap_or_default());
+    let location = RwSignal::new(
+        collagene_core::formats::sequence::location_text(&initial_location).unwrap_or_default(),
+    );
     let review = RwSignal::new(original.as_ref().is_some_and(|f| f.needs_review));
     let error = RwSignal::new(String::new());
     let base_revision = molecule.revision();
@@ -85,12 +87,15 @@ pub fn FeatureEditor(
     let save = move |_| {
         let source = source.get_value();
         let text = location.get_untracked();
-        let parsed =
-            if editing::location_text(&initial_location).ok().as_deref() == Some(text.trim()) {
-                Ok(initial_location.clone())
-            } else {
-                editing::parse_location(&text, source.sequence.len())
-            };
+        let parsed = if collagene_core::formats::sequence::location_text(&initial_location)
+            .ok()
+            .as_deref()
+            == Some(text.trim())
+        {
+            Ok(initial_location.clone())
+        } else {
+            collagene_core::formats::sequence::parse_location(&text, source.sequence.len())
+        };
         let parsed = match parsed {
             Ok(location) => location,
             Err(e) => {

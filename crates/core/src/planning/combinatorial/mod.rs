@@ -284,8 +284,8 @@ impl Design {
         construct: &SelectedConstruct,
     ) -> Result<Vec<InputEventBinding>, Error> {
         self.validate()?;
-        construct_shape(self, construct)?;
-        let choices = selected(self, &construct.choices)?;
+        self.construct_shape(construct)?;
+        let choices = self.selected(&construct.choices)?;
         let mut bindings = Vec::with_capacity(choices.len() * 2);
         for (bin, choice) in &choices {
             let (input_id, _) = source_role_ids(&self.id, &construct.id, &bin.id, &choice.id)?;
@@ -307,6 +307,242 @@ impl Design {
             return Err(Error::TooLarge);
         }
         Ok(bindings)
+    }
+    fn selected<'a>(
+        &'a self,
+        choices: &[ChoiceSelection],
+    ) -> Result<Vec<(&'a Bin, &'a Choice)>, Error> {
+        if choices.len() != self.bins.len() {
+            return Err(bad("choose exactly one alternative per ordered bin"));
+        }
+        let mut seen = BTreeSet::new();
+        for choice in choices {
+            if !seen.insert(&choice.bin_id) {
+                return Err(bad("duplicate bin in selected construct"));
+            }
+        }
+        self.bins
+            .iter()
+            .map(|bin| {
+                let selection = choices
+                    .iter()
+                    .find(|selection| selection.bin_id == bin.id)
+                    .ok_or_else(|| bad("selected construct is missing a bin"))?;
+                let choice = bin
+                    .choices
+                    .iter()
+                    .find(|choice| choice.id == selection.choice_id)
+                    .ok_or_else(|| bad("selected choice does not belong to its bin"))?;
+                Ok((bin, choice))
+            })
+            .collect()
+    }
+    pub(crate) fn combination_key(&self, choices: &[ChoiceSelection]) -> Result<String, Error> {
+        let canonical = self
+            .selected(choices)?
+            .iter()
+            .map(|(bin, choice)| (&bin.id, &choice.id))
+            .collect::<Vec<_>>();
+        Ok(format!(
+            "combination-{}",
+            crate::encoding::bounded_json::hash(&(VERSION, &self.id, canonical))?
+        ))
+    }
+    pub fn combination_id(&self, choices: &[ChoiceSelection]) -> Result<String, Error> {
+        self.validate()?;
+        self.combination_key(choices)
+    }
+    fn construct_shape(&self, construct: &SelectedConstruct) -> Result<(), Error> {
+        if !identifier(&construct.id) || !label(&construct.name, 256) {
+            return Err(bad("invalid selected construct identity"));
+        }
+        self.selected(&construct.choices)?;
+        let (method, circular) = effective(self, construct);
+        method_shape(method, self.bins.len(), circular)?;
+        for (bin, choice) in self.selected(&construct.choices)? {
+            let replacement = preparation_override(construct, &bin.id);
+            let preparation = replacement
+                .map(|p| p.preparation.as_ref())
+                .unwrap_or(choice.preparation.as_ref());
+            choice.pairing_shape(preparation)?;
+            if choice.anneal_bottom.is_some() {
+                if replacement.is_some() && preparation.is_none() {
+                    return Err(bad(
+                        "preparation override cannot discard a declared bottom oligo",
+                    ));
+                }
+                if replacement.is_some_and(|p| p.generation.is_some()) {
+                    return Err(bad(
+                        "paired original oligos cannot receive a duplex generation reset",
+                    ));
+                }
+                if matches!(method, Method::MultiSiteReference { .. })
+                    || matches!(method, Method::GoldenGatePool { substrates, .. }
+                        if substrates.iter().any(|row| row.bin_id == bin.id && matches!(row.kind, PoolSubstrateKind::WholeSource)))
+                {
+                    return Err(bad(
+                        "paired oligos require explicit physical preparation, not whole reference parents",
+                    ));
+                }
+            }
+        }
+        pool_bins(method, &self.bins)?;
+        if matches!(
+            method,
+            Method::GoldenGatePool { .. } | Method::MultiSiteReference { .. }
+        ) && self.selected(&construct.choices)?.iter().any(|(b, c)| {
+            preparation_override(construct, &b.id)
+                .map(|o| o.preparation_reverse)
+                .unwrap_or(c.preparation_reverse)
+        }) {
+            return Err(bad(
+                "reaction-pool orientation is selected by its explicit native path, not an ordered preparation reversal",
+            ));
+        }
+        if let Some(overrides) = &construct.overrides {
+            if overrides.preparations.len() > MAX_BINS {
+                return Err(Error::TooLarge);
+            }
+            crate::material::capsule::native_origins_preflight(
+                overrides
+                    .preparations
+                    .iter()
+                    .filter_map(|p| p.preparation.as_ref())
+                    .filter_map(preparation_origin),
+            )?;
+            let mut bins = BTreeSet::new();
+            for p in &overrides.preparations {
+                if !bins.insert(&p.bin_id) || !self.bins.iter().any(|b| b.id == p.bin_id) {
+                    return Err(bad("invalid or duplicate per-construct preparation bin"));
+                }
+                if let Some(preparation) = &p.preparation {
+                    preparation_shape(preparation)?;
+                    let (_, choice) = self
+                        .selected(&construct.choices)?
+                        .into_iter()
+                        .find(|(b, _)| b.id == p.bin_id)
+                        .ok_or_else(|| bad("missing override source"))?;
+                    preparation_binding(self, &choice.source, preparation)?;
+                    if material_binding(self, &choice.source).is_some() && p.generation.is_some() {
+                        return Err(bad(
+                            "native source cannot receive original-generation reset",
+                        ));
+                    }
+                }
+            }
+        }
+        if matches!(method, Method::MultiSiteReference { .. }) {
+            for (bin, choice) in self.selected(&construct.choices)? {
+                let preparation = preparation_override(construct, &bin.id)
+                    .map(|p| &p.preparation)
+                    .unwrap_or(&choice.preparation);
+                let treatment = preparation_override(construct, &bin.id)
+                    .map(|p| p.treatment)
+                    .unwrap_or(choice.treatment);
+                if preparation.is_some() || treatment.is_some() {
+                    return Err(bad(
+                        "multi-site reference parents must use no preparation or terminal treatment; clear those declarations explicitly instead of treating a reference as prepared physical material",
+                    ));
+                }
+            }
+        }
+        declaration_bounds(&construct.target)?;
+        match &construct.target {
+            TargetDeclaration::Existing(target) => binding(target)?,
+            TargetDeclaration::OriginalRegions {
+                junction_edits,
+                substitutions: _,
+                edits: _,
+            } => {
+                let count = self.bins.len().saturating_sub(1) + usize::from(circular);
+                let mut junctions = BTreeSet::new();
+                if junction_edits.len() > MAX_BINS
+                    || junction_edits.iter().any(|edit| {
+                        edit.junction >= count
+                            || !junctions.insert(edit.junction)
+                            || edit.inserted.len() > 200
+                    })
+                {
+                    return Err(bad("invalid literal junction edits"));
+                }
+            }
+        }
+        count(construct)
+    }
+    pub fn validate_construct(&self, construct: &SelectedConstruct) -> Result<(), Error> {
+        self.validate()?;
+        self.construct_shape(construct)
+    }
+    /// Count only. Source alternatives are never reaction substrates/products.
+    pub fn matrix_size(&self) -> Result<u128, Error> {
+        self.validate()?;
+        cartesian_size(
+            &self
+                .bins
+                .iter()
+                .map(|bin| bin.choices.len())
+                .collect::<Vec<_>>(),
+        )
+    }
+    /// Mixed-radix paging, last bin varying fastest. Never allocate the entire product.
+    pub fn matrix_page(&self, first: u128, limit: usize) -> Result<MatrixPage, Error> {
+        let total = self.matrix_size()?;
+        let pages = cartesian_page(
+            &self
+                .bins
+                .iter()
+                .map(|bin| bin.choices.len())
+                .collect::<Vec<_>>(),
+            first,
+            limit,
+        )?;
+        let mut combinations = Vec::with_capacity(pages.len());
+        for indices in pages {
+            let choices = self
+                .bins
+                .iter()
+                .zip(indices)
+                .map(|(bin, index)| ChoiceSelection {
+                    bin_id: bin.id.clone(),
+                    choice_id: bin.choices[index].id.clone(),
+                })
+                .collect::<Vec<_>>();
+            let canonical = self
+                .bins
+                .iter()
+                .zip(&choices)
+                .map(|(bin, choice)| (&bin.id, &choice.choice_id))
+                .collect::<Vec<_>>();
+            let id = format!(
+                "combination-{}",
+                crate::encoding::bounded_json::hash(&(VERSION, &self.id, canonical))?
+            );
+            combinations.push(Combination { id, choices });
+        }
+        Ok(MatrixPage {
+            total,
+            first,
+            combinations,
+        })
+    }
+}
+impl SelectedMatrix {
+    pub fn validate(&self) -> Result<(), Error> {
+        self.design.validate()?;
+        if self.constructs.is_empty() || self.constructs.len() > MAX_SELECTED {
+            return Err(bad("select 1–256 named constructs"));
+        }
+        let mut ids = BTreeSet::new();
+        for construct in &self.constructs {
+            self.design.construct_shape(construct)?;
+            if !identifier(&construct.id)
+                || !ids.insert(&construct.id)
+                || !label(&construct.name, 256)
+            {
+                return Err(bad("invalid/duplicate selected construct identity"));
+            }
+        }
+        count(self)
     }
 }
 pub struct Resolved {
@@ -941,183 +1177,17 @@ fn preparation_override<'a>(
         .iter()
         .find(|p| p.bin_id == bin_id)
 }
-fn selected<'a>(
-    design: &'a Design,
-    choices: &[ChoiceSelection],
-) -> Result<Vec<(&'a Bin, &'a Choice)>, Error> {
-    if choices.len() != design.bins.len() {
-        return Err(bad("choose exactly one alternative per ordered bin"));
-    }
-    let mut seen = BTreeSet::new();
-    for choice in choices {
-        if !seen.insert(&choice.bin_id) {
-            return Err(bad("duplicate bin in selected construct"));
-        }
-    }
-    design
-        .bins
-        .iter()
-        .map(|bin| {
-            let selection = choices
-                .iter()
-                .find(|selection| selection.bin_id == bin.id)
-                .ok_or_else(|| bad("selected construct is missing a bin"))?;
-            let choice = bin
-                .choices
-                .iter()
-                .find(|choice| choice.id == selection.choice_id)
-                .ok_or_else(|| bad("selected choice does not belong to its bin"))?;
-            Ok((bin, choice))
-        })
-        .collect()
-}
-pub(crate) fn combination_key(
-    design: &Design,
-    choices: &[ChoiceSelection],
-) -> Result<String, Error> {
-    let canonical = selected(design, choices)?
-        .iter()
-        .map(|(bin, choice)| (&bin.id, &choice.id))
-        .collect::<Vec<_>>();
-    Ok(format!(
-        "combination-{}",
-        crate::encoding::bounded_json::hash(&(VERSION, &design.id, canonical))?
-    ))
-}
-pub fn combination_id(design: &Design, choices: &[ChoiceSelection]) -> Result<String, Error> {
-    design.validate()?;
-    combination_key(design, choices)
-}
-fn construct_shape(design: &Design, construct: &SelectedConstruct) -> Result<(), Error> {
-    if !identifier(&construct.id) || !label(&construct.name, 256) {
-        return Err(bad("invalid selected construct identity"));
-    }
-    selected(design, &construct.choices)?;
-    let (method, circular) = effective(design, construct);
-    method_shape(method, design.bins.len(), circular)?;
-    for (bin, choice) in selected(design, &construct.choices)? {
-        let replacement = preparation_override(construct, &bin.id);
-        let preparation = replacement
-            .map(|p| p.preparation.as_ref())
-            .unwrap_or(choice.preparation.as_ref());
-        choice.pairing_shape(preparation)?;
-        if choice.anneal_bottom.is_some() {
-            if replacement.is_some() && preparation.is_none() {
-                return Err(bad(
-                    "preparation override cannot discard a declared bottom oligo",
-                ));
-            }
-            if replacement.is_some_and(|p| p.generation.is_some()) {
-                return Err(bad(
-                    "paired original oligos cannot receive a duplex generation reset",
-                ));
-            }
-            if matches!(method, Method::MultiSiteReference { .. })
-                || matches!(method, Method::GoldenGatePool { substrates, .. }
-                    if substrates.iter().any(|row| row.bin_id == bin.id && matches!(row.kind, PoolSubstrateKind::WholeSource)))
-            {
-                return Err(bad(
-                    "paired oligos require explicit physical preparation, not whole reference parents",
-                ));
-            }
-        }
-    }
-    pool_bins(method, &design.bins)?;
-    if matches!(
-        method,
-        Method::GoldenGatePool { .. } | Method::MultiSiteReference { .. }
-    ) && selected(design, &construct.choices)?.iter().any(|(b, c)| {
-        preparation_override(construct, &b.id)
-            .map(|o| o.preparation_reverse)
-            .unwrap_or(c.preparation_reverse)
-    }) {
-        return Err(bad(
-            "reaction-pool orientation is selected by its explicit native path, not an ordered preparation reversal",
-        ));
-    }
-    if let Some(overrides) = &construct.overrides {
-        if overrides.preparations.len() > MAX_BINS {
-            return Err(Error::TooLarge);
-        }
-        crate::material::capsule::native_origins_preflight(
-            overrides
-                .preparations
-                .iter()
-                .filter_map(|p| p.preparation.as_ref())
-                .filter_map(preparation_origin),
-        )?;
-        let mut bins = BTreeSet::new();
-        for p in &overrides.preparations {
-            if !bins.insert(&p.bin_id) || !design.bins.iter().any(|b| b.id == p.bin_id) {
-                return Err(bad("invalid or duplicate per-construct preparation bin"));
-            }
-            if let Some(preparation) = &p.preparation {
-                preparation_shape(preparation)?;
-                let (_, choice) = selected(design, &construct.choices)?
-                    .into_iter()
-                    .find(|(b, _)| b.id == p.bin_id)
-                    .ok_or_else(|| bad("missing override source"))?;
-                preparation_binding(design, &choice.source, preparation)?;
-                if material_binding(design, &choice.source).is_some() && p.generation.is_some() {
-                    return Err(bad(
-                        "native source cannot receive original-generation reset",
-                    ));
-                }
-            }
-        }
-    }
-    if matches!(method, Method::MultiSiteReference { .. }) {
-        for (bin, choice) in selected(design, &construct.choices)? {
-            let preparation = preparation_override(construct, &bin.id)
-                .map(|p| &p.preparation)
-                .unwrap_or(&choice.preparation);
-            let treatment = preparation_override(construct, &bin.id)
-                .map(|p| p.treatment)
-                .unwrap_or(choice.treatment);
-            if preparation.is_some() || treatment.is_some() {
-                return Err(bad(
-                    "multi-site reference parents must use no preparation or terminal treatment; clear those declarations explicitly instead of treating a reference as prepared physical material",
-                ));
-            }
-        }
-    }
-    declaration_bounds(&construct.target)?;
-    match &construct.target {
-        TargetDeclaration::Existing(target) => binding(target)?,
-        TargetDeclaration::OriginalRegions {
-            junction_edits,
-            substitutions: _,
-            edits: _,
-        } => {
-            let count = design.bins.len().saturating_sub(1) + usize::from(circular);
-            let mut junctions = BTreeSet::new();
-            if junction_edits.len() > MAX_BINS
-                || junction_edits.iter().any(|edit| {
-                    edit.junction >= count
-                        || !junctions.insert(edit.junction)
-                        || edit.inserted.len() > 200
-                })
-            {
-                return Err(bad("invalid literal junction edits"));
-            }
-        }
-    }
-    count(construct)
-}
-pub fn validate_construct(design: &Design, construct: &SelectedConstruct) -> Result<(), Error> {
-    design.validate()?;
-    construct_shape(design, construct)
-}
 fn resolved_work(
     design: &Design,
     construct: &SelectedConstruct,
     sources: &assembly_intent::Resolved<'_>,
     identities: &[(String, String)],
 ) -> Result<usize, Error> {
-    construct_shape(design, construct)?;
+    design.construct_shape(construct)?;
     let (method, _) = effective(design, construct);
     let mut work = 0usize;
-    for ((bin, choice), (id, _)) in selected(design, &construct.choices)?
+    for ((bin, choice), (id, _)) in design
+        .selected(&construct.choices)?
         .into_iter()
         .zip(identities)
     {
@@ -1244,73 +1314,6 @@ fn resolved_work(
     }
     Ok(work.max(1))
 }
-/// Count only. Source alternatives are never reaction substrates/products.
-pub fn matrix_size(design: &Design) -> Result<u128, Error> {
-    design.validate()?;
-    cartesian_size(
-        &design
-            .bins
-            .iter()
-            .map(|bin| bin.choices.len())
-            .collect::<Vec<_>>(),
-    )
-}
-/// Mixed-radix paging, last bin varying fastest. Never allocate the entire product.
-pub fn matrix_page(design: &Design, first: u128, limit: usize) -> Result<MatrixPage, Error> {
-    let total = matrix_size(design)?;
-    let pages = cartesian_page(
-        &design
-            .bins
-            .iter()
-            .map(|bin| bin.choices.len())
-            .collect::<Vec<_>>(),
-        first,
-        limit,
-    )?;
-    let mut combinations = Vec::with_capacity(pages.len());
-    for indices in pages {
-        let choices = design
-            .bins
-            .iter()
-            .zip(indices)
-            .map(|(bin, index)| ChoiceSelection {
-                bin_id: bin.id.clone(),
-                choice_id: bin.choices[index].id.clone(),
-            })
-            .collect::<Vec<_>>();
-        let canonical = design
-            .bins
-            .iter()
-            .zip(&choices)
-            .map(|(bin, choice)| (&bin.id, &choice.choice_id))
-            .collect::<Vec<_>>();
-        let id = format!(
-            "combination-{}",
-            crate::encoding::bounded_json::hash(&(VERSION, &design.id, canonical))?
-        );
-        combinations.push(Combination { id, choices });
-    }
-    Ok(MatrixPage {
-        total,
-        first,
-        combinations,
-    })
-}
-pub fn validate_matrix(matrix: &SelectedMatrix) -> Result<(), Error> {
-    matrix.design.validate()?;
-    if matrix.constructs.is_empty() || matrix.constructs.len() > MAX_SELECTED {
-        return Err(bad("select 1–256 named constructs"));
-    }
-    let mut ids = BTreeSet::new();
-    for construct in &matrix.constructs {
-        construct_shape(&matrix.design, construct)?;
-        if !identifier(&construct.id) || !ids.insert(&construct.id) || !label(&construct.name, 256)
-        {
-            return Err(bad("invalid/duplicate selected construct identity"));
-        }
-    }
-    count(matrix)
-}
 /// Workspace validation establishes actual event ownership, including historical
 /// inputs, rather than accepting matching DNA/revision assertions as membership.
 pub fn resolve_event<'a>(
@@ -1353,7 +1356,7 @@ pub fn resolve(
     workspace: &Workspace,
 ) -> Result<Resolved, Error> {
     source_preflight(design, workspace)?;
-    construct_shape(design, construct)?;
+    design.construct_shape(construct)?;
     let resolved = resolve_validated(design, construct, workspace)?;
     resolved.preflight()?;
     Ok(resolved)
@@ -1363,9 +1366,9 @@ pub(crate) fn resolve_validated(
     construct: &SelectedConstruct,
     workspace: &Workspace,
 ) -> Result<Resolved, Error> {
-    construct_shape(design, construct)?;
+    design.construct_shape(construct)?;
     let (method, circular) = effective(design, construct);
-    let choices = selected(design, &construct.choices)?;
+    let choices = design.selected(&construct.choices)?;
     let mut originals = Vec::with_capacity(choices.len());
     for (_, choice) in &choices {
         let molecule = resolve_event(workspace, &choice.source)?;
@@ -1844,7 +1847,7 @@ pub(crate) fn resolve_validated(
             }
         }
     };
-    let combination_id = combination_key(design, &construct.choices)?;
+    let combination_id = design.combination_key(&construct.choices)?;
     let declaration_revision = crate::encoding::bounded_json::hash(&(
         VERSION,
         design,
@@ -1938,7 +1941,7 @@ pub fn inspect_multisite_revision(
     construct: &SelectedConstruct,
     workspace: &Workspace,
 ) -> Result<String, Error> {
-    validate_construct(design, construct)?;
+    design.validate_construct(construct)?;
     workspace_guard(workspace)?;
     let (method, circular) = effective(design, construct);
     let Method::MultiSiteReference { request, .. } = method else {
@@ -1946,7 +1949,7 @@ pub fn inspect_multisite_revision(
             "selected construct is not a multi-site reference design",
         ));
     };
-    let selected = selected(design, &construct.choices)?;
+    let selected = design.selected(&construct.choices)?;
     let mut parents = Vec::with_capacity(selected.len());
     for (_, choice) in selected {
         let molecule = resolve_event(workspace, &choice.source)?;

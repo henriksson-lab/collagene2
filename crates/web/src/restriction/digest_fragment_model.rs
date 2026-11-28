@@ -24,7 +24,7 @@ pub struct AssemblyFragment {
     pub bottom_length: usize,
     pub epoch: u64,
     pub origin: Option<PinnedOrigin>,
-    pub material_domain: Option<crate::assembly::draft::model::MaterialDomain>,
+    pub material_domain: Option<collagene_core::cloning::assembly::intent::MaterialDomain>,
 }
 
 #[cfg(test)]
@@ -98,7 +98,7 @@ mod tests {
             material_domain: None,
         };
         let mut draft = Draft::default();
-        model::set_digest_fragment(&mut draft, payload.clone()).unwrap();
+        draft.set_digest_fragment(payload.clone()).unwrap();
         assert_eq!(
             draft.slots[0].captured.as_ref().unwrap().source.binding,
             payload.source.binding
@@ -111,7 +111,7 @@ mod tests {
         let before = draft.clone();
         let mut changed_event = payload;
         changed_event.source.binding.event_id.push_str("-different");
-        assert!(model::set_digest_fragment(&mut draft, changed_event).is_err());
+        assert!(draft.set_digest_fragment(changed_event).is_err());
         assert!(
             draft == before,
             "a stale source binding must not alter the draft"
@@ -236,7 +236,7 @@ mod tests {
                 selection,
                 options,
                 fragment_index,
-                material_domain: Some(crate::assembly::draft::model::MaterialDomain {
+                material_domain: Some(collagene_core::cloning::assembly::intent::MaterialDomain {
                     top_length: inspected
                         .source_material
                         .as_ref()
@@ -331,8 +331,8 @@ mod tests {
             };
         draft.active_slot = 1;
         draft.sync_rows();
-        model::set_digest_fragment(&mut draft, chosen).unwrap();
-        draft = model::orient_fragment(&draft, 1, true).unwrap();
+        draft.set_digest_fragment(chosen).unwrap();
+        draft = draft.orient_fragment(1, true).unwrap();
         draft.methods.rows[1].preparation = OverlapPreparation::WholeLinear;
         draft.methods.rows[1].reverse = false;
         draft.methods.rows[0].preparation = OverlapPreparation::WholeLinear;
@@ -340,7 +340,7 @@ mod tests {
         draft.sync_rows();
         let draft =
             crate::assembly::draft::assembly_alternatives::enable(&draft, "bottom-pcr").unwrap();
-        let (inputs, request, _) = model::inputs_request(&draft, Some(&frame)).unwrap();
+        let (inputs, request, _) = draft.inputs_request(Some(&frame)).unwrap();
         let intended =
             collagene_core::cloning::assembly::intent::build(&inputs, &request, Some(&frame))
                 .unwrap();
@@ -632,7 +632,7 @@ mod tests {
         // second source with the default empty exact-PCR primers.
         draft.slots.truncate(1);
         draft.sync_rows();
-        model::set_digest_fragment(&mut draft, chosen).unwrap();
+        draft.set_digest_fragment(chosen).unwrap();
         assert_eq!(draft.name, "My intended construct");
         assert_eq!(
             draft.version,
@@ -676,7 +676,7 @@ mod tests {
         let mut stale = chosen.clone();
         stale.batch_revision = "0".repeat(64);
         let mut draft = initial.clone();
-        assert!(model::set_digest_fragment(&mut draft, stale).is_err());
+        assert!(draft.set_digest_fragment(stale).is_err());
         assert!(draft == initial);
         let alias = DocumentHistory::new("equal-reference-alias", chosen.molecule.as_ref().clone())
             .unwrap();
@@ -686,7 +686,7 @@ mod tests {
             event_id: alias.head_event().into(),
             revision: alias.head_revision().into(),
         };
-        assert!(model::set_digest_fragment(&mut draft, alias_choice).is_err());
+        assert!(draft.set_digest_fragment(alias_choice).is_err());
         assert!(draft == initial);
     }
     #[test]
@@ -778,7 +778,7 @@ mod tests {
             bottom_length: f.duplex.bottom_length,
             epoch: 4,
             origin: Some(PinnedOrigin::from_material(derived_origin).unwrap()),
-            material_domain: Some(model::MaterialDomain {
+            material_domain: Some(collagene_core::cloning::assembly::intent::MaterialDomain {
                 top_length: derived_preview
                     .source_material
                     .as_ref()
@@ -817,11 +817,11 @@ mod tests {
         derived_draft.methods.mode =
             crate::cloning::preparation::cloning_methods_model::Mode::Ligation;
         derived_draft.sync_rows();
-        model::set_digest_fragment(&mut derived_draft, derived_choice).unwrap();
-        let mut derived_draft = model::orient_fragment(&derived_draft, 0, true).unwrap();
+        derived_draft.set_digest_fragment(derived_choice).unwrap();
+        let mut derived_draft = derived_draft.orient_fragment(0, true).unwrap();
         derived_draft.methods.rows[0].reverse = true;
         let (derived_inputs, derived_request, _) =
-            model::inputs_request(&derived_draft, Some(&derived_frame)).unwrap();
+            derived_draft.inputs_request(Some(&derived_frame)).unwrap();
         let derived_intent = collagene_core::cloning::assembly::intent::build(
             &derived_inputs,
             &derived_request,
@@ -871,7 +871,7 @@ mod tests {
         draft.methods.mode = crate::cloning::preparation::cloning_methods_model::Mode::Ligation;
         draft.slots.truncate(1);
         draft.sync_rows();
-        model::set_digest_fragment(&mut draft, chosen).unwrap();
+        draft.set_digest_fragment(chosen).unwrap();
         let forward = draft.slots[0].selector.clone();
         assert!(matches!(
             &forward,
@@ -882,7 +882,7 @@ mod tests {
                 ..
             }
         ));
-        let reversed = model::orient_fragment(&draft, 0, true).unwrap();
+        let reversed = draft.orient_fragment(0, true).unwrap();
         assert!(matches!(
             &reversed.slots[0].selector,
             collagene_core::cloning::assembly::intent::Selector::MaterialStrandRange {
@@ -892,14 +892,14 @@ mod tests {
                 ..
             }
         ));
-        assert!(model::orient_fragment(&reversed, 0, false).unwrap().slots[0].selector == forward);
+        assert!(reversed.orient_fragment(0, false).unwrap().slots[0].selector == forward);
         draft = reversed;
         assert!(
             !draft.methods.rows[0].reverse,
             "Selecting the original bottom does not choose physical preparation reversal"
         );
         draft.methods.rows[0].reverse = true;
-        let (inputs, request, _) = model::inputs_request(&draft, Some(&frame)).unwrap();
+        let (inputs, request, _) = draft.inputs_request(Some(&frame)).unwrap();
         assert!(collagene_core::cloning::assembly::intent::build(&inputs, &request, None).is_err());
         let intent =
             collagene_core::cloning::assembly::intent::build(&inputs, &request, Some(&frame))
@@ -975,7 +975,7 @@ mod tests {
             *expected_state_revision = "0".repeat(64);
         }
         assert!(source_review.get(&state_changed, 0).is_err());
-        assert!(model::inputs_request(&state_changed, Some(&frame)).is_err());
+        assert!(state_changed.inputs_request(Some(&frame)).is_err());
         let (_, prepared) =
             crate::cloning::preparation::cloning_preparations::prepared_rows(&draft.methods, 1)
                 .unwrap();
@@ -1096,7 +1096,7 @@ mod tests {
         )
         .unwrap();
         let reopened_draft = model::decode(&reopened.attachments[&hash].bytes).unwrap();
-        let (again, declared, _) = model::inputs_request(&reopened_draft, Some(&reopened)).unwrap();
+        let (again, declared, _) = reopened_draft.inputs_request(Some(&reopened)).unwrap();
         let replayed_intent =
             collagene_core::cloning::assembly::intent::build(&again, &declared, Some(&reopened))
                 .unwrap();

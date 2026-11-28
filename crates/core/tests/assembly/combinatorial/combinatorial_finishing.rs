@@ -442,7 +442,7 @@ fn three_prime_library_keeps_real_segments_and_nicks_and_planned_rescue_never_cr
     };
     options.method = OverlapMethod::InFusion;
     assert!(
-        design::validate_construct(&d, &row).is_err(),
+        d.validate_construct(&row).is_err(),
         "real InFusion-associated annealing requires explicit planned rescue"
     );
     let design::Method::Overlap {

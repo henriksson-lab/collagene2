@@ -197,7 +197,7 @@ fn attest_original_sources(
         .ok_or_else(|| bad("saved batch has no typed source design"))?;
     for selection in &request.rows {
         let row = selected(record, &selection.construct_id)?;
-        design::validate_construct(design, row)?;
+        design.validate_construct(row)?;
         for bin in &design.bins {
             let chosen = row
                 .choices
@@ -764,7 +764,7 @@ impl Manifest {
                 .design
                 .as_ref()
                 .ok_or_else(|| bad("release source design unavailable"))?;
-            if row.combination_id != design::combination_id(design, &declared.choices)?
+            if row.combination_id != design.combination_id(&declared.choices)?
                 || !digest(&row.declaration_revision)
             {
                 return Err(bad("release source-choice identity changed"));

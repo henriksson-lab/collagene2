@@ -4,6 +4,7 @@ mod annotation_formats;
 mod annotation_library_protocol;
 mod annotation_verification;
 mod annotations;
+mod coordinate_qualifiers;
 mod editing;
 mod feature_library;
 mod genbank_reference_editing;

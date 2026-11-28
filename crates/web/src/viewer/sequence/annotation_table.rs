@@ -1,8 +1,5 @@
 //! Source-bound batch annotation editing and separate local visibility controls.
-use collagene_core::sequence::{
-    annotations::batch::{ColorEdit, Request},
-    editing,
-};
+use collagene_core::sequence::annotations::batch::{ColorEdit, Request};
 use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::collections::BTreeSet;
@@ -86,7 +83,7 @@ pub fn AnnotationTable(
                     index,
                     label: feature.label().to_string(),
                     kind: feature.kind.clone(),
-                    location: editing::location_text(&feature.location)
+                    location: collagene_core::formats::sequence::location_text(&feature.location)
                         .unwrap_or_else(|e| format!("Unresolved location: {e}")),
                     review: feature.needs_review,
                     qualifiers: feature.qualifiers.len(),

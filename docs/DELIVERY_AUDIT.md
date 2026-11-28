@@ -38,11 +38,15 @@ hash-limit constant; the shared encoding owner retains its checked 32 MiB stream
 bound. Unchanged passing execution evidence is retained. No
 scientific, binary selector or current version changes are intended. Independent
 static reviews cover both worker execution and material authority; they do not
-replace runtime or graphical acceptance. Current-source CI remains required.
+replace runtime or graphical acceptance. The ownership checkpoint `ba76722` passed scientific CI on Windows/macOS/Linux and desktop packaging; later source changes retain their own CI gate.
 
-Proposal/pool UI ownership and a small TreeJob method cleanup remain in the
-ownership queue. The next semantic cloning gap is coordinate-bearing qualifier
-projection. Full product, installed-platform and graphical acceptance remain open;
+The refreshed [refactor plan](audits/REFACTOR_PLAN.md) identifies proposal/pool
+owners, natural methods, import facades and TreeJob cleanup as the next coherent
+ownership batch. These ownership changes now pass native/WASM checks and 495
+focused cases, with all 2,451 baseline test names preserved; see the
+[implementation evidence](audits/ownership-implementation-2026-11-28.md).
+Coordinate-bearing qualifier projection is now implemented in
+the current source, with its own scientific validation below. Full product, installed-platform and graphical acceptance remain open;
 browser/application HTTP checks stay deferred as instructed.
 
 ## Next connected cloning batch
@@ -92,30 +96,41 @@ links pass. Current Rust layout remains 1,213 files/210 directories, no violatio
 or 3,000-line warnings. Exact-source CI remains required; browser/application HTTP
 and installed-platform acceptance stay deferred.
 
-Coordinate-bearing qualifier projection is also incomplete. Supported local
-`transl_except`/`anticodon` locations need bounded, fully consumed parsing and
-biological-order-preserving remapping. The current parser batch replaces dependency prefix parsing with bounded, fully
-consumed descriptors; coordinate-bearing qualifier projection still needs its own
-wrapper grammar and biological mapping checks.
-Native model edits, destination paste and annotation-only strand flips have
-distinct refusal boundaries; changing projection alone must not bypass them.
+Coordinate-bearing qualifier projection now reuses the complete location codec
+and a bounded, fully consumed qualifier-wrapper parser. Exact local
+`transl_except` and `anticodon` positions follow biological parent order and strand
+through extraction, rotation, reverse complement and physical product projection.
+Translation phase and suffix-only one-/two-base `TERM` exceptions are checked;
+clipped or interrupted claims become bounded source evidence with review required.
+Unknown, remote, fuzzy, ordered and unresolved positions retain explicit refusal
+boundaries. Identity projections preserve source text. This preserves declarations;
+it does not interpret recoding biology or extend the CDS translator.
 
-The next batch can reuse the existing complete location codec; it needs a bounded
-qualifier-wrapper parser rather than another location parser or a model/core
-dependency change. Preserve ordered, strand-aware parent membership and exact
-local positions; do not derive biological order from `Location::spans()`.
-INSDC permits one- or two-base `TERM` exceptions as well as complete codons, so a
-blanket three-base rule would reject valid source annotations. Preserve amino-
-acid/anticodon sequence declarations when reference reversal preserves the same
-biological calls; clipping or interruption must deactivate affected assertions
-with retained source evidence. [INSDC feature-table reference](https://www.insdc.org/submitting-standards/feature-table/).
+Manual existing-feature location edits now refuse active coordinate qualifiers
+on either old or incoming annotations, including removal-and-move in one request.
+Other location edits deactivate translation/phase fields case-insensitively and
+retain their source evidence. An explicit review/remove step at the unchanged
+location permits fresh reannotation. Separate native replace, destination paste
+and annotation-only strand-flip refusal boundaries remain in place.
 
-Manual existing-feature location edits also need protection: `sequence::editing::set_feature`
-currently removes only exact-case `translation` and marks review, while retaining
-active `transl_except`, `anticodon` and `codon_start`. The annotation batch must
-refuse or deactivate stale assertions there, using case-insensitive field handling
-and an explicit route for fresh reannotation. This is an existing semantic gap,
-not a behavior change included in the ownership refactor.
+The native MCP registry now contains 209 tools, including
+`edit_reference_document`: seven explicit immutable reference operations use the
+same core guards, exact source identity and atomic result admission. Receipts
+state reference-only authority; no physical material, cloning verification or
+native history is invented. Thin WebMCP permissions do not expand.
+
+Scientific engine `science-33` and affected TOPO/recombination/reference-transfer
+engine stamps invalidate stale annotation contexts. No binary layout or plan
+schema changes are required. Final native harness compilation and web/worker WASM
+checks pass. Focused execution passes 2,152 unique scientific, SDK, sharing and
+web-model cases, including all 21 new core/SDK fixtures. After advancing standalone
+engine stamps and correcting one obsolete clipped-feature expectation, 366 affected
+cases were selected for rerun while unchanged passing results were retained.
+Discovery exposes 2,451 cases in 27 harnesses. The 4,096-feature replacement case
+also verifies that admission does not double-count the old annotation. Exact-source
+CI remains required for this annotation batch. See the
+[coordinate qualifier profile](COORDINATE_QUALIFIERS.md) for bounds and unsupported
+cases. Browser/application HTTP and installed-platform acceptance remain deferred.
 
 The current GenBank integrity batch implements independent location parsing and
 formatting, feature-table framing, complete qualifier parsing and safe feature

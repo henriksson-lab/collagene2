@@ -4,6 +4,7 @@ use collagene_model::{
     Alphabet, Error, Feature, Location, MAX_SEQUENCE_LEN, Molecule, Sequence, Topology,
 };
 use serde::{Deserialize, Serialize};
+mod qualifiers;
 
 const MAX_SEGMENTS: usize = 4096;
 const MAX_WORK: usize = 1_000_000;
@@ -405,20 +406,10 @@ fn mark_partial(location: &mut Location) {
 fn short_label(feature: &Feature) -> String {
     feature.label().chars().take(128).collect()
 }
-fn coordinate_qualifier(key: &str) -> bool {
-    matches!(
-        key.to_ascii_lowercase().as_str(),
-        "transl_except" | "anticodon" | "rpt_unit_range" | "coded_by"
-    )
-}
-fn remove_translation_assertions(feature: &mut Feature) {
-    let mut evidence = Vec::new();
-    feature.qualifiers.retain(|(key,value)|{
-        if matches!(key.to_ascii_lowercase().as_str(),"translation"|"codon_start") {
-            evidence.push(("note".into(),Some(format!("Collagene source qualifier /{key}={} retained only as source evidence; recalculate after annotation review.",value.as_deref().unwrap_or("(flag)")))));false
-        } else {true}
-    });
-    feature.qualifiers.extend(evidence);
+pub(crate) fn coordinate_qualifier(key: &str) -> bool {
+    ["transl_except", "anticodon", "rpt_unit_range", "coded_by"]
+        .iter()
+        .any(|name| key.eq_ignore_ascii_case(name))
 }
 
 /// Project into a linear destination. Use the topology-aware variant for a circular product.
@@ -471,6 +462,8 @@ fn project_with_maps(
     destination_topology: Topology,
     allow_collapse: bool,
 ) -> Result<Projection, Error> {
+    let mut work = 0;
+    qualifiers::preflight(source, &mut work)?;
     let segments = mappings(source, segments, destination_length, allow_collapse)?;
     if destination_topology == Topology::Circular && source.sequence.alphabet() == Alphabet::Protein
     {
@@ -483,7 +476,6 @@ fn project_with_maps(
         unmapped_features: vec![],
         dropped_features: 0,
     };
-    let mut work = 0;
     for original in &source.features {
         budget(&mut work)?;
         if has_unresolved(&original.location) && !is_identity {
@@ -573,17 +565,6 @@ fn project_with_maps(
             projection.dropped_features += 1;
             continue;
         };
-        if !is_identity
-            && original
-                .qualifiers
-                .iter()
-                .any(|(key, _)| coordinate_qualifier(key))
-        {
-            return Err(unsupported(format!(
-                "feature '{}' has coordinate-bearing qualifiers that cannot yet be remapped; retain the original input and resolve those qualifiers before projection",
-                short_label(original)
-            )));
-        }
         let broken = if has_unresolved(&original.location) {
             false
         } else {
@@ -600,11 +581,22 @@ fn project_with_maps(
             mark_partial(&mut location);
         }
         let review = partial || broken || uncertain(&original.location);
-        let mut feature = original.clone();
-        feature.location = location;
+        let projected_qualifiers = qualifiers::project(
+            original,
+            source,
+            segments,
+            destination_length,
+            is_identity && !partial && !broken,
+            review,
+            &mut work,
+        )?;
+        let mut feature = Feature {
+            kind: original.kind.clone(),
+            location,
+            qualifiers: projected_qualifiers,
+            needs_review: original.needs_review || review,
+        };
         if review {
-            feature.needs_review = true;
-            remove_translation_assertions(&mut feature);
             feature.qualifiers.push(("note".into(),Some(if broken {"Collagene: source annotation is interrupted by new reference boundaries/junctions; biological continuity requires review."}else if partial {"Collagene: source annotation is only partly retained in this product; endpoints and CDS phase require review."}else{"Collagene: source location remains fuzzy, ordered or unresolved; no exact biological extraction was established."}.into())));
             warn(
                 &mut projection.warnings,

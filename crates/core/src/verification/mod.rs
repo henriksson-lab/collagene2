@@ -6,4 +6,4 @@ pub mod pcr;
 pub mod projection;
 pub mod sources;
 pub mod terminal;
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-32");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-33");

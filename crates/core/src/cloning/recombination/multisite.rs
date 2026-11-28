@@ -12,7 +12,7 @@ pub use reference::multisite;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 
-pub const ENGINE_VERSION: &str = "multisite-reference-adapter-1";
+pub const ENGINE_VERSION: &str = "multisite-reference-adapter-2";
 pub const RECIPE_KEY: &str = "multisite_recombination:unverified_recipe";
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 const MAX_RECIPE_BYTES: usize = 256 * 1024;

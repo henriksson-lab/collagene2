@@ -14,6 +14,24 @@ pub enum IntendedReference {
     Edits(collagene_core::cloning::assembly::edit_intent::Report),
 }
 impl IntendedReference {
+    pub(crate) fn context(&self) -> &str {
+        match self {
+            Self::Regions(i) => &i.context_revision,
+            Self::Junctions(i) => &i.context_revision,
+            Self::Substitutions(i) => &i.context_revision,
+            Self::Edits(i) => &i.context_revision,
+        }
+    }
+
+    pub(crate) fn warnings(&self) -> &[String] {
+        match self {
+            Self::Regions(i) => &i.warnings,
+            Self::Junctions(i) => &i.warnings,
+            Self::Substitutions(i) => &i.warnings,
+            Self::Edits(i) => &i.warnings,
+        }
+    }
+
     pub fn target(&self) -> &collagene_model::Molecule {
         match self {
             Self::Regions(intent) => &intent.target,

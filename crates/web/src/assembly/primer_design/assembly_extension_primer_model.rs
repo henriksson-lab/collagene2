@@ -1,7 +1,6 @@
 //! Source/event-bound adapter for native overlap-extension oligo proposals.
 //! Applying a proposal changes one preparation declaration, never design intent
 //! or source documents. Ordinary recipe verification remains authoritative.
-use crate::assembly::draft::model;
 use crate::assembly::draft::model::Draft;
 use crate::assembly::review::assembly_review::IntendedReference;
 use crate::cloning::preparation::cloning_methods_model::ExtensionPrimerInput;
@@ -198,7 +197,7 @@ fn independent_intent(
     base: collagene_core::cloning::assembly::intent::Request,
     workspace: Option<&Workspace>,
 ) -> Result<String, String> {
-    let declared = model::edit_request(draft, base);
+    let declared = draft.edit_request(base);
     match intent {
         IntendedReference::Edits(report) => {
             if declared.edits.is_empty() {
@@ -295,7 +294,7 @@ pub fn request(
     if options.outer_forward_tail != tails.0 || options.outer_reverse_tail != tails.1 {
         return Err("Existing outer-PCR tails changed; review their explicit settings before proposing primers.".into());
     }
-    let (inputs, base, _) = model::inputs_request(draft, workspace)?;
+    let (inputs, base, _) = draft.inputs_request(workspace)?;
     let original = base
         .fragments
         .get(index)
@@ -667,10 +666,9 @@ mod tests {
         })
     }
     fn intent(draft: &Draft, workspace: Option<&Workspace>) -> IntendedReference {
-        let (inputs, base, _) = model::inputs_request(draft, workspace).unwrap();
+        let (inputs, base, _) = draft.inputs_request(workspace).unwrap();
         IntendedReference::Edits(
-            assembly_edit_intent::build(&inputs, &model::edit_request(draft, base), workspace)
-                .unwrap(),
+            assembly_edit_intent::build(&inputs, &draft.edit_request(base), workspace).unwrap(),
         )
     }
     fn options(draft: &Draft) -> native::Options {
@@ -1446,7 +1444,7 @@ mod tests {
             after.slots[1].captured.as_ref().unwrap().source.binding,
             selection.event
         );
-        let (inputs, _, _) = model::inputs_request(&after, Some(&commit.workspace)).unwrap();
+        let (inputs, _, _) = after.inputs_request(Some(&commit.workspace)).unwrap();
         let (_, fragments) = crate::cloning::preparation::cloning_preparations::prepared_rows(
             &after.methods,
             inputs.len(),

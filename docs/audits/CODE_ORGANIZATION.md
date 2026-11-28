@@ -4,6 +4,12 @@
 
 ## Current execution checklist
 
+The [current refactor plan](REFACTOR_PLAN.md) refreshes the remaining-work queue
+from three parallel reviews of the current source. Its measurements and explicit
+ownership decisions supersede earlier “current” counts below. The historical
+implementation and verification records remain scoped to their source checkpoints.
+
+
 The [working-tree ownership follow-up](organization-followup-2026-11-28.md)
 records the parallel audit and follow-up source implementation. Worker domain
 execution, material previews, restoration owners, natural methods and shared

@@ -254,7 +254,7 @@ pub fn capture<I: IntendedEdit + ?Sized>(
     }
     let roles = draft.methods.role_ids(1)?;
     let role = &roles[0];
-    let (inputs, base, _) = crate::assembly::draft::model::inputs_request(draft, workspace)?;
+    let (inputs, base, _) = draft.inputs_request(workspace)?;
     let base = assembly_substitution_intent::Request {
         base,
         junction_edits: draft.junction_edits.clone(),
@@ -1255,11 +1255,10 @@ mod tests {
             );
             draft.slots[0].material_origin = draft.methods.rows[0].run_origin.clone();
             draft.sync_rows();
-            let (inputs, base_request, _) =
-                crate::assembly::draft::model::inputs_request(&draft, Some(&reopened)).unwrap();
+            let (inputs, base_request, _) = draft.inputs_request(Some(&reopened)).unwrap();
             let intent = assembly_edit_intent::build(
                 &inputs,
-                &crate::assembly::draft::model::edit_request(&draft, base_request),
+                &draft.edit_request(base_request),
                 Some(&reopened),
             )
             .unwrap();

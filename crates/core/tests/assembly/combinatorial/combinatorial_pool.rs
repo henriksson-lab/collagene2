@@ -286,13 +286,13 @@ fn bounded_shapes_and_whole_source_chemistry_are_explicit() {
         unreachable!()
     };
     options.circular = false;
-    assert!(design::validate_construct(&d, &row).is_err());
+    assert!(d.validate_construct(&row).is_err());
     d = original.clone();
     let Method::GoldenGatePool { substrates, .. } = &mut d.method else {
         unreachable!()
     };
     substrates[0].bin_id = "foreign-bin".into();
-    assert!(design::validate_construct(&d, &row).is_err());
+    assert!(d.validate_construct(&row).is_err());
     d = original;
     d.bins[0].choices[0].treatment = Some(collagene_core::chemistry::EndTreatment::Phosphorylate);
     assert!(design::resolve_pool(&d, &row, &w).is_err());

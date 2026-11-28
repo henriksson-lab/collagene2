@@ -93,7 +93,7 @@ fn construct() -> SelectedConstruct {
 #[test]
 fn cartesian_rows_are_choices_not_reaction_products() {
     let (_, d) = fixture();
-    let page = design::matrix_page(&d, 0, 4).unwrap();
+    let page = d.matrix_page(0, 4).unwrap();
     assert_eq!(page.total, 4);
     let pairs = page
         .combinations
@@ -114,13 +114,13 @@ fn cartesian_rows_are_choices_not_reaction_products() {
             vec!["backbone-b", "insert-d"]
         ]
     );
-    let partial = design::matrix_page(&d, 2, 1).unwrap();
+    let partial = d.matrix_page(2, 1).unwrap();
     assert_eq!(partial.combinations[0].id, page.combinations[2].id);
     let mut renamed = d.clone();
     renamed.name = "Renamed library".into();
     renamed.bins[0].choices[0].label = "Display rename".into();
     assert_eq!(
-        design::matrix_page(&renamed, 0, 1).unwrap().combinations[0].id,
+        renamed.matrix_page(0, 1).unwrap().combinations[0].id,
         page.combinations[0].id
     );
 }
@@ -244,10 +244,11 @@ fn wrong_event_owner_and_duplicate_ids_are_rejected() {
     let mut duplicate_row = row.clone();
     duplicate_row.id = "different-row-id".into();
     assert!(
-        design::validate_matrix(&SelectedMatrix {
+        SelectedMatrix {
             design: d,
             constructs: vec![row, duplicate_row]
-        })
+        }
+        .validate()
         .is_ok()
     );
 }

@@ -1,6 +1,6 @@
 //! Shared conversion of editable preparation rows to existing typed recipes.
-use crate::cloning::preparation::cloning_methods_model::MethodsState;
 use crate::cloning::preparation::cloning_methods_model::OverlapPreparation;
+use crate::cloning::preparation::cloning_methods_model::{MethodsState, Mode};
 use collagene_core::{planning::plan::PlanInput, sequence::analysis::Primer};
 use collagene_model::Molecule;
 
@@ -1166,4 +1166,136 @@ mod source_generation_tests {
         assert_eq!(after.unknown_eligible, 0);
         assert_eq!(report.products[1].sequence.as_str(), "CAGTGATCGTACGTAC");
     }
+}
+
+pub(crate) fn overlap_request(
+    state: &MethodsState,
+    inputs: Vec<Molecule>,
+    target: &Molecule,
+) -> Result<
+    (
+        Vec<PlanInput>,
+        collagene_core::cloning::assembly::recipe::Recipe,
+    ),
+    String,
+> {
+    use collagene_core::cloning::assembly::recipe::Recipe;
+    state.validate_processing_selection()?;
+    let (overlaps, options) = state.profile()?;
+    let (ids, fragments) = prepared_rows(state, inputs.len())?;
+    let recipe = Recipe {
+        name: format!("Profiled overlap assembly to {}", target.name),
+        fragments,
+        overlaps,
+        circular: state.circular,
+        options,
+    };
+    let borrowed = ids
+        .iter()
+        .zip(&inputs)
+        .map(|(id, m)| (id.as_str(), m))
+        .collect::<Vec<_>>();
+    if let Some(form) = state.annealing.as_ref().filter(|form| form.enabled) {
+        let policy = form.policy(
+            recipe.overlaps.clone(),
+            recipe.circular,
+            recipe.fragments.len(),
+        )?;
+        collagene_core::cloning::assembly::recipe::annealing_source_preflight(
+            &borrowed, target, &recipe, &policy,
+        )
+        .map_err(|e| e.to_string())?;
+    } else if let Some(form) = state.homology.as_ref().filter(|form| form.enabled) {
+        let policy = form.policy(
+            recipe.overlaps.clone(),
+            recipe.circular,
+            recipe.fragments.len(),
+        )?;
+        collagene_core::cloning::assembly::recipe::homology_source_preflight(
+            &borrowed, target, &recipe, &policy,
+        )
+        .map_err(|e| e.to_string())?;
+    } else {
+        collagene_core::cloning::assembly::recipe::source_preflight(&borrowed, target, &recipe)
+            .map_err(|e| e.to_string())?;
+    }
+    let bound = ids
+        .into_iter()
+        .zip(inputs)
+        .map(|(id, molecule)| PlanInput {
+            revision: molecule.revision(),
+            id,
+            molecule,
+        })
+        .collect();
+    Ok((bound, recipe))
+}
+
+pub(crate) fn ligation_request(
+    state: &MethodsState,
+    inputs: Vec<Molecule>,
+    target: &Molecule,
+) -> Result<
+    (
+        Vec<PlanInput>,
+        collagene_core::cloning::ligation::recipe::Recipe,
+    ),
+    String,
+> {
+    use collagene_core::cloning::ligation::recipe::{Fragment, Recipe};
+    let (ids, fragments) = prepared_rows(state, inputs.len())?;
+    if state.mode == Mode::GoldenGate {
+        let geometry = state.golden_gate.enzyme.profile();
+        for fragment in &fragments {
+            let selection=collagene_core::cloning::assembly::recipe::preparation_catalog_selection(&fragment.preparation)
+                .ok_or("Golden Gate rows require a pinned Type IIS catalog digest, including an explicit exact or intentional-mismatch PCR followed by digestion.")?;
+            if selection.enzymes.len() != 1
+                || !selection.enzymes.iter().all(|entry| {
+                    entry.enzyme.recognition == geometry.recognition
+                        && entry.enzyme.top_cut == geometry.top_cut
+                        && entry.enzyme.bottom_cut == geometry.bottom_cut
+                })
+            {
+                return Err("A row's pinned enzyme geometry differs from the chosen Type IIS enzyme. Choose the matching existing digest fragment or apply fresh PCR-site proposals.".into());
+            }
+        }
+    }
+    let recipe = Recipe {
+        name: format!(
+            "{} to {}",
+            if state.mode == Mode::GoldenGate {
+                "Ordered Type IIS restriction/ligation"
+            } else {
+                "Ordered ligation"
+            },
+            target.name
+        ),
+        fragments: fragments
+            .into_iter()
+            .zip(&state.rows)
+            .map(|(source, row)| Fragment {
+                source,
+                treatment: row.treatment.operation(),
+            })
+            .collect(),
+        circular: state.circular,
+        allow_nicked: state.allow_nicked,
+    };
+    let borrowed = ids
+        .iter()
+        .zip(&inputs)
+        .map(|(id, m)| (id.as_str(), m))
+        .collect::<Vec<_>>();
+    collagene_core::cloning::ligation::recipe::source_preflight(&borrowed, target, &recipe)
+        .map_err(|e| e.to_string())?;
+    let bound = ids
+        .into_iter()
+        .zip(inputs)
+        .map(|(id, molecule)| PlanInput {
+            revision: molecule.revision(),
+            id,
+            molecule,
+        })
+        .collect();
+    Ok((bound, recipe))
 }

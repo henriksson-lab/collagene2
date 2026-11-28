@@ -40,3 +40,8 @@ bytes, immutable events and the recipes needed for fresh material reconstruction
 Qualifier keys preserve explicit custom fields, including positional primer keys
 such as `5prime_tail`. ASCII digits do not introduce a field delimiter; whitespace,
 slashes, quotes and statement delimiters remain rejected.
+
+Coordinate-bearing qualifier projection and manual annotation-edit guards use
+the [bounded qualifier profile](COORDINATE_QUALIFIERS.md). Import/export fidelity
+alone does not establish physical material or interpretation of translation
+exceptions.

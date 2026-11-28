@@ -51,7 +51,7 @@ pub struct DigestGeometry {
     #[serde(deserialize_with = "required_option")]
     pub material: Option<MaterialDomain>,
 }
-pub use collagene_core::cloning::assembly::intent::MaterialDomain;
+use collagene_core::cloning::assembly::intent::MaterialDomain;
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Slot {
@@ -1068,6 +1068,369 @@ impl Draft {
         }
         self.version = CURRENT_VERSION;
     }
+
+    /// Pin a fresh private digest selection, retaining its original source and full
+    /// catalog identity. This checks bindings/bounds, not cleavage; the compiled
+    /// CatalogDigest operation must reconstruct the actual fragment in the worker.
+    /// The host must check payload epoch and actual retained source-event identity.
+    /// Error leaves the original draft untouched.
+    pub fn set_digest_fragment(
+        &mut self,
+        fragment: crate::restriction::digest_fragment_model::AssemblyFragment,
+    ) -> Result<(), String> {
+        use collagene_core::cloning::restriction::{
+            catalog as catalog_digest, history as restriction_history,
+        };
+        self.validate()?;
+        if !token(&fragment.source.binding.document_id, 512)
+            || !token(&fragment.source.binding.event_id, 512)
+            || !hex(&fragment.source.binding.revision)
+        {
+            return Err("Invalid original-source event binding".into());
+        }
+        let index = self.active_slot;
+        let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
+        let role = restriction_history::source_role(&fragment.source.binding)
+            .map_err(|e| e.to_string())?;
+        if let Some(origin) = &fragment.origin {
+            if *origin.event() != fragment.source.binding {
+                return Err("Saved material belongs to a different exact source event".into());
+            }
+            collagene_core::material::derivation::digest::digest_inspection_revision(
+                &role,
+                &fragment.molecule,
+                &collagene_core::material::derivation::SourceOrigin::Saved(origin.as_ref().clone()),
+                &fragment.selection,
+                &fragment.options,
+            )
+            .map_err(|e| e.to_string())?;
+        } else {
+            catalog_digest::source_preflight(
+                &catalog,
+                &fragment.selection,
+                &role,
+                &fragment.molecule,
+                &fragment.options,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let n = fragment.molecule.sequence.len();
+        if fragment.source.length != n
+            || fragment.source.name != fragment.molecule.name
+            || fragment.source.topology != fragment.molecule.topology
+            || fragment.source.alphabet != fragment.molecule.sequence.alphabet()
+            || fragment.source.alphabet != Alphabet::Dna
+            || fragment.molecule.revision() != fragment.source.binding.revision
+        {
+            return Err(
+                "Digest original source differs from its captured document revision".into(),
+            );
+        }
+        if fragment.fragment_index >= fragment.options.max_fragments
+            || !hex(&fragment.batch_revision)
+            || collagene_core::material::derivation::digest::digest_inspection_revision(
+                &role,
+                &fragment.molecule,
+                &fragment.origin.as_ref().map_or(
+                    collagene_core::material::derivation::SourceOrigin::OriginalReference,
+                    |origin| {
+                        collagene_core::material::derivation::SourceOrigin::Saved(
+                            origin.as_ref().clone(),
+                        )
+                    },
+                ),
+                &fragment.selection,
+                &fragment.options,
+            )
+            .map_err(|e| e.to_string())?
+                != fragment.batch_revision
+        {
+            return Err("Digest selection/source/options changed; run the digest again".into());
+        }
+        let geometry = DigestGeometry {
+            material: fragment.material_domain.clone(),
+            top_start: fragment.top_start,
+            top_length: fragment.top_length,
+            bottom_start: fragment.bottom_start,
+            bottom_length: fragment.bottom_length,
+        };
+        if geometry.material.is_some() != fragment.origin.is_some() {
+            return Err("Actual source geometry and origin must be pinned together".into());
+        }
+        let selector = digest_selector(
+            &fragment.source,
+            &geometry,
+            if geometry.material.is_some() {
+                false
+            } else {
+                self.methods.rows[index].reverse
+            },
+        )?;
+        let mut borrowed = self
+            .slots
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != index)
+            .filter_map(|(_, slot)| slot.captured.as_ref().map(|c| &c.molecule))
+            .collect::<Vec<_>>();
+        borrowed.push(&fragment.molecule);
+        collagene_model::bounds::model_preflight(&borrowed).map_err(|e| e.to_string())?;
+        let mut bases = 0usize;
+        for source in &borrowed {
+            bases = bases
+                .checked_add(source.sequence.len())
+                .filter(|n| *n <= 8 << 20)
+                .ok_or("Pinned assembly sources exceed8MiB")?;
+        }
+        let display_index = fragment
+            .fragment_index
+            .checked_add(1)
+            .ok_or("Digest fragment index overflow")?;
+        let mut next = self.clone();
+        next.clear_slot_substitutions(index)?;
+        next.slots[index].captured = Some(Arc::new(CapturedSource {
+            source: fragment.source,
+            molecule: fragment.molecule.as_ref().clone(),
+        }));
+        next.slots[index].selector = selector;
+        next.slots[index].material_origin = fragment.origin.clone();
+        next.slots[index].digest_geometry = Some(geometry);
+        next.junction_edits.clear();
+        next.methods.rows[index] = OverlapInput {
+            preparation: OverlapPreparation::CatalogDigest,
+            run_origin: fragment.origin,
+            catalog_selection: Some(fragment.selection),
+            fragment: display_index.to_string(),
+            repair: None,
+            reverse: next.methods.rows[index].reverse,
+            ..Default::default()
+        };
+        next.sync_rows();
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
+
+    /// Shared original-source declarations for review and preparation proposals.
+    /// Both callers use the same borrowed preflights before copying source records.
+    pub(crate) fn inputs_request(
+        &self,
+        workspace: Option<&collagene_core::documents::workspace::Workspace>,
+    ) -> Result<
+        (
+            Vec<PlanInput>,
+            assembly_intent::Request,
+            Vec<Arc<CapturedSource>>,
+        ),
+        String,
+    > {
+        self.validate()?;
+        crate::assembly::draft::assembly_alternatives::require_active_choice_match(self)?;
+        let mut captures = self
+            .slots
+            .iter()
+            .map(|s| {
+                s.captured.clone().ok_or_else(|| {
+                    format!(
+                        "Set the {} fragment before reviewing the intended construct.",
+                        s.label
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let roles = self.methods.role_ids(captures.len())?;
+        let ids = self.methods.all_input_ids()?;
+        for (index, row) in self.methods.rows.iter().enumerate() {
+            if row.preparation == OverlapPreparation::AnnealedOligos {
+                captures.push(self.slots[index].anneal_bottom.clone().ok_or_else(|| {
+                    format!(
+                        "Pin the bottom oligo for {} before reviewing intended DNA.",
+                        self.slots[index].label
+                    )
+                })?);
+            }
+        }
+        collagene_core::material::capsule::material_capsules_preflight(
+            self.slots
+                .iter()
+                .filter_map(|slot| slot.material_origin.as_ref())
+                .map(|origin| match origin.as_ref() {
+                    collagene_core::material::run::MaterialOrigin::Run(c) => {
+                        collagene_core::material::capsule::MaterialOriginRef::Run(c)
+                    }
+                    collagene_core::material::run::MaterialOrigin::Derived(c) => {
+                        collagene_core::material::capsule::MaterialOriginRef::Derived(c)
+                    }
+                }),
+        )
+        .map_err(|e| e.to_string())?;
+        let mut material_bindings = Vec::new();
+        let fragments = self
+            .slots
+            .iter()
+            .enumerate()
+            .map(|(i, slot)| {
+                if let Some(origin) = &slot.material_origin {
+                    material_bindings.push(assembly_intent::MaterialBinding {
+                        input_id: ids[i].clone(),
+                        event: captures[i].source.binding.clone(),
+                        origin: origin.as_ref().clone(),
+                    });
+                } else if matches!(
+                    &slot.selector,
+                    assembly_intent::Selector::MaterialStrandRange { .. }
+                ) {
+                    return Err("Actual strand needs its selected source origin".into());
+                }
+                Ok(assembly_intent::Contribution {
+                    role: roles[i].role.clone(),
+                    input_id: ids[i].clone(),
+                    selector: slot.selector.clone(),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let request = assembly_intent::Request {
+            name: self.name.clone(),
+            circular: self.circular,
+            fragments,
+            material_bindings,
+        };
+        let borrowed = ids
+            .iter()
+            .zip(&captures)
+            .map(|(id, c)| (id.as_str(), &c.molecule))
+            .collect::<Vec<_>>();
+        assembly_intent::preflight(&borrowed, &request, workspace).map_err(|e| e.to_string())?;
+        if !self.junction_edits.is_empty() {
+            assembly_junction_edit::intent_preflight(
+                &borrowed,
+                &request,
+                &self.junction_edits,
+                workspace,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        if !self.substitutions.is_empty() {
+            assembly_substitution_intent::source_preflight(
+                &borrowed,
+                &assembly_substitution_intent::Request {
+                    base: request.clone(),
+                    junction_edits: self.junction_edits.clone(),
+                    substitutions: self.substitutions.clone(),
+                },
+                workspace,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        if !self.edits.is_empty() {
+            assembly_edit_intent::source_preflight(
+                &borrowed,
+                &self.edit_request(request.clone()),
+                workspace,
+            )
+            .map_err(|e| e.to_string())?;
+        }
+        let inputs = ids
+            .into_iter()
+            .zip(&captures)
+            .map(|(id, c)| PlanInput {
+                id,
+                revision: c.source.binding.revision.clone(),
+                molecule: c.molecule.clone(),
+            })
+            .collect();
+        Ok((inputs, request, captures))
+    }
+
+    pub(crate) fn edit_request(
+        &self,
+        base: assembly_intent::Request,
+    ) -> assembly_edit_intent::Request {
+        assembly_edit_intent::Request {
+            base: assembly_substitution_intent::Request {
+                base,
+                junction_edits: self.junction_edits.clone(),
+                substitutions: self.substitutions.clone(),
+            },
+            edits: self.edits.clone(),
+        }
+    }
+
+    pub(crate) fn orient_fragment(&self, index: usize, reverse: bool) -> Result<Draft, String> {
+        let mut next = self.clone();
+        let slot = next
+            .slots
+            .get(index)
+            .ok_or("Choose a source contribution first")?;
+        let selector = if let Some((capture, geometry)) =
+            slot.captured.as_ref().zip(slot.digest_geometry.as_ref())
+        {
+            digest_selector(&capture.source, geometry, reverse)?
+        } else {
+            match &slot.selector {
+                assembly_intent::Selector::ReferenceRange { start, end, .. } => {
+                    assembly_intent::Selector::ReferenceRange {
+                        start: *start,
+                        end: *end,
+                        reverse,
+                    }
+                }
+                assembly_intent::Selector::MaterialStrandRange { .. } => {
+                    return Err(
+                        "Actual strand orientation needs its pinned fragment geometry".into(),
+                    );
+                }
+            }
+        };
+        next.clear_slot_substitutions(index)?;
+        next.slots[index].selector = selector;
+        if matches!(
+            &next.slots[index].selector,
+            assembly_intent::Selector::ReferenceRange { .. }
+        ) {
+            next.methods.rows[index].reverse = reverse;
+        }
+        next.junction_edits.clear();
+        next.sync_rows();
+        next.validate()?;
+        Ok(next)
+    }
+
+    pub(crate) fn set_material_origin(
+        &self,
+        index: usize,
+        pin: Option<crate::history::run_origin_model::PinnedOrigin>,
+    ) -> Result<Draft, String> {
+        let slot = self
+            .slots
+            .get(index)
+            .ok_or("The source contribution is unavailable")?;
+        let capture = slot
+            .captured
+            .as_ref()
+            .ok_or("Pin the source contribution first")?;
+        if let Some(pin) = &pin {
+            pin.validate_documentary()?;
+            if pin.event() != &capture.source.binding {
+                return Err("Saved material belongs to another exact source event".into());
+            }
+        }
+        if matches!(
+            &slot.selector,
+            assembly_intent::Selector::MaterialStrandRange { .. }
+        ) && pin != slot.material_origin
+        {
+            return Err(
+                "Select a fresh digest fragment before changing an actual-strand origin".into(),
+            );
+        }
+        let mut next = self.clone();
+        next.slots[index].material_origin = pin.clone();
+        next.methods.rows[index].run_origin = pin;
+        next.sync_rows();
+        next.validate()?;
+        Ok(next)
+    }
 }
 
 #[cfg(test)]
@@ -1145,292 +1508,6 @@ pub(crate) fn digest_selector(
     })
 }
 
-/// Pin a fresh private digest selection, retaining its original source and full
-/// catalog identity. This checks bindings/bounds, not cleavage; the compiled
-/// CatalogDigest operation must reconstruct the actual fragment in the worker.
-/// The host must check payload epoch and actual retained source-event identity.
-/// Error leaves the original draft untouched.
-pub fn set_digest_fragment(
-    draft: &mut Draft,
-    fragment: crate::restriction::digest_fragment_model::AssemblyFragment,
-) -> Result<(), String> {
-    use collagene_core::cloning::restriction::{
-        catalog as catalog_digest, history as restriction_history,
-    };
-    draft.validate()?;
-    if !token(&fragment.source.binding.document_id, 512)
-        || !token(&fragment.source.binding.event_id, 512)
-        || !hex(&fragment.source.binding.revision)
-    {
-        return Err("Invalid original-source event binding".into());
-    }
-    let index = draft.active_slot;
-    let catalog = catalog_digest::builtin_catalog().map_err(|e| e.to_string())?;
-    let role =
-        restriction_history::source_role(&fragment.source.binding).map_err(|e| e.to_string())?;
-    if let Some(origin) = &fragment.origin {
-        if *origin.event() != fragment.source.binding {
-            return Err("Saved material belongs to a different exact source event".into());
-        }
-        collagene_core::material::derivation::digest::digest_inspection_revision(
-            &role,
-            &fragment.molecule,
-            &collagene_core::material::derivation::SourceOrigin::Saved(origin.as_ref().clone()),
-            &fragment.selection,
-            &fragment.options,
-        )
-        .map_err(|e| e.to_string())?;
-    } else {
-        catalog_digest::source_preflight(
-            &catalog,
-            &fragment.selection,
-            &role,
-            &fragment.molecule,
-            &fragment.options,
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    let n = fragment.molecule.sequence.len();
-    if fragment.source.length != n
-        || fragment.source.name != fragment.molecule.name
-        || fragment.source.topology != fragment.molecule.topology
-        || fragment.source.alphabet != fragment.molecule.sequence.alphabet()
-        || fragment.source.alphabet != Alphabet::Dna
-        || fragment.molecule.revision() != fragment.source.binding.revision
-    {
-        return Err("Digest original source differs from its captured document revision".into());
-    }
-    if fragment.fragment_index >= fragment.options.max_fragments
-        || !hex(&fragment.batch_revision)
-        || collagene_core::material::derivation::digest::digest_inspection_revision(
-            &role,
-            &fragment.molecule,
-            &fragment.origin.as_ref().map_or(
-                collagene_core::material::derivation::SourceOrigin::OriginalReference,
-                |origin| {
-                    collagene_core::material::derivation::SourceOrigin::Saved(
-                        origin.as_ref().clone(),
-                    )
-                },
-            ),
-            &fragment.selection,
-            &fragment.options,
-        )
-        .map_err(|e| e.to_string())?
-            != fragment.batch_revision
-    {
-        return Err("Digest selection/source/options changed; run the digest again".into());
-    }
-    let geometry = DigestGeometry {
-        material: fragment.material_domain.clone(),
-        top_start: fragment.top_start,
-        top_length: fragment.top_length,
-        bottom_start: fragment.bottom_start,
-        bottom_length: fragment.bottom_length,
-    };
-    if geometry.material.is_some() != fragment.origin.is_some() {
-        return Err("Actual source geometry and origin must be pinned together".into());
-    }
-    let selector = digest_selector(
-        &fragment.source,
-        &geometry,
-        if geometry.material.is_some() {
-            false
-        } else {
-            draft.methods.rows[index].reverse
-        },
-    )?;
-    let mut borrowed = draft
-        .slots
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| *i != index)
-        .filter_map(|(_, slot)| slot.captured.as_ref().map(|c| &c.molecule))
-        .collect::<Vec<_>>();
-    borrowed.push(&fragment.molecule);
-    collagene_model::bounds::model_preflight(&borrowed).map_err(|e| e.to_string())?;
-    let mut bases = 0usize;
-    for source in &borrowed {
-        bases = bases
-            .checked_add(source.sequence.len())
-            .filter(|n| *n <= 8 << 20)
-            .ok_or("Pinned assembly sources exceed8MiB")?;
-    }
-    let display_index = fragment
-        .fragment_index
-        .checked_add(1)
-        .ok_or("Digest fragment index overflow")?;
-    let mut next = draft.clone();
-    next.clear_slot_substitutions(index)?;
-    next.slots[index].captured = Some(Arc::new(CapturedSource {
-        source: fragment.source,
-        molecule: fragment.molecule.as_ref().clone(),
-    }));
-    next.slots[index].selector = selector;
-    next.slots[index].material_origin = fragment.origin.clone();
-    next.slots[index].digest_geometry = Some(geometry);
-    next.junction_edits.clear();
-    next.methods.rows[index] = OverlapInput {
-        preparation: OverlapPreparation::CatalogDigest,
-        run_origin: fragment.origin,
-        catalog_selection: Some(fragment.selection),
-        fragment: display_index.to_string(),
-        repair: None,
-        reverse: next.methods.rows[index].reverse,
-        ..Default::default()
-    };
-    next.sync_rows();
-    next.validate()?;
-    *draft = next;
-    Ok(())
-}
-
-// Shared original-source declarations for review and preparation proposals.
-// Both callers use the same borrowed preflights before copying source records.
-pub(crate) fn inputs_request(
-    draft: &Draft,
-    workspace: Option<&collagene_core::documents::workspace::Workspace>,
-) -> Result<
-    (
-        Vec<PlanInput>,
-        assembly_intent::Request,
-        Vec<Arc<CapturedSource>>,
-    ),
-    String,
-> {
-    draft.validate()?;
-    crate::assembly::draft::assembly_alternatives::require_active_choice_match(draft)?;
-    let mut captures = draft
-        .slots
-        .iter()
-        .map(|s| {
-            s.captured.clone().ok_or_else(|| {
-                format!(
-                    "Set the {} fragment before reviewing the intended construct.",
-                    s.label
-                )
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let roles = draft.methods.role_ids(captures.len())?;
-    let ids = draft.methods.all_input_ids()?;
-    for (index, row) in draft.methods.rows.iter().enumerate() {
-        if row.preparation == OverlapPreparation::AnnealedOligos {
-            captures.push(draft.slots[index].anneal_bottom.clone().ok_or_else(|| {
-                format!(
-                    "Pin the bottom oligo for {} before reviewing intended DNA.",
-                    draft.slots[index].label
-                )
-            })?);
-        }
-    }
-    collagene_core::material::capsule::material_capsules_preflight(
-        draft
-            .slots
-            .iter()
-            .filter_map(|slot| slot.material_origin.as_ref())
-            .map(|origin| match origin.as_ref() {
-                collagene_core::material::run::MaterialOrigin::Run(c) => {
-                    collagene_core::material::capsule::MaterialOriginRef::Run(c)
-                }
-                collagene_core::material::run::MaterialOrigin::Derived(c) => {
-                    collagene_core::material::capsule::MaterialOriginRef::Derived(c)
-                }
-            }),
-    )
-    .map_err(|e| e.to_string())?;
-    let mut material_bindings = Vec::new();
-    let fragments = draft
-        .slots
-        .iter()
-        .enumerate()
-        .map(|(i, slot)| {
-            if let Some(origin) = &slot.material_origin {
-                material_bindings.push(assembly_intent::MaterialBinding {
-                    input_id: ids[i].clone(),
-                    event: captures[i].source.binding.clone(),
-                    origin: origin.as_ref().clone(),
-                });
-            } else if matches!(
-                &slot.selector,
-                assembly_intent::Selector::MaterialStrandRange { .. }
-            ) {
-                return Err("Actual strand needs its selected source origin".into());
-            }
-            Ok(assembly_intent::Contribution {
-                role: roles[i].role.clone(),
-                input_id: ids[i].clone(),
-                selector: slot.selector.clone(),
-            })
-        })
-        .collect::<Result<Vec<_>, String>>()?;
-    let request = assembly_intent::Request {
-        name: draft.name.clone(),
-        circular: draft.circular,
-        fragments,
-        material_bindings,
-    };
-    let borrowed = ids
-        .iter()
-        .zip(&captures)
-        .map(|(id, c)| (id.as_str(), &c.molecule))
-        .collect::<Vec<_>>();
-    assembly_intent::preflight(&borrowed, &request, workspace).map_err(|e| e.to_string())?;
-    if !draft.junction_edits.is_empty() {
-        assembly_junction_edit::intent_preflight(
-            &borrowed,
-            &request,
-            &draft.junction_edits,
-            workspace,
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    if !draft.substitutions.is_empty() {
-        assembly_substitution_intent::source_preflight(
-            &borrowed,
-            &assembly_substitution_intent::Request {
-                base: request.clone(),
-                junction_edits: draft.junction_edits.clone(),
-                substitutions: draft.substitutions.clone(),
-            },
-            workspace,
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    if !draft.edits.is_empty() {
-        assembly_edit_intent::source_preflight(
-            &borrowed,
-            &edit_request(draft, request.clone()),
-            workspace,
-        )
-        .map_err(|e| e.to_string())?;
-    }
-    let inputs = ids
-        .into_iter()
-        .zip(&captures)
-        .map(|(id, c)| PlanInput {
-            id,
-            revision: c.source.binding.revision.clone(),
-            molecule: c.molecule.clone(),
-        })
-        .collect();
-    Ok((inputs, request, captures))
-}
-
-pub(crate) fn edit_request(
-    draft: &Draft,
-    base: assembly_intent::Request,
-) -> assembly_edit_intent::Request {
-    assembly_edit_intent::Request {
-        base: assembly_substitution_intent::Request {
-            base,
-            junction_edits: draft.junction_edits.clone(),
-            substitutions: draft.substitutions.clone(),
-        },
-        edits: draft.edits.clone(),
-    }
-}
-
 pub(crate) fn selector_label(selector: &assembly_intent::Selector) -> String {
     match selector {
         assembly_intent::Selector::ReferenceRange {
@@ -1456,78 +1533,7 @@ pub(crate) fn selector_label(selector: &assembly_intent::Selector) -> String {
         ),
     }
 }
-pub(crate) fn orient_fragment(draft: &Draft, index: usize, reverse: bool) -> Result<Draft, String> {
-    let mut next = draft.clone();
-    let slot = next
-        .slots
-        .get(index)
-        .ok_or("Choose a source contribution first")?;
-    let selector = if let Some((capture, geometry)) =
-        slot.captured.as_ref().zip(slot.digest_geometry.as_ref())
-    {
-        digest_selector(&capture.source, geometry, reverse)?
-    } else {
-        match &slot.selector {
-            assembly_intent::Selector::ReferenceRange { start, end, .. } => {
-                assembly_intent::Selector::ReferenceRange {
-                    start: *start,
-                    end: *end,
-                    reverse,
-                }
-            }
-            assembly_intent::Selector::MaterialStrandRange { .. } => {
-                return Err("Actual strand orientation needs its pinned fragment geometry".into());
-            }
-        }
-    };
-    next.clear_slot_substitutions(index)?;
-    next.slots[index].selector = selector;
-    if matches!(
-        &next.slots[index].selector,
-        assembly_intent::Selector::ReferenceRange { .. }
-    ) {
-        next.methods.rows[index].reverse = reverse;
-    }
-    next.junction_edits.clear();
-    next.sync_rows();
-    next.validate()?;
-    Ok(next)
-}
-pub(crate) fn set_material_origin(
-    draft: &Draft,
-    index: usize,
-    pin: Option<crate::history::run_origin_model::PinnedOrigin>,
-) -> Result<Draft, String> {
-    let slot = draft
-        .slots
-        .get(index)
-        .ok_or("The source contribution is unavailable")?;
-    let capture = slot
-        .captured
-        .as_ref()
-        .ok_or("Pin the source contribution first")?;
-    if let Some(pin) = &pin {
-        pin.validate_documentary()?;
-        if pin.event() != &capture.source.binding {
-            return Err("Saved material belongs to another exact source event".into());
-        }
-    }
-    if matches!(
-        &slot.selector,
-        assembly_intent::Selector::MaterialStrandRange { .. }
-    ) && pin != slot.material_origin
-    {
-        return Err(
-            "Select a fresh digest fragment before changing an actual-strand origin".into(),
-        );
-    }
-    let mut next = draft.clone();
-    next.slots[index].material_origin = pin.clone();
-    next.methods.rows[index].run_origin = pin;
-    next.sync_rows();
-    next.validate()?;
-    Ok(next)
-}
+
 pub(crate) fn require_reference_selectors(draft: &Draft) -> Result<(), String> {
     if draft.slots.iter().any(|slot| {
         matches!(

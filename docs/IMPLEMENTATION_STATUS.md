@@ -4,19 +4,31 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-The domain refactor is implemented: core scientific owners, native MCP server/
-atomic session storage, and web workspace/feature controllers have cohesive
-module trees. Every directory has at most 16 Rust files and every Rust file is
-below 3,000 lines. The strict layout gate now runs in CI. Native harness builds,
-web/worker WASM checks, executable discovery of all 1,935 integration and 401 web
-unit cases, and 1,034 selected scientific/SDK/model/private tests pass locally.
-The [refactor status](audits/CODE_ORGANIZATION.md) records scope and evidence.
-Cross-platform CI for the preceding `970f97d` checkpoint passed; the newly
-refactored tree still requires its own exact-commit CI. This does not establish
+The fresh [three-part ownership audit and refactor plan](audits/REFACTOR_PLAN.md)
+identified targeted ownership work. Proposal/pool owners, Design/Draft/TreeJob
+methods and canonical import cleanup now pass native/WASM checks and 495 focused
+cases. Current layout covers 1,241 Rust files / 214 directories, maximum 17 direct
+files per directory and largest file 2,869 lines. The
+[implementation record](audits/ownership-implementation-2026-11-28.md) distinguishes
+source comparisons, execution and remaining exact-source CI. Native annotation
+editing and future growth reviews remain open; historical checkpoints below
+retain their original scope.
+
+
+Scientific, MCP and web ownership refactors are implemented with direct caller
+updates and no old-path facades. The layout gate covers 1,234 Rust files with a
+maximum of 17 direct files per directory and no file reaching 3,000 lines at
+`ba76722`. That ownership checkpoint passed native/WASM checks and 1,745 focused
+cases; its scientific CI and desktop packaging passed on Windows/macOS/Linux. See the
+[refactor status](audits/CODE_ORGANIZATION.md) for scope and evidence.
+
+Current source uses worker schema 123, candidate schema 31, draft schema 20,
+scientific engine science-33 and 209 native MCP tools. The current annotation
+qualifier/reference-edit batch passes native/WASM compilation and 2,152 selected
+cases, including 21 new core/SDK fixtures; exact-source CI remains required. This does not establish
 full-product or visual acceptance.
 
-Current source uses worker schema 121, candidate schema 31, draft schema 19
-and 208 native MCP tools. RNA chemistry/declaration review, protein liability
+RNA chemistry/declaration review, protein liability
 screening and imported structure viewing are integrated. Antibody analysis now
 connects conditional human-reference IMGT/Kabat1991/Chothia1997 numbering and
 independently selected IMGT/Kabat1991/canonical-chart Chothia regions through

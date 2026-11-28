@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current source registry has 208 tools, including the five SBOL exchange tools in the integration batch. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current source registry has 209 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -10,6 +10,15 @@ independent target checking and fresh selected-component reconstruction. The
 optional `plan_sources` bridge binds a returned selection to typed plan sources
 without requiring a client to reproduce internal hash recipes.
 [Recombination tool contracts](RECOMBINATION_MCP.md).
+
+`edit_reference_document` applies a typed reference operation to an exact immutable
+document: reverse complement, circular origin rotation, region extraction,
+annotation insertion/replacement/deletion, renaming or reference topology change.
+It uses the same core projection and annotation-edit guards as the editor and
+returns another immutable session document without mutating its source. The
+receipt explicitly withholds physical-material, native-history and verification
+authority. Native sequence edits and annotation-only strand flips retain their
+separate supported profiles; projection does not silently enable them.
 
 Sequence-file exchange uses `import_compat_sequence` for explicit FASTA, GCG
 and original Collagene XML text profiles, and `import_sequence_file` for binary

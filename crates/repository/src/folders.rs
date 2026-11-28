@@ -172,6 +172,95 @@ impl TreeJob {
             issue: self.issue.clone(),
         }
     }
+    fn add_node(&mut self, node: TreeNode) -> TreeResult<()> {
+        if self.nodes.len() >= self.limits.max_nodes {
+            return Err(FolderError::Limit);
+        }
+        if self.nodes.iter().any(|old| old.id() == node.id()) {
+            return Err(FolderError::Protocol);
+        }
+        let depth = match &node {
+            TreeNode::Folder { depth, .. } | TreeNode::Document { depth, .. } => *depth,
+        };
+        if depth > self.limits.max_depth {
+            return Err(FolderError::Limit);
+        }
+        if let TreeNode::Folder { folder, .. } = &node {
+            self.queue.push_back(Cursor {
+                parent: Some(folder.id.clone()),
+                offset: 0,
+                depth,
+            });
+        }
+        self.nodes.push(node);
+        Ok(())
+    }
+    fn scan_step<T: RemoteTransport>(&mut self, transport: &mut T) -> TreeResult<()> {
+        if let Some(cursor) = self.discovery.clone() {
+            let page = browse(self, &cursor, transport)?;
+            self.catalog_generation = Some(page.catalog_generation);
+            self.pages += 1;
+            let TreeRoot::Folder { id, .. } = &self.root else {
+                return Err(FolderError::Invalid("root discovery"));
+            };
+            if let Some(found) = page.entries.iter().find_map(|e| match e {
+                wire::Entry::Folder(f) if &f.id == id => Some(f.clone()),
+                _ => None,
+            }) {
+                self.discovery = None;
+                self.add_node(TreeNode::Folder {
+                    folder: found,
+                    depth: 1,
+                })?;
+                self.phase = TreePhase::Scanning;
+            } else if let Some(offset) = page.next_offset {
+                self.discovery = Some(Cursor { offset, ..cursor });
+            } else {
+                return Err(FolderError::Rejected(wire::ErrorCode::NotFound));
+            }
+            return Ok(());
+        }
+        let Some(cursor) = self.queue.front().cloned() else {
+            self.scan_complete = true;
+            self.phase = TreePhase::Importing;
+            return Ok(());
+        };
+        let page = browse(self, &cursor, transport)?;
+        self.catalog_generation = Some(page.catalog_generation);
+        self.pages += 1;
+        for entry in page.entries.into_vec() {
+            match entry {
+                wire::Entry::Folder(folder) => {
+                    if folder.parent != cursor.parent {
+                        return Err(FolderError::Protocol);
+                    }
+                    self.add_node(TreeNode::Folder {
+                        folder,
+                        depth: cursor.depth + 1,
+                    })?;
+                }
+                wire::Entry::Document(document) => {
+                    if document.folder != cursor.parent {
+                        return Err(FolderError::Protocol);
+                    }
+                    self.add_node(TreeNode::Document {
+                        document,
+                        depth: cursor.depth + 1,
+                    })?;
+                }
+            }
+        }
+        if let Some(offset) = page.next_offset {
+            self.queue.front_mut().ok_or(FolderError::Protocol)?.offset = offset;
+        } else {
+            self.queue.pop_front();
+        }
+        if self.queue.is_empty() {
+            self.scan_complete = true;
+            self.phase = TreePhase::Importing;
+        }
+        Ok(())
+    }
 }
 fn job_key(id: &str) -> TreeResult<durable::CheckpointKey> {
     if id.len() != 37
@@ -292,104 +381,6 @@ fn issue(error: &FolderError) -> TreeIssue {
         )) => TreeIssue::LocalStateChanged,
         _ => TreeIssue::InvalidGraph,
     }
-}
-fn add_node(job: &mut TreeJob, node: TreeNode) -> TreeResult<()> {
-    if job.nodes.len() >= job.limits.max_nodes {
-        return Err(FolderError::Limit);
-    }
-    if job.nodes.iter().any(|old| old.id() == node.id()) {
-        return Err(FolderError::Protocol);
-    }
-    let depth = match &node {
-        TreeNode::Folder { depth, .. } | TreeNode::Document { depth, .. } => *depth,
-    };
-    if depth > job.limits.max_depth {
-        return Err(FolderError::Limit);
-    }
-    if let TreeNode::Folder { folder, .. } = &node {
-        job.queue.push_back(Cursor {
-            parent: Some(folder.id.clone()),
-            offset: 0,
-            depth,
-        });
-    }
-    job.nodes.push(node);
-    Ok(())
-}
-fn scan_step<T: RemoteTransport>(job: &mut TreeJob, transport: &mut T) -> TreeResult<()> {
-    if let Some(cursor) = job.discovery.clone() {
-        let page = browse(job, &cursor, transport)?;
-        job.catalog_generation = Some(page.catalog_generation);
-        job.pages += 1;
-        let TreeRoot::Folder { id, .. } = &job.root else {
-            return Err(FolderError::Invalid("root discovery"));
-        };
-        if let Some(found) = page.entries.iter().find_map(|e| match e {
-            wire::Entry::Folder(f) if &f.id == id => Some(f.clone()),
-            _ => None,
-        }) {
-            job.discovery = None;
-            add_node(
-                job,
-                TreeNode::Folder {
-                    folder: found,
-                    depth: 1,
-                },
-            )?;
-            job.phase = TreePhase::Scanning;
-        } else if let Some(offset) = page.next_offset {
-            job.discovery = Some(Cursor { offset, ..cursor });
-        } else {
-            return Err(FolderError::Rejected(wire::ErrorCode::NotFound));
-        }
-        return Ok(());
-    }
-    let Some(cursor) = job.queue.front().cloned() else {
-        job.scan_complete = true;
-        job.phase = TreePhase::Importing;
-        return Ok(());
-    };
-    let page = browse(job, &cursor, transport)?;
-    job.catalog_generation = Some(page.catalog_generation);
-    job.pages += 1;
-    for entry in page.entries.into_vec() {
-        match entry {
-            wire::Entry::Folder(folder) => {
-                if folder.parent != cursor.parent {
-                    return Err(FolderError::Protocol);
-                }
-                add_node(
-                    job,
-                    TreeNode::Folder {
-                        folder,
-                        depth: cursor.depth + 1,
-                    },
-                )?;
-            }
-            wire::Entry::Document(document) => {
-                if document.folder != cursor.parent {
-                    return Err(FolderError::Protocol);
-                }
-                add_node(
-                    job,
-                    TreeNode::Document {
-                        document,
-                        depth: cursor.depth + 1,
-                    },
-                )?;
-            }
-        }
-    }
-    if let Some(offset) = page.next_offset {
-        job.queue.front_mut().ok_or(FolderError::Protocol)?.offset = offset;
-    } else {
-        job.queue.pop_front();
-    }
-    if job.queue.is_empty() {
-        job.scan_complete = true;
-        job.phase = TreePhase::Importing;
-    }
-    Ok(())
 }
 fn exact_payload<T: RemoteTransport>(
     job: &TreeJob,
@@ -851,7 +842,7 @@ impl Repository {
             }
             job.issue = None;
             if matches!(job.phase, TreePhase::Discovering | TreePhase::Scanning) {
-                if let Err(error) = scan_step(&mut job, transport) {
+                if let Err(error) = job.scan_step(transport) {
                     job.issue = Some(issue(&error));
                     job.phase = match error {
                         FolderError::Unavailable => job.phase,

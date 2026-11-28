@@ -7,6 +7,8 @@ pub(crate) mod cloning_methods;
 pub(crate) mod cloning_methods_model;
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod cloning_preparations;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod diagnostics;
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod end_geometry;
 #[cfg(target_arch = "wasm32")]
@@ -26,4 +28,8 @@ pub(crate) mod pcr_digest_model;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod pcr_digest_view;
 #[cfg(target_arch = "wasm32")]
+pub(crate) mod pool;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod restriction_fields;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod review;

@@ -276,10 +276,38 @@ fn unsupported_and_stale_requests_never_modify_either_document() {
     unsupported.source.features[0]
         .qualifiers
         .push(("transl_except".into(), Some("(pos:2..4,aa:Sec)".into())));
+    let source_before = unsupported.source.clone();
+    let copied = transfer::copy(&RequestCopy {
+        source: unsupported.source.clone(),
+        selection: unsupported.selection.clone(),
+    })
+    .unwrap();
+    assert_eq!(copied.molecule.sequence.as_str(), "CCGG");
+    assert!(copied.molecule.features[0].needs_review);
+    assert!(
+        !copied.molecule.features[0]
+            .qualifiers
+            .iter()
+            .any(|(key, _)| key.eq_ignore_ascii_case("transl_except"))
+    );
+    assert!(
+        copied.molecule.features[0]
+            .qualifiers
+            .iter()
+            .any(|(key, value)| key == "note"
+                && value
+                    .as_deref()
+                    .is_some_and(|text| text.contains("(pos:2..4,aa:Sec)")
+                        && text.contains("source evidence")))
+    );
+    assert_eq!(unsupported.source, source_before);
+    unsupported.source.features[0]
+        .qualifiers
+        .push(("rpt_unit_range".into(), Some("2..4".into())));
     assert!(
         transfer::copy(&RequestCopy {
             source: unsupported.source,
-            selection: unsupported.selection
+            selection: unsupported.selection,
         })
         .is_err()
     );

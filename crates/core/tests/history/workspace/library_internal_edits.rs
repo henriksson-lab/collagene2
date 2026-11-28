@@ -449,7 +449,7 @@ fn source_event_alias_and_declared_literal_limits_refuse_before_preparation() {
         unreachable!()
     };
     edits[0].replacement = "A".repeat(100_001);
-    assert!(library::validate_construct(&d, &row).is_err());
+    assert!(d.validate_construct(&row).is_err());
     assert!(
         batch::Session::begin(
             w,

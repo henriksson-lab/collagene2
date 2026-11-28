@@ -97,10 +97,10 @@ impl Bound {
     ) -> Option<&Arc<collagene_core::material::derivation::digest::DigestPreview>> {
         self.origin.as_ref().map(|_| &self.inspection)
     }
-    fn material_domain(&self) -> Option<crate::assembly::draft::model::MaterialDomain> {
+    fn material_domain(&self) -> Option<collagene_core::cloning::assembly::intent::MaterialDomain> {
         self.origin.as_ref()?;
         let material = self.inspection.source_material.as_ref()?;
-        Some(crate::assembly::draft::model::MaterialDomain {
+        Some(collagene_core::cloning::assembly::intent::MaterialDomain {
             top_length: material.duplex.top_length,
             bottom_start: material.duplex.bottom_start,
             bottom_length: material.duplex.bottom_length,

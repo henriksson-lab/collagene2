@@ -1,11 +1,14 @@
 //! Validated annotation editing and explicit reference-document metadata changes.
-use collagene_model::{Error, Feature, Location, Molecule, Topology};
+use collagene_model::{Error, Feature, Molecule, Topology};
 
 pub fn set_feature(
     molecule: &Molecule,
     index: Option<usize>,
     mut feature: Feature,
 ) -> Result<Molecule, Error> {
+    // Bound both inputs before recursive validation, evidence copies or cloning.
+    collagene_model::bounds::model_preflight(&[molecule])?;
+    collagene_model::bounds::feature_preflight(&[std::slice::from_ref(&feature)])?;
     molecule.validate()?;
     if feature.kind.is_empty()
         || feature.kind.len() > 64
@@ -33,13 +36,32 @@ pub fn set_feature(
             "invalid qualifier key or annotation size limit exceeded".into(),
         ));
     }
-    if index
-        .and_then(|i| molecule.features.get(i))
-        .is_some_and(|old| old.location != feature.location)
-    {
-        feature.qualifiers.retain(|(key, _)| key != "translation");
-        feature.needs_review = true;
+    if let Some(old) = index.and_then(|i| molecule.features.get(i)) {
+        if old.location != feature.location {
+            if old
+                .qualifiers
+                .iter()
+                .chain(&feature.qualifiers)
+                .any(|(key, _)| crate::sequence::annotations::coordinate_qualifier(key))
+            {
+                return Err(Error::Unsupported(
+                    "Changing an annotation location cannot reinterpret coordinate-bearing qualifiers. Remove or review those qualifiers at the current location before relocating the annotation, then explicitly curate the new annotation.".into(),
+                ));
+            }
+            let mut evidence = Vec::new();
+            feature.qualifiers.retain(|(key, value)| {
+                if key.eq_ignore_ascii_case("translation") || key.eq_ignore_ascii_case("codon_start") {
+                    evidence.push(("note".into(), Some(format!(
+                        "Collagene source qualifier /{key}={} retained only as source evidence; recalculate after annotation location review.",
+                        value.as_deref().unwrap_or("(flag)")))));
+                    false
+                } else { true }
+            });
+            feature.qualifiers.extend(evidence);
+            feature.needs_review = true;
+        }
     }
+    collagene_model::bounds::feature_preflight(&[std::slice::from_ref(&feature)])?;
     let mut result = molecule.clone();
     match index {
         Some(index) => {
@@ -50,6 +72,7 @@ pub fn set_feature(
         }
         None => result.features.push(feature),
     }
+    collagene_model::bounds::model_preflight(&[&result])?;
     result.validate()?;
     Ok(result)
 }
@@ -76,11 +99,4 @@ pub fn rename(molecule: &Molecule, name: &str) -> Result<Molecule, Error> {
 /// Reference topology change; does not assert a physical cleavage or covalent ligation.
 pub fn set_reference_topology(molecule: &Molecule, topology: Topology) -> Result<Molecule, Error> {
     crate::sequence::annotations::change_reference_topology(molecule, topology)
-}
-
-pub fn location_text(location: &Location) -> Result<String, Error> {
-    crate::formats::sequence::location_text(location)
-}
-pub fn parse_location(text: &str, length: usize) -> Result<Location, Error> {
-    crate::formats::sequence::parse_location(text, length)
 }

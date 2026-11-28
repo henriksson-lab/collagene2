@@ -316,7 +316,7 @@ fn evaluate_row(
             );
         }
     };
-    let combination = design::combination_key(design, &construct.choices).ok();
+    let combination = design.combination_key(&construct.choices).ok();
     let result = (|| -> Result<RowEvidence, Error> {
         let evaluated = resolved?.evaluate()?;
         let report = evaluated.verification();
@@ -738,7 +738,7 @@ impl Record {
                         .as_ref()
                         .ok_or_else(|| bad("missing recorded design"))?;
                     if row.combination_id.as_ref()
-                        != Some(&design::combination_key(design, &construct.choices)?)
+                        != Some(&design.combination_key(&construct.choices)?)
                     {
                         return Err(bad("recorded combination differs from selected choices"));
                     }

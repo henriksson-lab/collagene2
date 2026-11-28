@@ -1,4 +1,5 @@
 use crate::session::presentation::summary;
+pub mod reference_edit;
 pub mod sbol_tools;
 pub mod sequence_exchange_tools;
 
@@ -231,6 +232,39 @@ pub struct ArtifactRegion {
 }
 #[tool_router(router = sequence_router, vis = "pub(crate)")]
 impl CollageneServer {
+    #[tool(
+        description = "Edit one immutable reference document: reverse-complement, rotate a circular origin, extract a zero-based half-open interval, set/delete an annotation, rename or change reference topology. Uses validated native coordinate/qualifier projection and annotation-edit guards. Publishes a new session-only reference revision; the source stays unchanged. This is reference intent only, never physical cleavage/ligation, recorded workspace ancestry, or verified cloning material. Unsupported coordinate semantics fail rather than silently moving source coordinates."
+    )]
+    pub(crate) async fn edit_reference_document(
+        &self,
+        Parameters(args): Parameters<reference_edit::Request>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let server = self.clone();
+        self.compute(move || {
+            let source = {
+                let store = server.session.store.lock().unwrap();
+                let source = store.document(&args.document)?;
+                collagene_model::bounds::model_preflight(&[source]).map_err(bad)?;
+                source.validate().map_err(bad)?;
+                args.operation.preflight().map_err(bad)?;
+                source.clone()
+            };
+            let operation = args.operation.name();
+            let product = args.operation.apply(&source).map_err(bad)?;
+            collagene_model::bounds::model_preflight(&[&product]).map_err(bad)?;
+            let published = server.session.insert_documents(
+                vec![product],
+                vec!["Reference edit only: no physical product, reusable material origin, native history or current scientific verification is established.".into()],
+            )?;
+            let Some(mut receipt) = published.structured_content else {
+                return Err(ErrorData::internal_error("Missing session document receipt", None));
+            };
+            receipt["source"] = json!(args.document);
+            receipt["operation"] = json!(operation);
+            receipt["reference_only"] = json!(true);
+            output(receipt)
+        }).await
+    }
     #[tool(
         description = "Design a literal source-derived homology editing donor against an independently supplied immutable target. Explicit edit/deletion/replacement/arm/orientation options and an optional exact source-bound guide are independently checked base by base. The target is a noncausal requirement, never donor source DNA. Returns bounded donor/edited-reference previews and full immutable JSON; installs an immutable donor document only when the independent check is consistent, atomically with the artifact. Sequence consistency is not cellular HDR, nuclease activity or editing success. No physical operation or persistent application writes."
     )]

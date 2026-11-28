@@ -852,10 +852,10 @@ mod tests {
             crate::assembly::edit::assembly_substitution_model::declare(&second, 1, "1", "A", None)
                 .unwrap();
         let target = |d: &Draft| {
-            let (inputs, base, _) = model::inputs_request(d, None).unwrap();
+            let (inputs, base, _) = d.inputs_request(None).unwrap();
             collagene_core::cloning::assembly::edit_intent::build(
                 &inputs,
-                &model::edit_request(d, base),
+                &d.edit_request(base),
                 None,
             )
             .unwrap()

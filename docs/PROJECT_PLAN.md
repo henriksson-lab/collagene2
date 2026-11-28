@@ -49,6 +49,18 @@ not remove outstanding features or weaken the final completion requirements.
 
 ## Current execution order — cloning first, 24 November 2026
 
+**Current refactor audit, 28 November:** three parallel reviewers refreshed
+the ownership review against the current working tree. The repository-wide gate
+passes **1,238 Rust files / 212 directories**, at most **17 direct Rust files per
+directory**, and no file at or above **3,000 lines**. This does not close the
+ownership work: finish the prioritized [current refactor plan](audits/REFACTOR_PLAN.md)
+before growing the affected owners. Items 1–4 are implemented and pass native/WASM checks plus 495 focused cases; see the
+[implementation record](audits/ownership-implementation-2026-11-28.md). It replaces the earlier remaining-work queue;
+completed historical moves below are evidence, not work to repeat. No broad
+rewrite or automatic split of every large file is planned. The audit introduces
+no new build, release or browser check cycle.
+
+
 **28 November priority update: the ownership and source-layout refactor is
 implemented and verified locally and in cross-platform CI at `416b26c`; the next
 connected cloning batch proceeds with its own integration checks.** Follow the current
@@ -66,11 +78,12 @@ gates remain separate requirements.
 **Current ownership follow-up:** parallel workers implemented typed worker domain
 execution, complete material-preview owners, narrow restoration owners, natural
 planning/record/library methods and a shared bounded-encoding owner. Native/WASM checks and 1,745 focused cases pass locally;
-exact-source CI remains required. Follow the concrete
-[ownership tracking](audits/organization-followup-2026-11-28.md): proposal/pool UI
-ownership and small tree-job methods remain. Current layout passes across 1,234
-Rust files/212 directories; the largest directory has 17 direct Rust files and
-no file reaches 3,000 lines. The paired-oligo base `ded0067` passed scientific CI
+exact-source CI remains required for that implementation checkpoint. Its
+[ownership tracking](audits/organization-followup-2026-11-28.md) records completed
+moves. The fresh [refactor plan](audits/REFACTOR_PLAN.md) now owns the remaining
+proposal/pool, natural-method, import-facade and growth-review work. Current layout
+passes across 1,241 Rust files/214 directories; the largest directory has 17
+direct Rust files and no file reaches 3,000 lines. The paired-oligo base `ded0067` passed scientific CI
 on Windows/macOS/Linux and desktop packaging. Current-source checks and the
 full existing delivery gates remain required. No superseded internal API or
 second plan representation is retained.
@@ -81,8 +94,9 @@ The GenBank feature codec is locally verified with bounded parsing/writing and
 450 focused cases; its scientific CI identified a numeric primer-qualifier key
 regression now corrected and verified in the original core/MCP cases. Paired-oligo
 library provenance passes native/WASM checks and 529 focused cases;
-coordinate-bearing qualifier projection remains
-a separate gap. Retain exact-source CI gates. See
+coordinate-bearing qualifier projection and guarded native MCP reference editing
+are now implemented and pass native/WASM checks plus 2,152 selected cases. Retain
+exact-source CI gates. See
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
 
 This order supersedes the older milestone order and any format-first expansion.

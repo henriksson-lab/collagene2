@@ -240,7 +240,9 @@ fn typed_row(
             circular: Some(row.edits.circular),
         }),
     };
-    design::validate_construct(catalog, &value).map_err(|e| e.to_string())?;
+    catalog
+        .validate_construct(&value)
+        .map_err(|e| e.to_string())?;
     Ok(value)
 }
 

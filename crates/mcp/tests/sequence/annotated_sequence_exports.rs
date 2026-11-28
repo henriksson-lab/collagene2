@@ -3,8 +3,8 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_mcp::server::CollageneServer;
 use rmcp::{RoleClient, ServiceExt, model::CallToolRequestParams, service::RunningService};
 use serde_json::{Value, json};
-type Client = RunningService<RoleClient, ()>;
-async fn call(c: &Client, name: &str, args: Value) -> Value {
+pub(super) type Client = RunningService<RoleClient, ()>;
+pub(super) async fn call(c: &Client, name: &str, args: Value) -> Value {
     let r = c
         .call_tool(
             CallToolRequestParams::new(name.to_string())
@@ -15,7 +15,7 @@ async fn call(c: &Client, name: &str, args: Value) -> Value {
     assert_ne!(r.is_error, Some(true), "{name}: {:?}", r.content);
     r.structured_content.unwrap()
 }
-async fn reject(c: &Client, name: &str, args: Value) {
+pub(super) async fn reject(c: &Client, name: &str, args: Value) {
     let r = c
         .call_tool(
             CallToolRequestParams::new(name.to_string())
@@ -24,7 +24,7 @@ async fn reject(c: &Client, name: &str, args: Value) {
         .await;
     assert!(r.is_err() || r.unwrap().is_error == Some(true));
 }
-async fn setup() -> (Client, tokio::task::JoinHandle<()>) {
+pub(super) async fn setup() -> (Client, tokio::task::JoinHandle<()>) {
     let (a, b) = tokio::io::duplex(65536);
     let server = tokio::spawn(async move {
         CollageneServer::default()
@@ -37,11 +37,11 @@ async fn setup() -> (Client, tokio::task::JoinHandle<()>) {
     });
     (().serve(b).await.unwrap(), server)
 }
-fn document(result: &Value) -> Value {
+pub(super) fn document(result: &Value) -> Value {
     let d = &result["documents"][0];
     json!({"id":d["id"],"revision":d["revision"]})
 }
-async fn bytes(c: &Client, result: &Value) -> Vec<u8> {
+pub(super) async fn bytes(c: &Client, result: &Value) -> Vec<u8> {
     let chunk = call(
         c,
         "read_artifact",
@@ -51,7 +51,7 @@ async fn bytes(c: &Client, result: &Value) -> Vec<u8> {
     assert_eq!(chunk["done"], true);
     STANDARD.decode(chunk["text"].as_str().unwrap()).unwrap()
 }
-async fn text(c: &Client, result: &Value) -> String {
+pub(super) async fn text(c: &Client, result: &Value) -> String {
     let mut out = String::new();
     let mut start = 0;
     loop {

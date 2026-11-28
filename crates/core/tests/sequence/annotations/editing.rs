@@ -1,3 +1,4 @@
+use collagene_core::formats::sequence::{location_text, parse_location};
 use collagene_core::sequence::editing::*;
 use collagene_model::{Error, Feature, Location, Molecule, Sequence, Topology};
 fn molecule() -> Molecule {
@@ -54,7 +55,23 @@ fn location_changes_clear_stale_translation_and_edits_are_reversible_snapshots()
     replacement.location = Location::range(3, 12);
     let changed = set_feature(&source, Some(0), replacement).unwrap();
     assert!(changed.features[0].needs_review);
-    assert!(changed.features[0].qualifiers.is_empty());
+    assert!(
+        changed.features[0]
+            .qualifiers
+            .iter()
+            .all(|(key, _)| !key.eq_ignore_ascii_case("translation")
+                && !key.eq_ignore_ascii_case("codon_start"))
+    );
+    assert!(
+        changed.features[0]
+            .qualifiers
+            .iter()
+            .any(|(key, value)| key == "note"
+                && value
+                    .as_deref()
+                    .is_some_and(|text| text.contains("/translation=old")
+                        && text.contains("source evidence")))
+    );
     assert_eq!(source.features[0].qualifiers[0].1.as_deref(), Some("old"));
     assert!(delete_feature(&source, 1).is_err());
     assert!(delete_feature(&source, 0).unwrap().features.is_empty());

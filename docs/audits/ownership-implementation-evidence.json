@@ -1,0 +1,290 @@
+{
+  "core_native_methods": [
+    {
+      "owner": "Design",
+      "old": "selected",
+      "new": "selected",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "Design",
+      "old": "combination_key",
+      "new": "combination_key",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "Design",
+      "old": "combination_id",
+      "new": "combination_id",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "Design",
+      "old": "construct_shape",
+      "new": "construct_shape",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "Design",
+      "old": "validate_construct",
+      "new": "validate_construct",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "Design",
+      "old": "matrix_size",
+      "new": "matrix_size",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "Design",
+      "old": "matrix_page",
+      "new": "matrix_page",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "SelectedMatrix",
+      "old": "validate_matrix",
+      "new": "validate",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "TreeJob",
+      "old": "add_node",
+      "new": "add_node",
+      "equivalent_after_receiver_and_call_substitution": true
+    },
+    {
+      "owner": "TreeJob",
+      "old": "scan_step",
+      "new": "scan_step",
+      "equivalent_after_receiver_and_call_substitution": true
+    }
+  ],
+  "draft_methods": {
+    "set_digest_fragment": true,
+    "inputs_request": true,
+    "edit_request": true,
+    "orient_fragment": true,
+    "set_material_origin": true
+  },
+  "preparation_author": {
+    "checks": {
+      "overlap_request_exact_body": true,
+      "ligation_request_exact_body": true,
+      "pool_receipt_settings_evidence_execution_and_rendering_exact": true,
+      "all_original_string_literals_retained": true
+    },
+    "missing_literals": [],
+    "old_source": "/tmp/collagene2-preparation-before.rs",
+    "new_source_lines": {
+      "cloning_methods.rs": 288,
+      "review/mod.rs": 1472,
+      "pool/mod.rs": 711,
+      "diagnostics.rs": 110,
+      "cloning_preparations.rs": 1301
+    },
+    "methods": {
+      "PlannerForm": [
+        "request"
+      ],
+      "Suggestions": [
+        "is_current",
+        "apply"
+      ],
+      "GoldenGateSuggestions": [
+        "is_current",
+        "apply"
+      ],
+      "Evidence": [
+        "is_current"
+      ],
+      "PoolContext": [
+        "admit",
+        "bind_inputs"
+      ]
+    },
+    "preserved_async_pins": [
+      "worker liveness AtomicBool",
+      "generation token",
+      "source revisions",
+      "exact source-event context",
+      "target context and model revision",
+      "workspace epoch",
+      "form/config settings",
+      "receipt ptr identity"
+    ],
+    "note": "Static source accounting supplements parent independent review and integrated native/WASM checks."
+  },
+  "preparation_independent": {
+    "item_comparisons": [
+      {
+        "item": "overlap_request",
+        "tokens_equal": true
+      },
+      {
+        "item": "ligation_request",
+        "tokens_equal": true
+      },
+      {
+        "item": "golden_gate_request",
+        "tokens_equal": true
+      },
+      {
+        "item": "ask",
+        "tokens_equal": true
+      },
+      {
+        "item": "proposed_oligo",
+        "tokens_equal": true
+      },
+      {
+        "item": "MethodEvidence",
+        "tokens_equal": true
+      },
+      {
+        "item": "TailFields",
+        "tokens_equal": true
+      },
+      {
+        "item": "SourceGenerationFields",
+        "tokens_equal": true
+      },
+      {
+        "item": "OverlapFields",
+        "tokens_equal": true
+      },
+      {
+        "item": "DeclaredEndFields",
+        "tokens_equal": true
+      },
+      {
+        "item": "HomologyControls",
+        "tokens_equal": true
+      },
+      {
+        "item": "AnnealingControls",
+        "tokens_equal": true
+      },
+      {
+        "item": "method_status",
+        "tokens_equal": true
+      },
+      {
+        "item": "method_end",
+        "tokens_equal": true
+      },
+      {
+        "item": "method_duplex",
+        "tokens_equal": true
+      },
+      {
+        "item": "MethodDiagnostics",
+        "tokens_equal": true
+      },
+      {
+        "item": "CheckedCleavageDetails",
+        "tokens_equal": true
+      },
+      {
+        "item": "PoolCandidateDetails",
+        "tokens_equal": true
+      },
+      {
+        "item": "cleavage_label",
+        "tokens_equal": true
+      },
+      {
+        "item": "PlannerForm",
+        "tokens_equal": true
+      },
+      {
+        "item": "Suggestions",
+        "tokens_equal": true
+      },
+      {
+        "item": "GoldenGateSuggestions",
+        "tokens_equal": true
+      },
+      {
+        "item": "Evidence",
+        "tokens_equal": true
+      },
+      {
+        "item": "PoolContext",
+        "tokens_equal": true
+      },
+      {
+        "item": "PoolEvidence",
+        "tokens_equal": true
+      },
+      {
+        "item": "TargetContext",
+        "tokens_equal": true
+      },
+      {
+        "item": "PoolReceipt",
+        "tokens_equal": true
+      }
+    ],
+    "additional_exact_comparisons": [
+      "impl PoolReceipt",
+      "impl PoolSettings",
+      "impl TargetContext",
+      "impl Default for PlannerForm",
+      "PreparedPool component",
+      "focus_row callback",
+      "suggest_gate callback",
+      "compute callback",
+      "review callback",
+      "pool_guard callback",
+      "inspect callback",
+      "select callback"
+    ],
+    "exact_after_receiver_or_call_substitution": [
+      "PlannerForm::request",
+      "overlap suggest callback"
+    ],
+    "manual_guard_review": {
+      "GoldenGateSuggestions::is_current": "config, exact sourcecontext, targetcontext, epoch; apply/navigation retains original lack of plannerform/busy/targetsequence assertions",
+      "Suggestions::is_current": "config, plannerform, sourcecontext, targetcontext, targetrevision, epoch; apply separately retains busy rejection; navigation/export do not add busy rejection",
+      "Evidence::is_current": "config, sourcecontext, revisions, targetcontext, targetrevision, epoch; diagnostics retains Arc::ptr_eq; finalize retains Arc identity and separately captured source/target assertions",
+      "PoolContext::admit": "preparation_context, sourcecontext, revisions, targetcontext, targetrevision, epoch; capture guards before reading/binding originals",
+      "proposal_apply_methods": "same ordered validation and clone-then-commit fields; fallible methods return original errors and callbacks setstatus thenreturn before config commit"
+    },
+    "literal_inventory": "every original Rust string literal remains in new owner tree",
+    "concrete_semantic_regressions": [],
+    "scope": "source comparison only; no compiler/tests/browser or production edits"
+  },
+  "integrator_string_literal_comparison": {
+    "base_commit": "ba76722c1040383b100edff4c43e85d71a68fa6b",
+    "exact_multiset_preserved": [
+      "crates/web/src/assembly/draft/model/mod.rs",
+      "crates/core/src/planning/combinatorial/mod.rs",
+      "crates/repository/src/folders.rs"
+    ]
+  },
+  "test_discovery": {
+    "baseline_cases": 2451,
+    "baseline_harnesses": 27,
+    "baseline_names_preserved": true,
+    "selected_repository_cases": 12,
+    "selected_repository_harnesses": 2,
+    "total_cases": 2463,
+    "total_harnesses": 29
+  },
+  "verification": {
+    "native_harness_compilation": "pass",
+    "web_worker_wasm": "pass",
+    "focused_cases": 495,
+    "failures": 0,
+    "by_crate": {
+      "core": 64,
+      "mcp": 18,
+      "web": 407,
+      "repository": 6
+    },
+    "preceding_annotation_cases": 2152,
+    "note": "Execution groups overlap; do not sum them as unique cases. Exact-source CI remains required."
+  }
+}

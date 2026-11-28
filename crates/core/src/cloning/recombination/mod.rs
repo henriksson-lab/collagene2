@@ -5,7 +5,7 @@ use collagene_model::{Error, Feature, Location, Molecule, Topology};
 pub use collagene_recombination as reference;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-pub const ENGINE_VERSION: &str = "recombination-reference-adapter-1";
+pub const ENGINE_VERSION: &str = "recombination-reference-adapter-2";
 pub const RECIPE_KEY: &str = "recombination:unverified_recipe";
 pub const REFERENCE_ONLY_KEY: &str = "recombination:reference_only";
 pub const CHEMISTRY_UNMAPPED_KEY: &str = "source:legacy:chemistry_unmapped";

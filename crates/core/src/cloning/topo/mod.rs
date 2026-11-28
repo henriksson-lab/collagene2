@@ -6,8 +6,8 @@ pub use collagene_topo as physical;
 use physical::projection;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
-pub const ENGINE_VERSION: &str = "topo-source-adapter-2";
-pub const ANNOTATION_ENGINE_VERSION: &str = "topo-annotated-reference-1";
+pub const ENGINE_VERSION: &str = "topo-source-adapter-3";
+pub const ANNOTATION_ENGINE_VERSION: &str = "topo-annotated-reference-2";
 pub const MAX_REPORT_BYTES: usize = 32 * 1024 * 1024;
 pub const RECIPE_KEY: &str = "topo:unverified_generation";
 macro_rules! dto { ($($t:tt)*) => { #[derive(Debug,Clone,Serialize,Deserialize)] #[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))] #[serde(deny_unknown_fields)] $($t)* }; }

@@ -135,7 +135,7 @@ fn independent(
     base: collagene_core::cloning::assembly::intent::Request,
     workspace: Option<&Workspace>,
 ) -> Result<(String, String, assembly_edit_intent::Request), String> {
-    let declared = model::edit_request(draft, base);
+    let declared = draft.edit_request(base);
     let (kind, context) = match intent {
         IntendedReference::Regions(report) => {
             if !draft.edits.is_empty()
@@ -306,7 +306,7 @@ pub fn request(
     if let Some(workspace) = workspace {
         attest(draft, workspace)?;
     }
-    let (inputs, base, _) = model::inputs_request(draft, workspace)?;
+    let (inputs, base, _) = draft.inputs_request(workspace)?;
     let (intent_kind, intent_context_revision, declared) =
         independent(draft, intent, &inputs, base, workspace)?;
     let finishing = draft.methods.overlap_finishing(
@@ -669,14 +669,10 @@ mod tests {
         })
     }
     fn intent(draft: &Draft, workspace: &Workspace) -> IntendedReference {
-        let (inputs, base, _) = model::inputs_request(draft, Some(workspace)).unwrap();
+        let (inputs, base, _) = draft.inputs_request(Some(workspace)).unwrap();
         IntendedReference::Edits(
-            assembly_edit_intent::build(
-                &inputs,
-                &model::edit_request(draft, base),
-                Some(workspace),
-            )
-            .unwrap(),
+            assembly_edit_intent::build(&inputs, &draft.edit_request(base), Some(workspace))
+                .unwrap(),
         )
     }
     fn fixture() -> (Draft, Workspace, Options) {
@@ -1074,8 +1070,8 @@ mod tests {
             },
         );
         draft.sync_rows();
-        let (inputs, base, _) = model::inputs_request(&draft, None).unwrap();
-        let declared = model::edit_request(&draft, base);
+        let (inputs, base, _) = draft.inputs_request(None).unwrap();
+        let declared = draft.edit_request(base);
         let intended = IntendedReference::Substitutions(
             collagene_core::cloning::assembly::substitution_intent::build(
                 &inputs,

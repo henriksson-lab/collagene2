@@ -187,7 +187,7 @@ fn uncertain_and_unmapped_locations_are_never_promoted_to_exact_product_annotati
 }
 
 #[test]
-fn mapping_bounds_ambiguity_and_coordinate_qualifiers_fail_explicitly() {
+fn mapping_bounds_ambiguity_and_unsupported_coordinate_qualifiers_fail_explicitly() {
     let mut source = molecule("AAAACCCC", Topology::Linear);
     source.features.push(feature(Location::range(0, 4)));
     assert!(
@@ -209,7 +209,7 @@ fn mapping_bounds_ambiguity_and_coordinate_qualifiers_fail_explicitly() {
     assert!(project_features(&source, &[segment(0, 4, usize::MAX, false)], 8).is_err());
     source.features[0]
         .qualifiers
-        .push(("transl_except".into(), Some("(pos:1..3,aa:Sec)".into())));
+        .push(("rpt_unit_range".into(), Some("1..3".into())));
     assert!(reverse_complement(&source).is_err());
     assert!(project_features(&source, &[segment(0, 8, 0, false)], 8).is_ok());
     let omitted = project_features(&source, &[segment(4, 8, 0, false)], 4).unwrap();

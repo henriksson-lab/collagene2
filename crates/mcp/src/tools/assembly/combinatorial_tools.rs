@@ -363,7 +363,7 @@ impl CollageneServer {
         let server = self.clone();
         self.compute(move||{
             let frame=server.session.restore_workspace(&args.workspace)?;let declared=args.design.into_native(&frame)?;
-            let page=design::matrix_page(&declared,args.first,args.limit).map_err(bad)?;
+            let page=declared.matrix_page(args.first,args.limit).map_err(bad)?;
             output(json!({"workspace":args.workspace,"design_id":declared.id,"design_name":declared.name,"page":page,
                 "state":"source-bound-declarations","verified":false,"authority":"Exact retained source events and declared native ownership were checked; actual material state/ranges are freshly checked when resolving a construct. Matrix enumeration does not check preparations, junctions, target agreement or experimental success."}))
         }).await

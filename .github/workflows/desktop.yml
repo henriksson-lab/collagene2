@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
+      - ".gitattributes"
       - "Cargo.toml"
       - "Cargo.lock"
       - "Trunk.toml"
@@ -15,6 +16,7 @@ on:
       - "scripts/stage_desktop_packages.py"
   pull_request:
     paths:
+      - ".gitattributes"
       - "Cargo.toml"
       - "Cargo.lock"
       - "Trunk.toml"

@@ -13,7 +13,7 @@
   "compilation": {
     "native": "passed",
     "web_worker_wasm": "passed",
-    "scope_note": "A final File-picker statement ordering change retains the File before clearing browser selection; exact source frontend rebuild follows in publication CI."
+    "scope_note": "Exact-source web compilation also passed in published56d7ffc CI, including the final File-picker statement ordering."
   },
   "execution": {
     "unique_cases": 302,
@@ -2033,5 +2033,15 @@
     "Native MCP inline import is8MiB; larger originals can arrive in bounded native workspace archives.",
     "No browser, application HTTP, live provider, GUI installer or physical experiment acceptance was executed.",
     "MG1655 source acquisition is not evidence of a validated host profile."
-  ]
+  ],
+  "publication_ci": {
+    "commit": "56d7ffc2371c939b057f519a026e23ebd4536163",
+    "scientific_run": 46137879402,
+    "macos": "passed",
+    "linux": "passed",
+    "web": "passed",
+    "windows": "one captured-source byte-count/hash fixture changed by checkout CRLF conversion; strict test retained, captured data now marked -text",
+    "desktop_package_run": 46137879427,
+    "desktop_packages": "passed"
+  }
 }

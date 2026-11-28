@@ -7,7 +7,7 @@ until in-scope implementation is complete.
 
 | Area | Current source evidence | Remaining delivery work |
 | --- | --- | --- |
-| Saved-material digest continuation | Implemented in the current batch: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Worker schema 122; closure engine 4. | Native/WASM compilation and 823 affected regression cases pass; exact-commit cross-platform CI remains required. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
+| Saved-material digest continuation | Implemented in the current batch: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Worker schema 122; closure engine 4. | Native/WASM compilation and 823 affected regression cases pass; cross-platform scientific CI and desktop packaging passed at `83eb6c4`. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
 | Protected codon ranges | `codon_design::ConstrainedPolicy` includes protected ranges and allowed codons; its independent checker reports violations | Current platform/workflow acceptance; the older blanket “protected ranges missing” entry is obsolete |
 | Plate layouts | `protocol_layout` plus web/MCP capture and CSV/HTML/PDF export | Broader workflow acceptance; this is documentary cloning layout, not inventory or instruments |
 | Lab comments/review | Native collaboration store, individual member registry, discussion SDK and shared browser/Tauri remote controls | Exact-source CI, graphical acceptance and deliberate deployment cutover; no automatic offline comment queue |
@@ -60,19 +60,24 @@ encodings.
 
 Coordinate-bearing qualifier projection is also incomplete. Supported local
 `transl_except`/`anticodon` locations need bounded, fully consumed parsing and
-biological-order-preserving remapping. The current gb-io location wrapper ignores
-unconsumed suffixes, so its result alone cannot validate an embedded location.
+biological-order-preserving remapping. The current parser batch replaces dependency prefix parsing with bounded, fully
+consumed descriptors; coordinate-bearing qualifier projection still needs its own
+wrapper grammar and biological mapping checks.
 Native model edits, destination paste and annotation-only strand flips have
 distinct refusal boundaries; changing projection alone must not bypass them.
 
-Location parsing needs an integrity fix before broader qualifier projection:
-gb-io discards unconsumed suffixes and performs signed coordinate arithmetic
-before the core's range checks. A delimiter wrapper alone is insufficient:
-`A(:1..3)junk` can escape it through the dependency's permissive accession token.
-Use checked positive coordinates, explicit node/depth/work limits and complete
-consumption; retain full remote/unresolved source evidence without inventing
-precise local ranges. Address this core GenBank import boundary before the next
-library expansion.
+The current GenBank integrity batch implements independent location parsing and
+formatting, feature-table framing, complete qualifier parsing and safe feature
+output. The rich dependency reader receives no feature data and only validated
+CONTIG placeholders. This removes its prefix-consumption, signed-arithmetic and
+quote/width hazards without fabricating source positions. Native export validates
+field tokens and line widths; original records remain exact. Native/WASM compilation,
+formatting and layout checks pass. Focused verification covers 450 unique cases:
+166 format, 255 sequence, 20 MCP sequence and nine owner-unit cases. The 19 failed
+cases were corrected and rerun, alongside the changed owner checks, without
+repeating unrelated passing cases. All 18 new public integrity cases are
+discoverable. Exact-commit cross-platform CI remains required for this batch.
+[Profile](GENBANK_FORMAT.md).
 
 ## Antibody analysis acceptance scope
 

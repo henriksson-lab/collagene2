@@ -65,8 +65,9 @@ gates remain separate requirements.
 
 Saved-material digest export, named setups and gel handoff are implemented and
 locally verified, including recognition-only scans without physical authority.
-Next fix the GenBank location-parser integrity boundary, then paired-oligo library
-provenance and coordinate-bearing qualifier projection; see
+The GenBank feature codec is locally verified with bounded parsing/writing and
+450 focused cases; retain its exact-commit CI gate while completing paired-oligo
+library provenance and coordinate-bearing qualifier projection. See
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
 
 This order supersedes the older milestone order and any format-first expansion.

@@ -6,6 +6,7 @@ mod format_dispatch;
 mod gcg_sequence;
 mod genbank_rna;
 mod legacy_formats;
+mod location_integrity;
 mod oligo_formats;
 mod oligo_orders;
 mod sequence_export;

@@ -1,11 +1,12 @@
-//! GenBank syntax uses the standalone gb-io parser; molecular semantics remain ours.
+//! Bounded INSDC locations are parsed here; gb-io reads rich headers and qualifiers.
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_model::*;
-use gb_io::seq::{self as gb, After, Before};
+use gb_io::seq as gb;
 use serde::{Deserialize, Serialize};
-use std::borrow::Cow;
 
 pub const MAX_IMPORT_BYTES: usize = 32 * 1024 * 1024;
+const MAX_LOCATION_WORK: usize = 1_000_000;
+const MAX_QUALIFIER_LINES: usize = 1_000_000;
 const DIGEST_PRODUCER_MARKER: &str =
     "Collagene physical product v1: unverified sequence-only evidence";
 const REFERENCE_PRODUCER_MARKER: &str =
@@ -765,164 +766,18 @@ fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportRe
     })
 }
 
-fn check_location_text(text: &str) -> Result<(), Error> {
-    if text.is_empty()
-        || text.len() > 65_536
-        || !text.is_ascii()
-        || text.bytes().any(|b| b.is_ascii_control())
-    {
-        return Err(Error::Format(
-            "invalid or oversized location expression".into(),
-        ));
-    }
-    let mut depth = 0usize;
-    for b in text.bytes() {
-        match b {
-            b'(' => {
-                depth += 1;
-                if depth >= 32 {
-                    return Err(Error::Format("location nesting exceeds 32 levels".into()));
-                }
-            }
-            b')' => {
-                depth = depth
-                    .checked_sub(1)
-                    .ok_or_else(|| Error::Format("unbalanced location parentheses".into()))?;
-            }
-            _ => {}
-        }
-    }
-    if depth != 0 {
-        return Err(Error::Format("unbalanced location parentheses".into()));
-    }
-    Ok(())
-}
 pub fn parse_location(text: &str, length: usize) -> Result<Location, Error> {
-    let text = text.trim();
-    check_location_text(text)?;
-    let raw = gb::Location::from_gb_format(text)
-        .map_err(|e| Error::Format(format!("invalid location: {e}")))?;
-    let location = from_location(&raw, 0)?;
-    location.validate(length)?;
-    Ok(location)
+    location::parse(text, length)
+}
+
+fn feature_kind_valid(kind: &str) -> bool {
+    !kind.is_empty()
+        && kind.len() <= 256
+        && !kind.starts_with('/')
+        && kind.bytes().all(|byte| byte.is_ascii_graphic())
 }
 pub fn location_text(location: &Location) -> Result<String, Error> {
-    location.validate(MAX_SEQUENCE_LEN)?;
-    if let Location::Unresolved(raw) = location {
-        check_location_text(raw)?;
-        return Ok(raw.clone());
-    }
-    Ok(to_location(location)?.to_string())
-}
-
-fn from_location(l: &gb::Location, depth: usize) -> Result<Location, Error> {
-    if depth >= 32 {
-        return Err(Error::Format("location nesting exceeds 32 levels".into()));
-    }
-    Ok(match l {
-        gb::Location::Range((a, before), (b, after)) => Location::Range {
-            start: usize::try_from(*a)
-                .map_err(|_| Error::Coordinates("negative GenBank start".into()))?,
-            end: usize::try_from(*b)
-                .map_err(|_| Error::Coordinates("negative GenBank end".into()))?,
-            before: before.0,
-            after: after.0,
-        },
-        gb::Location::Complement(inner) => {
-            Location::Complement(Box::new(from_location(inner, depth + 1)?))
-        }
-        gb::Location::Join(parts) => Location::Join(
-            parts
-                .iter()
-                .map(|p| from_location(p, depth + 1))
-                .collect::<Result<_, _>>()?,
-        ),
-        gb::Location::Order(parts) => Location::Order(
-            parts
-                .iter()
-                .map(|p| from_location(p, depth + 1))
-                .collect::<Result<_, _>>()?,
-        ),
-        _ => Location::Unresolved(l.to_string()),
-    })
-}
-
-fn to_location(l: &Location) -> Result<gb::Location, Error> {
-    Ok(match l {
-        Location::Range {
-            start,
-            end,
-            before,
-            after,
-        } => gb::Location::Range(
-            ((*start) as i64, Before(*before)),
-            ((*end) as i64, After(*after)),
-        ),
-        Location::Complement(inner) => gb::Location::Complement(Box::new(to_location(inner)?)),
-        Location::Join(parts) => {
-            gb::Location::Join(parts.iter().map(to_location).collect::<Result<_, _>>()?)
-        }
-        Location::Order(parts) => {
-            gb::Location::Order(parts.iter().map(to_location).collect::<Result<_, _>>()?)
-        }
-        Location::Unresolved(raw) => {
-            check_location_text(raw)?;
-            gb::Location::from_gb_format(raw)
-                .map_err(|e| Error::Format(format!("invalid retained location: {e}")))?
-        }
-    })
-}
-
-/// Bound recursive location syntax before invoking the general GenBank parser.
-fn preflight_genbank(text: &str) -> Result<(), Error> {
-    let mut in_features = false;
-    let mut in_location = false;
-    let mut depth = 0usize;
-    let mut features = 0usize;
-    for line in text.lines() {
-        if line.starts_with("FEATURES") {
-            in_features = true;
-            continue;
-        }
-        if line.starts_with("ORIGIN") || line.starts_with("CONTIG") || line.starts_with("//") {
-            in_features = false;
-        }
-        if !in_features {
-            continue;
-        }
-        let Some(key) = line.get(5..21) else {
-            continue;
-        };
-        let Some(value) = line.get(21..) else {
-            continue;
-        };
-        if !key.trim().is_empty() {
-            features += 1;
-            if features > 100_000 {
-                return Err(Error::TooLarge);
-            }
-            in_location = true;
-            depth = 0;
-        }
-        if value.trim_start().starts_with('/') {
-            in_location = false;
-        }
-        if in_location {
-            for c in value.chars() {
-                if c == '(' {
-                    depth += 1;
-                    if depth >= 32 {
-                        return Err(Error::Format(
-                            "GenBank location nesting exceeds 32 levels".into(),
-                        ));
-                    }
-                } else if c == ')' {
-                    depth = depth.saturating_sub(1);
-                }
-            }
-        }
-    }
-    Ok(())
+    location::format(location)
 }
 
 // INSDC nucleotide flat files encode RNA uracil as T. Keep this conversion
@@ -959,28 +814,10 @@ pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
     if text.len() > MAX_IMPORT_BYTES {
         return Err(Error::TooLarge);
     }
-    preflight_genbank(text)?;
-    // Retain each record once. Copying the full multi-record input into every molecule
-    // would multiply memory use and make native exports unnecessarily enormous.
-    let mut raw_records = vec![];
-    let mut start = 0usize;
-    let mut offset = 0usize;
-    for line in text.split_inclusive('\n') {
-        offset += line.len();
-        if line.trim_end() == "//" && line.starts_with("//") {
-            raw_records.push(&text[start..offset]);
-            start = offset;
-            if raw_records.len() > 1000 {
-                return Err(Error::TooLarge);
-            }
-        }
-    }
-    if start < text.len() && !text[start..].trim().is_empty() {
-        raw_records.push(&text[start..]);
-    }
+    let reader = genbank_reader::ReaderInput::new(text)?;
     let mut molecules = vec![];
     let mut warnings = vec![];
-    for (index, record) in gb_io::reader::SeqReader::new(text.as_bytes()).enumerate() {
+    for (index, record) in gb_io::reader::SeqReader::new(reader.text().as_bytes()).enumerate() {
         if index >= 1000 {
             return Err(Error::TooLarge);
         }
@@ -1021,13 +858,9 @@ pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
         } else {
             Topology::Linear
         };
-        mol.original_genbank = Some(
-            raw_records
-                .get(index)
-                .ok_or_else(|| Error::Format("cannot associate original GenBank record".into()))?
-                .to_string(),
-        );
-        if retain_digest_producer_comments(&mut mol, raw_records[index]) {
+        let original = reader.original(index)?;
+        mol.original_genbank = Some(original.to_owned());
+        if retain_digest_producer_comments(&mut mol, original) {
             warnings.push("Sequence-only producer comments were retained as unverified source data; reference provenance and strand/end chemistry were not restored.".into());
         }
         mol.metadata
@@ -1035,32 +868,29 @@ pub fn import_genbank(text: &str) -> Result<ImportReport, Error> {
         if let Some(def) = &record.definition {
             mol.metadata.insert("definition".into(), def.clone());
         }
-        for f in &record.features {
-            let location = from_location(&f.location, 0)?;
-            if has_unresolved(&location) {
+        if !record.features.is_empty() {
+            return Err(Error::Format(
+                "GenBank rich reader unexpectedly parsed feature data".into(),
+            ));
+        }
+        mol.features = reader.features(index, mol.sequence.len())?;
+        for feature in &mol.features {
+            if has_unresolved(&feature.location) {
                 warnings.push(format!(
                     "{}: {} location retained but not interpreted: {}",
-                    mol.name, f.kind, f.location
+                    mol.name,
+                    feature.kind,
+                    location_text(&feature.location)?
                 ));
             }
-            mol.features.push(Feature {
-                kind: f.kind.to_string(),
-                location,
-                qualifiers: f
-                    .qualifiers
-                    .iter()
-                    .map(|(k, v)| import_qualifier(k, v))
-                    .collect(),
-                needs_review: f.qualifiers.iter().any(|(key, value)| {
-                    key == "collagene_review_required" && value.as_deref() == Some("true")
-                }),
-            });
         }
         mol.validate()?;
         molecules.push(mol);
     }
-    if molecules.is_empty() {
-        return Err(Error::Format("no GenBank records".into()));
+    if molecules.is_empty() || molecules.len() != reader.record_count() {
+        return Err(Error::Format(
+            "GenBank record framing differs or no records were found".into(),
+        ));
     }
     warnings.push("Original GenBank text is retained. Headers/qualifiers supported by the parser are exported; unrecognized syntax may require the original attachment.".into());
     Ok(ImportReport {
@@ -1096,25 +926,13 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
         if original.len() > MAX_IMPORT_BYTES {
             return Err(Error::TooLarge);
         }
-        // Bound the existing parser's LOCUS preallocation before rich parsing.
-        if original
-            .lines()
-            .filter(|line| line.starts_with("LOCUS"))
-            .any(|line| {
-                line.split_whitespace()
-                    .nth(2)
-                    .and_then(|n| n.parse::<usize>().ok())
-                    .is_some_and(|n| n > MAX_SEQUENCE_LEN)
-            })
-        {
-            return Err(Error::TooLarge);
-        }
+        let reader = genbank_reader::ReaderInput::new(original)?;
         let index = mol
             .metadata
             .get("source_record_index")
             .and_then(|i| i.parse::<usize>().ok())
             .unwrap_or(0);
-        gb_io::reader::SeqReader::new(original.as_bytes())
+        gb_io::reader::SeqReader::new(reader.text().as_bytes())
             .nth(index)
             .ok_or_else(|| Error::Format("original record index is missing".into()))?
             .map_err(|e| Error::Format(e.to_string()))?
@@ -1234,43 +1052,34 @@ pub fn export_genbank(mol: &Molecule) -> Result<String, Error> {
             record.comments.push(comment);
         }
     }
-    record.features = mol
-        .features
-        .iter()
-        .map(|f| {
-            let mut qualifiers: Vec<_> = f
-                .qualifiers
-                .iter()
-                .filter(|(key, _)| key != "collagene_review_required")
-                .map(|(k, v)| (Cow::Owned(k.clone()), v.clone()))
-                .collect();
-            if f.needs_review {
-                qualifiers.push((
-                    Cow::Borrowed("collagene_review_required"),
-                    Some("true".into()),
-                ));
-                if !qualifiers.iter().any(|(key, value)| {
-                    key == "note"
-                        && value.as_deref() == Some("Collagene: annotation requires review")
-                }) {
-                    qualifiers.push((
-                        Cow::Borrowed("note"),
-                        Some("Collagene: annotation requires review".into()),
-                    ));
-                }
-            }
-            Ok(gb::Feature {
-                kind: Cow::Owned(f.kind.clone()),
-                location: to_location(&f.location)?,
-                qualifiers,
-            })
-        })
-        .collect::<Result<_, Error>>()?;
+    let features = feature_writer::write(mol)?;
+    record.features.clear();
     let mut bytes = vec![];
     record
         .write(&mut bytes)
         .map_err(|e| Error::Format(e.to_string()))?;
-    String::from_utf8(bytes).map_err(|e| Error::Format(e.to_string()))
+    let mut text = String::from_utf8(bytes).map_err(|e| Error::Format(e.to_string()))?;
+    if text
+        .len()
+        .checked_add(features.len())
+        .filter(|n| *n <= MAX_IMPORT_BYTES)
+        .is_none()
+    {
+        return Err(Error::TooLarge);
+    }
+    if !features.is_empty() {
+        let mut offset = 0;
+        let origin = text
+            .split_inclusive('\n')
+            .find_map(|line| {
+                let start = offset;
+                offset += line.len();
+                (line.starts_with("ORIGIN") && line.trim_end() == "ORIGIN").then_some(start)
+            })
+            .ok_or_else(|| Error::Format("GenBank output has no sequence section".into()))?;
+        text.insert_str(origin, &features);
+    }
+    Ok(text)
 }
 
 pub fn export_fasta(mol: &Molecule) -> String {
@@ -1314,3 +1123,8 @@ fn fasta_export_header(mol: &Molecule) -> (String, bool) {
 pub mod embl;
 pub mod export;
 pub mod gcg;
+
+mod feature_qualifiers;
+mod feature_writer;
+mod genbank_reader;
+mod location;

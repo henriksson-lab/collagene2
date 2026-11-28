@@ -54,6 +54,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {
         inputs,
         target,
         Recipe {
+            standard: None,
             name: "three-piece ligation".into(),
             fragments,
             circular: false,

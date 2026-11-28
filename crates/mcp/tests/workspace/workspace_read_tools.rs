@@ -143,6 +143,7 @@ fn archive_fixture(documents: usize) -> Workspace {
     archive.documents[0].undo_events = vec![root_event];
     archive.history.push(event);
     let candidate = Candidate::new(DesignPlan {
+        standard: None,
         name: "Unverified candidate, independently bound target".into(),
         target_revision: changed_revision,
         inputs: vec![PlanInput {
@@ -592,6 +593,166 @@ async fn explicit_fastq_quality_validation_and_oligo_collection_evidence_are_rev
         json!({"collection":stale,"delimiter":"Comma","mode":"SpreadsheetSafe"}),
     )
     .await;
+    client.cancel().await.unwrap();
+    server.await.unwrap();
+}
+
+#[tokio::test]
+async fn declared_standard_survives_session_workspace_and_candidate_with_fresh_advisory_evidence() {
+    use collagene_core::{
+        cloning::assembly::standards::{
+            self,
+            declaration::{Declaration, DeclaredPart, ProfileRef},
+        },
+        verification::evidence::VerificationReport,
+    };
+    let (client, server) = setup().await;
+    let profile = standards::catalogue()
+        .unwrap()
+        .into_iter()
+        .find(|profile| profile.profile_id == collagene_assembly_standards::profile::RFC1000_L0_ID)
+        .unwrap();
+    let source = Molecule::dna("declared source", "ACACAC", Topology::Linear).unwrap();
+    let target = Molecule::dna("independent target", "ACACAC", Topology::Linear).unwrap();
+    let declaration = Declaration {
+        profile: ProfileRef {
+            profile_id: profile.profile_id,
+            profile_identity: profile.profile_identity,
+        },
+        parts: vec![DeclaredPart {
+            role: "promoter-part".into(),
+            input_id: "source".into(),
+            source_revision: source.revision(),
+            start: 0,
+            length: 6,
+            reverse: false,
+            slot: "promoter".into(),
+            body_start: 0,
+            body_end: 6,
+        }],
+        limits: Default::default(),
+    };
+    let plan = DesignPlan {
+        standard: Some(declaration.clone()),
+        name: "Explicit format advisory".into(),
+        target_revision: target.revision(),
+        inputs: vec![PlanInput {
+            id: "source".into(),
+            revision: source.revision(),
+            molecule: source.clone(),
+        }],
+        steps: vec![Operation::Overlap {
+            fragments: vec![Source::Input("source".into())],
+            overlaps: vec![],
+            circular: false,
+        }],
+    };
+    let mut archive =
+        Workspace::from_documents("Declared candidate retention", vec![source, target], 1).unwrap();
+    let candidate = Candidate::new(plan.clone());
+    archive.active_candidate = Some(candidate.plan_revision.clone());
+    archive.candidates.push(candidate);
+    let imported = call(
+        &client,
+        "import_workspace_archive",
+        json!({
+            "data_base64": STANDARD.encode(workspace::save_workspace(&archive).unwrap())
+        }),
+    )
+    .await;
+    let exported = call(
+        &client,
+        "export_workspace_archive",
+        json!({
+            "id": imported["workspace"]["id"], "revision": imported["workspace"]["revision"]
+        }),
+    )
+    .await;
+    let restored =
+        workspace::load_workspace(&artifact(&client, &exported["artifact_id"]).await).unwrap();
+    assert_eq!(restored.candidates[0].plan.standard, plan.standard);
+    assert_eq!(restored.candidates[0].plan_revision, plan.revision());
+    let documents = call(&client, "list_documents", json!({})).await;
+    let reference = |name: &str| {
+        let document = documents["documents"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|document| document["name"] == name)
+            .unwrap();
+        json!({"id": document["id"], "revision": document["revision"]})
+    };
+    let proposal = json!({
+        "name": plan.name, "target": reference("independent target"),
+        "inputs": [{"id":"source", "document":reference("declared source")}],
+        "steps": plan.steps, "standard": declaration,
+    });
+    let mut missing = proposal.clone();
+    missing.as_object_mut().unwrap().remove("standard");
+    reject(&client, "propose_plan", missing).await;
+    let mut excessive = proposal.clone();
+    excessive["standard"]["parts"][0]["role"] = json!("x".repeat(129));
+    reject(&client, "propose_plan", excessive).await;
+    let proposed = call(&client, "propose_plan", proposal.clone()).await;
+    assert_eq!(proposed["plan_revision"], plan.revision());
+    let plan_ref = json!({"plan_revision":proposed["plan_revision"]});
+    let verified = call(&client, "verify_plan", plan_ref.clone()).await;
+    assert_eq!(
+        verified["standard_review"]["assessment"]["state"],
+        "assessed"
+    );
+    assert_eq!(
+        verified["standard_review"]["assessment"]["outcome"],
+        "Conforms"
+    );
+    assert_eq!(
+        verified["standard_review"]["full_evidence_artifact"],
+        verified["artifact_id"]
+    );
+    let full: VerificationReport =
+        serde_json::from_slice(&artifact(&client, &verified["artifact_id"]).await).unwrap();
+    full.validate_standard_for_plan(&plan).unwrap();
+    let review = full.standard_review.as_ref().unwrap();
+    assert_eq!(
+        verified["standard_review"]["review_revision"],
+        review.review_revision
+    );
+    assert_eq!(
+        verified["standard_review"]["charge"],
+        serde_json::to_value(&review.charge).unwrap()
+    );
+    let candidate_artifact = call(&client, "export_candidate", plan_ref).await;
+    let exported_candidate = collagene_core::documents::transfer::load_candidate(
+        &artifact(&client, &candidate_artifact["artifact_id"]).await,
+    )
+    .unwrap();
+    assert_eq!(exported_candidate.plan.standard, plan.standard);
+
+    let mut ordinary = proposal.clone();
+    ordinary["standard"] = Value::Null;
+    let ordinary = call(&client, "propose_plan", ordinary).await;
+    let baseline = call(
+        &client,
+        "verify_plan",
+        json!({"plan_revision":ordinary["plan_revision"]}),
+    )
+    .await;
+    assert!(baseline.get("standard_review").unwrap().is_null());
+    assert_eq!(baseline["status"], verified["status"]);
+    let mut unbound = proposal;
+    unbound["standard"]["parts"][0]["source_revision"] = json!("0".repeat(64));
+    let unbound = call(&client, "propose_plan", unbound).await;
+    let unavailable = call(
+        &client,
+        "verify_plan",
+        json!({"plan_revision":unbound["plan_revision"]}),
+    )
+    .await;
+    assert_eq!(
+        unavailable["standard_review"]["assessment"]["state"],
+        "unavailable"
+    );
+    assert_eq!(unavailable["status"], baseline["status"]);
     client.cancel().await.unwrap();
     server.await.unwrap();
 }

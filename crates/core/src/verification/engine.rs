@@ -185,6 +185,7 @@ fn evaluate_native(
     Option<Result<super::ancestry::ReconstructionTrace, Error>>,
 ) {
     let mut report = VerificationReport {
+        standard_review: None,
         plan_revision: String::new(), target_revision: String::new(),
         engine_version: ENGINE_VERSION.into(), status: Status::Invalid,
         findings: vec![], planned_steps: 0, steps: vec![], exhaustive_alternative_search: false,
@@ -227,6 +228,25 @@ fn evaluate_native(
                 ))
             }),
         );
+    }
+    match crate::cloning::assembly::standards::declaration::assess_declared(
+        plan,
+        &mut scientific.standards,
+    ) {
+        Ok(review) => report.standard_review = review,
+        Err(_) => {
+            report.findings.push(CheckFinding::new(
+                RuleId::Admission,
+                CheckVerdict::Fail,
+                CheckScope::Plan,
+                "Bounded advisory evidence envelope could not be constructed after resource admission; the request was refused before reconstruction.",
+            ));
+            return (
+                report,
+                vec![],
+                capture_ancestry.map(|_| Err(Error::TooLarge)),
+            );
+        }
     }
     report.plan_revision = plan.revision();
     report.target_revision = target.revision();

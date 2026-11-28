@@ -50,6 +50,7 @@ fn fixture() -> (DesignPlan, Molecule) {
     });
     (
         DesignPlan {
+            standard: None,
             name: "Intended path plus alternatives".into(),
             target_revision: target.revision(),
             inputs,

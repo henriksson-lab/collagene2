@@ -59,6 +59,7 @@ pub fn fixture() -> (Workspace, layout::Request) {
             }],
         }),
         rows: vec![RowRequest::Ready(SelectedConstruct {
+            standard: None,
             id: "clone-A".into(),
             name: "Literal AACCTTAA".into(),
             choices: vec![ChoiceSelection {

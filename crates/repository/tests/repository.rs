@@ -496,6 +496,7 @@ fn saved_product_evidence_survives_queue_remote_clone_restart_and_fresh_replay()
         Workspace::from_documents("Scientific origin", vec![source.clone(), target.clone()], 0)
             .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original native PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

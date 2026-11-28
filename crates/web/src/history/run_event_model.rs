@@ -226,6 +226,7 @@ mod tests {
         )
         .unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Literal reference PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

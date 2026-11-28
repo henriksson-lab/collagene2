@@ -154,6 +154,7 @@ fn fixture() -> (Workspace, Value) {
         })
         .collect::<Vec<_>>();
     let good = SelectedConstruct {
+        standard: None,
         id: "..".into(),
         name: "Cloning Ω good".into(),
         choices: choices.clone(),
@@ -165,6 +166,7 @@ fn fixture() -> (Workspace, Value) {
         overrides: None,
     };
     let bad = SelectedConstruct {
+        standard: None,
         id: "wrong".into(),
         name: "Independent wrong target".into(),
         choices,

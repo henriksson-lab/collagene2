@@ -77,6 +77,7 @@ pub fn from_origin_report(
         origin.validate_documentary()?;
         report.validate_documentary()?;
         let candidate = crate::documents::transfer::decode_candidate_shallow(&origin.candidate)?;
+        report.validate_standard_for_plan(&candidate.plan)?;
         let selected = origin.selection.step_index;
         if report.engine_version != crate::verification::ENGINE_VERSION
             || report.plan_revision != candidate.plan_revision
@@ -278,6 +279,7 @@ mod tests {
             });
         }
         let plan = DesignPlan {
+            standard: None,
             name: "Disconnected digest plus selected dependency path".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

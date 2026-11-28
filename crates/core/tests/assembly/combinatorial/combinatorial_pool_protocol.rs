@@ -77,6 +77,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         },
     };
     let row = SelectedConstruct {
+        standard: None,
         id: "selected-circle".into(),
         name: "Independent selected circle".into(),
         choices: vec![ChoiceSelection {

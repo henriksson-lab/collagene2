@@ -129,6 +129,7 @@ fn fixture(profile: Profile) -> (Workspace, Design, SelectedConstruct) {
             .collect(),
     };
     let c = SelectedConstruct {
+        standard: None,
         id: "intended".into(),
         name: "Literal scarred circle".into(),
         choices: vec![
@@ -265,6 +266,7 @@ fn saved_tailed_vector(w: Workspace) -> (Workspace, LibraryMaterialBinding) {
     .contribute(&mut w)
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual saved T-tailed vector".into(),
         target_revision: target.revision(),
         inputs: vec![input(original)],

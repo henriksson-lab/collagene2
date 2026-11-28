@@ -309,3 +309,7 @@ impl Report {
         Ok(())
     }
 }
+
+pub mod declaration;
+#[cfg(test)]
+mod declared_tests;

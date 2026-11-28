@@ -1435,6 +1435,10 @@ fn export_protocol_pdf_checked_inner(
     preflight(plan, target)?;
     let report = checked.report();
     let mut layout = Layout::new(report.status)?;
+    for line in crate::output::standard_review::lines(plan, report)? {
+        layout.paragraph(&line)?;
+    }
+
     layout.paragraph_size(&plan.name, 21.0, GREEN)?;
     layout.paragraph("Computed sequence/chemistry checks. Reaction conditions, quantities and experimental outcome require laboratory review.")?;
     layout.paragraph(&format!(

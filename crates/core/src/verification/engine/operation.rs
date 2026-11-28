@@ -885,7 +885,7 @@ impl StepAttempt {
                         .map(|(role, material)| (role.clone(), material))
                         .collect::<Vec<_>>();
                     let (fresh, native_projections) =
-                        if ancestry.budget().is_some() || scientific.is_qc_job() {
+                        if ancestry.budget().is_some() || scientific.is_shared_job() {
                             crate::cloning::topo::actions::inspect_reconstructed_with_projections(
                                 &inputs,
                                 request,
@@ -1039,7 +1039,7 @@ impl StepAttempt {
                         }
                     };
                     let (reply, native_projections) = if ancestry.budget().is_some()
-                        || scientific.is_qc_job()
+                        || scientific.is_shared_job()
                     {
                         crate::cloning::topo::inspect_reconstructed_task_with_projections(
                             &inputs,
@@ -1825,7 +1825,7 @@ impl StepAttempt {
                         }
                     }
                     rule.set(RuleId::RestrictionCleavage);
-                    let fragments = if scientific.is_qc_job() {
+                    let fragments = if scientific.is_shared_job() {
                         modified_duplex::digest_with_budget(&source, &enzymes, scientific.cleavage)?
                     } else {
                         modified_duplex::digest(&source, &enzymes)?

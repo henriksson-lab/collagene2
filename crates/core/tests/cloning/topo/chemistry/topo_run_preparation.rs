@@ -158,6 +158,7 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
     let target =
         Molecule::dna("Independent literal24bp target", TARGET, Topology::Circular).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Upstream modified template, new PCR, accounted TOPO actions".into(),
         target_revision: target.revision(),
         inputs: inputs
@@ -227,6 +228,7 @@ fn saved(
     };
     let native = inputs[2].molecule.clone();
     let mut originplan = DesignPlan {
+        standard: None,
         name: "Original new PCR material".into(),
         target_revision: native.revision(),
         inputs: vec![PlanInput {
@@ -773,6 +775,7 @@ fn embedded_topo_oligos_keep_literal_domains_tails_and_exact_source_without_orde
     ];
     for operation in operations {
         let plan = DesignPlan {
+            standard: None,
             name: "Declared embedded oligos; no physical success asserted".into(),
             target_revision: target.revision(),
             inputs: inputs
@@ -907,6 +910,7 @@ fn actual_reusable_but_search_incomplete_origin_stays_conditional_through_new_to
         ..Default::default()
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Literal physical homology with finite terminal search".into(),
         target_revision: assembled.revision(),
         inputs: vec![
@@ -1385,6 +1389,7 @@ fn actual_nicked_saved_template_is_not_implicitly_repaired_for_topo_insert_pcr()
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "One actual strand ligated, one nick retained".into(),
         target_revision: target.revision(),
         inputs: vec![

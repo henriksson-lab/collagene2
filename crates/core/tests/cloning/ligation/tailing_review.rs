@@ -51,6 +51,7 @@ fn plan(
         Molecule::dna("independently authored target", target, Topology::Circular).unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "literal source-tail-ligate review".into(),
             target_revision: target.revision(),
             inputs: vec![
@@ -238,6 +239,7 @@ fn imported_physical_metadata_cannot_establish_accessible_tailing_ends() {
             source.revision = source.molecule.revision();
         }
         let p = DesignPlan {
+            standard: None,
             name: "no imported authority".into(),
             target_revision: target.revision(),
             inputs: vec![source],
@@ -260,6 +262,7 @@ fn imported_physical_metadata_cannot_establish_accessible_tailing_ends() {
 fn prior_trusted_linear_ligation_nicks_survive_tailing_with_unchanged_five_prime_state() {
     let target = Molecule::dna("nicked linear target", "ACGCGGTAA", Topology::Linear).unwrap();
     let p = DesignPlan {
+        standard: None,
         name: "retain a known nick".into(),
         target_revision: target.revision(),
         inputs: vec![

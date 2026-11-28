@@ -27,6 +27,7 @@ fn fixture() -> (DesignPlan, Molecule, CatalogSelection) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "pinned NheI cut".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -110,6 +111,7 @@ fn catalog_preparation_in_existing_recipe_jobs_cannot_claim_old_headers() {
     };
     let (plan, target, selection) = fixture();
     let recipe = Recipe {
+        standard: None,
         name: "one cut overlap input".into(),
         fragments: vec![FragmentSpec {
             generation: None,

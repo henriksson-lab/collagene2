@@ -116,7 +116,7 @@ async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plai
         .map(|id| json!({"id":id,"document":reference(&imported,id)}))
         .collect::<Vec<_>>();
     let target = reference(&imported, "independent_target");
-    let proposed=call(&c,"propose_plan",json!({"name":"Directional flap remains graph-only","target":target,"inputs":inputs,"steps":[Operation::Topo{sources,request,selection}]})).await;
+    let proposed=call(&c,"propose_plan",json!({"standard": null,"name":"Directional flap remains graph-only","target":target,"inputs":inputs,"steps":[Operation::Topo{sources,request,selection}]})).await;
     let result = call(
         &c,
         "verify_plan",
@@ -163,7 +163,7 @@ async fn native_topo_zero_product_failure_retains_full_bound_step_graph_and_plai
             .sum::<usize>(),
         4
     );
-    let plain=call(&c,"propose_plan",json!({"name":"Plain identity summary control","target":target,"inputs":[{"id":"vt","document":reference(&imported,"vt")}],"steps":[{"Overlap":{"fragments":[{"Input":"vt"}],"overlaps":[],"circular":false}}]})).await;
+    let plain=call(&c,"propose_plan",json!({"standard": null,"name":"Plain identity summary control","target":target,"inputs":[{"id":"vt","document":reference(&imported,"vt")}],"steps":[{"Overlap":{"fragments":[{"Input":"vt"}],"overlaps":[],"circular":false}}]})).await;
     let plain = call(
         &c,
         "verify_plan",

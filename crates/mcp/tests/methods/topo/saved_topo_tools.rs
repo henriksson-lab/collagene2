@@ -81,6 +81,7 @@ fn saved() -> Commit {
         Molecule::dna("Original literal template", "CACCATGACG", Topology::Linear).unwrap();
     let target = Molecule::dna("Independent first PCR", "CACCATGACG", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Recorded actual PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

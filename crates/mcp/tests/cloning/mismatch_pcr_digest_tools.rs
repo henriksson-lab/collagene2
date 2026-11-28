@@ -78,6 +78,7 @@ fn saved() -> cloning_outputs::Commit {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original exact PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

@@ -115,6 +115,7 @@ fn candidate_schema_one_cannot_claim_new_physical_operations() {
     };
     let target = Molecule::dna("target", "ACGT", Topology::Linear).unwrap();
     let candidate = Candidate::new(DesignPlan {
+        standard: None,
         name: "new physical step".into(),
         target_revision: target.revision(),
         inputs: vec![],

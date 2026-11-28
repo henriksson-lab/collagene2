@@ -15,10 +15,9 @@ pub(super) fn verify(
         let molecule: Option<&Molecule> = Some(target);
         context.admit(molecule)?;
     }
-    let outcome: Result<AnalysisResult, Error> = Ok(AnalysisResult::Verification(
-        crate::verification::engine::verify(&plan, &target),
-    ));
-    Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+    let report = crate::verification::engine::verify(&plan, &target);
+    report.validate_standard_for_plan(&plan)?;
+    Ok(AnalysisResult::Verification(report))
 }
 
 pub(super) fn export_protocol_pdf(

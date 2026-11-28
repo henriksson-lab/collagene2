@@ -21,6 +21,7 @@ fn fixture() -> (Workspace, DesignPlan) {
     let s = Molecule::dna("original", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
     let t = Molecule::dna("independent target", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
     let p = DesignPlan {
+        standard: None,
         name: "literal PCR".into(),
         target_revision: t.revision(),
         inputs: vec![PlanInput {
@@ -321,6 +322,7 @@ fn ordinary_capture_does_not_apply_the_optional_oligo_order_length_profile() {
     let source = Molecule::dna("long domains", &dna, Topology::Linear).unwrap();
     let target = Molecule::dna("independent 402nt target", &dna, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "long exact primers".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

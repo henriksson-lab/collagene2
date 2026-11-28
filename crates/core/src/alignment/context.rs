@@ -8,7 +8,7 @@ use std::io;
 pub const PAGE_COLUMNS: usize = 600;
 const MAX_CDS_POSITIONS: usize = 1_500_000;
 const MAX_TRANSLATION_WORK: usize = 64_000_000;
-const CONTRACT: &str = "pairwise-aligned-source-context-1";
+const CONTRACT: &str = "pairwise-aligned-source-context-2";
 const MAX_BYTES: usize = 32 * 1024 * 1024;
 fn bad(message: &str) -> Error {
     Error::Format(format!("Pairwise context: {message}"))
@@ -675,6 +675,18 @@ mod tests {
             query_length: 12,
             options,
             comparison: MoleculeComparison {
+                evaluated_cells: alignment.search.evaluated_cells,
+                candidate_evidence: vec![alignment::grid::CandidateEvidence {
+                    reference_origin: 9,
+                    query_reversed: true,
+                    score: Some(alignment.score),
+                    search: Some(alignment.search.clone()),
+                    disposition: if alignment.search.unrestricted_optimum_proven {
+                        alignment::grid::CandidateDisposition::CertifiedOwnOptimum
+                    } else {
+                        alignment::grid::CandidateDisposition::Limited
+                    },
+                }],
                 alignment,
                 reference_revision: r.revision(),
                 query_revision: q.revision(),

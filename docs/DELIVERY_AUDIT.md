@@ -104,8 +104,10 @@ change is recorded separately from compilation. [Current evidence](audits/clonin
 | 2 | F25 bounded CRISPR extensions | The current source integrates bounded full-input DNA/RNA bulges, five primary-source nuclease presets, explicit design/screening PAM policies and retained path columns through core/worker/web/MCP; the shared verification below passes. Supplied variants and appropriately licensed empirical scoring remain; deferred large-reference/BAM work does not gain priority. [Research](audits/crispr-extensions-current.md). |
 | 1 | F21 restriction reaction conditions | Exact choices, joint unit-assay assessment/suggestions, worker/MCP/UI and named setup retention are implemented. Current source adds plan/protocol and native-ancestry retention with fresh source/material binding; native/WASM checks and 86 focused cases pass. The current parallel batch adds eight cited host presets and four further formulations, in the checked batch. Hosts retain exact catalogue/source pins and leave chemical calls explicit. Broader formulations and appropriate condition-specific star evidence remain. Target-free PCR/digest inspection states its geometry-only scope. [Reaction workflow](CLONING_REACTION_CONDITIONS.md) · [Preset/condition research](audits/restriction-source-presets-current.md). |
 | 3 | F34 antibody competitor coverage | User-confirmed scope: map Benchling and Geneious Biologics GUI/workflows and actual supported analysis, schemes, species/chains, liabilities and exports. Current source adds pinned mouse C57BL/6 IGH-only IMGT/IMGT references, explicit species/locus controls, simultaneous conditional interval tracks and training/omission diagnostics; the shared verification below passes. Broader chain/species/scheme coverage and independent residue-level calibration remain. |
-| 4 | F36 construct QC | CDS/reference/register paths are integrated. Current source adds structural element chains and literal copy requirements through the same UI/MCP owner. The current source adds a pinned literal initiation-context comparison and bounded canonical ORF enumeration with explicit annotation coverage; the shared verification below passes. Causal assembly-junction and sourced vector-class checks remain. Preserve individual evidence and indeterminate results. |
-| 4 | F37 assembly standards | Scoped RFC10 and RFC1000 Level-0 profiles use the same independent grammar engine. Admit other toolkit data from appropriate primary/licensed sources, then connect multi-part grammar hints to the assembly wizard and retained protocols. |
+| 4 | F36 construct QC | CDS/reference/register paths are integrated. Current source adds structural element chains and literal copy requirements through the same UI/MCP owner. The current source adds a pinned literal initiation-context comparison and bounded canonical ORF enumeration with explicit annotation coverage; the shared verification below passes. Native edit/assembly ancestry, causal junction checks and scoped sourced vector-class checks are integrated in checkpoint `190ae08`, with native/WASM checks and **2,934 distinct** effective selected cases. Preserve individual evidence and indeterminate results; broader biological calibration remains outside that evidence. |
+| 4 | F37 assembly standards | Scoped RFC10, RFC1000 Level-0 and original MoClo 2011 profiles use one independent grammar engine. Current source connects exact-role declarations, multi-part review/hints and retained HTML/PDF advice to the wizard. The combined native/WASM checks and 2,959 effective selected cases pass; broader licensed toolkit data and genuine prepared-part coordinate projection remain. Advice does not establish full-standard or physical compliance. |
+| 4 | F20 screening strategy | Native named intended/decoy mixtures, exact digest/PCR hypotheses, ideal size witnesses and bounded panel search are connected through binary worker, MCP and web controls. Native/WASM checks and the 23 screening-specific cases pass within the [shared execution record](audits/connected-design-current-integration.json). No success probability, measured gel resolution or intensity claim. |
+| 4 | F28/F17 design versus supplied consensus | Current source replaces rectangular affine storage with one sparse row-grid recurrence and typed adaptive/global search evidence. Native/WASM checks and independent literal/oracle fixtures pass within the shared execution record. Explicit design/consensus roles, retained supplied-evidence semantics and conditional CDS consequences remain subsequent work; no raw-read pipeline or BAM/BAI expansion. |
 | 4 | F38 collection binding | Bounded ungapped suffix scoring, both strands, circular coordinates, per-oligo completion and supported perfect-duplex Tm are integrated. The current parallel source adds independently implemented, licensed single internal DNA-mismatch parameter replacement and the shared sodium/equal-concentration solver; the shared verification below passes. Ambiguous, multiple, near-end or self-associating unsupported footprints retain unavailable Tm. No PCR-success inference. |
 | 5 | F39–F41 and reviewed queue extensions | The current verifier/IVT/base-editor/MoClo batch passes native/WASM checks and 1,860 unique selected cases ([execution evidence](audits/verifier-and-design-current-integration.json)); it implements typed cited findings, indexed outcomes, independent branches and shared exact-PCR work; see the [concrete contract batch](audits/verifier-next-contract-current.md). Then deliver the admitted IVT/editor rules and ranked extensions in the current plan. Preserve existing exclusions and the pending genetic-barcode scope decision. [Implementation partition](PROJECT_PLAN.md#implementation-partition-of-the-expanded-feature-queue). |
 
@@ -381,12 +383,24 @@ reference foundation are outside this proof.
 
 ## Published checkpoint CI and current parallel source
 
-Checkpoint `39d70f4` has failed scientific CI and desktop packaging. Two PDF
-assertions use obsolete verifier prose; their current-source corrections preserve
-typed target-check assertions. Frontend packaging reports an asset-size rejection;
-the previous diagnostic cannot establish the exact asset or observed size. Source
-now retains the size caps, adds precise diagnostics, and uses a frontend-only
-lightly optimized development-derived profile. Current-source native/WASM and selected PDF/packager checks pass; optimized frontend/package success remains unverified. The [package inventory](audits/desktop-packages-current.json)
-keeps the last successful `c58c95c` artifacts separate from these later failures.
+Published checkpoint `190ae08e7842322adbfae9d887d76dfcaf319bae` passes
+[Check run 46178350510](https://github.com/henriksson-lab/collagene2/actions/runs/46178350510),
+including scientific jobs on Windows/macOS/Linux and the web job. The two stale
+PDF prose assertions from `39d70f4` were corrected while preserving typed target
+checks. Desktop packaging's fresh offline frontend and all three platform package jobs
+pass at that same head. The [current package inventory](audits/desktop-packages-current.json)
+records artifact IDs, byte sizes and SHA256 digests for the Windows portable
+executable, macOS installer/app archive and Linux Debian package. This is CI
+artifact evidence, not installed or graphical acceptance.
+These CI results do not verify the uncommitted F20/F28/F37 integration source.
 
 Vector-class QC, IVT linearization selection and native causal/edit ancestry are integrated. Native/WASM checks and **2,934 distinct selected cases** pass across initial and affected corrective executions. [Exact scope and corrections](audits/causal-history-current-integration.json) retain original failures and distinguish source stages; this is not a claim that every case ran on the final binary. GUI/platform/provider acceptance and the broader feature goal remain open.
+
+
+The connected screening/affine-alignment/standard-workflow batch passes selected
+native/WASM checks and **2,959 distinct effective cases**, including the actual
+workspace-codec declaration fix and affected SDK round trips.
+[Case/source stages and original failures](audits/connected-design-current-integration.json)
+distinguish earlier passing binaries from targeted correction runs. The next
+design/consensus semantic owner and adapters are isolated, unregistered source;
+they are excluded from this verification and remain feature work.

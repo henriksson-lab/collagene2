@@ -81,6 +81,7 @@ fn fixture() -> (Workspace, String) {
         .into_iter()
         .map(|id| {
             batch::RowRequest::Ready(SelectedConstruct {
+                standard: None,
                 id: id.into(),
                 name: format!("Construct {id}"),
                 choices: vec![

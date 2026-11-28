@@ -419,6 +419,7 @@ fn PreparedPool(
                     })
                     .collect();
                 let request = collagene_core::cloning::golden_gate::reaction::Request {
+                    standard: config.standard_declaration()?,
                     name: "Declared Golden Gate reaction".into(),
                     rows,
                     options: pool_options,

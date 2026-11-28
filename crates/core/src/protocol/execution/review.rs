@@ -10,16 +10,27 @@ pub(super) fn align(
     query: Molecule,
     options: crate::alignment::AlignmentOptions,
 ) -> Result<AnalysisResult, Error> {
-    {
-        let molecule = &molecule;
-
-        let molecule: Option<&Molecule> = Some(molecule);
-        context.admit(molecule)?;
+    let expected = crate::alignment::review::revision(
+        &molecule,
+        &query,
+        &crate::alignment::review::Options::Stored(options),
+    )?;
+    if expected != *context.revision {
+        return Err(Error::Format(
+            "Pairwise alignment sources/settings context changed".into(),
+        ));
     }
-    let outcome: Result<AnalysisResult, Error> = query
-        .validate()
-        .and_then(|_| crate::alignment::align(&molecule.sequence, &query.sequence, &options))
-        .map(AnalysisResult::Alignment);
+    context.admit(None)?;
+    let outcome = (|| -> Result<AnalysisResult, Error> {
+        let report = crate::alignment::align(&molecule.sequence, &query.sequence, &options)?;
+        report.validate_search(molecule.sequence.len(), query.sequence.len())?;
+        if report.options != options {
+            return Err(Error::Format(
+                "Pairwise alignment returned different options".into(),
+            ));
+        }
+        Ok(AnalysisResult::Alignment(report))
+    })();
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 
@@ -331,9 +342,17 @@ pub(super) fn compare_sequences(
         };
         context.admit(molecule)?;
     }
-    let outcome: Result<AnalysisResult, Error> =
-        crate::alignment::review::compare(&reference, &query, &options)
-            .map(AnalysisResult::ReviewedComparison);
+    let outcome: Result<AnalysisResult, Error> = (|| {
+        let report = crate::alignment::review::compare(&reference, &query, &options)?;
+        report.validate_binding(context.revision)?;
+        report.validate_sources(&reference, &query)?;
+        if report.options != options {
+            return Err(Error::Format(
+                "Pairwise comparison returned different options".into(),
+            ));
+        }
+        Ok(AnalysisResult::ReviewedComparison(report))
+    })();
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 

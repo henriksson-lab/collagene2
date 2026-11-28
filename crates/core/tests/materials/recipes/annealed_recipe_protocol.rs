@@ -73,6 +73,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, ligation_recipe::Recipe) {
         )
         .unwrap(),
         ligation_recipe::Recipe {
+            standard: None,
             name: "Actual originals".into(),
             fragments,
             circular: true,
@@ -142,6 +143,7 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     assert!(protocol::execution::process_request(&wire(b"CGQ\0", 70, &verify)).is_err());
     assert!(protocol::execution::process_request(&wire(b"CGQ\0", 91, &verify)).is_err());
     let overlap = assembly_recipe::Recipe {
+        standard: None,
         name: recipe.name.clone(),
         fragments: recipe.fragments.iter().map(|f| f.source.clone()).collect(),
         overlaps: vec![4, 4],
@@ -159,6 +161,7 @@ fn all_three_recipe_requests_reject_downgraded_preparation_and_preview_rows_requ
     };
     assert!(protocol::execution::process_request(&wire(b"CGQ\0", 70, &request)).is_err());
     let tail = tailing_recipe::Recipe {
+        standard: None,
         profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: recipe.name,

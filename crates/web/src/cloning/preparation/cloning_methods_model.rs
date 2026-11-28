@@ -51,7 +51,7 @@ impl TailInput {
         }
     }
 }
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OverlapPreparation {
     WholeLinear,
     DeclaredDuplex,
@@ -803,6 +803,8 @@ impl AnnealingForm {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct MethodsState {
+    #[serde(deserialize_with = "required_option")]
+    pub standard: Option<crate::assembly::draft::assembly_standard_model::StandardDraft>,
     pub mode: Mode,
     pub vector: TailInput,
     pub insert: TailInput,
@@ -942,6 +944,7 @@ fn deserialize_source_roles<'de, D: serde::Deserializer<'de>>(
 impl Default for MethodsState {
     fn default() -> Self {
         Self {
+            standard: None,
             mode: Mode::Overlap,
             vector: TailInput::new(Action::AddTail {
                 base: TailingBase::T,
@@ -968,6 +971,18 @@ impl Default for MethodsState {
     }
 }
 impl MethodsState {
+    pub(crate) fn standard_declaration(
+        &self,
+    ) -> Result<
+        Option<collagene_core::cloning::assembly::standards::declaration::Declaration>,
+        String,
+    > {
+        self.standard
+            .as_ref()
+            .map(|standard| standard.declaration(self))
+            .transpose()
+    }
+
     pub(crate) fn cleavage_policy(
         &self,
     ) -> collagene_core::cloning::assembly::recipe::CleavagePolicy {

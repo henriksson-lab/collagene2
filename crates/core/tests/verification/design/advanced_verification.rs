@@ -77,6 +77,7 @@ fn primers() -> (Primer, Primer) {
 }
 fn plan(target: &Molecule, inputs: Vec<(&str, Molecule)>, steps: Vec<Operation>) -> DesignPlan {
     DesignPlan {
+        standard: None,
         name: "Independent integration audit".into(),
         target_revision: target.revision(),
         inputs: inputs

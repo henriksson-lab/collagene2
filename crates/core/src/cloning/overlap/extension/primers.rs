@@ -846,6 +846,7 @@ fn plan_from_frame(
     };
     preparation.append(template, &mut steps)?;
     Ok(DesignPlan {
+        standard: None,
         name: format!("{} overlap-extension PCR", r.fragment.role),
         target_revision: expected.revision(),
         inputs: vec![PlanInput {
@@ -1393,6 +1394,7 @@ impl Report {
     /// ranking/PCR or grant material authority to an imported report.
     pub fn validate(&self) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification.validate_standard_for_plan(&self.plan)?;
         if !hex(&self.context_revision)
             || !hex(&self.source_revision)
             || self.engine_version != ENGINE_VERSION

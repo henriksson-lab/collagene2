@@ -34,6 +34,7 @@ fn input(id: &str, molecule: Molecule) -> PlanInput {
 }
 fn saved(source: Molecule, target: Molecule, steps: Vec<Operation>) -> (Molecule, Capsule) {
     let plan = DesignPlan {
+        standard: None,
         name: "Independent original preparation".into(),
         target_revision: target.revision(),
         inputs: vec![input("original", source.clone())],
@@ -148,6 +149,7 @@ fn saved_circle_is_freshly_digested_and_ligated_with_two_real_oligos() {
     )
     .unwrap();
     let recipe = lig::Recipe {
+        standard: None,
         name: "Serial digest and ligation".into(),
         circular: true,
         allow_nicked: false,
@@ -243,6 +245,7 @@ fn saved_material_pcr_and_whole_material_keep_real_oh_ends_until_treatment() {
             RunPreparation::WholeLinear
         };
         let mut recipe = lig::Recipe {
+            standard: None,
             name: "Serial material reuse".into(),
             circular: true,
             allow_nicked: false,
@@ -326,6 +329,7 @@ fn stale_origin_and_cross_row_or_skipped_replay_chain_cannot_pass_readonly_valid
     let inputs = vec![input("saved", m)];
     let target = Molecule::dna("Independent reference", "AAACCC", Topology::Linear).unwrap();
     let mut recipe = lig::Recipe {
+        standard: None,
         name: "Serial PCR".into(),
         circular: false,
         allow_nicked: false,
@@ -398,6 +402,7 @@ fn replay_pcr_catalog_repair_tail_and_treatment_preserve_the_full_typed_chain() 
     )
     .unwrap();
     let recipe = tail::Recipe {
+        standard: None,
         profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: "Serial prepared material with complete downstream chain".into(),

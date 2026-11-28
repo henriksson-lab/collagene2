@@ -1036,6 +1036,7 @@ fn saved_product_native_history_crosses_dsq_queue_and_clone_without_becoming_met
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Native source PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

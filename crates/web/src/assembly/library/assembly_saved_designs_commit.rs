@@ -288,6 +288,7 @@ mod tests {
         let mut changed = saved;
         let source = changed.revisions[&changed.documents[0].head].clone();
         let candidate = Candidate::new(DesignPlan {
+            standard: None,
             name: "New unrelated candidate".into(),
             target_revision: source.revision(),
             inputs: vec![PlanInput {

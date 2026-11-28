@@ -477,6 +477,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         }
     }
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: r.base.name.clone(),
         fragments: recipe_rows,
         circular: r.base.circular,

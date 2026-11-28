@@ -91,6 +91,10 @@ pub fn ComparePanel(
     let gap_open = RwSignal::new("-4".to_string());
     let gap_extend = RwSignal::new("-1".to_string());
     let max_cells = RwSignal::new("16000000".to_string());
+    let global_storage = RwSignal::new("adaptive".to_string());
+    let initial_radius = RwSignal::new("16".to_string());
+    let maximum_radius = RwSignal::new("4096".to_string());
+    let max_attempts = RwSignal::new("10".to_string());
     let both_strands = RwSignal::new(true);
     let rotations = RwSignal::new(true);
     let origins = RwSignal::new("16".to_string());
@@ -115,7 +119,31 @@ pub fn ComparePanel(
                 .parse::<i32>()
                 .map_err(|_| format!("{label} must be an integer"))
         };
+        let selected_mode = match mode.get().as_str() {
+            "local" => AlignmentMode::Local,
+            "query" => AlignmentMode::QueryInReference,
+            _ => AlignmentMode::Global,
+        };
+        let storage = if selected_mode != AlignmentMode::Global || global_storage.get() == "full" {
+            collagene_core::alignment::grid::GlobalStorage::Full
+        } else {
+            collagene_core::alignment::grid::GlobalStorage::Adaptive {
+                initial_radius: initial_radius
+                    .get()
+                    .parse()
+                    .map_err(|_| "Enter an initial band radius".to_string())?,
+                maximum_radius: maximum_radius
+                    .get()
+                    .parse()
+                    .map_err(|_| "Enter a maximum band radius".to_string())?,
+                max_attempts: max_attempts
+                    .get()
+                    .parse()
+                    .map_err(|_| "Enter a band-attempt bound".to_string())?,
+            }
+        };
         let alignment = AlignmentOptions {
+            global_storage: storage,
             mode: match mode.get().as_str() {
                 "local" => AlignmentMode::Local,
                 "query" => AlignmentMode::QueryInReference,
@@ -338,7 +366,7 @@ pub fn ComparePanel(
                     }
                     Ok(Arc::new(Review {
                         record: Record {
-                            schema_version: 1,
+                            schema_version: collagene_core::alignment::history::VERSION,
                             reference: key.reference,
                             query: key.query,
                             report: result,
@@ -412,6 +440,21 @@ pub fn ComparePanel(
             gap_open.set(alignment.scoring.gap_open.to_string());
             gap_extend.set(alignment.scoring.gap_extend.to_string());
             max_cells.set(alignment.max_cells.to_string());
+            match alignment.global_storage {
+                collagene_core::alignment::grid::GlobalStorage::Full => {
+                    global_storage.set("full".into())
+                }
+                collagene_core::alignment::grid::GlobalStorage::Adaptive {
+                    initial_radius: initial,
+                    maximum_radius: maximum,
+                    max_attempts: attempts,
+                } => {
+                    global_storage.set("adaptive".into());
+                    initial_radius.set(initial.to_string());
+                    maximum_radius.set(maximum.to_string());
+                    max_attempts.set(attempts.to_string());
+                }
+            }
             report.set(Some(Arc::new(Review {
                 reference_name: r.name.clone(),
                 query_name: q.name.clone(),
@@ -437,8 +480,19 @@ pub fn ComparePanel(
             {move||saved_query.get().map(|query|view!{<p class="helper">{format!("Pinned saved query: {}. Choosing a query document switches to its current version.",query.molecule.name)}</p>})}
             <label>"Comparison policy"<select prop:value=move||policy.get() on:change=move|event|policy.set(event_target_value(&event))><option value="stored">"Stored origin and orientation"</option><option value="whole">"Whole construct · explicit origin/strand search"</option></select></label>
             <label>"Alignment mode"<select prop:value=move||mode.get() on:change=move|event|mode.set(event_target_value(&event))><option value="global">"Global · end-to-end"</option><option value="local">"Local · matching regions"</option><option value="query">"Query end-to-end in reference"</option></select></label>
-            <Show when=move||policy.get()=="whole"><p class="helper">"Whole-construct search requires Global mode. Circular-origin candidates can be seed-limited; best score does not establish a unique alignment or physical topology."</p><label><input type="checkbox" prop:checked=move||both_strands.get() on:change=move|event|both_strands.set(event_target_checked(&event))/>"Compare both query strands"</label><label><input type="checkbox" prop:checked=move||rotations.get() on:change=move|event|rotations.set(event_target_checked(&event))/>"Search circular reference origins"</label><label>"Maximum origin candidates"<input type="number" min="1" max="64" prop:value=move||origins.get() on:input=move|event|origins.set(event_target_value(&event))/></label><label>"Total matrix cells"<input type="number" min="1" prop:value=move||total_cells.get() on:input=move|event|total_cells.set(event_target_value(&event))/></label></Show>
-            <details><summary>"Scoring and compute budget"</summary><p class="helper">"Gap length k costs opening + (k−1) × extension. Compatible ambiguity is separate from a certain match."</p><div class="compare-scores">{[("Certain match",match_score),("Compatible ambiguity",ambiguity),("Mismatch",mismatch),("Gap opening",gap_open),("Gap extension",gap_extend)].into_iter().map(|(label,field)|view!{<label>{label}<input type="number" prop:value=move||field.get() on:input=move|event|field.set(event_target_value(&event))/></label>}).collect_view()}</div><label>"Matrix cells per alignment"<input type="number" min="1" prop:value=move||max_cells.get() on:input=move|event|max_cells.set(event_target_value(&event))/></label></details>
+            <Show when=move||policy.get()=="whole"><p class="helper">"Whole-construct search requires Global mode. Circular-origin candidates can be seed-limited; best score does not establish a unique alignment or physical topology."</p><label><input type="checkbox" prop:checked=move||both_strands.get() on:change=move|event|both_strands.set(event_target_checked(&event))/>"Compare both query strands"</label><label><input type="checkbox" prop:checked=move||rotations.get() on:change=move|event|rotations.set(event_target_checked(&event))/>"Search circular reference origins"</label><label>"Maximum origin candidates"<input type="number" min="1" max="64" prop:value=move||origins.get() on:input=move|event|origins.set(event_target_value(&event))/></label><label>"Total cumulative cells"<input type="number" min="1" prop:value=move||total_cells.get() on:input=move|event|total_cells.set(event_target_value(&event))/></label></Show>
+            <details><summary>"Global row bands and proof"</summary>
+                <p class="helper">"Adaptive global bands keep an unrestricted optimum only when a strict omitted-path bound certifies it. Limited bands retain the actual path with unproven optimality. Local and query-in-reference always use the full grid. Repeated bands and all origin/strand candidates share actual cumulative cell budgets; no sequencing confidence is inferred."</p>
+                <Show when=move||mode.get()=="global">
+                    <label>"Global storage"<select prop:value=move||global_storage.get() on:change=move|event|global_storage.set(event_target_value(&event))><option value="adaptive">"Adaptive row bands"</option><option value="full">"Full grid"</option></select></label>
+                    <Show when=move||global_storage.get()=="adaptive">
+                        <label>"Initial radius"<input type="number" min="0" max="1000000" prop:value=move||initial_radius.get() on:input=move|event|initial_radius.set(event_target_value(&event))/></label>
+                        <label>"Maximum radius"<input type="number" min="0" max="1000000" prop:value=move||maximum_radius.get() on:input=move|event|maximum_radius.set(event_target_value(&event))/></label>
+                        <label>"Maximum attempts"<input type="number" min="1" max="32" prop:value=move||max_attempts.get() on:input=move|event|max_attempts.set(event_target_value(&event))/></label>
+                    </Show>
+                </Show>
+            </details>
+            <details><summary>"Scoring and compute budget"</summary><p class="helper">"Gap length k costs opening + (k−1) × extension. Compatible ambiguity is separate from a certain match."</p><div class="compare-scores">{[("Certain match",match_score),("Compatible ambiguity",ambiguity),("Mismatch",mismatch),("Gap opening",gap_open),("Gap extension",gap_extend)].into_iter().map(|(label,field)|view!{<label>{label}<input type="number" prop:value=move||field.get() on:input=move|event|field.set(event_target_value(&event))/></label>}).collect_view()}</div><label>"Cumulative cells per alignment"<input type="number" min="1" prop:value=move||max_cells.get() on:input=move|event|max_cells.set(event_target_value(&event))/></label></details>
             <button class="button primary full" disabled=move||busy.get() on:click=compute>"Compare pinned versions"</button><button class="text-tool" disabled=move||!busy.get() on:click=move|_|cancel.run(())>"Cancel comparison"</button>
             <p class="helper" role="status">{move||status.get()}</p>
             {move||report.get().map(|review|view!{<PairwiseResultView review guard on_save on_navigate/>})}

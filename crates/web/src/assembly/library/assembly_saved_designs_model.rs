@@ -308,6 +308,50 @@ fn source_values(value: &Value) -> Result<Vec<&Value>, String> {
     }
     Ok(output)
 }
+fn standard_events(
+    value: &Value,
+) -> Result<Vec<collagene_core::material::lineage::EventBinding>, String> {
+    fn add(
+        methods: &Value,
+        output: &mut Vec<collagene_core::material::lineage::EventBinding>,
+    ) -> Result<(), String> {
+        let value = methods
+            .get("standard")
+            .ok_or_else(|| fail("missing current standard declaration field"))?;
+        if value.is_null() {
+            return Ok(());
+        }
+        let standard: crate::assembly::draft::assembly_standard_model::StandardDraft =
+            serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
+        output.extend(standard.rows.into_iter().map(|row| row.event));
+        Ok(())
+    }
+    let mut pins = Vec::new();
+    add(
+        value
+            .get("methods")
+            .ok_or_else(|| fail("missing method settings"))?,
+        &mut pins,
+    )?;
+    if let Some(library) = value.get("alternatives").filter(|v| !v.is_null()) {
+        let rows = library
+            .get("rows")
+            .and_then(Value::as_array)
+            .ok_or_else(|| fail("missing construct rows"))?;
+        if rows.len() > 256 {
+            return Err(fail("too many construct declarations"));
+        }
+        for row in rows {
+            add(
+                row.get("edits")
+                    .and_then(|e| e.get("methods"))
+                    .ok_or_else(|| fail("missing construct method settings"))?,
+                &mut pins,
+            )?;
+        }
+    }
+    Ok(pins)
+}
 fn count_sources(draft: &Value) -> Result<usize, String> {
     let mut refs = BTreeSet::new();
     for value in source_values(draft)? {
@@ -317,6 +361,9 @@ fn count_sources(draft: &Value) -> Result<usize, String> {
             source.binding.event_id,
             source.binding.revision,
         ));
+    }
+    for pin in standard_events(draft)? {
+        refs.insert((pin.document_id, pin.event_id, pin.revision));
     }
     Ok(refs.len())
 }
@@ -424,6 +471,11 @@ pub(crate) fn save(
 ) -> Result<(Workspace, Entry), String> {
     frame.validate().map_err(|e| e.to_string())?;
     draft.validate()?;
+    for pin in crate::assembly::draft::assembly_standard_model::declared_events(draft) {
+        collagene_core::planning::combinatorial::resolve_event(frame, pin)
+            .map_err(|e| e.to_string())?;
+    }
+
     let name = name(display_name)?;
     let existing = entries(frame)?;
     if existing.len() >= MAX_DESIGNS
@@ -570,6 +622,11 @@ pub(crate) fn load(frame: &Workspace, id: &str) -> Result<Draft, String> {
     })?;
     let hydrated = encode(&saved.draft, MAX_DRAFT)?;
     let draft = model::decode(&hydrated)?;
+    for pin in crate::assembly::draft::assembly_standard_model::declared_events(&draft) {
+        collagene_core::planning::combinatorial::resolve_event(frame, pin)
+            .map_err(|e| e.to_string())?;
+    }
+
     // Native decoding may reject/remove a stale run-origin declaration. Refuse
     // any silent change rather than dropping a closed capsule from a saved design.
     let canonical = model::encode_raw(&draft)?;
@@ -813,6 +870,7 @@ mod tests {
         let source_event = captured(&frame, 0).source.binding.clone();
         let target_event = captured(&frame, 1).source.binding.clone();
         let plan = DesignPlan {
+            standard: None,
             name: "Actual original-source PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

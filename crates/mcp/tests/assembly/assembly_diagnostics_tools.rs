@@ -95,13 +95,13 @@ async fn failed_middle_preparation_locates_the_executed_step_and_blocks_later_ro
         let (tool, recipe, expected_step) = if ligation {
             (
                 "propose_ligation_assembly",
-                json!({"name":"failed middle physical preparation","fragments":rows.iter().map(|row|json!({"source":row,"treatment":"Phosphorylate"})).collect::<Vec<_>>(),"circular":false,"allow_nicked":false}),
+                json!({"standard": null,"name":"failed middle physical preparation","fragments":rows.iter().map(|row|json!({"source":row,"treatment":"Phosphorylate"})).collect::<Vec<_>>(),"circular":false,"allow_nicked":false}),
                 1,
             )
         } else {
             (
                 "propose_overlap_assembly",
-                json!({"name":"failed middle overlap preparation","fragments":rows,"overlaps":[15,15],"circular":false,"options":profile()}),
+                json!({"standard": null,"name":"failed middle overlap preparation","fragments":rows,"overlaps":[15,15],"circular":false,"options":profile()}),
                 1,
             )
         };
@@ -199,12 +199,12 @@ async fn final_target_mismatch_preserves_reconstructed_rows_and_real_junction_ev
         let (tool, recipe) = if ligation {
             (
                 "propose_ligation_assembly",
-                json!({"name":"wrong target is not failed PCR","fragments":[{"source":left,"treatment":"Phosphorylate"},{"source":right,"treatment":"Phosphorylate"}],"circular":false,"allow_nicked":false}),
+                json!({"standard": null,"name":"wrong target is not failed PCR","fragments":[{"source":left,"treatment":"Phosphorylate"},{"source":right,"treatment":"Phosphorylate"}],"circular":false,"allow_nicked":false}),
             )
         } else {
             (
                 "propose_overlap_assembly",
-                json!({"name":"wrong target is not failed overlap preparation","fragments":[left,right],"overlaps":[15],"circular":false,"options":profile()}),
+                json!({"standard": null,"name":"wrong target is not failed overlap preparation","fragments":[left,right],"overlaps":[15],"circular":false,"options":profile()}),
             )
         };
         let result = call(

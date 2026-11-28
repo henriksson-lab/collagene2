@@ -97,6 +97,7 @@ fn released() -> release::Commit {
         .enumerate()
         .map(|(i, id)| {
             batch::RowRequest::Ready(SelectedConstruct {
+                standard: None,
                 id: id.into(),
                 name: format!("Cloning Ω construct{i}"),
                 choices: choices.clone(),

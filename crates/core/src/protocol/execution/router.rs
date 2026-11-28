@@ -11,6 +11,9 @@ pub(super) fn dispatch(
     context: &RequestContext,
 ) -> Result<AnalysisResult, Error> {
     match job {
+        AnalysisJob::AssessScreeningStrategy { request } => {
+            super::design_checks::screening(context, request)
+        }
         AnalysisJob::AssessConstructCausalQc { workspace, request } => {
             super::design_checks::causal_qc(context, workspace, request)
         }

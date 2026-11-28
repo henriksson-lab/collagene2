@@ -416,6 +416,7 @@ fn typed_plan_preserves_whole_batch_and_withholds_physical_ancestry() {
         .selection
         .clone();
     let mut plan = DesignPlan {
+        standard: None,
         name: "Four original parents, not repeated two-parent exchanges".into(),
         target_revision: target.revision(),
         inputs: inputs
@@ -503,6 +504,7 @@ fn retained_multisite_run_requires_exact_immutable_reference_evidence() {
         .selection
         .clone();
     let plan = DesignPlan {
+        standard: None,
         name: "Retain whole reference network".into(),
         target_revision: target.revision(),
         inputs: inputs
@@ -635,6 +637,7 @@ fn retained_reference_graphs_bind_exact_source_and_product_events_without_replay
         component_id: component,
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Four-parent reciprocal reference design".into(),
         target_revision: target.revision(),
         inputs: inputs

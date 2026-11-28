@@ -157,7 +157,21 @@ impl<'a> CheckedProtocol<'a> {
             e(&input.revision)
         ));
         }
-        body.push_str("</ul><h2>Cloning steps</h2><ol>");
+        body.push_str("</ul>");
+        match crate::output::standard_review::lines(plan, report) {
+            Ok(lines) if !lines.is_empty() => {
+                body.push_str("<h2>Declared source-part standard</h2>");
+                for line in lines {
+                    body.push_str(&format!("<p>{}</p>", e(&line)));
+                }
+            }
+            Ok(_) => (),
+            Err(error) => body.push_str(&format!(
+                "<p>Source-format advice unavailable: {}</p>",
+                e(&error.to_string())
+            )),
+        }
+        body.push_str("<h2>Cloning steps</h2><ol>");
         let source = |s: &Source| {
             e(&match s {
                 Source::Input(id) => format!("input {id}"),

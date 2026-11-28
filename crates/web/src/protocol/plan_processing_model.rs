@@ -94,6 +94,7 @@ mod tests {
         .unwrap();
         (
             DesignPlan {
+                standard: None,
                 name: "PCR then explicit3′ cuts".into(),
                 target_revision: target.revision(),
                 inputs: vec![PlanInput {

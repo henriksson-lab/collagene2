@@ -83,6 +83,7 @@ fn fragment(preparation: Preparation, reverse: bool) -> FragmentSpec {
 }
 fn linear(preparation: Preparation, reverse: bool) -> a::Recipe {
     a::Recipe {
+        standard: None,
         name: "Actual edited digest and repair".into(),
         fragments: vec![fragment(preparation, reverse)],
         overlaps: vec![],
@@ -96,6 +97,7 @@ fn outer_actual_pcr_is_cut_under_exact_catalog_pin_and_closes_real_sticky_ends()
     let before = serde_json::to_value(&inputs).unwrap();
     let target = Molecule::dna("Independent44bp circle", DIGEST, Topology::Circular).unwrap();
     let recipe = lig::Recipe {
+        standard: None,
         name: "OE to pinned EcoRI to actual ligation".into(),
         fragments: vec![lig::Fragment {
             source: fragment(preparation(None), false),
@@ -225,6 +227,7 @@ fn exact_saved_origin_precedes_all_seven_preparation_steps_without_retargeting()
     let target =
         Molecule::dna("Independent original stock PCR", ORIGINAL, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original PCR scope".into(),
         target_revision: target.revision(),
         inputs: vec![input(stock.clone())],

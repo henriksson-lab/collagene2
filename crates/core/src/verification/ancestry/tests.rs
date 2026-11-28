@@ -515,6 +515,7 @@ fn same_executor_pcr_trace_preserves_report_and_literal_primer_tail_origins() {
     let source = molecule("AGTCCGATGCTACGTAGGACTTCAGACCTGTA");
     let target = molecule("GGAGTCCGATGCTACGTAGGACTTCAGACCTGTACC");
     let plan = DesignPlan {
+        standard: None,
         name: "native receipt oracle".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -572,6 +573,7 @@ fn same_executor_overlap_retains_both_junction_sources_and_exact_feature_ordinal
     }
     let target = molecule("AAAACCCCGGGG");
     let plan = DesignPlan {
+        standard: None,
         name: "native overlap receipt oracle".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -683,6 +685,7 @@ fn actual_annotation_dedup_retains_both_declared_source_feature_origins() {
     });
     let target = molecule("AAAACCCCGGGG");
     let plan = DesignPlan {
+        standard: None,
         name: "actual dedup receipt oracle".into(),
         target_revision: target.revision(),
         inputs: vec![

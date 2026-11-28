@@ -46,6 +46,7 @@ fn fixture() -> (Workspace, EventBinding, String, String, String) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Fresh unique PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -436,6 +437,7 @@ fn later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication
         (0, 7)
     );
     let plan = DesignPlan {
+        standard: None,
         name: "PCR from saved digest material".into(),
         target_revision: revision.clone(),
         inputs: vec![PlanInput {

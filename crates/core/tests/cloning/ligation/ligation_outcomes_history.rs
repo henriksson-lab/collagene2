@@ -72,6 +72,7 @@ fn fixture(target: &str) -> (Vec<Molecule>, DesignPlan) {
         ),
     ];
     let plan = DesignPlan {
+        standard: None,
         name: "Intended blunt ligation with retained orientation alternative".into(),
         target_revision: target.revision(),
         inputs,
@@ -310,6 +311,7 @@ fn large_recipe_retains_intended_outcomes_and_native_history_without_enumeration
         molecule: original,
     }];
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "Explicit large ordered path".into(),
         fragments: (0..33)
             .map(|i| ligation_recipe::Fragment {

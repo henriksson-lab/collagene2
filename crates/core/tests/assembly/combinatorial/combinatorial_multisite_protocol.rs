@@ -117,6 +117,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         },
     };
     let row = SelectedConstruct {
+        standard: None,
         id: "declared-reference".into(),
         name: "Independent source-bound reference".into(),
         choices: (0..2)

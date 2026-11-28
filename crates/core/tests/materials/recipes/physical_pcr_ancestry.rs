@@ -84,6 +84,7 @@ fn assembly(profiled: bool) -> Operation {
 }
 fn plan(target: &Molecule, inputs: Vec<PlanInput>, steps: Vec<Operation>) -> DesignPlan {
     DesignPlan {
+        standard: None,
         name: "Explicit physical PCR ancestry".into(),
         target_revision: target.revision(),
         inputs,

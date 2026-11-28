@@ -534,6 +534,7 @@ fn real_saved_run_archive_retains_ancestry_while_native_snapshot_never_restores_
     let frame =
         Workspace::from_documents("PCR origin", vec![source.clone(), target.clone()], 0).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual source PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

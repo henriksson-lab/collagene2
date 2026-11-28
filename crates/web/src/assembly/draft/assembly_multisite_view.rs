@@ -320,6 +320,7 @@ pub fn MultisiteReview(
                     return Err("Component source binding differs.".into());
                 }
                 let plan = DesignPlan {
+                    standard: next.methods.standard_declaration()?,
                     name: format!(
                         "{} · {:?} reference exchange",
                         next.name, request.reaction.reaction

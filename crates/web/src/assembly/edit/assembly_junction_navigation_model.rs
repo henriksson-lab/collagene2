@@ -302,6 +302,7 @@ mod tests {
             )
         };
         let plan = DesignPlan {
+            standard: None,
             name: "Actual overlap".into(),
             target_revision: target.revision(),
             inputs,
@@ -316,6 +317,7 @@ mod tests {
     fn ligation() -> (Snapshot, Capture, Report) {
         let target = Molecule::dna("Independent circle", "AAACCC", Topology::Circular).unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Actual sealed circular ligation".into(),
             target_revision: target.revision(),
             inputs: vec![input("original", "AAACCC")],

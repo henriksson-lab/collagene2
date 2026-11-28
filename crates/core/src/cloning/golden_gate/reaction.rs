@@ -15,11 +15,16 @@ use crate::{
 use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
-pub const ENGINE_VERSION: &str = "golden-gate-reaction-1";
+pub const ENGINE_VERSION: &str = "golden-gate-reaction-2";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub enum Substrate{WholeSource{#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]origin:Option<crate::material::run::MaterialOrigin>},Prepared{preparation:Preparation,treatment:Option<EndTreatment>}}}
 dto! {pub struct Row{pub role:String,pub input_id:String,pub substrate:Substrate,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::chemistry::tracked_duplex::GenerationAssumptions>}}
-dto! {pub struct Request{pub name:String,pub rows:Vec<Row>,pub options:GoldenGateOptions}}
+dto! {pub struct Request{
+ pub name:String,pub rows:Vec<Row>,pub options:GoldenGateOptions,
+ #[serde(deserialize_with="crate::encoding::required_option")]
+ #[cfg_attr(feature="json-schema",schemars(required))]
+ pub standard:Option<crate::cloning::assembly::standards::declaration::Declaration>
+}}
 dto! {pub struct Material{pub index:usize,pub role:String,pub input_id:String,pub source:Source}}
 dto! {pub struct Report{pub context_revision:String,pub request:Request,pub target:Molecule,pub probe_plan:DesignPlan,pub materials:Vec<Material>,pub verification:VerificationReport,#[cfg_attr(feature="json-schema",schemars(with="serde_json::Value"))]pub pool:Option<GoldenGateReport>,pub assessments:Vec<Assessment>,pub warnings:Vec<String>}}
 fn bad(s: &str) -> Error {
@@ -89,6 +94,10 @@ pub fn preflight(
     target: &Molecule,
     r: &Request,
 ) -> Result<(), Error> {
+    if let Some(standard) = &r.standard {
+        standard.validate()?;
+    }
+
     options(&r.options)?;
     if inputs.is_empty()
         || inputs.len() > 32
@@ -271,6 +280,7 @@ fn compile(
     });
     Ok((
         DesignPlan {
+            standard: r.standard.clone(),
             name: r.name.clone(),
             inputs: inputs.to_vec(),
             target_revision: target.revision(),
@@ -377,6 +387,8 @@ pub fn inspect(inputs: &[PlanInput], target: &Molecule, r: &Request) -> Result<R
 impl Report {
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification
+            .validate_standard_for_plan(&self.probe_plan)?;
         let actual = inspect_revision(&self.probe_plan.inputs, &self.target, &self.request)?;
         if expected != actual || self.context_revision != actual {
             return Err(bad("reaction context changed"));

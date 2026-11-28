@@ -355,6 +355,7 @@ pub fn RecombinationPanel(
             .collect();
         on_candidate.run((
             Candidate::new(DesignPlan {
+                standard: None,
                 name: format!(
                     "{:?} reference exchange to {}",
                     bound.context.request.reaction, bound.context.target.name

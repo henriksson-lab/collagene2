@@ -300,6 +300,7 @@ async fn saved_role_requires_exact_workspace_attestation_before_any_full_design(
     .unwrap();
     let vector = Molecule::dna("Vector source", VECTOR, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original saved PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

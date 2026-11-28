@@ -81,7 +81,7 @@ async fn checked_digest_plans_pin_catalogs_rebuild_physical_state_and_export_wit
         collagene_core::cloning::restriction::catalog::select(&catalog, &[enzyme]).unwrap();
     let options = collagene_core::chemistry::tracked_duplex::checked_inspection_options();
     let steps = json!([{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"host":null,"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"conditions":null,"template":{"Step":0},"selection":selection,"options":options,"fragment_index":0}}]);
-    let propose = |steps: Value| json!({"name":"checked source generation","target":target,"inputs":[{"id":"s","document":source}],"steps":steps});
+    let propose = |steps: Value| json!({"standard": null,"name":"checked source generation","target":target,"inputs":[{"id":"s","document":source}],"steps":steps});
     let candidate = call(&c, "propose_plan", propose(steps.clone())).await;
     assert_eq!(candidate["verified"], false);
     let plan = json!({"plan_revision":candidate["plan_revision"]});

@@ -157,6 +157,7 @@ fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
         ],
     };
     let row = library::SelectedConstruct {
+        standard: None,
         id: "edited-row".into(),
         name: "Literal edited construct".into(),
         overrides: None,

@@ -219,6 +219,7 @@ fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
         template_strand: collagene_core::chemistry::Strand::Top,
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Actual PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -267,6 +268,7 @@ fn private_open_preserves_real_saved_run_and_fresh_capsule_pcr_reuse() {
     let prepared = reopened.revisions[&material.event.revision].clone();
     let capsule = collagene_core::material::capsule::capsule(&reopened, &material).unwrap();
     let downstream = DesignPlan {
+        standard: None,
         name: "Fresh physical reuse".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

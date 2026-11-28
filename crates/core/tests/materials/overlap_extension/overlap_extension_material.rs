@@ -292,6 +292,7 @@ fn saved_run(incomplete: bool) -> (Workspace, EventBinding, MaterialOrigin) {
         Molecule::dna("Independent source-run target", ORIGINAL, Topology::Linear).unwrap()
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Original source amplification".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

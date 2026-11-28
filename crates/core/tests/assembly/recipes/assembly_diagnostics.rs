@@ -55,6 +55,7 @@ fn three() -> (Vec<PlanInput>, Vec<FragmentSpec>, Molecule) {
 fn missing_middle_pcr_product_locates_that_row_and_preserves_independent_later_row() {
     let (inputs, fragments, target) = three();
     let recipe = a::Recipe {
+        standard: None,
         name: "Missing middle PCR".into(),
         fragments,
         overlaps: vec![4, 4],
@@ -111,6 +112,7 @@ fn raw(mismatch: bool, max_comparisons: usize, scan: bool, wrong_target: bool) -
         input("right", if mismatch { "GGGGTTTT" } else { "CCCCGGGG" }),
     ];
     let recipe = a::Recipe {
+        standard: None,
         name: "Explicit raw reference overlap".into(),
         fragments: vec![
             FragmentSpec {
@@ -211,6 +213,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
  {
     let (inputs, rows, t) = three();
     let recipe = l::Recipe {
+        standard: None,
         name: "Treatments after preparations".into(),
         fragments: rows
             .into_iter()
@@ -256,6 +259,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
     );
     let inputs = inputs[..2].to_vec();
     let mut recipe = l::Recipe {
+        standard: None,
         name: "No implicit phosphorylation".into(),
         fragments: vec![
             l::Fragment {
@@ -312,6 +316,7 @@ fn ligation_treatments_are_after_all_preparations_and_missing_assembly_never_nam
 fn forged_source_prepared_mapping_engine_and_context_shape_fail_closed() {
     let (inputs, fragments, t) = three();
     let recipe = a::Recipe {
+        standard: None,
         name: "Forged receipt guards".into(),
         fragments,
         overlaps: vec![4, 4],
@@ -335,6 +340,7 @@ fn forged_source_prepared_mapping_engine_and_context_shape_fail_closed() {
     context.context_revision = "stale".into();
     assert!(d::overlap(&context).is_err());
     let recipe = l::Recipe {
+        standard: None,
         name: "Forged native chain".into(),
         fragments: vec![
             l::Fragment {

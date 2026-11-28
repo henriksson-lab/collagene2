@@ -43,6 +43,7 @@ pub fn fixture(derived: bool) -> (Workspace, MaterialOrigin, EventBinding, Molec
     )
     .unwrap();
     let p = DesignPlan {
+        standard: None,
         name: "Actual PCR, phosphorylation and seal".into(),
         target_revision: circle.revision(),
         inputs: vec![PlanInput {

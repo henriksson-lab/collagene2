@@ -131,7 +131,7 @@ async fn exact_event_finalization_saved_primers_native_history_and_replay_are_at
     let base_bytes = workspace::save_workspace(&w).unwrap();
     let imported = upload(&c, &w).await;
     let wr = workspace_ref(&imported);
-    let recipe = json!({"name":"Actual prepared overlap","fragments":[{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","AGGTCGCTAACGGAT").unwrap()}},"reverse":false},{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false}],"overlaps":[15],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100}});
+    let recipe = json!({"standard": null,"name":"Actual prepared overlap","fragments":[{"generation":null,"role":"left","input_id":"l","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("LF","ATGACCCC","").unwrap(),"reverse":Primer::new("LR","TCTGGAAA","AGGTCGCTAACGGAT").unwrap()}},"reverse":false},{"generation":null,"role":"right","input_id":"r","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("RF","ATCCGTTA","").unwrap(),"reverse":Primer::new("RR","TTCCAAGG","").unwrap()}},"reverse":false}],"overlaps":[15],"circular":false,"options":{"method":"HiFi","scan_repeated_overlaps":false,"max_comparisons":100000,"max_occurrences":100}});
     let inputs = json!([{"id":"l","document":doc(&left)},{"id":"r","document":doc(&right)}]);
     let plan = call(
         &c,
@@ -167,7 +167,7 @@ async fn exact_event_finalization_saved_primers_native_history_and_replay_are_at
         .iter()
         .map(|source| json!({"source":source,"treatment":null}))
         .collect::<Vec<_>>();
-    let blocked_plan=call(&c,"propose_ligation_assembly",json!({"inputs":inputs,"target":doc(&target),"recipe":{"name":"Unphosphorylated PCR ends cannot seal","fragments":blocked_fragments,"circular":false,"allow_nicked":false}})).await;
+    let blocked_plan=call(&c,"propose_ligation_assembly",json!({"inputs":inputs,"target":doc(&target),"recipe":{"standard": null,"name":"Unphosphorylated PCR ends cannot seal","fragments":blocked_fragments,"circular":false,"allow_nicked":false}})).await;
     assert_ne!(
         blocked_plan["verification"]["status"],
         "ConsistentUnderAssumptions"
@@ -312,7 +312,7 @@ async fn incomplete_opaque_order_data_never_publishes_a_finalized_workspace() {
     let imported = upload(&c, &w).await;
     let mut options = AnnealOptions::default();
     options.min_paired_bases = 4;
-    let plan=call(&c,"propose_plan",json!({"name":"Declared anneal source orders","target":doc(&target),"inputs":[{"id":"top","document":doc(&top)},{"id":"bottom","document":doc(&bottom)}],"steps":[{"AnnealOligos":{"top":{"Input":"top"},"bottom":{"Input":"bottom"},"options":options,"candidate_index":0}}]})).await;
+    let plan=call(&c,"propose_plan",json!({"standard": null,"name":"Declared anneal source orders","target":doc(&target),"inputs":[{"id":"top","document":doc(&top)},{"id":"bottom","document":doc(&bottom)}],"steps":[{"AnnealOligos":{"top":{"Input":"top"},"bottom":{"Input":"bottom"},"options":options,"candidate_index":0}}]})).await;
     let orders = call(
         &c,
         "export_plan_oligos",

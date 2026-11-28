@@ -152,6 +152,7 @@ fn actual_declared_termini_product_and_all_restrictive_documentary_shapes_cannot
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actually declare native end chemistry".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

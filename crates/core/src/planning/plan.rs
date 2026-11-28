@@ -258,6 +258,9 @@ pub enum Operation {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DesignPlan {
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    #[cfg_attr(feature = "json-schema", schemars(required))]
+    pub standard: Option<crate::cloning::assembly::standards::declaration::Declaration>,
     pub name: String,
     pub target_revision: String,
     #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, PlanInput, MAX_INPUTS>")]

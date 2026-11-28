@@ -41,6 +41,7 @@ fn saved(
     };
     let step_index = steps.len() - 1;
     let plan = DesignPlan {
+        standard: None,
         name: "Original reactions".into(),
         target_revision: target.revision(),
         inputs,
@@ -294,6 +295,7 @@ fn actual_retained_nicks_cannot_become_a_saved_pcr_template() {
     assert!(err.to_string().contains("nick"), "{err}");
     // The original native state, independently replayed, still carries both nicks.
     let plan = DesignPlan {
+        standard: None,
         name: "Replay only".into(),
         target_revision: source.revision(),
         inputs: vec![PlanInput {

@@ -9,9 +9,9 @@ use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
-pub const KIND: &str = "pairwise-review-v1";
+pub const KIND: &str = "pairwise-review-v2";
 pub const MAX_SAVED_BYTES: usize = workspace::MAX_ENTRY_BYTES;
-const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

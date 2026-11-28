@@ -71,6 +71,7 @@ fn fixture() -> (Workspace, Design) {
 }
 fn construct() -> SelectedConstruct {
     SelectedConstruct {
+        standard: None,
         overrides: None,
         id: "construct-ac".into(),
         name: "AC construct".into(),
@@ -458,6 +459,7 @@ fn circular_unrolled_contribution_and_explicit_reverse_keep_source_geometry() {
         },
     };
     let row = SelectedConstruct {
+        standard: None,
         overrides: None,
         id: "reverse-crossing".into(),
         name: "Reverse crossing".into(),

@@ -825,7 +825,7 @@ fn fresh_template(
     request_source(source, request)?;
     let mut inherited = match capture {
         Some(capture) => capture.source(template.role, source, &template.origin, replay)?,
-        None if replay.is_qc_job() => match &template.origin {
+        None if replay.is_shared_job() => match &template.origin {
             SourceOrigin::OriginalReference => fresh_source(source, &template.origin)?,
             SourceOrigin::Saved(origin) => {
                 let (fresh, _) = origin.replay_scoped(source, replay, None)?;
@@ -844,7 +844,7 @@ fn fresh_template(
             template_strand,
             selection,
         } => {
-            let previews = if replay.is_qc_job() {
+            let previews = if replay.is_shared_job() {
                 match &template.origin {
                     SourceOrigin::OriginalReference => {
                         verification::pcr::simulate_pcr_documents_with_budget(
@@ -914,7 +914,7 @@ fn fresh_template(
                 &inherited.tracked,
                 *template_strand,
             )?;
-            let geometries = if replay.is_qc_job() {
+            let geometries = if replay.is_shared_job() {
                 frame
                     .geometries_with_budget(forward, reverse, &mut replay.pcr)?
                     .0
@@ -1110,7 +1110,7 @@ fn fresh_template(
                 &inherited.tracked.duplex.summary()?,
                 || {
                     let mut result = Vec::new();
-                    let fragments = if replay.is_qc_job() {
+                    let fragments = if replay.is_shared_job() {
                         modified_duplex::digest_with_budget(
                             &inherited.tracked,
                             &enzymes,

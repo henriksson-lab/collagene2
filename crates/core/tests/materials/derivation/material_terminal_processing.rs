@@ -258,6 +258,7 @@ fn independently_declared_ta_ligation_keeps_intended_path_and_alternative_produc
         false,
     ));
     let plan = DesignPlan {
+        standard: None,
         name: "Declared TA orientation after standalone tails".into(),
         target_revision: target.revision(),
         inputs: events
@@ -448,6 +449,7 @@ fn cut_created_oh_and_original_dam_calls_survive_tailing_and_phosphorylation_wit
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Declared generation and actual two-sided EcoRV cleavage".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source)],
@@ -587,6 +589,7 @@ fn tailing_keeps_a_real_internal_nick_and_treatment_refuses_to_seal_it() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Asymmetric phosphorylation leaves one real nick".into(),
         target_revision: target.revision(),
         inputs: vec![input("a", a), input("b", b)],

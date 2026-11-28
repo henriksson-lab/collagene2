@@ -51,6 +51,7 @@ fn fixture() -> (Workspace, batch::Request) {
     ];
     let ready = |id: &str, target| {
         RowRequest::Ready(SelectedConstruct {
+            standard: None,
             id: id.into(),
             name: id.into(),
             choices: choices.clone(),

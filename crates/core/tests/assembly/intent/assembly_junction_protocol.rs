@@ -24,6 +24,7 @@ fn fixture() -> (DesignPlan, Molecule) {
         .collect();
     let target = Molecule::dna("independent target", "AAATGATTT", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "literal stop-codon junction".into(),
         target_revision: target.revision(),
         inputs,

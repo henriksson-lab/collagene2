@@ -243,6 +243,7 @@ pub(crate) fn validate_options(o: &TraceValidationOptions) -> Result<(), Error> 
         &Sequence::dna("A")?,
         &Sequence::dna("A")?,
         &AlignmentOptions {
+            global_storage: crate::alignment::grid::GlobalStorage::Full,
             mode: AlignmentMode::Global,
             scoring: o.scoring,
             max_cells: o.max_cells,
@@ -603,6 +604,7 @@ fn alignment_for_read(
                 selected,
                 selected,
                 &AlignmentOptions {
+                    global_storage: crate::alignment::grid::GlobalStorage::Full,
                     mode: AlignmentMode::Global,
                     scoring: o.scoring,
                     max_cells: o.max_cells,
@@ -640,6 +642,7 @@ fn alignment_for_read(
             &extended,
             q,
             &AlignmentOptions {
+                global_storage: crate::alignment::grid::GlobalStorage::Full,
                 mode: AlignmentMode::QueryInReference,
                 scoring: o.scoring,
                 max_cells: o.max_cells,

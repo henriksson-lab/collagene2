@@ -219,7 +219,7 @@ async fn typed_plan_role_bridge_records_only_exact_causal_source_events() {
     let checked=call(&c,"check_recombination_target",json!({"sources":sources,"request":request,"plan_sources":slots,"target":target,"policy":{"allow_reverse_complement":false}})).await;
     let m = &checked["assessment"]["reference"]["matches"][0];
     let selection = json!({"batch_revision":inspected["batch_revision"],"candidate_id":m["candidate"],"component_id":m["product"]});
-    let proposed=call(&c,"propose_plan",json!({"name":"Source-event-bound reference exchange","target":target,"inputs":[{"id":"insert","document":sources[0]["document"]},{"id":"donor","document":sources[1]["document"]}],"steps":[{"RecombineReference":{"sources":slots,"request":request,"selection":selection}}]})).await;
+    let proposed=call(&c,"propose_plan",json!({"standard": null,"name":"Source-event-bound reference exchange","target":target,"inputs":[{"id":"insert","document":sources[0]["document"]},{"id":"donor","document":sources[1]["document"]}],"steps":[{"RecombineReference":{"sources":slots,"request":request,"selection":selection}}]})).await;
     let verified = call(
         &c,
         "verify_plan",

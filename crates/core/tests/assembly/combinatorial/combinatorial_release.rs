@@ -113,6 +113,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
     let rows = (0..2)
         .map(|i| {
             batch::RowRequest::Ready(SelectedConstruct {
+                standard: None,
                 id: format!("construct-{i}"),
                 name: format!("Declared construct {i}"),
                 choices: selections.clone(),
@@ -196,6 +197,7 @@ fn fixture(wrong_second: bool, pcr: bool, rich: bool) -> (Workspace, Request) {
     if rich {
         let molecule = workspace.head(&workspace.documents[3].id).unwrap().clone();
         let plan = DesignPlan {
+            standard: None,
             name: "Unrelated supported rich candidate".into(),
             target_revision: molecule.revision(),
             inputs: vec![PlanInput {

@@ -157,6 +157,7 @@ fn fixture() -> Fixture {
     let mut options = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     options.scan_repeated_overlaps = false;
     let plan = DesignPlan {
+        standard: None,
         name: "Saved derivation then physical assembly".into(),
         target_revision: target.revision(),
         inputs: vec![input("vector", vector), input("cut", cut)],

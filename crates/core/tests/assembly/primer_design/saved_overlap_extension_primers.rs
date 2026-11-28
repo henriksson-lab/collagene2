@@ -48,6 +48,7 @@ fn saved() -> (Workspace, EventBinding, MaterialOrigin) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Explicit40/44 annealing".into(),
         target_revision: target.revision(),
         inputs: vec![input("top", top), input("bottom", bottom)],

@@ -31,6 +31,7 @@ fn current_encoding_roundtrips_scientific_and_documentary_receipts() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original template hypothesis PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

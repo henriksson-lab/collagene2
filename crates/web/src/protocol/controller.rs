@@ -109,6 +109,10 @@ impl ProtocolController {
                         result: protocol::schema::AnalysisResult::Verification(report),
                         ..
                     }) => {
+                        if let Err(error) = report.validate_standard_for_plan(&plan) {
+                            message.set(error.to_string());
+                            return;
+                        }
                         plan_report.set(Some(report));
                         last_plan_events.set(exact_sources.map(|bindings| {
                             (

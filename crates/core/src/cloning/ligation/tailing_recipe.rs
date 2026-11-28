@@ -10,7 +10,7 @@ use crate::{
 };
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "tailing-recipe-1";
+pub const ENGINE_VERSION: &str = "tailing-recipe-2";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -34,7 +34,18 @@ pub enum ProfileStatus {
     Undetermined,
 }
 dto! {pub struct Fragment{pub source:FragmentSpec,pub action:Action,pub treatment:Option<EndTreatment>}}
-dto! {pub struct Recipe{pub name:String,pub profile:Profile,pub fragments:Vec<Fragment>,pub circular:bool,pub allow_nicked:bool}}
+dto! {
+    pub struct Recipe {
+    pub name:String,
+    pub profile:Profile,
+    pub fragments:Vec<Fragment>,
+    pub circular:bool,
+    pub allow_nicked:bool,
+    #[serde(deserialize_with="crate::encoding::required_option")]
+    #[cfg_attr(feature="json-schema",schemars(required))]
+    pub standard:Option<crate::cloning::assembly::standards::declaration::Declaration>,
+    }
+}
 dto! {pub struct Row{pub preparation:PreparedRow,pub action:Action,pub tail_step:Option<usize>,pub treatment_step:Option<usize>,pub prepared_source:Source}}
 dto! {pub struct Compiled{pub plan:DesignPlan,pub rows:Vec<Row>,pub ligation_step:usize}}
 use crate::cloning::ligation::recipe::Junction;
@@ -100,6 +111,10 @@ pub fn source_preflight(
     target: &Molecule,
     recipe: &Recipe,
 ) -> Result<(), Error> {
+    if let Some(standard) = &recipe.standard {
+        standard.validate()?;
+    }
+
     shape(recipe)?;
     preparation::preparation_source_preflight(inputs, target, &recipe.name, &sources(recipe))
 }
@@ -214,6 +229,7 @@ fn compile_bound(
     ));
     let result = Compiled {
         plan: DesignPlan {
+            standard: recipe.standard.clone(),
             name: recipe.name.clone(),
             target_revision: target_revision.into(),
             inputs: inputs.to_vec(),
@@ -379,11 +395,12 @@ pub fn preview(inputs: &[PlanInput], target: &Molecule, recipe: &Recipe) -> Resu
 impl Preview {
     /// Readonly declaration/source correspondence, never chemical replay or authority.
     pub fn validate(&self) -> Result<(), Error> {
-        self.verification.validate_documentary()?;
         self.validate_binding(&self.context_revision)
     }
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification
+            .validate_standard_for_plan(&self.compiled.plan)?;
         let recipe = &self.recipe;
         let inputs = &self.compiled.plan.inputs;
         let target_revision = &self.compiled.plan.target_revision;

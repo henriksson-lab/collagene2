@@ -47,6 +47,7 @@ pub fn fixture() -> (
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual staggered annealing".into(),
         target_revision: target.revision(),
         inputs: vec![input("top", top), input("bottom", bottom)],

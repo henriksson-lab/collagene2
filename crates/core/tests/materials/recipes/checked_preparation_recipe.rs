@@ -40,6 +40,7 @@ fn input(m: Molecule) -> Vec<PlanInput> {
 }
 fn recipe(preparation: Preparation) -> l::Recipe {
     l::Recipe {
+        standard: None,
         name: "Explicit original CpG state".into(),
         fragments: vec![l::Fragment {
             source: FragmentSpec {

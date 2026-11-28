@@ -1208,6 +1208,7 @@ mod tests {
             }
         };
         let plan = collagene_core::planning::plan::DesignPlan {
+            standard: None,
             name: "Explicitly close circle".into(),
             target_revision: circle.revision(),
             inputs: vec![PlanInput {

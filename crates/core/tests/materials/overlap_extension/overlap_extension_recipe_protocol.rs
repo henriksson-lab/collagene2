@@ -60,6 +60,7 @@ fn input(id: &str, molecule: Molecule) -> PlanInput {
 }
 fn recipe(preparation: Preparation) -> Recipe {
     Recipe {
+        standard: None,
         name: "Mutate an insert before multipart assembly".into(),
         fragments: vec![
             FragmentSpec {
@@ -277,6 +278,7 @@ fn flat_saved_run_preparation_variant7_cannot_hide_under_old_from_run_envelope()
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Prepare original stock".into(),
         target_revision: original_target.revision(),
         inputs: vec![input("insert", source.clone())],

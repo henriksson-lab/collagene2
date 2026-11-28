@@ -19,6 +19,10 @@ pub enum Status {
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct VerificationReport {
+    /// Advisory source-format evidence; never a product or global status gate.
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    #[cfg_attr(feature = "json-schema", schemars(required))]
+    pub standard_review: Option<crate::cloning::assembly::standards::declaration::DeclaredReview>,
     pub plan_revision: String,
     pub target_revision: String,
     pub engine_version: String,
@@ -81,6 +85,47 @@ impl VerificationReport {
             .filter(|step| step.state == StepState::Reconstructed && step.product.is_some())
             .count()
     }
+    /// Bind advisory evidence to the actual current plan without running the
+    /// standards checker or reconstructing products. Standalone report decoding
+    /// cannot establish whether a declaration was present in an external plan.
+    pub fn validate_standard_for_plan(
+        &self,
+        plan: &crate::planning::plan::DesignPlan,
+    ) -> Result<(), Error> {
+        self.validate_documentary()?;
+        // A global resource refusal deliberately did not hash or assess the
+        // supplied plan. Retain that negative artifact without trying again or
+        // pretending that its missing advice says anything about conformity.
+        if self.status == Status::Invalid
+            && self.planned_steps == 0
+            && self.steps.is_empty()
+            && self.plan_revision.is_empty()
+            && self.target_revision.is_empty()
+            && self.standard_review.is_none()
+            && self.findings.iter().any(|finding| {
+                finding.rule == RuleId::Admission
+                    && finding.verdict == CheckVerdict::Fail
+                    && finding.scope == CheckScope::Plan
+            })
+        {
+            return Ok(());
+        }
+        crate::material::capsule::plan_resource_preflight(plan)?;
+        if self.plan_revision != plan.revision() {
+            return Err(Error::Format(
+                "advisory verification plan binding changed".into(),
+            ));
+        }
+        match (&plan.standard, &self.standard_review) {
+            (Some(declaration), Some(review)) => {
+                review.validate_binding(&self.plan_revision, declaration)
+            }
+            (None, None) => Ok(()),
+            _ => Err(Error::Format(
+                "declared standard and verification advice presence differ".into(),
+            )),
+        }
+    }
     /// Current documentary shape and integrity only. This neither replays the
     /// plan nor grants private chemical/source authority to imported reports.
     pub fn validate_documentary(&self) -> Result<(), Error> {
@@ -95,6 +140,14 @@ impl VerificationReport {
             || self.reference_step_reports.len() > 64
         {
             return Err(Error::TooLarge);
+        }
+        if let Some(review) = &self.standard_review {
+            review.validate_documentary()?;
+            if review.plan_revision != self.plan_revision {
+                return Err(Error::Format(
+                    "advisory standard review names another plan".into(),
+                ));
+            }
         }
         // Native owned callers can bypass serde's location-depth admission.
         // Walk borrowed trees before recursive JSON counting or molecule checks,

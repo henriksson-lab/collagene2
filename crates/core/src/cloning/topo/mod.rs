@@ -1353,7 +1353,7 @@ fn prepare_bound(
         }
     }
     let budget = match replay.as_deref_mut() {
-        Some(replay) if replay.is_qc_job() => Some(&mut replay.pcr),
+        Some(replay) if replay.is_shared_job() => Some(&mut replay.pcr),
         _ => None,
     };
     let mut evidence = prepare_declared(&expanded.inputs, &expanded.request, budget)?;

@@ -40,6 +40,7 @@ fn report(
     let target = dna(sequence, topology);
     verify(
         &DesignPlan {
+            standard: None,
             name: "annotation fixture".into(),
             target_revision: target.revision(),
             inputs: inputs

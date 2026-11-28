@@ -235,6 +235,7 @@ pub(crate) fn tailing_request(
     }
     let (ids, sources) = prepared_rows(state, inputs.len())?;
     let recipe = Recipe {
+        standard: state.standard_declaration()?,
         name: format!("Declared tailing and ligation to {}", target.name),
         profile: state.tailing_profile,
         fragments: sources
@@ -670,6 +671,7 @@ mod annealed_tests {
             matches!(&fragments[1].preparation,collagene_core::cloning::assembly::recipe::Preparation::AnnealedOligos{bottom_input_id,..} if bottom_input_id==&ids[2])
         );
         let recipe = collagene_core::cloning::ligation::recipe::Recipe {
+            standard: None,
             name: "Actual three-source ligation".into(),
             fragments: fragments
                 .into_iter()
@@ -849,6 +851,7 @@ mod overlap_extension_tests {
             .collect::<Vec<_>>();
         let (_, options) = s.profile().unwrap();
         let recipe = assembly_recipe::Recipe {
+            standard: None,
             name: "Actual edited insert and separate part".into(),
             fragments,
             overlaps: vec![8],
@@ -957,6 +960,7 @@ mod overlap_extension_tests {
             }
         };
         let plan = DesignPlan {
+            standard: None,
             name: "Actual original-stock PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -1211,6 +1215,7 @@ mod source_generation_tests {
         ));
         assert!(matches!(&compiled.steps[1], Operation::Pcr { .. }));
         let plan = DesignPlan {
+            standard: None,
             name: "Actual generated strands".into(),
             target_revision: target.revision(),
             inputs,
@@ -1262,6 +1267,7 @@ pub(crate) fn overlap_request(
     let (overlaps, options) = state.profile()?;
     let (ids, fragments) = prepared_rows(state, inputs.len())?;
     let recipe = Recipe {
+        standard: state.standard_declaration()?,
         name: format!("Profiled overlap assembly to {}", target.name),
         fragments,
         overlaps,
@@ -1339,6 +1345,7 @@ pub(crate) fn ligation_request(
         }
     }
     let recipe = Recipe {
+        standard: state.standard_declaration()?,
         name: format!(
             "{} to {}",
             if state.mode == Mode::GoldenGate {

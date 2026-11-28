@@ -141,6 +141,7 @@ mod tests {
         )
         .unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Exact PCR diagnostic".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

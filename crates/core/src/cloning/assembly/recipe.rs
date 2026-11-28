@@ -11,7 +11,7 @@ use crate::{
 use collagene_model::{Alphabet, Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-pub const ENGINE_VERSION: &str = "overlap-recipe-2";
+pub const ENGINE_VERSION: &str = "overlap-recipe-3";
 pub const MAX_ROWS: usize = 128;
 const MAX_INPUT_BASES: usize = 8 << 20;
 pub(crate) const MAX_ROLE_BASES: usize = 16 << 20;
@@ -335,7 +335,18 @@ pub(crate) fn from_derived_shape(
     Ok(())
 }
 dto! {pub struct FragmentSpec {pub role:String,pub input_id:String,pub preparation:Preparation,pub reverse:bool,#[serde(deserialize_with="required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::chemistry::tracked_duplex::GenerationAssumptions>}}
-dto! {pub struct Recipe {pub name:String,pub fragments:Vec<FragmentSpec>,pub overlaps:Vec<usize>,pub circular:bool,pub options:ProfileOptions}}
+dto! {
+    pub struct Recipe {
+    pub name:String,
+    pub fragments:Vec<FragmentSpec>,
+    pub overlaps:Vec<usize>,
+    pub circular:bool,
+    pub options:ProfileOptions,
+    #[serde(deserialize_with="crate::encoding::required_option")]
+    #[cfg_attr(feature="json-schema",schemars(required))]
+    pub standard:Option<crate::cloning::assembly::standards::declaration::Declaration>,
+    }
+}
 dto! {pub struct PreparedRow {pub row_index:usize,pub role:String,pub input_id:String,pub input_revision:String,pub preparation_step:Option<usize>,pub repair_step:Option<usize>,pub prepared_source:Source,pub reverse:bool}}
 dto! {pub struct Compiled {pub plan:DesignPlan,pub rows:Vec<PreparedRow>,pub assembly_step:usize}}
 dto! {pub struct Preview {pub context_revision:String,pub compiled:Compiled,pub verification:VerificationReport,
@@ -843,6 +854,10 @@ pub fn source_preflight(
     target: &Molecule,
     recipe: &Recipe,
 ) -> Result<(), Error> {
+    if let Some(standard) = &recipe.standard {
+        standard.validate()?;
+    }
+
     recipe.options.validate()?;
     if recipe.fragments.is_empty() || recipe.fragments.len() > MAX_ROWS {
         return Err(Error::TooLarge);
@@ -1719,6 +1734,7 @@ pub fn compile(
     });
     let compiled = Compiled {
         plan: DesignPlan {
+            standard: recipe.standard.clone(),
             name: recipe.name.clone(),
             target_revision: prepared.target_revision,
             inputs: prepared.inputs,
@@ -2034,6 +2050,8 @@ impl Preview {
     /// Readonly shape/binding checks only. No reconstruction or authority restoration.
     pub fn validate(&self) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification
+            .validate_standard_for_plan(&self.compiled.plan)?;
         if !hex(&self.context_revision)
             || self.compiled.rows.is_empty()
             || self.compiled.rows.len() > MAX_ROWS

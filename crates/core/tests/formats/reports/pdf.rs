@@ -26,6 +26,7 @@ fn fixture() -> (DesignPlan, Molecule) {
         needs_review: false,
     });
     let plan = DesignPlan {
+        standard: None,
         name: "Assembly α → β / café".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -233,6 +234,7 @@ fn physical_pcr_and_ligation_steps_print_oligos_tails_chemistry_nicks_and_source
         .metadata
         .insert("source:accession_version".into(), "SYN000001.1".into());
     let plan = DesignPlan {
+        standard: None,
         name: "PCR evidence".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -300,6 +302,7 @@ fn circular_map_keeps_origin_crossing_and_uncertain_review_geometry() {
         needs_review: true,
     });
     let plan = DesignPlan {
+        standard: None,
         name: "Circular closure".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

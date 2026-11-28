@@ -228,6 +228,7 @@ fn saved(incomplete: bool) -> (Molecule, MaterialOrigin, Workspace) {
         .unwrap()
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Closed originating PCR graph".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -403,6 +404,7 @@ fn bottom_only_source_calls_reach_all_six_oligos_and_real_ecori_ends() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual40/44 annealing".into(),
         target_revision: target.revision(),
         inputs: vec![

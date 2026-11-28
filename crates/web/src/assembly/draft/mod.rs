@@ -19,3 +19,8 @@ pub(crate) mod assembly_strategy_view;
 pub(crate) mod assembly_workspace;
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod model;
+
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod assembly_standard_model;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod assembly_standard_view;

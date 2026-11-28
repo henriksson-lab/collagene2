@@ -34,7 +34,7 @@ fn record() -> Record {
         }
     };
     Record {
-        schema_version: 1,
+        schema_version: collagene_core::alignment::history::VERSION,
         reference: binding(0),
         query: binding(1),
         report: pairwise_review::compare(

@@ -49,6 +49,7 @@ fn graph_consuming_run_closes_both_records_and_exact_sources_then_replays() {
     .unwrap();
     let request = literal::continuation(&second.workspace, &second.receipt.selection);
     let plan = DesignPlan {
+        standard: None,
         name: "Independent target check of actual graph continuation".into(),
         target_revision: literal::event(&second.workspace, 4).revision,
         inputs: vec![],

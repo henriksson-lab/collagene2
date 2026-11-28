@@ -71,6 +71,7 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "first native PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -112,6 +113,7 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
     .unwrap();
     add(&mut w, "second-target", target2.clone());
     let plan2 = DesignPlan {
+        standard: None,
         name: "saved material then native PCR".into(),
         target_revision: target2.revision(),
         inputs: vec![PlanInput {
@@ -152,6 +154,7 @@ fn fixture() -> (Workspace, Selection, run_material::Selection, String) {
     // Unrelated proposals and later source edits are local work, not publication
     // dependencies. The source run still binds its exact original import event.
     w.candidates.push(Candidate::new(DesignPlan {
+        standard: None,
         name: "private future design".into(),
         target_revision: private.revision(),
         inputs: vec![PlanInput {
@@ -265,6 +268,7 @@ fn published_pcr_history_reopens_and_replays_nested_saved_material_without_priva
     let intended =
         Molecule::dna("third independently declared target", DNA, Topology::Linear).unwrap();
     let downstream = DesignPlan {
+        standard: None,
         name: "after library download".into(),
         target_revision: intended.revision(),
         inputs: vec![PlanInput {

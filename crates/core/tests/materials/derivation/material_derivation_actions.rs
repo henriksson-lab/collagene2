@@ -248,6 +248,7 @@ fn saved_staggered() -> (Workspace, EventBinding, MaterialOrigin) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Declared Dam generation, actual EcoRV cleavage and top shortening".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", stock)],
@@ -598,6 +599,7 @@ fn end_repair_preserves_real_internal_nick_and_does_not_enable_unsupported_nicke
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "One eligible strand joins".into(),
         target_revision: target.revision(),
         inputs: vec![input("a", a), input("b", b)],

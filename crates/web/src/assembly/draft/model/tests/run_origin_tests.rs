@@ -26,6 +26,7 @@ fn saved_pcr_workspace() -> (Draft, Workspace) {
         }
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

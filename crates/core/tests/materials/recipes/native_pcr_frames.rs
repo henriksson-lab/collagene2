@@ -57,6 +57,7 @@ fn saved_pair(top_dna: &str, bottom_dna: &str) -> (Workspace, EventBinding, Mate
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual literal13/17 oligo annealing".into(),
         target_revision: target.revision(),
         inputs: vec![input("top", top), input("bottom", bottom)],
@@ -340,6 +341,7 @@ fn framed_step_pcr_orders_and_saved_collection_retain_bottom_declarations_after_
         unreachable!()
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Actual Bottom-frame Step PCR with explicit order".into(),
         target_revision: target.revision(),
         inputs: vec![input("saved", source.clone())],

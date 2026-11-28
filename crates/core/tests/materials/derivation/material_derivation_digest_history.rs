@@ -117,6 +117,7 @@ fn pcr() -> (Workspace, d::Request) {
     });
     let target = Molecule::dna("Independent full PCR target", STOCK, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source.clone())],
@@ -241,6 +242,7 @@ fn actual_physical_overlap_circle_digest_preserves_strands_and_inherited_search_
     let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
     let plan = DesignPlan {
+        standard: None,
         name: "Two actual PCRs and physical closure".into(),
         target_revision: target.revision(),
         inputs: vec![input("left", a.clone()), input("right", b.clone())],
@@ -320,6 +322,7 @@ fn declared_original_modifications_survive_actual_full_circle_cleavage_and_capsu
     .unwrap();
     let target = Molecule::dna("Independent original circle", STOCK, Topology::Circular).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Closed source-generation assumption".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source.clone())],

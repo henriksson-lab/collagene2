@@ -391,6 +391,7 @@ pub fn EndRepairPanel(
             });
         }
         on_candidate.run(Candidate::new(DesignPlan {
+            standard: None,
             name: format!("Digest / end repair to {}", target.name),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -448,6 +449,7 @@ pub fn EndRepairPanel(
             });
         }
         on_candidate.run(Candidate::new(DesignPlan {
+            standard: None,
             name: format!("Annealed oligos to {}", target.name),
             target_revision: target.revision(),
             inputs: vec![

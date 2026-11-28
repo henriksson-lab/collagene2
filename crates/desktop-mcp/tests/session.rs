@@ -113,6 +113,7 @@ async fn selected_saved_pcr_closure_replays_fromrun_without_private_documents_or
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Real native PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

@@ -159,6 +159,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         },
     };
     let row = SelectedConstruct {
+        standard: None,
         id: "literal-row".into(),
         name: "Literal AACC TTAA".into(),
         choices: vec![

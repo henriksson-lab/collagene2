@@ -321,6 +321,7 @@ fn candidate_snapshots_deduplicate_sources_and_preserve_unresolved_targets_as_da
     let mut workspace = simple();
     let source = workspace.head("document-1").unwrap().clone();
     let candidate = Candidate::new(DesignPlan {
+        standard: None,
         name: "Unbound draft".into(),
         target_revision: "f".repeat(64),
         inputs: vec![PlanInput {
@@ -671,6 +672,7 @@ fn repair_candidate_roundtrips_with_only_the_current_workspace_plan_schema() {
     let mut workspace = simple();
     let source = workspace.head(&workspace.active_document).unwrap().clone();
     workspace.candidates.push(Candidate::new(DesignPlan {
+        standard: None,
         name: "Repair candidate".into(),
         target_revision: source.revision(),
         inputs: vec![PlanInput {
@@ -704,6 +706,7 @@ fn tailing_candidate_preserves_current_schema_and_literal_operation() {
     let mut w = simple();
     let source = w.head(&w.active_document).unwrap().clone();
     w.candidates.push(Candidate::new(DesignPlan {
+        standard: None,
         name: "tail".into(),
         target_revision: source.revision(),
         inputs: vec![PlanInput {
@@ -888,4 +891,94 @@ fn typed_reference_action_larger_than_manifest_limit_roundtrips_in_its_own_blob(
         serde_json::to_value(&loaded.history).unwrap(),
         serde_json::to_value(&workspace.history).unwrap()
     );
+}
+
+#[test]
+fn current_archive_plan_records_preserve_declared_and_null_standard_and_require_the_field() {
+    use collagene_core::cloning::assembly::standards::declaration::{
+        Declaration, DeclaredPart, ProfileRef,
+    };
+    let mut workspace = simple();
+    let source = workspace.revisions[&workspace.documents[0].head].clone();
+    let ordinary = DesignPlan {
+        standard: None,
+        name: "Same native input, separate declaration identity".into(),
+        target_revision: source.revision(),
+        inputs: vec![PlanInput {
+            id: "source".into(),
+            revision: source.revision(),
+            molecule: source.clone(),
+        }],
+        steps: vec![Operation::Overlap {
+            fragments: vec![Source::Input("source".into())],
+            overlaps: vec![],
+            circular: true,
+        }],
+    };
+    let mut declared = ordinary.clone();
+    declared.standard = Some(Declaration {
+        // Archive retention is documentary: a well-formed historical profile
+        // pin is retained even when that profile is not installed today.
+        profile: ProfileRef {
+            profile_id: "literal-uninstalled-profile".into(),
+            profile_identity: "1".repeat(64),
+        },
+        parts: vec![DeclaredPart {
+            role: "literal-part".into(),
+            input_id: "source".into(),
+            source_revision: source.revision(),
+            start: 0,
+            length: source.sequence.len(),
+            reverse: false,
+            slot: "literal-slot".into(),
+            body_start: 0,
+            body_end: source.sequence.len(),
+        }],
+        limits: Default::default(),
+    });
+    assert_ne!(ordinary.revision(), declared.revision());
+    workspace.candidates = vec![Candidate::new(ordinary), Candidate::new(declared.clone())];
+    workspace.active_candidate = Some(workspace.candidates[1].plan_revision.clone());
+    let bytes = save_workspace(&workspace).unwrap();
+    let restored = load_workspace(&bytes).unwrap();
+    assert_eq!(
+        serde_json::to_value(&restored.candidates).unwrap(),
+        serde_json::to_value(&workspace.candidates).unwrap()
+    );
+    let files = unpack(&bytes).into_iter().collect::<BTreeMap<_, _>>();
+    let manifest: Value = serde_json::from_slice(&files["manifest.json"]).unwrap();
+    assert_eq!(manifest["plan_schema"], 33);
+    for index in 0..2 {
+        let original = manifest["candidates"][index].as_str().unwrap();
+        let mut record: Value =
+            serde_json::from_slice(&files[&format!("blobs/{original}")]).unwrap();
+        if index == 0 {
+            assert!(record.get("standard").unwrap().is_null());
+        } else {
+            assert_eq!(
+                record["standard"],
+                serde_json::to_value(&declared.standard).unwrap()
+            );
+        }
+        record.as_object_mut().unwrap().remove("standard");
+        let altered = serde_json::to_vec(&record).unwrap();
+        let altered_hash = hash(&altered);
+        let mut changed_files = files.clone();
+        changed_files.remove(&format!("blobs/{original}"));
+        changed_files.insert(format!("blobs/{altered_hash}"), altered.clone());
+        let mut changed_manifest = manifest.clone();
+        changed_manifest["blobs"]
+            .as_object_mut()
+            .unwrap()
+            .remove(original);
+        changed_manifest["blobs"][&altered_hash] = json!({"length":altered.len()});
+        changed_manifest["candidates"][index] = json!(altered_hash);
+        changed_files.insert(
+            "manifest.json".into(),
+            serde_json::to_vec(&changed_manifest).unwrap(),
+        );
+        // Hashes, entry lengths and every blob reference are current and closed;
+        // a missing required-nullable field still cannot be decoded as None.
+        assert!(load_workspace(&stored(&changed_files.into_iter().collect::<Vec<_>>())).is_err());
+    }
 }

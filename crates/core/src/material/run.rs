@@ -725,6 +725,7 @@ pub fn reconstruct(workspace: &Workspace, selection: &Selection) -> Result<Fresh
     let target = resolve(workspace, &run.target)?;
     let (report, mut states) = verification::engine::verify_with_tracked(&run.plan, target);
     report.validate_documentary()?;
+    report.validate_standard_for_plan(&run.plan)?;
     if report.status == Status::Invalid
         || report.steps.len() != run.products.len()
         || !report

@@ -9,4 +9,4 @@ pub mod projection;
 pub(crate) mod replay_budget;
 pub mod sources;
 pub mod terminal;
-pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-38");
+pub const ENGINE_VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "/science-39");

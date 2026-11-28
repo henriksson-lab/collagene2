@@ -111,7 +111,7 @@ async fn explicit_original_source_termini_enable_declared_ligation_without_mutat
     let target = named(&imported, "independent_target");
     let before = call(&client, "export_document", l.clone()).await;
     let inputs = json!([{"id":"l","document":l},{"id":"r","document":r}]);
-    let recipe = json!({"name":"Explicit original duplex assumptions","fragments":[
+    let recipe = json!({"standard": null,"name":"Explicit original duplex assumptions","fragments":[
         {"source":{"role":"left","input_id":"l","generation":null,"preparation":{"DeclaredDuplex":{"left":terminus(),"right":terminus()}},"reverse":false},"treatment":null},
         {"source":{"role":"right","input_id":"r","generation":null,"preparation":{"DeclaredDuplex":{"left":terminus(),"right":terminus()}},"reverse":false},"treatment":null}
     ],"circular":false,"allow_nicked":false});
@@ -175,7 +175,7 @@ async fn explicit_original_source_termini_enable_declared_ligation_without_mutat
     );
     // The direct typed tool exposes the same explicit operation; no recipe-only
     // bypass and no ability to redeclare a prior Step as an intact original.
-    let direct=call(&client,"propose_plan",json!({"name":"Direct terminal declarations","target":target,"inputs":inputs,"steps":[declaration("l"),declaration("r"),{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":false,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]})).await;
+    let direct=call(&client,"propose_plan",json!({"standard": null,"name":"Direct terminal declarations","target":target,"inputs":inputs,"steps":[declaration("l"),declaration("r"),{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":false,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]})).await;
     assert_eq!(
         call(
             &client,
@@ -185,7 +185,7 @@ async fn explicit_original_source_termini_enable_declared_ligation_without_mutat
         .await["status"],
         "ConsistentUnderAssumptions"
     );
-    let step=call(&client,"propose_plan",json!({"name":"Step cannot become original","target":l,"inputs":inputs,"steps":[declaration("l"),{"DeclareSourceTermini":{"template":{"Step":0},"left":terminus(),"right":terminus()}}]})).await;
+    let step=call(&client,"propose_plan",json!({"standard": null,"name":"Step cannot become original","target":l,"inputs":inputs,"steps":[declaration("l"),{"DeclareSourceTermini":{"template":{"Step":0},"left":terminus(),"right":terminus()}}]})).await;
     assert_eq!(
         call(
             &client,
@@ -213,7 +213,7 @@ async fn single_stranded_circular_and_imported_physical_sources_cannot_be_redecl
     .await;
     let target = named(&target, "independent_target");
     for name in ["ss_source", "circle", "imported_physical", "reference_only"] {
-        let proposal=call(&client,"propose_plan",json!({"name":format!("Reject inherited {name}"),"target":target,"inputs":[{"id":"s","document":named(&imported,name)}],"steps":[declaration("s")]})).await;
+        let proposal=call(&client,"propose_plan",json!({"standard": null,"name":format!("Reject inherited {name}"),"target":target,"inputs":[{"id":"s","document":named(&imported,name)}],"steps":[declaration("s")]})).await;
         let report = call(
             &client,
             "verify_plan",

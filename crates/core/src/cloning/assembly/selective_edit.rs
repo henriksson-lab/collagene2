@@ -431,6 +431,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         }
     }
     let recipe = assembly_recipe::Recipe {
+        standard: None,
         name: r.base.name.clone(),
         fragments,
         overlaps: r.overlaps.clone(),

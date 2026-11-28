@@ -83,7 +83,7 @@ async fn ta_gc_roundtrip_preserves_originals_target_and_explicit_nicks() {
         "{text}LOCUS       blunt_target 12 bp DNA circular SYN 01-JAN-2026\nFEATURES             Location/Qualifiers\nORIGIN\n        1 aaacccgggttt\n//\n"
     );
     let imported = call(&client, "import_document", json!({"text":text})).await;
-    let recipe = json!({"name":"Original PCR products and explicit tails","profile":"Ta","fragments":[
+    let recipe = json!({"standard": null,"name":"Original PCR products and explicit tails","profile":"Ta","fragments":[
         {"source":{"generation":null,"role":"vector","input_id":"vector","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("VF","AAA","").unwrap(),"reverse":Primer::new("VR","GGG","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"T"}},"treatment":"Phosphorylate"},
         {"source":{"generation":null,"role":"insert","input_id":"insert","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("IF","GGG","").unwrap(),"reverse":Primer::new("IR","AAA","").unwrap()}},"reverse":false},"action":{"AddTail":{"base":"A"}},"treatment":"Phosphorylate"}
     ],"circular":true,"allow_nicked":false});

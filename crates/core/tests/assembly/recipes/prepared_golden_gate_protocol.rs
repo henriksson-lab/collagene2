@@ -58,6 +58,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, pool::Request) {
     .unwrap();
     let request = pool::Request {
         recipe: ligation_recipe::Recipe {
+            standard: None,
             name: "two-role pool".into(),
             fragments: proposal
                 .fragments

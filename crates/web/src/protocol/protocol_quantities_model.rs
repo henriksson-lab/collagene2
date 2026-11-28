@@ -699,6 +699,7 @@ mod tests {
         let source_pin = pin(0);
         let target_pin = pin(1);
         let plan = DesignPlan {
+            standard: None,
             name: "Actual PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

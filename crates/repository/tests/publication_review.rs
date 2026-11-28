@@ -162,6 +162,7 @@ fn fixture(alternatives: bool) -> (Workspace, Selection, run_material::Selection
         },
     );
     let plan = DesignPlan {
+        standard: None,
         name: "Saved actual PCR from SBOL projected stock".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

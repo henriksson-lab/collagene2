@@ -801,6 +801,7 @@ fn saved_material_recipe(derived: bool) -> (Workspace, digest_setups::Recipe) {
         )
         .unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Source-backed PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

@@ -98,6 +98,7 @@ fn new_preparation_cannot_hide_inside_an_old_recipe_envelope() {
     let inputs = vec![input()];
     let target = Molecule::dna("independent", "ACGACCCCGGGG", Topology::Linear).unwrap();
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "literal PCR digest".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {

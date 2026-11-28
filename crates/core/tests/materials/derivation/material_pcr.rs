@@ -53,6 +53,7 @@ fn stock(
         let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
         profile.scan_repeated_overlaps = false;
         let plan = DesignPlan {
+            standard: None,
             name: "Finite terminal enumeration".into(),
             target_revision: target.revision(),
             inputs: vec![input("left", left.clone()), input("right", right.clone())],
@@ -104,6 +105,7 @@ fn stock(
             Topology::Linear,
         );
         let plan = DesignPlan {
+            standard: None,
             name: "Real original PCR".into(),
             target_revision: target.revision(),
             inputs: vec![input("stock", source.clone())],

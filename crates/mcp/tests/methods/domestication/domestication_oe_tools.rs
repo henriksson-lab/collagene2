@@ -164,7 +164,7 @@ async fn real_original_linear_and_circle_oe_keep_checked_target_and_actual_prime
             verification::engine::verify(&candidate.plan, &native.target).status,
             verification::evidence::Status::ConsistentUnderAssumptions
         );
-        let wrong=call(&c,"propose_plan",json!({"name":"Wrong independent original target","target":source,"inputs":[{"id":"template","document":source}],"steps":native.plan.steps})).await;
+        let wrong=call(&c,"propose_plan",json!({"standard": native.plan.standard,"name":"Wrong independent original target","target":source,"inputs":[{"id":"template","document":source}],"steps":native.plan.steps})).await;
         assert_eq!(
             call(
                 &c,

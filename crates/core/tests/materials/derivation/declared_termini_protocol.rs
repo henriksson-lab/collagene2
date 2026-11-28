@@ -28,6 +28,7 @@ fn fixture() -> (DesignPlan, Molecule) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "explicit original-source termini".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -176,6 +177,7 @@ fn declared_preparation_cannot_hide_in_an_old_existing_recipe_job() {
     use collagene_core::cloning::assembly::recipe::{FragmentSpec, Preparation, Recipe};
     let (plan, target) = fixture();
     let recipe = Recipe {
+        standard: None,
         name: "declared overlap source".into(),
         fragments: vec![FragmentSpec {
             generation: None,

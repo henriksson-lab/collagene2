@@ -94,6 +94,27 @@ mod tests {
         DifferenceKind, Scoring,
     };
 
+    // These fixtures independently declare alignment rows for presentation
+    // indexing only; they never enter history or a native assessment.
+    fn declared_full_search(
+        n: usize,
+        m: usize,
+        score: i32,
+    ) -> collagene_core::alignment::grid::SearchEvidence {
+        use collagene_core::alignment::grid::{
+            Attempt, Domain, GlobalStorage, SearchEvidence, StopReason,
+        };
+        let cells = (n + 1) * (m + 1);
+        SearchEvidence {
+            storage: GlobalStorage::Full,
+            attempts: vec![
+                Attempt::completed(Domain::Full, n, m, Scoring::default(), score, cells).unwrap(),
+            ],
+            evaluated_cells: cells,
+            unrestricted_optimum_proven: true,
+            stop_reason: StopReason::Certified,
+        }
+    }
     #[test]
     fn gaps_across_a_page_boundary_keep_native_offsets_and_empty_difference_spans() {
         // Explicit valid alignment path: insert T at column599, match G at600,
@@ -117,8 +138,12 @@ mod tests {
         );
         let alignment = Alignment {
             algorithm: "independently declared gap-containing presentation fixture".into(),
+            search: declared_full_search(675, 685, 1324),
+            reference_length: 675,
+            query_length: 685,
             options: AlignmentOptions {
                 mode: AlignmentMode::Local,
+                global_storage: collagene_core::alignment::grid::GlobalStorage::Full,
                 scoring: Scoring {
                     gap_open: -2,
                     ..Scoring::default()
@@ -248,7 +273,14 @@ mod tests {
             .collect();
         let alignment = Alignment {
             algorithm: "independently declared late-page presentation fixture".into(),
-            options: AlignmentOptions::default(),
+            search: declared_full_search(5000, 5000, 8750),
+            reference_length: 5000,
+            query_length: 5000,
+            options: AlignmentOptions {
+                global_storage: collagene_core::alignment::grid::GlobalStorage::Full,
+                max_cells: 32_000_000,
+                ..AlignmentOptions::default()
+            },
             score: 8750,
             reference_start: 0,
             reference_end: 5000,

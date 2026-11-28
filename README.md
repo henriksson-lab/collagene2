@@ -11,7 +11,8 @@ A molecular cloning workspace in Rust, WebAssembly and Leptos, with WebGL2 maps 
 These tables summarize implemented capabilities; see the linked profiles for limitations and [implementation status](docs/IMPLEMENTATION_STATUS.md) for remaining acceptance work.
 
 - Sequence editing, annotations, translations and synchronized circular/linear maps.
-- Restriction-site filtering, virtual digests, primer design and cloning workflows.
+- Restriction-site filtering, virtual digests, primer design and named-outcome screening.
+- Bounded pairwise comparison with circular-origin and reverse-strand search.
 - [Structural construct checks, assembly-standard checks and oligo collection binding](docs/DESIGN_CHECKS.md).
 - Independent target verification, retained intermediate products and alternative cloning products.
 - Saved history, [reaction choices](docs/CLONING_REACTION_CONDITIONS.md), primer orders and HTML/PDF protocols.

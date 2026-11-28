@@ -42,6 +42,7 @@ fn anneal(top: &str, bottom: &str, chemistry: Terminus) -> Operation {
 fn ta_plan(base: TailingBase, insert: TailingBase, chemistry: Terminus) -> DesignPlan {
     let target = dna("target", "ACGCTGGTAA", Topology::Circular);
     DesignPlan {
+        standard: None,
         name: "literal TA".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -185,6 +186,7 @@ fn preview_metadata_cannot_grant_chemistry_and_unknown_or_blocked_tails_remain_i
     let source_m = dna("plain", "ACGC", Topology::Linear);
     let target = dna("tailed", "ACGCA", Topology::Linear);
     let mut plan = DesignPlan {
+        standard: None,
         name: "unknown".into(),
         target_revision: target.revision(),
         inputs: vec![input("s", source_m)],
@@ -256,6 +258,7 @@ fn oriented_profiles_reconstruct_and_map_source_features_without_enforcing_recom
     });
     let target = dna("target", "AAAACCGGTT", Topology::Linear);
     let plan = DesignPlan {
+        standard: None,
         name: "oriented short homology".into(),
         target_revision: target.revision(),
         inputs: vec![input("a", first), input("b", second)],

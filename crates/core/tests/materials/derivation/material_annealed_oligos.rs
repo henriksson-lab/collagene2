@@ -326,6 +326,7 @@ fn saved_annealed_adapters_supply_literal_sticky_and_blunt_junctions_to_later_li
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Source-backed annealed adapters into circle".into(),
         target_revision: target.revision(),
         inputs,

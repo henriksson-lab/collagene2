@@ -13,4 +13,5 @@ mod methylation_audit;
 mod methylation_protocol;
 mod rna_chemistry_protocol;
 mod rna_history;
+mod screening_protocol;
 mod structure_view_protocol;

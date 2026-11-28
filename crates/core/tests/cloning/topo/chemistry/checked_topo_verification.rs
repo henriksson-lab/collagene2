@@ -109,6 +109,7 @@ fn plan(directional: bool) -> (DesignPlan, Molecule) {
     .unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "TOPO plan".into(),
             target_revision: target.revision(),
             inputs,

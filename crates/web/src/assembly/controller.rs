@@ -473,6 +473,7 @@ impl AssemblyController {
                     ));
                 }
                 let plan = DesignPlan {
+                    standard: None,
                     name: format!(
                         "{} restriction {} to {}",
                         if checked {
@@ -505,6 +506,7 @@ impl AssemblyController {
                 overlaps.push(close);
             }
             let plan = DesignPlan {
+                standard: None,
                 name: format!("Assembly to {}", target.name),
                 target_revision: target.revision(),
                 inputs: vec![

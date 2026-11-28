@@ -1238,6 +1238,7 @@ mod overlap_extension_digest_tests {
         )
         .unwrap();
         let plan = collagene_core::planning::plan::DesignPlan {
+            standard: None,
             name: "Fresh conditional preparation".into(),
             inputs,
             target_revision: target.revision(),
@@ -1282,6 +1283,7 @@ mod overlap_extension_digest_tests {
             }
         };
         let plan = DesignPlan {
+            standard: None,
             name: "Actual stock PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

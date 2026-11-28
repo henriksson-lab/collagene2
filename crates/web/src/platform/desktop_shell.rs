@@ -37,6 +37,11 @@ const TOOLS: &[Tool] = &[
         target: Target::Panel("construct_qc"),
     },
     Tool {
+        label: "Screening strategy",
+        group: "Cloning",
+        target: Target::Panel("screening"),
+    },
+    Tool {
         label: "Assembly standards",
         group: "Cloning",
         target: Target::Panel("assembly_standards"),

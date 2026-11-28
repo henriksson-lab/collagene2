@@ -127,7 +127,7 @@ async fn sdk_proposal_verification_and_exports_use_actual_extension_not_target_s
         "AGTCCGATGCTACGTATTTTCAGACCTGTAGATCGTCA",
     )
     .await;
-    let args = json!({"name":"Actual reciprocal extension","target":target,"inputs":[{"id":"original","document":original}],"steps":operations()});
+    let args = json!({"standard": null,"name":"Actual reciprocal extension","target":target,"inputs":[{"id":"original","document":original}],"steps":operations()});
     let candidate = call(&client, "propose_plan", args.clone()).await;
     assert_eq!(candidate["state"], "candidate");
     assert_eq!(candidate["verified"], false);

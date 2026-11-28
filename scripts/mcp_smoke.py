@@ -117,7 +117,7 @@ def main():
         plan_check=tool("check_recombination_target",{"sources":recombination_sources,"request":recombination_request,"plan_sources":plan_sources,"target":recombination_target,"policy":recombination_policy})
         plan_match=plan_check["assessment"]["reference"]["matches"][0]
         plan_selection={"batch_revision":plan_inspection["batch_revision"],"candidate_id":plan_match["candidate"],"component_id":plan_match["product"]}
-        reference_plan=tool("propose_plan",{"name":"Stdio reference-only BP","target":recombination_target,"inputs":[{"id":"recombination_insert","document":recombination_sources[0]["document"]},{"id":"recombination_donor","document":recombination_sources[1]["document"]}],"steps":[{"RecombineReference":{"sources":plan_sources,"request":recombination_request,"selection":plan_selection}}]})
+        reference_plan=tool("propose_plan",{"standard": None,"name":"Stdio reference-only BP","target":recombination_target,"inputs":[{"id":"recombination_insert","document":recombination_sources[0]["document"]},{"id":"recombination_donor","document":recombination_sources[1]["document"]}],"steps":[{"RecombineReference":{"sources":plan_sources,"request":recombination_request,"selection":plan_selection}}]})
         reference_report=tool("verify_plan",{"plan_revision":reference_plan["plan_revision"]})
         assert reference_report["status"]=="Incomplete" and reference_report["engine_version"].endswith(current_engine_suffix),reference_report
         catalog=tool("lookup_enzyme_catalog",{"query":"HaeIII","mode":"Enzyme"})
@@ -358,7 +358,7 @@ def main():
         tracked_pin=tool("inspect_restriction",{"document":tracked_refs["tracked_source"],"source_role":"tracked-source-catalog","enzymes":["EcoRI"]})["catalog_pin"]
         tracked_limits={"max_comparisons":100000,"max_sites":32,"max_fragments":32,"max_report_bytes":1048576}
         tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"host":None,"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":tracked_pin,"conditions":None,"options":tracked_limits,"fragment_index":0}}]
-        tracked=tool("propose_plan",{"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
+        tracked=tool("propose_plan",{"standard": None,"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
         tracked_report=tool("verify_plan",{"plan_revision":tracked["plan_revision"]})
         assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith(current_engine_suffix),tracked_report
         assert tracked_report["steps"][1]["product"]["length"]==5 and tracked_report["steps"][1]["product"]["tracked_modifications"]["generation"]
@@ -368,12 +368,12 @@ def main():
         assert resolved_primer["resolved"]["source_revision"]==saved_primer_doc["revision"] and resolved_primer["resolved"]["feature_index"]==0
         assert resolved_primer["resolved"]["primer"]["name"]=="saved oligo" and resolved_primer["resolved"]["primer"]["tail"]=="GG"
         reject_tool("resolve_primer",{"document":immutable_ref(saved_primer_doc),"feature_index":1})
-        candidate = tool("propose_plan", {"name": "Stdio assembly", "target": ref("target"), "inputs": [{"id": name, "document": ref(name)} for name in ["left", "right"]], "steps": [{"Overlap": {"fragments": [{"Input": "left"}, {"Input": "right"}], "overlaps": [4], "circular": False}}]})
+        candidate = tool("propose_plan", {"standard": None,"name": "Stdio assembly", "target": ref("target"), "inputs": [{"id": name, "document": ref(name)} for name in ["left", "right"]], "steps": [{"Overlap": {"fragments": [{"Input": "left"}, {"Input": "right"}], "overlaps": [4], "circular": False}}]})
         assert candidate["verified"] is False
         recipe_candidate=tool("propose_overlap_assembly",{
             "inputs":[{"id":name,"document":ref(name)} for name in ["left","right"]],
             "target":ref("target"),
-            "recipe":{"name":"Stdio prepared overlap recipe","fragments":[
+            "recipe":{"standard": None,"name":"Stdio prepared overlap recipe","fragments":[
                 {"role":"left-fragment","input_id":"left","generation":None,"preparation":"WholeLinear","reverse":False},
                 {"role":"right-fragment","input_id":"right","generation":None,"preparation":"WholeLinear","reverse":False}],
                 "overlaps":[4],"circular":False,
@@ -423,7 +423,7 @@ def main():
         ligation_refs={document["name"]:immutable_ref(document) for document in ligation_docs}
         ligation_inputs=[{"id":name,"document":ligation_refs[name]} for name,_ in ligation_sequences[:3]]
         ligation_fragments=[{"source":{"role":name,"input_id":name,"generation":None,"preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":None}},"reverse":False},"treatment":None} for name,_ in ligation_sequences[:3]]
-        ligation=tool("propose_ligation_assembly",{"inputs":ligation_inputs,"target":ligation_refs["ligation_target"],"recipe":{"name":"Stdio three-piece cohesive ligation","fragments":ligation_fragments,"circular":True,"allow_nicked":False}})
+        ligation=tool("propose_ligation_assembly",{"inputs":ligation_inputs,"target":ligation_refs["ligation_target"],"recipe":{"standard": None,"name":"Stdio three-piece cohesive ligation","fragments":ligation_fragments,"circular":True,"allow_nicked":False}})
         assert ligation["verified"] is False and ligation["verification"]["status"]=="ConsistentUnderAssumptions",ligation
         assert ligation["junction_count"]==3 and ligation["product_physical"]["top_length"]==42 and ligation["product_physical"]["nick_count"]==0,ligation
         ligation_evidence=full_json_artifact(ligation["artifact_id"])
@@ -433,7 +433,7 @@ def main():
         declared_refs={document["name"]:immutable_ref(document) for document in declared_docs}
         declared_terminus={"five_prime":"Phosphate","three_prime":"Hydroxyl"}
         declared_fragments=[{"source":{"role":name,"input_id":name,"generation":None,"preparation":{"DeclaredDuplex":{"left":declared_terminus,"right":declared_terminus}},"reverse":False},"treatment":None} for name in ["declared_left","declared_right"]]
-        declared_args={"inputs":[{"id":name,"document":declared_refs[name]} for name in ["declared_left","declared_right"]],"target":declared_refs["declared_independent_target"],"recipe":{"name":"Explicit original duplex termini","fragments":declared_fragments,"circular":False,"allow_nicked":False}}
+        declared_args={"inputs":[{"id":name,"document":declared_refs[name]} for name in ["declared_left","declared_right"]],"target":declared_refs["declared_independent_target"],"recipe":{"standard": None,"name":"Explicit original duplex termini","fragments":declared_fragments,"circular":False,"allow_nicked":False}}
         declared=tool("propose_ligation_assembly",declared_args)
         assert declared["verification"]["status"]=="ConsistentUnderAssumptions" and declared["verification"]["engine_version"].endswith(current_engine_suffix),declared
         assert declared["product_physical"]["top_length"]==8 and declared["product_physical"]["nick_count"]==0
@@ -509,7 +509,7 @@ def main():
             target_event=next(e for e in events if e["document_id"]=="document-2")
             event_ref=lambda e:{k:e[k] for k in ["document_id","event_id","revision"]}
             document_ref=lambda e:{"id":e["revision"],"revision":e["revision"]}
-            run_plan=tool("propose_plan",{"name":"Stdio retained run","target":document_ref(target_event),"inputs":[{"id":"s","document":document_ref(source_event)}],"steps":[{"Overlap":{"fragments":[{"Input":"s"}],"overlaps":[],"circular":False}}]})
+            run_plan=tool("propose_plan",{"standard": None,"name":"Stdio retained run","target":document_ref(target_event),"inputs":[{"id":"s","document":document_ref(source_event)}],"steps":[{"Overlap":{"fragments":[{"Input":"s"}],"overlaps":[],"circular":False}}]})
             recorded=tool("record_workspace_run",{"workspace":workspace_ref,"plan_revision":run_plan["plan_revision"],"target_binding":event_ref(target_event),"input_bindings":[{"input_id":"s","event":event_ref(source_event)}]})
             assert recorded["workspace"]["id"]!=native["id"] and len(recorded["receipt"]["products"])==1
             new_ref={k:recorded["workspace"][k] for k in ["id","revision"]}

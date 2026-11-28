@@ -18,6 +18,7 @@ fn fixture() -> (Molecule, DesignPlan) {
     let source = Molecule::dna("source", "AAAAGAATTCCCC", Topology::Linear).unwrap();
     let target = Molecule::dna("target", "AAAAG", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "checked digestion".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

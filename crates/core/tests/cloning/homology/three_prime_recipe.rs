@@ -76,6 +76,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
     profile.scan_repeated_overlaps = false;
     profile.method = collagene_core::cloning::overlap::profiles::OverlapMethod::InFusion;
     let request = recipe::Recipe {
+        standard: None,
         name: "Declared physical homology route".into(),
         fragments,
         overlaps: overlaps.clone(),
@@ -340,6 +341,7 @@ fn resection_plan() -> (DesignPlan, Molecule, Molecule) {
     });
     let target = Molecule::dna("Independent shortened37", &CIRCLE[..37], Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Explicit actual3′ shortening".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source.clone())],
@@ -436,6 +438,7 @@ fn actual_resected_operand_retains_extruded_bottom_and_clips_top_annotation_then
     .unwrap();
     let independent = Molecule::dna("Independent filled forty", CIRCLE, Topology::Linear).unwrap();
     let downstream = DesignPlan {
+        standard: None,
         name: "Reuse retained5′ extensions, fill only templated positions".into(),
         target_revision: independent.revision(),
         inputs: vec![input(
@@ -490,6 +493,7 @@ fn source_accessibility_and_single_linear_vs_self_circle_policies_are_not_implic
         Status::ConsistentUnderAssumptions
     );
     let mut single = DesignPlan {
+        standard: None,
         name: "No phantom single linear assembly".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source)],
@@ -670,6 +674,7 @@ fn infusion_native_ecori_vector_reverse_insert_and_linker_keep_bottom_extension_
     let target = Molecule::dna("Independent111", "AATTCCTACGATTCGACGTACCGGATACCGTACCTGAGCTAACGAATTTGACGATCTACAGGTCTGAAGGCTGCAGATCCGTAACGCTTGAAGTCCGATGCTACGTAGGAC", Topology::Circular).unwrap();
     assert_eq!(target.sequence.len(), 111);
     let request = recipe::Recipe {
+        standard: None,
         name: "Three-part native-end In-Fusion declaration".into(),
         circular: true,
         overlaps: vec![20, 20, 20],

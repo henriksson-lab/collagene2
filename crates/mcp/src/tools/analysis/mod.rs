@@ -4,6 +4,7 @@ mod codon;
 mod design_checks;
 mod ivt;
 mod ivt_linearization;
+mod screening;
 mod vector_class;
 
 use crate::tools::default_inspection_page;
@@ -1613,33 +1614,162 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Run embedded affine-gap pairwise alignment on two immutable nucleotide revisions. Explicit global/local/query-in-reference mode, scoring and matrix budget; no circular-origin/orientation search in this tool. Ambiguous-compatible columns are distinct from certain matches. Full CIGAR/differences in JSON artifact."
+        description = "Run embedded affine pairwise alignment on two immutable nucleotide revisions. Declare global/local/query-in-reference mode, scoring, cumulative cell budget and required global_storage policy. Adaptive global row bands return actual strict off-band proof or explicitly unproven path; Local/QueryInReference require Full storage. This tool performs no rotation/orientation search. Full CIGAR/differences, actual input lengths/options, work and typed search proof remain in the immutable artifact. Ambiguous compatibility is separate from a certain match; no read-quality or sample confirmation."
     )]
     pub(crate) async fn align_sequences(
         &self,
         Parameters(args): Parameters<AlignQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
-        self.compute(move||{
-            let (reference,query)={let store=server.session.store.lock().unwrap();(store.document(&args.reference)?.clone(),store.document(&args.query)?.clone())};
-            let report=alignment::align(&reference.sequence,&query.sequence,&args.options).map_err(bad)?;
-            let artifact=server.session.analysis_artifact(&json!({"reference":args.reference,"query":args.query,"engine_version":verification::ENGINE_VERSION,"alignment":report}))?;
-            output(json!({"reference":args.reference,"query":args.query,"algorithm":report.algorithm,"options":report.options,"score":report.score,"reference_range":[report.reference_start,report.reference_end],"query_range":[report.query_start,report.query_end],"stats":report.stats,"cigar_preview":report.cigar.chars().take(2000).collect::<String>(),"cigar_truncated":report.cigar.len()>2000,"warnings":report.warnings,"artifact_id":artifact}))
-        }).await
+        self.compute(move || {
+            let (reference, query) = {
+                let store = server.session.store.lock().unwrap();
+                let reference = store.document(&args.reference)?;
+                let query = store.document(&args.query)?;
+                collagene_model::bounds::model_preflight(&[reference, query]).map_err(bad)?;
+                args.options
+                    .validate_for_lengths(reference.sequence.len(), query.sequence.len())
+                    .map_err(bad)?;
+                (reference.clone(), query.clone())
+            };
+            let context = alignment::review::revision(
+                &reference,
+                &query,
+                &alignment::review::Options::Stored(args.options),
+            )
+            .map_err(bad)?;
+            let report = alignment::align(&reference.sequence, &query.sequence, &args.options)
+                .map_err(bad)?;
+            report
+                .validate_search(reference.sequence.len(), query.sequence.len())
+                .map_err(bad)?;
+            if report.options != args.options {
+                return Err(bad(
+                    "native alignment options differ from the exact request",
+                ));
+            }
+            #[derive(Serialize)]
+            struct Evidence<'a> {
+                reference: &'a DocumentRef,
+                query: &'a DocumentRef,
+                context_revision: &'a str,
+                engine_version: &'static str,
+                alignment: &'a alignment::Alignment,
+            }
+            let evidence = Evidence {
+                reference: &args.reference,
+                query: &args.query,
+                context_revision: &context,
+                engine_version: verification::ENGINE_VERSION,
+                alignment: &report,
+            };
+            let artifact = server.session.text_artifact(
+                bounded_json_limit(&evidence, 32 * 1024 * 1024)?,
+                "application/json",
+                "pairwise-alignment.json",
+            )?;
+            output(json!({
+                "reference": args.reference,
+                "query": args.query,
+                "context_revision": context,
+                "algorithm": report.algorithm,
+                "options": report.options,
+                "reference_length": report.reference_length,
+                "query_length": report.query_length,
+                "score": report.score,
+                "reference_range": [report.reference_start,report.reference_end],
+                "query_range": [report.query_start,report.query_end],
+                "stats": report.stats,
+                "search": report.search,
+                "cigar_preview": report.cigar.chars().take(2000).collect::<String>(),
+                "cigar_truncated": report.cigar.len()>2000,
+                "warnings": report.warnings,
+                "artifact_id": artifact,
+            }))
+        })
+        .await
     }
     #[tool(
-        description = "Compare immutable molecule sequences with bounded circular-origin and reverse-query candidate search. Returns tested counts, completeness and optimality flags separately; seed/budget-limited search is never labeled exhaustive. Exact identity does not establish biological function or uniqueness."
+        description = "Compare immutable nucleotide revisions with explicit circular-reference origins, query strands, affine scoring and cumulative adaptive-band cell budgets. Typed candidate receipts distinguish certified individual optima, candidates discharged against the observed incumbent and unsearched/limited domains. A selected-path certificate never promotes seed-limited origins or missing strands to exhaustive comparison. Returns actual input pins/options, work, selected path/search evidence, candidate disposition and a complete immutable JSON artifact. No biological function, read confidence, sample identity, physical topology equivalence or unique correspondence is established."
     )]
     pub(crate) async fn compare_molecules(
         &self,
         Parameters(args): Parameters<CompareQuery>,
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
-        self.compute(move||{
-            let (reference,query)={let store=server.session.store.lock().unwrap();(store.document(&args.reference)?.clone(),store.document(&args.query)?.clone())};
-            let report=alignment::compare_molecules(&reference,&query,&args.options).map_err(bad)?;
-            let artifact=server.session.analysis_artifact(&json!({"reference":args.reference,"query":args.query,"engine_version":verification::ENGINE_VERSION,"comparison":report}))?;
-            output(json!({"reference":args.reference,"query":args.query,"reference_origin":report.reference_origin,"query_reversed":report.query_reversed,"score":report.alignment.score,"stats":report.alignment.stats,"evaluated_candidates":report.evaluated_candidates,"exhaustive_reference_origins":report.exhaustive_reference_origins,"exhaustive_query_orientations":report.exhaustive_query_orientations,"optimality_proven":report.optimality_proven,"warnings":report.warnings,"artifact_id":artifact}))
-        }).await
+        self.compute(move || {
+            let (reference, query) = {
+                let store = server.session.store.lock().unwrap();
+                let reference = store.document(&args.reference)?;
+                let query = store.document(&args.query)?;
+                collagene_model::bounds::model_preflight(&[reference, query]).map_err(bad)?;
+                args.options
+                    .alignment
+                    .validate_for_lengths(reference.sequence.len(), query.sequence.len())
+                    .map_err(bad)?;
+                alignment::review::Options::Whole(args.options)
+                    .validate()
+                    .map_err(bad)?;
+                (reference.clone(), query.clone())
+            };
+            let options = alignment::review::Options::Whole(args.options);
+            let context = alignment::review::revision(&reference, &query, &options).map_err(bad)?;
+            let comparison =
+                alignment::compare_molecules(&reference, &query, &args.options).map_err(bad)?;
+            let reviewed = alignment::review::Report {
+                engine_version: alignment::review::ENGINE_VERSION.into(),
+                context_revision: context.clone(),
+                reference_revision: reference.revision(),
+                query_revision: query.revision(),
+                reference_length: reference.sequence.len(),
+                query_length: query.sequence.len(),
+                options,
+                comparison,
+            };
+            reviewed.validate_sources(&reference, &query).map_err(bad)?;
+            let report = &reviewed.comparison;
+            #[derive(Serialize)]
+            struct Evidence<'a> {
+                reference: &'a DocumentRef,
+                query: &'a DocumentRef,
+                context_revision: &'a str,
+                engine_version: &'static str,
+                comparison: &'a alignment::MoleculeComparison,
+            }
+            let evidence = Evidence {
+                reference: &args.reference,
+                query: &args.query,
+                context_revision: &context,
+                engine_version: verification::ENGINE_VERSION,
+                comparison: report,
+            };
+            let artifact = server.session.text_artifact(
+                bounded_json_limit(&evidence, 32 * 1024 * 1024)?,
+                "application/json",
+                "pairwise-comparison.json",
+            )?;
+            output(json!({
+                "reference": args.reference,
+                "query": args.query,
+                "context_revision": context,
+                "reference_origin": report.reference_origin,
+                "query_reversed": report.query_reversed,
+                "options": args.options,
+                "reference_length": reference.sequence.len(),
+                "query_length": query.sequence.len(),
+                "score": report.alignment.score,
+                "stats": report.alignment.stats,
+                "search": report.alignment.search,
+                "evaluated_candidates": report.evaluated_candidates,
+                "evaluated_cells": report.evaluated_cells,
+                "candidate_evidence": report.candidate_evidence,
+                "exhaustive_reference_origins": report.exhaustive_reference_origins,
+                "exhaustive_query_orientations": report.exhaustive_query_orientations,
+                "optimality_proven": report.optimality_proven,
+                "warnings": report.warnings,
+                "artifact_id": artifact,
+            }))
+        })
+        .await
     }
 }

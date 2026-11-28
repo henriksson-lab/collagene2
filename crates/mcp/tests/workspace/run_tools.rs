@@ -77,7 +77,7 @@ async fn immutable_run_record_list_replay_artifacts_and_explicit_event_bindings(
     let events = artifact(&c, &listed["artifact_id"]).await;
     assert_eq!(events["events"].as_array().unwrap().len(), 2);
     let doc = |m: &Molecule| json!({"id":m.revision(),"revision":m.revision()});
-    let p=call(&c,"propose_plan",json!({"name":"identity assembly","target":doc(&target),"inputs":[{"id":"s","document":doc(&source)}],"steps":[{"Overlap":{"fragments":[{"Input":"s"}],"overlaps":[],"circular":false}}]})).await;
+    let p=call(&c,"propose_plan",json!({"standard": null,"name":"identity assembly","target":doc(&target),"inputs":[{"id":"s","document":doc(&source)}],"steps":[{"Overlap":{"fragments":[{"Input":"s"}],"overlaps":[],"circular":false}}]})).await;
     let bind = |i: usize| json!({"document_id":w.documents[i].id,"event_id":w.documents[i].head_event,"revision":w.documents[i].head});
     let args = json!({"workspace":wr,"plan_revision":p["plan_revision"],"target_binding":bind(1),"input_bindings":[{"input_id":"s","event":bind(0)}]});
     let mut wrong = args.clone();

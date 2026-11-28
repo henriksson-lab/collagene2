@@ -79,7 +79,7 @@ async fn actual_two_pcr_fragments_require_explicit_phosphorylation_and_independe
     let imported=call(&client,"import_document",json!({"text":">left_template\nACGACCCCGGGGTAAC\n>right_template\nTATGAGCTCCAGGTCA\n>literal_target\nACGACCCCGGGGTAACTATGAGCTCCAGGTCA\n>wrong_target\nACGACCCCGGGGTAACTATGAGCTCCAGGTCT\n"})).await;
     let left = named(&imported, "left_template");
     let right = named(&imported, "right_template");
-    let recipe = json!({"name":"Two actual PCR products, explicit phosphorylation","fragments":[
+    let recipe = json!({"standard": null,"name":"Two actual PCR products, explicit phosphorylation","fragments":[
         {"source":{"generation":null,"role":"left","input_id":"left_template","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("ordered LF","ACGACCCC","").unwrap(),"reverse":Primer::new("ordered LR","GTTACCCC","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"},
         {"source":{"generation":null,"role":"right","input_id":"right_template","preparation":{"ExactPcr":{"template_strand":"Top","forward":Primer::new("ordered RF","TATGAGCT","").unwrap(),"reverse":Primer::new("ordered RR","TGACCTGG","").unwrap()}},"reverse":false},"treatment":"Phosphorylate"}
     ],"circular":false,"allow_nicked":false});
@@ -167,7 +167,7 @@ async fn three_actual_circular_ecori_digests_keep_compatible_cohesive_ends_and_a
         .map(|(name, _)| json!({"id":name,"document":named(&imported,name)}))
         .collect::<Vec<_>>();
     let fragments=sequences.iter().take(3).map(|(name,_)|json!({"source":{"generation":null,"role":name,"input_id":name,"preparation":{"Digest":{"enzymes":["EcoRI"],"fragment_index":0,"repair":null}},"reverse":false},"treatment":null})).collect::<Vec<_>>();
-    let result=call(&client,"propose_ligation_assembly",json!({"inputs":inputs,"target":named(&imported,"target"),"recipe":{"name":"Three compatible EcoRI fragments","fragments":fragments,"circular":true,"allow_nicked":false}})).await;
+    let result=call(&client,"propose_ligation_assembly",json!({"inputs":inputs,"target":named(&imported,"target"),"recipe":{"standard": null,"name":"Three compatible EcoRI fragments","fragments":fragments,"circular":true,"allow_nicked":false}})).await;
     assert_eq!(
         result["verification"]["status"],
         "ConsistentUnderAssumptions"

@@ -1136,6 +1136,7 @@ mod tests {
         )
         .unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Actual stock PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

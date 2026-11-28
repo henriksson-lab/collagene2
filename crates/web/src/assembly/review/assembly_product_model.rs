@@ -387,6 +387,7 @@ mod tests {
             });
         }
         let plan = DesignPlan {
+            standard: None,
             name: "Mismatch PCR and actual digest".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

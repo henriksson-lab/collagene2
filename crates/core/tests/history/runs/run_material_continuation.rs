@@ -42,6 +42,7 @@ fn finalize_original(
 ) -> Commit {
     let n = originals.len();
     let plan = DesignPlan {
+        standard: None,
         name: name.into(),
         target_revision: target.revision(),
         inputs: originals
@@ -190,6 +191,7 @@ fn continuation(
         .unwrap()
         .clone();
     let plan = DesignPlan {
+        standard: None,
         name: "Fresh continuation of saved material".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -780,6 +782,7 @@ fn capsule_nesting_and_advertised_oversize_fail_before_unbounded_decoding() {
     let mut rejected = false;
     for _ in 0..10 {
         let plan = DesignPlan {
+            standard: None,
             name: "One nested source-backed reconstruction".into(),
             target_revision: current.target.revision(),
             inputs: vec![PlanInput {

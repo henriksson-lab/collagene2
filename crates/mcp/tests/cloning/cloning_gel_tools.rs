@@ -209,7 +209,7 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
     );
     let generation = json!({"host":null,"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"});
     let inputs = json!([{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}]);
-    let request = json!({"name":"Declared unmodified reaction","rows":[
+    let request = json!({"standard": null,"name":"Declared unmodified reaction","rows":[
         {"role":"A","input_id":"A","generation":generation,"substrate":{"WholeSource":{"origin":null}}},
         {"role":"B","input_id":"B","generation":generation,"substrate":{"WholeSource":{"origin":null}}}
     ],"options":options});
@@ -276,7 +276,7 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
             .unwrap()
             .is_empty()
     );
-    let incomplete=s.call("propose_plan",json!({"name":"Capped Type IIS search is not a verified design","target":reference(&target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"DeclareSourceModifications":{"template":{"Input":"A"},"assumptions":generation}},{"DeclareSourceModifications":{"template":{"Input":"B"},"assumptions":generation}},{"GoldenGate":{"templates":[{"Step":0},{"Step":1}],"options":limited,"candidate_index":0}}]})).await;
+    let incomplete=s.call("propose_plan",json!({"standard": null,"name":"Capped Type IIS search is not a verified design","target":reference(&target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"DeclareSourceModifications":{"template":{"Input":"A"},"assumptions":generation}},{"DeclareSourceModifications":{"template":{"Input":"B"},"assumptions":generation}},{"GoldenGate":{"templates":[{"Step":0},{"Step":1}],"options":limited,"candidate_index":0}}]})).await;
     assert_eq!(
         s.call(
             "verify_plan",
@@ -287,7 +287,7 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
     );
     s.pdf(&incomplete, "Incomplete", &target).await;
     let operation = json!({"GoldenGate":{"templates":[{"Step":0},{"Step":1}],"options":options,"candidate_index":selected}});
-    let proposal = |target: &Molecule| json!({"name":"Explicit Type IIS geometry","target":reference(target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"DeclareSourceModifications":{"template":{"Input":"A"},"assumptions":generation}},{"DeclareSourceModifications":{"template":{"Input":"B"},"assumptions":generation}},operation]});
+    let proposal = |target: &Molecule| json!({"standard": null,"name":"Explicit Type IIS geometry","target":reference(target),"inputs":[{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}],"steps":[{"DeclareSourceModifications":{"template":{"Input":"A"},"assumptions":generation}},{"DeclareSourceModifications":{"template":{"Input":"B"},"assumptions":generation}},operation]});
     let plan = s.call("propose_plan", proposal(&target)).await;
     assert_eq!(
         s.call(
@@ -379,7 +379,7 @@ async fn mismatched_oligos_reconstruct_both_introduced_changes_and_capped_search
     let capped = s.call("simulate_mismatch_pcr", capped).await;
     assert_eq!(capped["search_complete"], false);
     assert_eq!(capped["enumeration_complete"], false);
-    let plan=s.call("propose_plan",json!({"name":"Two explicit primer-encoded substitutions","target":reference(&target),"inputs":[{"id":"template","document":reference(&source)}],"steps":[{"PcrWithMismatches":{"template":{"Input":"template"},"forward":forward,"reverse":reverse,"options":options}}]})).await;
+    let plan=s.call("propose_plan",json!({"standard": null,"name":"Two explicit primer-encoded substitutions","target":reference(&target),"inputs":[{"id":"template","document":reference(&source)}],"steps":[{"PcrWithMismatches":{"template":{"Input":"template"},"forward":forward,"reverse":reverse,"options":options}}]})).await;
     let verified = s
         .call(
             "verify_plan",

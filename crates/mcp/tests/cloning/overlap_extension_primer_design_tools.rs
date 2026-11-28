@@ -190,7 +190,7 @@ async fn six_auto_oligos_keep_original_stock_independent_intent_and_full_recipe_
     let mut bad = args;
     bad["request"]["edits"][0]["expected"] = json!("AAAA");
     reject(&client, "design_overlap_extension_primers", bad).await;
-    let recipe = json!({"name":"Use advisory auto-primers in an independently targeted assembly","fragments":[{"generation":null,"role":"insert","input_id":"original","preparation":{"OverlapExtensionPcr":{"request":proposal["preparation"]}},"reverse":false}],"overlaps":[],"circular":false,"options":ProfileOptions::default()});
+    let recipe = json!({"standard": null,"name":"Use advisory auto-primers in an independently targeted assembly","fragments":[{"generation":null,"role":"insert","input_id":"original","preparation":{"OverlapExtensionPcr":{"request":proposal["preparation"]}},"reverse":false}],"overlaps":[],"circular":false,"options":ProfileOptions::default()});
     let assembled = call(
         &client,
         "propose_overlap_assembly",

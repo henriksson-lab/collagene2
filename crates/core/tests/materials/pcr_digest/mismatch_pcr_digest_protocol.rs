@@ -157,6 +157,7 @@ fn mismatch_digest_preparations_roundtrip_current_native_evidence() {
     )
     .unwrap();
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "Mismatch PCR then pinned EcoRI".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {

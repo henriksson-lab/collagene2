@@ -97,6 +97,7 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
         treatment: None,
     }];
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "Explicit mismatched source preparation".into(),
         fragments,
         circular: false,
@@ -164,6 +165,7 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
     };
     assert!(protocol::execution::process_request(&wire(b"CGQ\0", 75, &verify)).is_err());
     let overlap = assembly_recipe::Recipe {
+        standard: None,
         name: "Mismatch overlap preparation".into(),
         fragments: vec![fragment(preparation())],
         overlaps: vec![],
@@ -181,6 +183,7 @@ fn mismatch_preparations_roundtrip_current_plans_and_reject_unsupported_versions
     };
     old_rejected(&request);
     let tail = tailing_recipe::Recipe {
+        standard: None,
         profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: "Mismatch before explicit tailing".into(),
@@ -219,6 +222,7 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
     let target =
         Molecule::dna("Independent exact requirement", ORIGINAL, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Saved exact PCR".into(),
         target_revision: target.revision(),
         inputs: vec![input(source.clone())],
@@ -271,6 +275,7 @@ fn saved_run_flat_mismatch_variant5_cannot_hide_under_existing_from_run_floor74_
     };
     assert_eq!(postcard::to_allocvec(&run).unwrap()[0], 5);
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "Saved source explicit mismatched PCR".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: fragment(Preparation::FromRun {

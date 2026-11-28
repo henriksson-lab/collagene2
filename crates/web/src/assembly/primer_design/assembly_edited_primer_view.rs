@@ -341,7 +341,7 @@ pub fn EditedAssemblyPrimerView(
                     </details>}
                 }).collect_view())}
                 {saved.with_value(|p|p.warnings.iter().take(24).map(|warning|view!{<p class="helper">{warning.clone()}</p>}).collect_view())}
-                <details><summary>"Whole-recipe findings"</summary>{saved.with_value(|p| crate::protocol::verification_view::findings(&p.verification.findings))}</details>
+                <details><summary>"Whole-recipe findings"</summary>{saved.with_value(|p| crate::protocol::verification_view::report(&p.verification))}</details>
                 <button class="button primary" disabled=move||invalid||!current.get() on:click=move|_|match apply.run(saved.get_value()){Ok(())=>status.set("All proposed oligos entered. Reconstruct and verify the complete assembly against the unchanged intended construct.".into()),Err(error)=>status.set(error)}>"Use all proposed oligos"</button>
             </section>}
         })}

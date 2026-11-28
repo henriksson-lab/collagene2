@@ -76,6 +76,7 @@ fn input(source: Molecule) -> PlanInput {
 }
 fn recipe(preparation: Preparation) -> ligation_recipe::Recipe {
     ligation_recipe::Recipe {
+        standard: None,
         name: "Edit, actually amplify, digest and fill".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {
@@ -233,6 +234,7 @@ fn saved() -> (
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual saved original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![input(source.clone())],

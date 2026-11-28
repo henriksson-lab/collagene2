@@ -455,6 +455,7 @@ fn assembly_plan() -> (DesignPlan, Molecule) {
     ];
     (
         DesignPlan {
+            standard: None,
             name: "independent assembly".into(),
             target_revision: target.revision(),
             inputs,
@@ -492,6 +493,7 @@ fn verifier_does_not_assume_overlapping_homology_arms_are_independent() {
     let a = molecule("AAAAAA", Topology::Linear);
     let target = molecule("AAAA", Topology::Circular);
     let plan = DesignPlan {
+        standard: None,
         name: "overlapping arms".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

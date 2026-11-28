@@ -36,6 +36,7 @@ fn original() -> Commit {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -164,6 +165,7 @@ fn saved_run_recipe_preserves_exact_reconstruction_in_current_encoding() {
     )
     .unwrap();
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "Explicit retained run source".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {

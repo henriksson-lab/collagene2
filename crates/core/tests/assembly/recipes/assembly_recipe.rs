@@ -27,6 +27,7 @@ fn row(role: &str, id: &str, preparation: a::Preparation, reverse: bool) -> a::F
 }
 fn recipe(rows: Vec<a::FragmentSpec>) -> a::Recipe {
     a::Recipe {
+        standard: None,
         name: "explicit original-source recipe".into(),
         overlaps: vec![15; rows.len() - 1],
         fragments: rows,

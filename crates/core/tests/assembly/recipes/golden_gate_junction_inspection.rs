@@ -35,6 +35,7 @@ fn raw(reverse: bool) -> (DesignPlan, Molecule) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "raw cut circle".into(),
         inputs: vec![PlanInput {
             id: "source".into(),
@@ -255,6 +256,7 @@ fn prepared(circular: bool, capped: bool) -> (DesignPlan, Molecule) {
     .unwrap();
     let request = prepared_golden_gate::Request {
         recipe: ligation_recipe::Recipe {
+            standard: None,
             name: "prepared pool".into(),
             fragments: designed
                 .fragments

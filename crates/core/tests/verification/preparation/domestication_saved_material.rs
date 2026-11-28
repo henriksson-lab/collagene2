@@ -88,6 +88,7 @@ fn stock(dna: &str, topology: Topology) -> (Workspace, MaterialOrigin) {
         });
     }
     let plan = DesignPlan {
+        standard: None,
         name: "Actual upstream PCR stock".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -512,6 +513,7 @@ fn actual_nicked_saved_circle_does_not_gain_a_fabricated_pcr_template() {
         template_strand: Strand::Top,
     };
     let plan = DesignPlan {
+        standard: None,
         name: "One phosphorylated half only".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -629,6 +631,7 @@ fn genuine_incomplete_origin_stays_conditional_after_fresh_inverse_pcr() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual bounded homology then new stock PCR".into(),
         target_revision: target.revision(),
         inputs: vec![

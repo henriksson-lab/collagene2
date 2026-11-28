@@ -52,6 +52,7 @@ fn annealed(
     let b = Molecule::dna("Explicit bottom oligo", bottom, Topology::Linear).unwrap();
     let target = Molecule::dna("Independent annealing top", top, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Native oligo annealing".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -265,6 +266,7 @@ fn independent_actual_bottom_target_verifies_only_after_native_reconstruction_di
         panic!("fixture run")
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Actual sticky bottom assembly".into(),
         target_revision: target.revision(),
         inputs: ins,

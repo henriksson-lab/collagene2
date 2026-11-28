@@ -103,7 +103,7 @@ async fn actual_plan_oligos_keep_tails_duplicates_domain_uses_and_target_context
         {"PcrWithMismatches":{"template":{"Step":0},"forward":Primer::new("renamed","GACGT","G").unwrap(),"reverse":Primer::new("same name","CCGG","").unwrap(),"options":PcrOptions::default()}},
         {"TreatEnds":{"template":{"Step":1},"treatment":"Phosphorylate"}}
     ]);
-    let proposal=call(&client,"propose_plan",json!({"name":"Actual declared orders","target":target,"inputs":[{"id":"s","document":source}],"steps":steps})).await;
+    let proposal=call(&client,"propose_plan",json!({"standard": null,"name":"Actual declared orders","target":target,"inputs":[{"id":"s","document":source}],"steps":steps})).await;
     let args = json!({"plan_revision":proposal["plan_revision"],"format":"Csv"});
     let exported = call(&client, "export_plan_oligos", args.clone()).await;
     assert_eq!(exported["verified"], false);
@@ -137,7 +137,7 @@ async fn actual_plan_oligos_keep_tails_duplicates_domain_uses_and_target_context
             .contains('\t')
     );
     let other = named(&imported, "other_target");
-    let second=call(&client,"propose_plan",json!({"name":"Same declared orders, other target","target":other,"inputs":[{"id":"s","document":source}],"steps":steps})).await;
+    let second=call(&client,"propose_plan",json!({"standard": null,"name":"Same declared orders, other target","target":other,"inputs":[{"id":"s","document":source}],"steps":steps})).await;
     let second_export = call(
         &client,
         "export_plan_oligos",

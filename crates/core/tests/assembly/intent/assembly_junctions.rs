@@ -26,6 +26,7 @@ fn overlap(
         target.topology = Topology::Circular;
     }
     let p = DesignPlan {
+        standard: None,
         name: "literal ordered overlap".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -85,6 +86,7 @@ fn actual_shared_homology_boundary_window_relative_codon_and_genetic_code_are_ex
 fn circular_closing_homology_uses_origin_and_never_repeats_short_product() {
     let target = Molecule::dna("independent circle", "AAACCC", Topology::Circular).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "self overlap".into(),
         target_revision: target.revision(),
         inputs: vec![input(
@@ -132,6 +134,7 @@ fn ordinary_nine_hundred_base_cds_yields_only_local_coding_window() {
     });
     let target = molecule("independent full expected target", &format!("TTTTTT{gene}"));
     let plan = DesignPlan {
+        standard: None,
         name: "coding overlap".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -176,6 +179,7 @@ fn ordinary_nine_hundred_base_cds_yields_only_local_coding_window() {
 fn failed_final_operation_never_exposes_preparation_as_final_but_wrong_target_does() {
     let mut target = molecule("independent target", "AAACCCGGG");
     let mut plan = DesignPlan {
+        standard: None,
         name: "failed unknown chemistry".into(),
         target_revision: target.revision(),
         inputs: vec![

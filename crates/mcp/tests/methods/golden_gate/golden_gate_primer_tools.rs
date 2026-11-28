@@ -69,7 +69,7 @@ fn row(role: &str, input: &str, right: &str) -> Value {
     json!({"role":role,"input_id":input,"start":0,"end":16,"reverse":false,"forward_length":8,"reverse_length":8,"right_overhang":right})
 }
 fn ligation_recipe(fragments: &Value) -> Value {
-    json!({"name":"Two PCR-added Type IIS substrates","fragments":fragments.as_array().unwrap().iter().map(|f|json!({"source":f,"treatment":null})).collect::<Vec<_>>(),"circular":false,"allow_nicked":false})
+    json!({"standard": null,"name":"Two PCR-added Type IIS substrates","fragments":fragments.as_array().unwrap().iter().map(|f|json!({"source":f,"treatment":null})).collect::<Vec<_>>(),"circular":false,"allow_nicked":false})
 }
 
 #[tokio::test]

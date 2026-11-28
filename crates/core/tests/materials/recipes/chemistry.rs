@@ -266,6 +266,7 @@ fn plan_fixture() -> (DesignPlan, Molecule) {
     let target =
         Molecule::dna("target", "AATTCTTTTAAAAGAATTCGGGGCCCCG", Topology::Circular).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Restriction ligation".into(),
         target_revision: target.revision(),
         inputs: vec![

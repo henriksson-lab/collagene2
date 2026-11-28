@@ -218,6 +218,7 @@ fn actual_capped_ordinary_origin_uncertainty_survives_new_pcr_and_graph_source_r
     assert_eq!(retained.duplex.bottom.as_str(), "CATTCG");
     assert!(retained.duplex.nicks.is_empty());
     let plan = DesignPlan {
+        standard: None,
         name: "Real capped annealing placement search".into(),
         target_revision: target.revision(),
         inputs: vec![

@@ -68,6 +68,7 @@ fn fixture(byproduct: bool) -> (Molecule, DesignPlan) {
         component_id,
     };
     let plan = DesignPlan {
+        standard: None,
         name: "pinned reference exchange".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -545,6 +546,7 @@ fn imported_reference_guard_cannot_be_redeclared_as_materialized_annealing_input
             .is_err()
         );
         let p = DesignPlan {
+            standard: None,
             name: "attempted import authority wash".into(),
             target_revision: target.revision(),
             inputs: vec![

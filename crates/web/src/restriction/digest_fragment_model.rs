@@ -174,6 +174,7 @@ mod tests {
     ) -> (AssemblyFragment, Workspace) {
         let target_index = originals.len();
         let plan = DesignPlan {
+            standard: None,
             name: "Explicit saved source".into(),
             target_revision: target.revision(),
             inputs: originals
@@ -443,6 +444,7 @@ mod tests {
         )
         .unwrap();
         let recipe = collagene_core::cloning::assembly::recipe::Recipe {
+            standard: None,
             name: applied.name.clone(),
             fragments,
             overlaps: vec![8],
@@ -868,6 +870,7 @@ mod tests {
             collagene_core::cloning::assembly::recipe::Preparation::FromDerived { .. }
         ));
         let derived_recipe = collagene_core::cloning::ligation::recipe::Recipe {
+            standard: None,
             name: "Derived actual strand circle".into(),
             fragments: derived_rows
                 .into_iter()
@@ -1009,6 +1012,7 @@ mod tests {
             crate::cloning::preparation::cloning_preparations::prepared_rows(&draft.methods, 1)
                 .unwrap();
         let recipe = collagene_core::cloning::ligation::recipe::Recipe {
+            standard: None,
             name: "Reverse actual sticky circle".into(),
             fragments: prepared
                 .into_iter()

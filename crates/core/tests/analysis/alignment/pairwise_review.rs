@@ -131,6 +131,7 @@ fn local_flanks_and_zero_local_alignment_are_not_full_identity() {
     let query = molecule("local query", "ACGTT", Topology::Linear);
     let options = Options::Stored(AlignmentOptions {
         mode: AlignmentMode::Local,
+        global_storage: collagene_core::alignment::grid::GlobalStorage::Full,
         ..Default::default()
     });
     let report = pairwise_review::compare(&reference, &query, &options).unwrap();
@@ -213,8 +214,58 @@ fn new_binary_selectors_bind_sources_and_reject_old_prefixes() {
     ));
     let mut stale = request;
     stale.revision = "0".repeat(64);
-    assert!(
-        protocol::execution::process_request(&protocol::request::Request::encode(&stale).unwrap())
-            .is_err()
-    );
+    assert!(protocol::request::Request::encode(&stale).is_err());
+    // Also exercise the inbound guard independently of the admitted outbound
+    // encoder: this is a well-framed current request with a stale context.
+    let body = postcard::to_allocvec(&stale).unwrap();
+    let mut incoming = wire[..42].to_vec();
+    incoming[6..10].copy_from_slice(&(body.len() as u32).to_le_bytes());
+    incoming[10..42].copy_from_slice(blake3::hash(&body).as_bytes());
+    incoming.extend_from_slice(&body);
+    assert!(protocol::execution::process_request(&incoming).is_err());
+}
+
+#[test]
+fn selected_proof_does_not_replace_omitted_requested_candidate_scope() {
+    use collagene_core::alignment::grid::GlobalStorage;
+    for (topology, rotations, both_strands, expected_candidates) in [
+        (Topology::Linear, false, true, 2),
+        (Topology::Circular, true, false, 6),
+    ] {
+        let reference = molecule("independent reference", "ACGTAC", topology);
+        let query = molecule("literal substitution", "ACGTTC", topology);
+        let report = pairwise_review::compare(
+            &reference,
+            &query,
+            &Options::Whole(ComparisonOptions {
+                alignment: AlignmentOptions {
+                    global_storage: GlobalStorage::Full,
+                    ..AlignmentOptions::default()
+                },
+                both_query_strands: both_strands,
+                reference_rotations: rotations,
+                max_origins: 6,
+                max_total_cells: 100_000,
+            }),
+        )
+        .unwrap();
+        report.validate_sources(&reference, &query).unwrap();
+        assert_eq!(report.comparison.evaluated_candidates, expected_candidates);
+        assert!(report.comparison.optimality_proven);
+        let mut omitted = report.clone();
+        let comparison = &mut omitted.comparison;
+        let selected_origin = comparison.reference_origin;
+        let selected_reversed = comparison.query_reversed;
+        comparison.candidate_evidence.retain(|candidate| {
+            candidate.reference_origin == selected_origin
+                && candidate.query_reversed == selected_reversed
+        });
+        comparison.evaluated_candidates = 1;
+        comparison.evaluated_cells = comparison.alignment.search.evaluated_cells;
+        // All selected rows, exact source bindings, score, own certificate and
+        // declared options remain genuine. Only the other actual receipts are
+        // erased, with their counters adjusted to be internally consistent.
+        assert_eq!(comparison.candidate_evidence.len(), 1);
+        assert!(omitted.validate_sources(&reference, &query).is_err());
+    }
 }

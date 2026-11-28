@@ -16,6 +16,7 @@ fn one_source(sequence: &str, enzyme: &str, target: &str) -> (DesignPlan, Molecu
     let target = Molecule::dna("independent repaired target", target, Topology::Circular).unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "digest repair close".into(),
             target_revision: target.revision(),
             inputs: vec![input("source", source)],
@@ -184,6 +185,7 @@ fn anneal_plan(options: AnnealOptions, phosphorylate: bool) -> (DesignPlan, Mole
     });
     (
         DesignPlan {
+            standard: None,
             name: "anneal phosphorylate close".into(),
             target_revision: target.revision(),
             inputs: vec![input("top", top), input("bottom", bottom)],

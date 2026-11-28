@@ -100,6 +100,7 @@ fn exact_sbol_original_survives_real_saved_pcr_and_native_capsule_replay() {
     );
     let unneeded_hash = attach(&mut w, &unneeded);
     let plan = DesignPlan {
+        standard: None,
         name: "Native PCR from projected stock".into(),
         target_revision: independent.revision(),
         inputs: vec![PlanInput {
@@ -173,6 +174,7 @@ fn exact_sbol_original_survives_real_saved_pcr_and_native_capsule_replay() {
     let capsule = collagene_core::material::capsule::capsule(&reopened, &material).unwrap();
     let prepared = reopened.revisions[&material.event.revision].clone();
     let downstream = DesignPlan {
+        standard: None,
         name: "Fresh use of retained PCR stock".into(),
         target_revision: independent.revision(),
         inputs: vec![PlanInput {
@@ -243,6 +245,7 @@ fn alternative_sequences_require_explicit_retained_native_input_selections() {
         matches!(sharing::document_closure(&w,&selected(&w,0)),Err(sharing::Error::SbolSource(reason))if reason.contains("alternative"))
     );
     let plan = DesignPlan {
+        standard: None,
         name: "Both declared representations used as original PCR inputs".into(),
         target_revision: target.revision(),
         inputs: vec![

@@ -57,6 +57,7 @@ fn ordinary() -> Preparation {
 }
 fn recipe(preparation: Preparation) -> lig::Recipe {
     lig::Recipe {
+        standard: None,
         name: "Independent mismatch-PCR construct".into(),
         circular: true,
         allow_nicked: false,
@@ -220,6 +221,7 @@ fn mismatch_preparation_reuses_a_fresh_saved_origin_and_preserves_the_replay_dep
     let origin_target =
         Molecule::dna("Independent original PCR", ORIGINAL, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Origin exactPCR".into(),
         target_revision: origin_target.revision(),
         inputs: vec![input(source.clone())],
@@ -311,6 +313,7 @@ fn shared_overlap_compilation_keeps_mismatch_policy_without_inferring_target() {
     )];
     let target = Molecule::dna("Independent linear mutant", INTENDED, Topology::Linear).unwrap();
     let r = assembly_recipe::Recipe {
+        standard: None,
         name: "Explicit overlap recipe with mutagenic preparation".into(),
         fragments: vec![fragment(ordinary())],
         overlaps: vec![],
@@ -356,6 +359,7 @@ fn tailing_recipe_keeps_literal_mismatch_policy_and_checks_it_readonly() {
     )
     .unwrap();
     let recipe = tail::Recipe {
+        standard: None,
         profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
         name: "Mismatch preparation and explicit complementary tails".into(),

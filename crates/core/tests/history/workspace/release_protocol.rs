@@ -83,6 +83,7 @@ fn fixture() -> (Workspace, String) {
     };
     let row = |id: &str, insert: &str, target| {
         RowRequest::Ready(SelectedConstruct {
+            standard: None,
             id: id.into(),
             name: id.into(),
             choices: vec![

@@ -21,6 +21,7 @@ fn input(source: &str) -> PlanInput {
 fn recipe() -> l::Recipe {
     let selection = c::select(&c::builtin_catalog().unwrap(), &["bsai".into()]).unwrap();
     l::Recipe {
+        standard: None,
         name: "PCR-added sites then digest".into(),
         fragments: vec![l::Fragment {
             source: FragmentSpec {
@@ -153,6 +154,7 @@ fn optional_repair_is_a_separate_chain_step_and_overlap_receipt_accepts_chain_ma
         *repair = None;
     }
     let ar = a::Recipe {
+        standard: None,
         name: "overlap chain receipt".into(),
         fragments: vec![source],
         overlaps: vec![],

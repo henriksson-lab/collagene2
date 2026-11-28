@@ -40,6 +40,7 @@ fn fixture(conditions: Option<ReactionConditions>) -> (DesignPlan, Molecule) {
         catalog::select(&catalog::builtin_catalog().unwrap(), &["ecori".into()]).unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "documentary digest".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -179,6 +180,7 @@ fn pcr_digest_conditions_bind_fresh_amplicon_and_html_escapes_declared_context()
     let selection =
         catalog::select(&catalog::builtin_catalog().unwrap(), &["bsai".into()]).unwrap();
     let recipe = ligation::Recipe {
+        standard: None,
         name: "PCR digest".into(),
         fragments: vec![ligation::Fragment {
             source: FragmentSpec {

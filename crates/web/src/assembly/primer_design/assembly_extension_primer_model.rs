@@ -1358,6 +1358,7 @@ mod tests {
         )
         .unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Original stock amplification".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -1460,6 +1461,7 @@ mod tests {
         )
         .unwrap();
         let physical = DesignPlan {
+            standard: None,
             name: "Fresh selected physical preparation".into(),
             target_revision: p.worker.expected.revision(),
             inputs,

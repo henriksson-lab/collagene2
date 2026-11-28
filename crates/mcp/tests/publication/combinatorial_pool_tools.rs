@@ -82,7 +82,7 @@ fn fixture() -> (Workspace, Value, Value) {
     let design = json!({"id":"reaction-sdk","name":"Whole reaction alternatives","circular":true,"bins":bins,"material_bindings":[],
         "method":{"GoldenGatePool":{"options":GoldenGateOptions {max_fragments:3,..Default::default()},
         "substrates":[{"bin_id":"bin-0","kind":"WholeSource"},{"bin_id":"bin-1","kind":"WholeSource"}],"selection":null}}});
-    let row = json!({"id":"construct-one","name":"Explicit Ω path","choices":[{"bin_id":"bin-0","choice_id":"choice-0"},{"bin_id":"bin-1","choice_id":"choice-1"}],"target":{"Existing":bindings[2]},"overrides":null});
+    let row = json!({"standard": null,"id":"construct-one","name":"Explicit Ω path","choices":[{"bin_id":"bin-0","choice_id":"choice-0"},{"bin_id":"bin-1","choice_id":"choice-1"}],"target":{"Existing":bindings[2]},"overrides":null});
     (w, design, row)
 }
 #[tokio::test]

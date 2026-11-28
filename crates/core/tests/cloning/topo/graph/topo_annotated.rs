@@ -109,6 +109,7 @@ fn canonical_product_projects_annotations_and_retains_unmapped_source_evidence()
         t::TargetOutcome::AcceptedUnderDeclaredGraph
     ));
     let plan = DesignPlan {
+        standard: None,
         name: "annotated TOPO".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

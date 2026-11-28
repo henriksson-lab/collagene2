@@ -77,6 +77,7 @@ fn fixture(incomplete: bool) -> Fixture {
             ..Default::default()
         };
         let plan = DesignPlan {
+            standard: None,
             name: "Original finite-search physical circle".into(),
             target_revision: target.revision(),
             inputs: vec![input("left", left.clone()), input("right", right.clone())],
@@ -130,6 +131,7 @@ fn fixture(incomplete: bool) -> Fixture {
             Topology::Linear,
         );
         let plan = DesignPlan {
+            standard: None,
             name: "Original physical PCR".into(),
             target_revision: target.revision(),
             inputs: vec![input("stock", stock.clone())],
@@ -266,6 +268,7 @@ fn compile(f: &Fixture) -> (Vec<PlanInput>, Molecule, a::Recipe, a::Compiled) {
     let forward = if f.incomplete { "AATTCCAG" } else { "AATTCCGT" };
     let inputs = vec![input("fragment", fragment), input("vector", vector)];
     let recipe = a::Recipe {
+        standard: None,
         name: "Saved digest then new PCR and physical assembly".into(),
         fragments: vec![
             FragmentSpec {
@@ -449,6 +452,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         Topology::Linear,
     );
     let plan = DesignPlan {
+        standard: None,
         name: "Original source assumptions".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source.clone())],
@@ -541,6 +545,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual cut ancestry".into(),
         target_revision: prepared.target_revision,
         inputs: prepared.inputs,

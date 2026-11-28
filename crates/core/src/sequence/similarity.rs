@@ -43,6 +43,7 @@ impl Default for Options {
 impl Options {
     pub fn validate(&self) -> Result<(), Error> {
         crate::alignment::review::Options::Stored(AlignmentOptions {
+            global_storage: crate::alignment::grid::GlobalStorage::Full,
             mode: AlignmentMode::Local,
             scoring: self.scoring,
             max_cells: self.max_cells_per_alignment,
@@ -454,6 +455,7 @@ pub fn search(
                     &rotated,
                     oriented,
                     &AlignmentOptions {
+                        global_storage: crate::alignment::grid::GlobalStorage::Full,
                         mode: AlignmentMode::Local,
                         scoring: options.scoring,
                         max_cells: options.max_cells_per_alignment,

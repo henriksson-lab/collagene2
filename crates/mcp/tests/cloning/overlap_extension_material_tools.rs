@@ -362,6 +362,7 @@ fn saved_source(run: bool) -> (Workspace, EventBinding, Origin) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Historical exact stock PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

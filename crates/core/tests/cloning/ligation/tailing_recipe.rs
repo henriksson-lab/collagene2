@@ -78,6 +78,7 @@ fn saved_tail(
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Historical stock preparation".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", original)],
@@ -144,6 +145,7 @@ fn keep_saved_t_vector_and_add_a_insert_preserves_actual_material_and_only_new_o
     )
     .unwrap();
     let recipe = t::Recipe {
+        standard: None,
         name: "Keep actual vector tails".into(),
         profile: Profile::Ta,
         fragments: vec![
@@ -326,6 +328,7 @@ fn both_existing_saved_tails_do_not_repeat_tailing_or_order_upstream_primers() {
     )
     .unwrap();
     let recipe = t::Recipe {
+        standard: None,
         name: "Hold both actual tailed substrates".into(),
         profile: Profile::Ta,
         fragments: vec![
@@ -412,6 +415,7 @@ fn all_four_explicit_bases_match_independent_ta_gc_scar_sequences() {
         ];
         let target = Molecule::dna("Independent scar", letters, Topology::Circular).unwrap();
         let recipe = t::Recipe {
+            standard: None,
             name: "Parity".into(),
             profile,
             fragments: vec![
@@ -465,6 +469,7 @@ fn keep_blunt_is_not_ta_even_when_generic_ligation_is_valid_and_wrong_family_ref
     )
     .unwrap();
     let recipe = t::Recipe {
+        standard: None,
         name: "No invented tails".into(),
         profile: Profile::Ta,
         fragments: vec![
@@ -527,6 +532,7 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
         ..Default::default()
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Explicit finite-search original stock".into(),
         target_revision: stock_target.revision(),
         inputs: vec![input("left", left), input("right", right)],
@@ -621,6 +627,7 @@ fn keep_existing_replays_sticky_incomplete_origin_without_upgrading_material_ass
     )
     .unwrap();
     let recipe = t::Recipe {
+        standard: None,
         name: "Hold incomplete actual tail source".into(),
         profile: Profile::Ta,
         fragments: vec![
@@ -732,6 +739,7 @@ mod preparation_and_receipt_tests {
             vec![input("vector", "AAACCC"), input("insert", "GGGTTT")],
             Molecule::dna("Independent scar intent", target, Topology::Circular).unwrap(),
             t::Recipe {
+                standard: None,
                 profile: if matches!(a, TailingBase::A | TailingBase::T) {
                     collagene_core::cloning::ligation::tailing_recipe::Profile::Ta
                 } else {
@@ -891,6 +899,7 @@ mod preparation_and_receipt_tests {
         )
         .unwrap();
         let recipe = t::Recipe {
+            standard: None,
             profile: collagene_core::cloning::ligation::tailing_recipe::Profile::Ta,
 
             name: "Pinned source and whole-PCR digest".into(),

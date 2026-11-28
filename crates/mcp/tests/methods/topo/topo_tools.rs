@@ -233,7 +233,7 @@ async fn topo_sdk_retains_nicks_all_orientations_and_explicit_independent_target
         .iter()
         .map(|source| json!({"role":source["role"],"source":{"Input":source["role"]}}))
         .collect::<Vec<_>>();
-    let proposed=call(&c,"propose_plan",json!({"name":"Source-bound TA transfer and explicit sealing","target":independent_target,"inputs":plan_inputs,"steps":[{"TopoActions":{"sources":role_sources,"request":bridge}}]})).await;
+    let proposed=call(&c,"propose_plan",json!({"standard": null,"name":"Source-bound TA transfer and explicit sealing","target":independent_target,"inputs":plan_inputs,"steps":[{"TopoActions":{"sources":role_sources,"request":bridge}}]})).await;
     assert_eq!(proposed["verified"], false);
     let verified = call(
         &c,
@@ -501,7 +501,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
         .iter()
         .map(|s| json!({"role":s["role"],"source":{"Input":s["role"]}}))
         .collect::<Vec<_>>();
-    let proposed=call(&c,"propose_plan",json!({"name":"Explicit accounted directional action fixture","target":independent_target,"inputs":bindings,"steps":[{"TopoActions":{"sources":roles,"request":request}}]})).await;
+    let proposed=call(&c,"propose_plan",json!({"standard": null,"name":"Explicit accounted directional action fixture","target":independent_target,"inputs":bindings,"steps":[{"TopoActions":{"sources":roles,"request":request}}]})).await;
     let verified = call(
         &c,
         "verify_plan",
@@ -527,7 +527,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
         .iter_mut()
         .find(|r| r["role"] == "template")
         .unwrap()["source"] = json!({"Step":0});
-    let proposed = call(&c, "propose_plan", json!({
+    let proposed = call(&c, "propose_plan", json!({"standard": null,
         "name":"Native modified template copied by PCR into TOPO preparation", "target":independent_target,
         "inputs":bindings, "steps":[
             {"DeclareSourceModifications":{"template":{"Input":"template"},"assumptions":{"host":null,"dam":"Unknown","dcm":"Unknown","cpg":"FullyModified"}}},

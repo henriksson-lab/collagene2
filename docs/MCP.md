@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current source registry has 227 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current source registry has 228 tools, including immutable reference editing, named-product screening and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -10,6 +10,25 @@ independent target checking and fresh selected-component reconstruction. The
 optional `plan_sources` bridge binds a returned selection to typed plan sources
 without requiring a client to reproduce internal hash recipes.
 [Recombination tool contracts](RECOMBINATION_MCP.md).
+
+`assess_screening_strategy` binds an immutable workspace, exact source events and
+native material origins to explicitly named intended/decoy outcomes. Outcomes
+may contain declared mixtures. Candidate tests use native checked digests or
+exact PCR with explicit primers/tails; names such as “wrong orientation” never
+create DNA. Responses retain ideal size signatures, unresolved searches,
+separation witnesses, candidate ranking and bounded panels of up to three tests.
+Tolerance is a declared size-comparison rule, not calibrated gel resolution.
+PCR/cleavage work includes source replay. Full evidence is a bounded artifact;
+the tool writes no molecules or history and predicts no success probability.
+This extension passes the current native/WASM and selected SDK checks;
+[execution scope](audits/connected-design-current-integration.json) records source stages and limits. [Scientific scope and bounds](audits/screening-strategy-current.md).
+
+`propose_plan` requires the nullable `standard` field: use `null` when no
+source-part standard is declared. `verify_plan` returns nullable
+`standard_review` separately from status-changing cloning findings. Its summary
+retains plan/declaration/review pins, advice availability, comparison charges and
+scope; the JSON artifact contains the full fresh native review. Format advice
+does not establish physical assembly or full-standard compliance.
 
 `edit_reference_document` applies a typed reference operation to an exact immutable
 document: reverse complement, circular origin rotation, region extraction,

@@ -316,7 +316,7 @@ async fn derived_stock_domestication_requires_exact_owner_and_exports_only_new_p
     let (csv, _) = artifact(&c, &oligos["table_artifact_id"]).await;
     let csv = String::from_utf8(csv).unwrap();
     assert!(!csv.contains("Upstream stock"));
-    let wrong = call(&c,"propose_plan",json!({"name":"Wrong independent saved-stock target","target":source,"inputs":[{"id":physical::INPUT_ID,"document":source}],"steps":native.plan.steps})).await;
+    let wrong = call(&c,"propose_plan",json!({"standard": native.plan.standard,"name":"Wrong independent saved-stock target","target":source,"inputs":[{"id":physical::INPUT_ID,"document":source}],"steps":native.plan.steps})).await;
     assert_eq!(
         call(
             &c,

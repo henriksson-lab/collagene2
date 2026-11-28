@@ -129,6 +129,7 @@ fn select(inputs: &[topo::Input], preparation: topo::Request) -> actions::Reques
 
 fn plan(inputs: &[topo::Input], request: actions::Request, target: &Molecule) -> DesignPlan {
     DesignPlan {
+        standard: None,
         name: "Directional accounted flap actions with independent intent".into(),
         target_revision: target.revision(),
         inputs: inputs
@@ -641,6 +642,7 @@ fn native_plan12_and_generic_run_sidecar_keep_main_and_excised_source_events_his
         .clone();
     assert!(chemistry::has_unmapped_physical_evidence(&portable));
     let imported = DesignPlan {
+        standard: None,
         name: "Historical reference is not isolated material".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

@@ -135,7 +135,7 @@ async fn oriented_profile_recommendations_are_advisory_but_target_reconstruction
         json!([a["revision"], b["revision"]])
     );
     let step = json!({"ProfiledOverlap":{"fragments":[{"source":{"Input":"a"},"reverse":false},{"source":{"Input":"b"},"reverse":true}],"overlaps":[2],"circular":false,"options":options}});
-    let p=call(&c,"propose_plan",json!({"name":"oriented profile","target":target,"inputs":[{"id":"a","document":a},{"id":"b","document":b}],"steps":[step]})).await;
+    let p=call(&c,"propose_plan",json!({"standard": null,"name":"oriented profile","target":target,"inputs":[{"id":"a","document":a},{"id":"b","document":b}],"steps":[step]})).await;
     let r = call(
         &c,
         "verify_plan",
@@ -152,7 +152,7 @@ async fn oriented_profile_recommendations_are_advisory_but_target_reconstruction
     assert!(html.to_string().contains("artifact"));
     let mut bad = step;
     bad["ProfiledOverlap"]["fragments"][0]["phosphorylate"] = json!(true);
-    reject(&c,"propose_plan",json!({"name":"ignored chemistry","target":target,"inputs":[{"id":"a","document":a},{"id":"b","document":b}],"steps":[bad]})).await;
+    reject(&c,"propose_plan",json!({"standard": null,"name":"ignored chemistry","target":target,"inputs":[{"id":"a","document":a},{"id":"b","document":b}],"steps":[bad]})).await;
     c.cancel().await.unwrap();
     s.await.unwrap();
 }

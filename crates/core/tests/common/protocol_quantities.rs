@@ -52,6 +52,7 @@ pub fn fixture() -> (Workspace, q::Request) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Saved native PCR, unchanged status".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

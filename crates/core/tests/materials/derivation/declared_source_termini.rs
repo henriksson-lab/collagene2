@@ -33,6 +33,7 @@ fn plan(a: Terminus, b: Terminus, allow_nicked: bool) -> (DesignPlan, Molecule) 
     let target = molecule("independent target", "AAAACCCC");
     (
         DesignPlan {
+            standard: None,
             name: "explicit original source hypotheses".into(),
             target_revision: target.revision(),
             inputs: vec![
@@ -115,6 +116,7 @@ fn dna_annotations_citations_and_unknown_modification_state_are_preserved() {
     let target = molecule("independent unchanged sequence", m.sequence.as_str());
     let known = Terminus::CLEAVED;
     let plan = DesignPlan {
+        standard: None,
         name: "hypothesis only".into(),
         target_revision: target.revision(),
         inputs: vec![input("source", m.clone())],
@@ -195,6 +197,7 @@ fn preparation_and_operation_are_append_only_and_whole_linear_is_not_upgraded() 
     let target = molecule("independent overlap target", "AAATGATTT");
     let known = Terminus::CLEAVED;
     let recipe = a::Recipe {
+        standard: None,
         name: "declaration reuse".into(),
         fragments: vec![
             a::FragmentSpec {

@@ -327,6 +327,7 @@ fn saved() -> (Molecule, Capsule, Workspace) {
     let target =
         Molecule::dna("Independent original PCR stock", ORIGINAL, Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original scope unchanged".into(),
         target_revision: target.revision(),
         inputs: vec![src.clone()],

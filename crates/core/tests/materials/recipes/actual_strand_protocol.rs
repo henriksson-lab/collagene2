@@ -97,6 +97,7 @@ fn documentary_construction_does_not_replay_or_promote_reference_only_history() 
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Reference overlap".into(),
         target_revision: target.revision(),
         inputs: vec![input("source", source)],

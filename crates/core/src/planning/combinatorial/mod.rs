@@ -21,7 +21,7 @@ use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
 
-const VERSION: &str = "combinatorial-source-design-4";
+const VERSION: &str = "combinatorial-source-design-5";
 pub const MAX_BINS: usize = 12;
 pub const MAX_INPUTS: usize = 24;
 pub const MAX_CHOICES: usize = 256;
@@ -65,7 +65,8 @@ dto! {pub struct PoolSelection {pub selection:crate::cloning::golden_gate::prepa
 dto! {pub struct MultiSiteSelection {pub selection:crate::cloning::recombination::Selection,pub source_revision:String}}
 dto! {pub struct MultiSiteInspection {pub context_revision:String,pub source_revision:String,pub batch:crate::cloning::recombination::multisite::Batch}}
 dto! {pub struct LibraryMaterialBinding {pub event:EventBinding,pub origin:crate::material::run::MaterialOrigin}}
-dto! {pub struct Design {pub id:String,pub name:String,pub circular:bool,pub bins:Vec<Bin>,pub method:Method,pub material_bindings:Vec<LibraryMaterialBinding>}}
+dto! {pub struct Design {
+pub id:String,pub name:String,pub circular:bool,pub bins:Vec<Bin>,pub method:Method,pub material_bindings:Vec<LibraryMaterialBinding>}}
 dto! {pub struct ChoiceSelection {pub bin_id:String,pub choice_id:String}}
 dto! {pub struct Combination {pub id:String,pub choices:Vec<ChoiceSelection>}}
 dto! {pub struct MatrixPage {pub total:u128,pub first:u128,pub combinations:Vec<Combination>}}
@@ -79,6 +80,10 @@ dto! {pub enum TargetDeclaration {
 dto! {pub struct PreparationOverride {pub bin_id:String,pub preparation_reverse:bool,pub preparation:Option<assembly_recipe::Preparation>,pub treatment:Option<EndTreatment>,#[serde(deserialize_with="crate::encoding::required_option")]#[cfg_attr(feature="json-schema",schemars(required))]pub generation:Option<crate::chemistry::tracked_duplex::GenerationAssumptions>}}
 dto! {pub struct ConstructOverrides {pub preparations:Vec<PreparationOverride>,pub method:Option<Method>,pub circular:Option<bool>}}
 dto! {pub struct SelectedConstruct {
+#[serde(deserialize_with="crate::encoding::required_option")]
+#[cfg_attr(feature="json-schema",schemars(required))]
+pub standard:Option<crate::cloning::assembly::standards::declaration::Declaration>,
+
     pub id:String,pub name:String,pub choices:Vec<ChoiceSelection>,pub target:TargetDeclaration,
     #[serde(default)] pub overrides:Option<ConstructOverrides>,
 }}
@@ -534,6 +539,9 @@ impl SelectedMatrix {
         }
         let mut ids = BTreeSet::new();
         for construct in &self.constructs {
+            if let Some(standard) = &construct.standard {
+                standard.validate()?;
+            }
             self.design.construct_shape(construct)?;
             if !identifier(&construct.id)
                 || !ids.insert(&construct.id)
@@ -546,6 +554,7 @@ impl SelectedMatrix {
     }
 }
 pub struct Resolved {
+    pub standard: Option<crate::cloning::assembly::standards::declaration::Declaration>,
     pub construct_id: String,
     pub construct_name: String,
     pub combination_id: String,
@@ -597,6 +606,7 @@ impl Resolved {
                     &pin.selection,
                 )?;
                 Ok(crate::planning::plan::DesignPlan {
+                    standard: self.standard.clone(),
                     name: self.construct_name.clone(),
                     target_revision: self.target.revision(),
                     inputs: self.inputs.clone(),
@@ -1699,6 +1709,7 @@ pub(crate) fn resolve_validated(
             })
             .collect::<Result<Vec<_>, Error>>()?;
         let request = crate::cloning::golden_gate::reaction::Request {
+            standard: construct.standard.clone(),
             name: construct.name.clone(),
             rows,
             options: options.clone(),
@@ -1776,6 +1787,7 @@ pub(crate) fn resolve_validated(
                     .collect::<Result<Vec<_>, Error>>()?;
                 Recipe::Tailing {
                     recipe: tailing_recipe::Recipe {
+                        standard: construct.standard.clone(),
                         name: construct.name.clone(),
                         profile: *profile,
                         fragments,
@@ -1800,6 +1812,7 @@ pub(crate) fn resolve_validated(
                     ));
                 }
                 let recipe = assembly_recipe::Recipe {
+                    standard: construct.standard.clone(),
                     name: construct.name.clone(),
                     fragments: rows,
                     overlaps: overlaps.clone(),
@@ -1830,6 +1843,7 @@ pub(crate) fn resolve_validated(
                     }
                 }
                 let recipe = ligation_recipe::Recipe {
+                    standard: construct.standard.clone(),
                     name: construct.name.clone(),
                     fragments: rows
                         .into_iter()
@@ -1867,6 +1881,7 @@ pub(crate) fn resolve_validated(
         target.revision(),
     ))?;
     Ok(Resolved {
+        standard: construct.standard.clone(),
         construct_id: construct.id.clone(),
         construct_name: construct.name.clone(),
         combination_id,

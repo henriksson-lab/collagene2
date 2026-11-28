@@ -107,6 +107,7 @@ fn plan(directional: bool) -> (DesignPlan, Molecule) {
     .unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "TOPO plan".into(),
             target_revision: target.revision(),
             inputs,
@@ -277,6 +278,7 @@ fn html_pcr_preparation_includes_actual_ordered_oligos_and_explicit_physical_ass
     };
     let target = molecule("GGGACTAGTCATGACCTGATCGTACGAGTCCGATGCAGG");
     let plan = DesignPlan {
+        standard: None,
         name: "PCR preparation".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

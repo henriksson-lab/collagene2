@@ -31,6 +31,7 @@ fn fixture() -> (DesignPlan, Molecule) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Two actual mutagenic PCRs and reciprocal extension".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -335,6 +336,7 @@ fn closed_extension_origin_cannot_hide_new_semantics_in_old_worker_envelope() {
     let origin = collagene_core::material::capsule::capsule(&commit.workspace, &selection).unwrap();
     let saved = commit.workspace.revisions[&selection.event.revision].clone();
     let continuation = DesignPlan {
+        standard: None,
         name: "Freshly reconstructed saved extension".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -392,6 +394,7 @@ fn competing_terminal_pairings_remain_incomplete_after_outer_pcr() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "An outer PCR does not resolve competing terminal pairings".into(),
         target_revision: target.revision(),
         inputs: vec![

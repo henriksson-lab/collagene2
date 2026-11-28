@@ -340,6 +340,13 @@ pub fn AssemblyWorkspace(
     });
     let review_intent = Callback::new(move |()| {
         let declared = draft.get_untracked();
+        if let Some(standard) = &declared.methods.standard {
+            if let Err(error) = standard.validate_sources(&declared) {
+                status.set(error);
+                return;
+            }
+        }
+
         let state = identity.get_untracked();
         let bound_epoch = epoch.get_untracked();
         review_pin.set(crate::ai::web_mcp_assembly::pin(&declared, bound_epoch).ok());
@@ -884,6 +891,7 @@ pub fn AssemblyWorkspace(
         <p class="helper" aria-label="Current assembly method"><strong>"Current method: "</strong>{move||draft.with(|d|method_overview(&d.methods))}". Review the intended construct to edit preparation settings in step 3."</p>
         </details>
         <nav class="assembly-slot-ribbon" aria-label="Assembly fragment order">
+        <crate::assembly::draft::assembly_standard_view::AssemblyStandardControls draft locked=Memo::new(move |_| workspace_busy.get() || busy.get())/>
         <For each=move||draft.with(|d|(0..d.slots.len()).collect::<Vec<_>>()) key=|i|*i children=move|i|view!{
             <button class="assembly-slot-tab" class:active=move||draft.with(|d|d.active_slot==i) aria-pressed=move||draft.with(|d|d.active_slot==i) on:click=move|_|draft.update(|d|d.active_slot=i)>
                 <strong>{move||draft.with(|d|format!("{}. {}",i+1,d.slots.get(i).map(|s|s.label.as_str()).unwrap_or("Fragment")))}</strong>
@@ -1041,6 +1049,13 @@ fn FrozenWorkspace(
                 || draft.with_untracked(Draft::identity) != f.identity
             {
                 return Err("Source slots changed; review the intended construct again.".into());
+            }
+            let standard = draft.with_untracked(|d| {
+                if let Some(standard) = &d.methods.standard { standard.validate_sources(d)?; }
+                d.methods.standard_declaration()
+            })?;
+            if candidate.plan.standard != standard {
+                return Err("Candidate does not retain the current declared source standard; preview the method again before review.".into());
             }
             if candidate.plan.target_revision != f.target_revision
                 || candidate.plan.inputs.len() != f.sources.len()

@@ -446,6 +446,7 @@ mod tests {
                 _ => unreachable!(),
             }
             let request = reaction::Request {
+                standard: None,
                 name: "native limits".into(),
                 rows: vec![reaction::Row {
                     role: "substrate".into(),

@@ -6,6 +6,11 @@ fn dna(s: &str) -> Sequence {
 fn options(mode: AlignmentMode) -> AlignmentOptions {
     AlignmentOptions {
         mode,
+        global_storage: if mode == AlignmentMode::Global {
+            grid::GlobalStorage::default()
+        } else {
+            grid::GlobalStorage::Full
+        },
         ..AlignmentOptions::default()
     }
 }
@@ -317,16 +322,16 @@ fn invalid_scoring_and_matrix_budgets_fail_before_large_allocations() {
     o.scoring.match_score = i32::MAX;
     assert!(align(&dna("A"), &dna("A"), &o).is_err());
     let skewed = dna(&"A".repeat(4_000_000));
-    assert!(
+    // The full query-in-reference domain fits the cell cap but its two
+    // four-million-column score rows plus traceback exceed matrix bytes.
+    assert!(matches!(
         align(
             &dna("A"),
             &skewed,
             &options(AlignmentMode::QueryInReference)
-        )
-        .unwrap_err()
-        .to_string()
-        .contains("allocation budget")
-    );
+        ),
+        Err(collagene_model::Error::TooLarge)
+    ));
 }
 
 #[test]

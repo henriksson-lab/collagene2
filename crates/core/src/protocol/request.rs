@@ -45,6 +45,40 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::Align {
+                molecule,
+                query,
+                options,
+            } => {
+                let expected = crate::alignment::review::revision(
+                    molecule,
+                    query,
+                    &crate::alignment::review::Options::Stored(*options),
+                )?;
+                if expected != self.revision {
+                    return Err(Error::Format(
+                        "Pairwise alignment sources/settings context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::CompareSequences {
+                reference,
+                query,
+                options,
+            } => {
+                if crate::alignment::review::revision(reference, query, options)? != self.revision {
+                    return Err(Error::Format(
+                        "Pairwise comparison sources/settings context changed".into(),
+                    ));
+                }
+            }
+            AnalysisJob::AssessScreeningStrategy { request } => {
+                if crate::cloning::screening::revision(request)? != self.revision {
+                    return Err(Error::Format(
+                        "Screening source/settings context changed".into(),
+                    ));
+                }
+            }
             AnalysisJob::AssessConstructCausalQc { workspace, request } => {
                 if crate::construct_qc::causal::revision(workspace, request)? != self.revision {
                     return Err(Error::Format(

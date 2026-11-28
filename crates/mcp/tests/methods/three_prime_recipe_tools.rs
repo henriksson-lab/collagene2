@@ -28,6 +28,7 @@ fn policy() -> Options {
 }
 fn recipe() -> assembly_recipe::Recipe {
     assembly_recipe::Recipe {
+        standard: None,
         name: "Explicit physical circular assembly".into(),
         fragments: ["a", "b"]
             .into_iter()
@@ -169,7 +170,7 @@ async fn annealing_preview_retains_incomplete_strands_and_never_saves_or_grants_
             .as_str(),
         CIRCLE
     );
-    let proposed=call(&client,"propose_plan",json!({"name":"Keep explicitly previewed physical homology candidate","inputs":inputs,"target":target,"steps":native.compiled.plan.steps})).await;
+    let proposed=call(&client,"propose_plan",json!({"standard": native.compiled.plan.standard,"name":"Keep explicitly previewed physical homology candidate","inputs":inputs,"target":target,"steps":native.compiled.plan.steps})).await;
     assert_eq!(proposed["verified"], false);
     let verified = call(
         &client,

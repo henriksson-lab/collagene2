@@ -79,3 +79,14 @@ pub(super) fn causal_qc(
         .map(AnalysisResult::ConstructCausalQc)
         .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
+
+/// Model only explicitly named products/mixtures with the existing scientific owners.
+pub(super) fn screening(
+    context: &RequestContext,
+    request: crate::cloning::screening::Request,
+) -> Result<AnalysisResult, Error> {
+    bound(context, crate::cloning::screening::revision(&request)?)?;
+    Ok(crate::cloning::screening::assess(&request)
+        .map(AnalysisResult::ScreeningStrategy)
+        .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+}

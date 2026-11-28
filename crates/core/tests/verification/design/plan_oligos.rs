@@ -14,6 +14,7 @@ fn fixture() -> (DesignPlan, Molecule) {
     let target = Molecule::dna("independent target", "TTTTCCCC", Topology::Linear).unwrap();
     let policy = PcrOptions::default();
     let plan = DesignPlan {
+        standard: None,
         name: "Declared orders, not verified PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

@@ -123,6 +123,7 @@ fn fixture(nicked: bool) -> (Workspace, MaterialOrigin) {
         options: ligation,
     });
     let plan = DesignPlan {
+        standard: None,
         name: "Actual prepared circular template".into(),
         target_revision: target.revision(),
         inputs: vec![input("left", left), input("right", right)],
@@ -517,6 +518,7 @@ fn reusable_capped_origin_keeps_incomplete_status_through_new_material() {
     let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
     let plan = DesignPlan {
+        standard: None,
         name: "Physical homology with bounded terminal alternatives".into(),
         target_revision: original_target.revision(),
         inputs: vec![input("left", left), input("right", right)],

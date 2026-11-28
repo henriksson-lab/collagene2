@@ -91,6 +91,7 @@ fn original() -> Commit {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

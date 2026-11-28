@@ -186,6 +186,7 @@ fn pcr_archive() -> (store::Payload, run_material::Selection) {
         }
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Actual native PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

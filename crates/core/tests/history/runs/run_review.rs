@@ -41,6 +41,7 @@ fn fixture() -> (Workspace, String) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Retained exact PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

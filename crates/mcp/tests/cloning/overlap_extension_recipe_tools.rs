@@ -65,6 +65,7 @@ fn pair(f: &str, ft: &str, r: &str, rt: &str) -> PrimerPair {
 }
 fn recipe() -> Recipe {
     Recipe {
+        standard: None,
         name: "Replace GGAC with TT before inserting into vector".into(),
         fragments: vec![
             FragmentSpec {

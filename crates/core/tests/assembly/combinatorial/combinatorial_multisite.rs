@@ -125,6 +125,7 @@ fn fixture(existing: bool) -> (Workspace, Design, SelectedConstruct) {
         })
         .collect::<Vec<_>>();
     let row = SelectedConstruct {
+        standard: None,
         id: "wanted-reference".into(),
         name: "User chosen clone name".into(),
         choices: bins

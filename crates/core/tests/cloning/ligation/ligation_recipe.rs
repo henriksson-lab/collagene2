@@ -45,6 +45,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, l::Recipe) {
         "TTGCAATCGTCGATGCTAGCATCGTCGATGCTAGCGGTAC",
     );
     let recipe = l::Recipe {
+        standard: None,
         name: "prepared blunt ligation".into(),
         fragments: vec![
             pcr(
@@ -238,6 +239,7 @@ fn three_fresh_cohesive_digest_arms_close_but_opposite_polarities_do_not() {
     )
     .unwrap();
     let mut recipe = l::Recipe {
+        standard: None,
         name: "actualthreewaycohesiveassembly".into(),
         fragments,
         circular: true,

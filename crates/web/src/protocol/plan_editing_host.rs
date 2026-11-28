@@ -66,6 +66,7 @@ pub fn ManualPlanEditor(
         };
         let original = if creating {
             Candidate::new(DesignPlan {
+                standard: None,
                 name: "Manual cloning plan".into(),
                 target_revision: target.revision.clone(),
                 inputs: vec![],

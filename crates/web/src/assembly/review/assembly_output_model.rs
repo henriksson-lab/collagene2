@@ -71,6 +71,7 @@ mod tests {
         let target =
             Molecule::dna("Independent16bp", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "Declared actual primers".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -208,6 +209,7 @@ mod tests {
         .unwrap();
         let molecule = commit.workspace.revisions[&event.revision].clone();
         let mut next = DesignPlan {
+            standard: None,
             name: "Reuse already-prepared material".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

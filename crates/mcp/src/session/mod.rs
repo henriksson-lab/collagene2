@@ -63,6 +63,8 @@ pub(crate) struct StoredCandidate {
     pub(crate) target_revision: String,
     pub(crate) inputs: Vec<(String, String)>,
     pub(crate) steps: Vec<Operation>,
+    pub(crate) standard:
+        Option<collagene_core::cloning::assembly::standards::declaration::Declaration>,
 }
 #[derive(Clone, Serialize)]
 pub(crate) struct StoredWorkspace {
@@ -99,6 +101,7 @@ impl StoredWorkspace {
                             .map(|i| (i.id, i.revision))
                             .collect(),
                         steps: c.plan.steps,
+                        standard: c.plan.standard,
                     })
                     .collect(),
                 active_candidate: value.active_candidate,
@@ -137,6 +140,7 @@ impl StoredWorkspace {
                             name: c.name.clone(),
                             target_revision: c.target_revision.clone(),
                             steps: c.steps.clone(),
+                            standard: c.standard.clone(),
                             inputs: c
                                 .inputs
                                 .iter()

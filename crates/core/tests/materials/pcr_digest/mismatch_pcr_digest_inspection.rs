@@ -200,6 +200,7 @@ fn saved_origin_is_freshly_replayed_and_forged_origin_or_stale_source_is_not_aut
         }
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Original exact PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

@@ -72,6 +72,12 @@ impl Response {
         let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::Alignment(report) => {
+                report.validate_search(report.reference_length, report.query_length)?;
+            }
+            AnalysisResult::ScreeningStrategy(report) => {
+                report.validate_binding(&response.revision)?
+            }
             AnalysisResult::ConstructCausalQc(report) => {
                 report.validate_binding(&response.revision)?
             }

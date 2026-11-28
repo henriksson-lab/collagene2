@@ -8,10 +8,20 @@ use crate::{
 };
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "ligation-recipe-1";
+pub const ENGINE_VERSION: &str = "ligation-recipe-2";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Clone,Debug,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
 dto! {pub struct Fragment {pub source:FragmentSpec,pub treatment:Option<EndTreatment>}}
-dto! {pub struct Recipe {pub name:String,pub fragments:Vec<Fragment>,pub circular:bool,pub allow_nicked:bool}}
+dto! {
+    pub struct Recipe {
+    pub name:String,
+    pub fragments:Vec<Fragment>,
+    pub circular:bool,
+    pub allow_nicked:bool,
+    #[serde(deserialize_with="crate::encoding::required_option")]
+    #[cfg_attr(feature="json-schema",schemars(required))]
+    pub standard:Option<crate::cloning::assembly::standards::declaration::Declaration>,
+    }
+}
 dto! {pub struct Row {pub preparation:PreparedRow,pub treatment_step:Option<usize>,pub prepared_source:Source}}
 dto! {pub struct Compiled {pub plan:DesignPlan,pub rows:Vec<Row>,pub ligation_step:usize}}
 dto! {pub struct Junction {pub index:usize,pub upstream:usize,pub downstream:usize,pub closing:bool,pub upstream_end:Option<End>,pub downstream_end:Option<End>}}
@@ -60,6 +70,10 @@ pub fn source_preflight(
     target: &Molecule,
     recipe: &Recipe,
 ) -> Result<(), Error> {
+    if let Some(standard) = &recipe.standard {
+        standard.validate()?;
+    }
+
     // Guard before cloning the small serialized recipe fields: large untrusted
     // primer/tail/name strings must not be copied merely to call the shared helper.
     if recipe.fragments.is_empty()
@@ -242,6 +256,7 @@ pub fn compile(
     ));
     let compiled = Compiled {
         plan: DesignPlan {
+            standard: recipe.standard.clone(),
             name: recipe.name.clone(),
             target_revision: prepared.target_revision,
             inputs: prepared.inputs,
@@ -414,6 +429,8 @@ impl Preview {
     /// Readonly bounds/correspondence checks, never chemical replay or authority.
     pub fn validate(&self) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification
+            .validate_standard_for_plan(&self.compiled.plan)?;
         let rows = self.compiled.rows.len();
         let steps = self.compiled.plan.steps.len();
         if !hex(&self.context_revision)

@@ -75,6 +75,7 @@ fn staggered() -> (Molecule, MaterialOrigin) {
         Topology::Linear,
     );
     let plan = DesignPlan {
+        standard: None,
         name: "Two literal unequal annealed oligos".into(),
         target_revision: target.revision(),
         inputs: vec![input("top", top.clone()), input("bottom", bottom.clone())],
@@ -194,6 +195,7 @@ fn freshly_replayed_unsealed_nicks_remain_unsupported_for_pcr_and_source_is_unch
         Topology::Circular,
     );
     let plan = DesignPlan {
+        standard: None,
         name: "One phosphorylated and one hydroxyl fragment".into(),
         target_revision: target.revision(),
         inputs: vec![input("left", left.clone()), input("right", right.clone())],

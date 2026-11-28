@@ -17,6 +17,7 @@ fn request() -> Request {
     let source = Molecule::dna("original", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
     let target = Molecule::dna("independent target", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "literal exact PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

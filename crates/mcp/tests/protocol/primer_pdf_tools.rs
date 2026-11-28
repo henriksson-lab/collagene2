@@ -149,7 +149,7 @@ async fn primer_evidence_design_pdf_artifacts_and_provider_selection_contracts()
     reject!("import_url", json!({"url":"NC_001422.1","sequence_id":9}));
     let plan = call!(
         "propose_plan",
-        json!({"name":"PCR α protocol","target":reference("target"),"inputs":[{"id":"left","document":reference("left")},{"id":"right","document":reference("right")}],"steps":[{"Overlap":{"fragments":[{"Input":"left"},{"Input":"right"}],"overlaps":[4],"circular":false}}]})
+        json!({"standard": null,"name":"PCR α protocol","target":reference("target"),"inputs":[{"id":"left","document":reference("left")},{"id":"right","document":reference("right")}],"steps":[{"Overlap":{"fragments":[{"Input":"left"},{"Input":"right"}],"overlaps":[4],"circular":false}}]})
     );
     let exported = call!(
         "export_protocol_pdf",

@@ -9,10 +9,11 @@ pub(crate) enum ReplayScope {
     PlanLocal,
     /// A causal-QC request shares actual exact-PCR and cleavage charges across every
     /// retained producer it replays, including nested saved material.
-    QcJob,
+    SharedJob,
 }
 
 pub(crate) struct ReplayBudget<'a> {
+    pub(crate) standards: crate::cloning::assembly::standards::declaration::DeclarationBudget,
     pub(crate) pcr: ExactSearchBudget,
     pub(crate) cleavage: &'a mut CleavageBudget,
     scope: ReplayScope,
@@ -20,20 +21,28 @@ pub(crate) struct ReplayBudget<'a> {
 impl<'a> ReplayBudget<'a> {
     pub fn plan_local(cleavage: &'a mut CleavageBudget) -> Self {
         Self {
+            standards: crate::cloning::assembly::standards::declaration::DeclarationBudget::new(
+                64_000_000,
+            )
+            .expect("fixed advisory comparison bound"),
             pcr: ExactSearchBudget::default(),
             cleavage,
             scope: ReplayScope::PlanLocal,
         }
     }
-    pub fn qc_job(cleavage: &'a mut CleavageBudget) -> Self {
+    pub fn shared_job(cleavage: &'a mut CleavageBudget) -> Self {
         Self {
+            standards: crate::cloning::assembly::standards::declaration::DeclarationBudget::new(
+                64_000_000,
+            )
+            .expect("fixed advisory comparison bound"),
             pcr: ExactSearchBudget::default(),
             cleavage,
-            scope: ReplayScope::QcJob,
+            scope: ReplayScope::SharedJob,
         }
     }
-    pub fn is_qc_job(&self) -> bool {
-        self.scope == ReplayScope::QcJob
+    pub fn is_shared_job(&self) -> bool {
+        self.scope == ReplayScope::SharedJob
     }
     pub fn exhausted(&self) -> bool {
         self.pcr.remaining() == 0 || self.cleavage.remaining() == 0
@@ -71,6 +80,7 @@ mod tests {
         )
         .unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "exact PCR budget fixture".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -98,7 +108,7 @@ mod tests {
         assert!(first_work > 0);
 
         let mut cleavage = CleavageBudget::new(100_000_000).unwrap();
-        let mut qc = ReplayBudget::qc_job(&mut cleavage);
+        let mut qc = ReplayBudget::shared_job(&mut cleavage);
         // Lower the private test ledger instead of constructing an enormous
         // sequence. Each actual kernel charge still follows the production path.
         let limit = first_work + first_work / 2;

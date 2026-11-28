@@ -39,6 +39,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
         })
         .collect();
     let request = reaction::Request {
+        standard: None,
         name: "all material entering the reaction".into(),
         rows: vec![
             reaction::Row {

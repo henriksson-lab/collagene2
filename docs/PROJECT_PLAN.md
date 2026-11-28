@@ -5590,3 +5590,59 @@ recorded checked and published hashes distinguish that formatting. Current-sourc
 frontend profile packaging and cross-platform CI remain pending publication.
 Unregistered screening, row-band and assembly-standard foundations are excluded
 from this checkpoint and remain next integration work. The full goal is active.
+
+### Connected screening, affine alignment and assembly-standard batch
+
+Checkpoint `190ae08` is published. The connected batch registers three prepared
+extensions in parallel and now passes selected native/WASM checks and **2,959
+distinct effective cases** across initial and affected corrective executions.
+[Source stages, original failures and execution limits](audits/connected-design-current-integration.json).
+Not every case ran on the final binary.
+
+- F20: exact-event named intended/decoy mixtures, candidate digest/PCR tests,
+  ideal size witnesses and bounded panel selection, connected through the native
+  owner, binary worker, MCP and Analyze controls. Shared PCR/cleavage budgets
+  include saved-origin replay. Ambiguous or incomplete evidence withholds
+  separation claims; no probability or calibrated gel-resolution claim is made.
+- F28/F17: one affine recurrence with sparse row storage and adaptive global
+  corridors, strict off-band score bounds and cumulative candidate work. Current
+  proof reports bind actual input lengths, options and candidate coverage.
+  Circular-origin coverage and in-band uniqueness remain separate questions.
+  Design-versus-consensus biological consequence review remains subsequent work.
+- F37: a required nullable declaration on the current plan and recipes, exact
+  source/profile binding, grammar review retained with native verification,
+  editable wizard declarations and the same review in HTML/PDF output. Advice
+  does not change reconstructed DNA or confer whole-standard compliance.
+
+Three workers handled alignment/transport, assembly-standard UI/output and an
+independent scientific audit; root integrated shared schemas and screening.
+The SDK round trip caught a genuine custom archive codec omission: declarations
+were lost before candidate revision validation. The codec now preserves the
+required field, and its encoder exhaustively matches canonical plan fields.
+Native malformed-archive and SDK retention checks pass. No browser checks ran.
+
+Published checkpoint CI: [Check run 46178350510](https://github.com/henriksson-lab/collagene2/actions/runs/46178350510)
+completed successfully at exact head `190ae08e7842322adbfae9d887d76dfcaf319bae`,
+including Windows/macOS/Linux scientific jobs and the web job. The separate
+[desktop packaging run](https://github.com/henriksson-lab/collagene2/actions/runs/46178350413)
+also succeeded on all three platforms; the [artifact inventory](audits/desktop-packages-current.json)
+records exact IDs, sizes and digests. No installation or GUI acceptance is inferred.
+These results do not verify the uncommitted screening/alignment/standards batch
+described above.
+
+The parallel [F19 annotation-merge audit](audits/annotation-merge-current.md)
+confirms that current library and GFF/GTF/BED application already append without
+deleting existing features and retain per-feature source evidence. Remaining work
+is explicit conflict handling, idempotent duplicate policy, multiple contributors
+on one feature, direct annotation-only donor transfer and a unified provenance
+view. Reuse the current matcher, reference-edit projection and history owner;
+do not add another annotation engine or preserve an old internal representation.
+
+Next F28/F17 work is underway in isolated, unregistered source: one
+design-versus-supplied-consensus semantic owner, conditional CDS consequences,
+existing comparison UI/MCP integration and independent literal fixtures. Reuse
+the actual pairwise report and extend its one current history record with
+required nullable semantic evidence; retain no second path or archive. This
+next-feature source is excluded from the verified batch above. Local FASTA raw
+source retention, unsupported feature semantics, unproven correspondence and
+missing provider evidence must remain explicit rather than inferred.

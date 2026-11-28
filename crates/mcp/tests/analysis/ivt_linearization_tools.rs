@@ -341,6 +341,7 @@ async fn linearization_sdk_replays_saved_pcr_and_refuses_original_relabeling_or_
     let mut target = original.clone();
     target.name = "Independent PCR target".into();
     let plan = DesignPlan {
+        standard: None,
         name: "Saved literal PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

@@ -188,6 +188,7 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
     let left_cap = d::capsule(&w, &left_pin).unwrap();
     let right_cap = d::capsule(&w, &right_pin).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Assemble freshly reconstructed sticky fragments".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -320,6 +321,7 @@ fn full_ordered_tails_and_source_run_and_legacy_digest_origins_are_replayed_not_
     let target_pin = event(&w, 1);
     let (f, r) = primers();
     let plan = DesignPlan {
+        standard: None,
         name: "Conventional original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -539,6 +541,7 @@ fn an_actual_reusable_incomplete_origin_stays_incomplete_after_new_unmodified_pc
     let mut options = overlap_profiles::ProfileOptions::default();
     options.scan_repeated_overlaps = false;
     let plan = DesignPlan {
+        standard: None,
         name: "Actual sealed source with bounded alternatives".into(),
         target_revision: target.revision(),
         inputs: vec![

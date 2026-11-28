@@ -276,6 +276,7 @@ fn material(source: &Molecule, input: &SourceInput) -> Result<(TrackedDuplex, bo
         }
         SourceInput::DeclaredOriginal { generation } => {
             let plan = DesignPlan {
+                standard: None,
                 name: "Declared original IVT template generation".into(),
                 target_revision: source.revision(),
                 inputs: vec![PlanInput {

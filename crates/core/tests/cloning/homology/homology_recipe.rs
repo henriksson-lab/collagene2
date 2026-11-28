@@ -73,6 +73,7 @@ fn fixture(circular: bool) -> (Vec<PlanInput>, recipe::Recipe, Options) {
     let mut profile = collagene_core::cloning::overlap::profiles::ProfileOptions::default();
     profile.scan_repeated_overlaps = false;
     let request = recipe::Recipe {
+        standard: None,
         name: "Declared physical homology route".into(),
         fragments,
         overlaps: overlaps.clone(),
@@ -205,6 +206,7 @@ fn pcr_five_prime_oh_fragments_form_a_native_circle_then_closed_origin_supplies_
         .clone();
     let selection = catalog_digest::select(&catalog, &[id]).unwrap();
     let downstream = ligation_recipe::Recipe {
+        standard: None,
         name: "Reuse actual circle, PCR and cut real amplicon".into(),
         circular: false,
         allow_nicked: false,
@@ -323,6 +325,7 @@ fn reference_only_and_imported_product_summaries_cannot_acquire_homology_materia
         .expect("final declared step must reconstruct")
         .clone();
     let forged = collagene_core::planning::plan::DesignPlan {
+        standard: None,
         name: "Metadata is not originating material".into(),
         target_revision: linear.revision(),
         inputs: vec![input("copied", imported)],

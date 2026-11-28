@@ -33,6 +33,7 @@ fn fixture() -> (Workspace, DesignPlan, Request) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original-template PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

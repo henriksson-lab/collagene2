@@ -38,6 +38,7 @@ fn fixture(options: Options, nicked: bool) -> (DesignPlan, Molecule) {
         EndTreatment::Phosphorylate
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Intended path with actual competing orientation".into(),
         target_revision: target.revision(),
         inputs: vec![input("vector", vector), input("insert", insert)],

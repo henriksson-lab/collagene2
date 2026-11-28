@@ -31,7 +31,7 @@ const MAX_ENTRIES: usize = 50_000;
 const MAX_STACK: usize = 1000;
 const FORMAT: &str = "collagene-workspace";
 const VERSION: u32 = 2;
-pub const PLAN_SCHEMA_VERSION: u32 = 32;
+pub const PLAN_SCHEMA_VERSION: u32 = 33;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -667,6 +667,8 @@ impl<'de> Deserialize<'de> for ValueRecord {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PlanRecord {
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    standard: Option<crate::cloning::assembly::standards::declaration::Declaration>,
     plan_revision: String,
     name: String,
     target_revision: String,
@@ -778,20 +780,29 @@ pub fn save_workspace(workspace: &Workspace) -> Result<Vec<u8>, Error> {
     }
     let mut candidates = Vec::new();
     for candidate in &workspace.candidates {
-        let plan = &candidate.plan;
+        // Exhaustive canonical fields keep this compact archive encoder in
+        // lockstep when the current plan representation changes.
+        let DesignPlan {
+            standard,
+            name,
+            target_revision,
+            inputs,
+            steps,
+        } = &candidate.plan;
         let record = PlanRecord {
+            // workspace.validate() admitted the borrowed declaration before this clone.
+            standard: standard.clone(),
             plan_revision: candidate.plan_revision.clone(),
-            name: plan.name.clone(),
-            target_revision: plan.target_revision.clone(),
-            inputs: plan
-                .inputs
+            name: name.clone(),
+            target_revision: target_revision.clone(),
+            inputs: inputs
                 .iter()
                 .map(|i| InputRecord {
                     id: i.id.clone(),
                     revision: i.revision.clone(),
                 })
                 .collect(),
-            steps: blobs.json(&plan.steps)?,
+            steps: blobs.json(steps)?,
         };
         candidates.push(blobs.json(&record)?);
     }
@@ -1325,6 +1336,11 @@ fn load_workspace_inner(bytes: &[u8]) -> Result<Workspace, Error> {
     for blob in &manifest.candidates {
         used.insert(blob.clone());
         let record: PlanRecord = json(get(&blobs, blob)?)?;
+        // Native archive records may be read independently of public Plan serde.
+        // Admit bounded declaration content before source clones or plan hashes.
+        if let Some(declaration) = &record.standard {
+            declaration.validate()?;
+        }
         used.insert(record.steps.clone());
         if record.inputs.len() > 1000 || record.name.len() > 1024 {
             return Err(Error::TooLarge);
@@ -1357,6 +1373,7 @@ fn load_workspace_inner(bytes: &[u8]) -> Result<Workspace, Error> {
         let candidate = Candidate {
             plan_revision: record.plan_revision,
             plan: DesignPlan {
+                standard: record.standard,
                 name: record.name,
                 target_revision: record.target_revision,
                 inputs,

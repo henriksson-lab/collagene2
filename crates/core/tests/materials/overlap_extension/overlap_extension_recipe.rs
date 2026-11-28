@@ -81,6 +81,7 @@ fn overlap(reverse: bool) -> (Vec<PlanInput>, Molecule, a::Recipe) {
         )
         .unwrap(),
         a::Recipe {
+            standard: None,
             name: "Edited insert and independent vector".into(),
             fragments: vec![
                 row(
@@ -196,6 +197,7 @@ fn actual_prepared_duplex_can_be_phosphorylated_and_ligated_without_reference_ma
     let (mut inputs, target, overlap) = overlap(false);
     inputs[0] = input("vector", "CACGTTCG");
     let recipe = lig::Recipe {
+        standard: None,
         name: "Physical edited insert ligation".into(),
         fragments: vec![
             lig::Fragment {
@@ -265,6 +267,7 @@ fn saved_original_is_replayed_before_both_branches_without_changing_its_origin_t
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original physical template".into(),
         target_revision: original_target.revision(),
         inputs: vec![source.clone()],

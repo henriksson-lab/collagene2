@@ -173,6 +173,7 @@ fn reconstruction_operation_and_evidence_are_explicit_and_replayable() {
     let target = Molecule::dna("Independent expected DNA", TEMPLATE, Topology::Linear).unwrap();
     let origin = native::capsule(&w, &product).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Retrieve native material against independent DNA".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -291,6 +292,7 @@ fn ordinary_preparation_compiler_owns_reconstruction_new_pcr_and_physical_assemb
         },
     ];
     let recipe = a::Recipe {
+        standard: None,
         name: "Fresh preparation from reusable material".into(),
         fragments: vec![
             FragmentSpec {

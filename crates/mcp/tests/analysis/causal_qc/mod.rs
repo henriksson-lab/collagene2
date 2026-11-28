@@ -15,7 +15,7 @@ use collagene_core::{
         self,
         request::Request as WorkerRequest,
         response::Response as WorkerResponse,
-        schema::{AnalysisJob, AnalysisResult},
+        schema::{AnalysisJob, AnalysisResult, WORKER_SCHEMA_VERSION},
     },
 };
 use collagene_mcp::server::CollageneServer;
@@ -160,7 +160,10 @@ async fn native_history_pairs_roundtrip_full_artifacts_and_keep_preview_gaps_exp
         },
     };
     let bytes = wire.encode().unwrap();
-    assert_eq!(u16::from_le_bytes(bytes[4..6].try_into().unwrap()), 137);
+    assert_eq!(
+        u16::from_le_bytes(bytes[4..6].try_into().unwrap()),
+        WORKER_SCHEMA_VERSION
+    );
     let response =
         WorkerResponse::decode(&protocol::execution::process_request(&bytes).unwrap()).unwrap();
     let AnalysisResult::ConstructCausalQc(report) = response.result else {
@@ -180,7 +183,7 @@ async fn native_history_pairs_roundtrip_full_artifacts_and_keep_preview_gaps_exp
     stale.revision = "0".repeat(64);
     assert!(stale.encode().is_err());
     let mut obsolete = bytes.clone();
-    obsolete[4..6].copy_from_slice(&136u16.to_le_bytes());
+    obsolete[4..6].copy_from_slice(&(WORKER_SCHEMA_VERSION - 1).to_le_bytes());
     assert!(protocol::execution::process_request(&obsolete).is_err());
     let (client, server) = setup().await;
     let imported = call(

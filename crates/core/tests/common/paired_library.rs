@@ -76,6 +76,7 @@ pub fn fixture() -> (Workspace, layout::Request, String) {
             material_bindings: vec![],
         }),
         rows: vec![batch::RowRequest::Ready(library::SelectedConstruct {
+            standard: None,
             id: "pair-A".into(),
             name: "Independent AACC intent".into(),
             choices: vec![library::ChoiceSelection {

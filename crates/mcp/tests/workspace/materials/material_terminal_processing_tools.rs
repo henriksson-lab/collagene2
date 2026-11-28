@@ -163,6 +163,7 @@ fn ligation(w: &Workspace, v: &EventBinding, i: &EventBinding) -> ligation_recip
         treatment: None,
     };
     ligation_recipe::Recipe {
+        standard: None,
         name: "Independently intended TA circle from retained native tails".into(),
         fragments: vec![row("vector", v), row("insert", i)],
         circular: true,

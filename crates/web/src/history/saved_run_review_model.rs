@@ -48,6 +48,8 @@ pub fn editing_candidate(
 pub fn validate_report(p: &PreparedReview, r: &VerificationReport) -> Result<(), String> {
     r.validate_documentary()
         .map_err(|error| error.to_string())?;
+    r.validate_standard_for_plan(&p.candidate.plan)
+        .map_err(|error| error.to_string())?;
     if r.engine_version != verification::ENGINE_VERSION
         || r.plan_revision != p.candidate.plan_revision
         || r.target_revision != p.target_event.revision
@@ -91,6 +93,7 @@ mod tests {
             }
         };
         let plan = DesignPlan {
+            standard: None,
             name: "PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

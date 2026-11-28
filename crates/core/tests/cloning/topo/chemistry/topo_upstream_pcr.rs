@@ -170,6 +170,7 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
     let target =
         Molecule::dna("Independent literal24bp target", TARGET, Topology::Circular).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Upstream modified template, new PCR, accounted TOPO actions".into(),
         target_revision: target.revision(),
         inputs: inputs

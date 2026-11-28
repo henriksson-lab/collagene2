@@ -120,6 +120,7 @@ fn run_fixture() -> (Workspace, Workspace, Selection, run_material::Selection) {
     let base = Workspace::from_documents("Local library", vec![source.clone(), target.clone()], 0)
         .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "PCR of original stock".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -157,6 +158,7 @@ fn run_fixture() -> (Workspace, Workspace, Selection, run_material::Selection) {
     let required = pin(&remote, "downstream-target");
     let capsule = collagene_core::material::capsule::capsule(&remote, &origin).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Fresh use of saved PCR stock".into(),
         target_revision: required.revision.clone(),
         inputs: vec![PlanInput {

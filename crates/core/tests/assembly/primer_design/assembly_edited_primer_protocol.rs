@@ -342,6 +342,7 @@ fn per_role_saved_origin_is_retained_and_replayed_without_turning_its_metadata_i
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Saved actual original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![input("original", source.clone())],

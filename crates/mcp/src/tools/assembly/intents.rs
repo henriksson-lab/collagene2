@@ -1,6 +1,7 @@
 use crate::server::CollageneServer;
 use crate::server::response::bad;
 use crate::server::response::bounded_json_limit;
+use crate::server::response::bounded_json_size;
 use crate::server::response::output;
 use crate::session::MAX_ITEMS;
 use crate::session::MAX_STORE_BYTES;
@@ -41,6 +42,10 @@ pub struct Proposal {
     pub inputs: Vec<BoundInput>,
     /// Typed operations refer to input IDs or earlier steps. OverlapExtension explicitly denatures/reanneals two intact linear tracked duplexes and extends their selected terminal pairing; use actual PCR oligos before and after it. Reference overlap assemblies cannot substitute for physical PCR templates.
     pub steps: Vec<Operation>,
+    /// Explicit nullable source-format advisory declaration; not physical standard acceptance.
+    #[serde(deserialize_with = "Option::deserialize")]
+    #[schemars(required)]
+    pub standard: Option<collagene_core::cloning::assembly::standards::declaration::Declaration>,
 }
 /// MCP accepts small exact native selections, never a caller's closed capsule.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -465,25 +470,25 @@ impl CollageneServer {
             || args.steps.is_empty()
             || args.steps.len() > 100
             || args.inputs.len() > 128
-            || serde_json::to_vec(&args).map_err(bad)?.len() > 2 * 1024 * 1024
         {
             return Err(bad(
                 "plan requires a name, 1–100 steps, at most 128 inputs and at most 2 MiB",
             ));
         }
+        if let Some(declaration) = &args.standard {
+            declaration.validate().map_err(bad)?;
+        }
+        let proposal_bytes = bounded_json_size(&args, 2 * 1024 * 1024)?;
         let mut store = self.session.store.lock().unwrap();
-        let mut estimated = serde_json::to_vec(&args).map_err(bad)?.len();
-        estimated = estimated.saturating_add(
-            serde_json::to_vec(store.document(&args.target)?)
-                .map_err(bad)?
-                .len(),
-        );
+        let mut estimated = proposal_bytes.saturating_add(bounded_json_size(
+            store.document(&args.target)?,
+            MAX_STORE_BYTES.saturating_sub(proposal_bytes),
+        )?);
         for input in &args.inputs {
-            estimated = estimated.saturating_add(
-                serde_json::to_vec(store.document(&input.document)?)
-                    .map_err(bad)?
-                    .len(),
-            );
+            estimated = estimated.saturating_add(bounded_json_size(
+                store.document(&input.document)?,
+                MAX_STORE_BYTES.saturating_sub(estimated),
+            )?);
             if estimated > MAX_STORE_BYTES {
                 return Err(bad(
                     "candidate input materialization exceeds session storage budget",
@@ -509,14 +514,16 @@ impl CollageneServer {
             target_revision: args.target.revision.clone(),
             inputs,
             steps: args.steps,
+            standard: args.standard,
         };
         let revision = collagene_core::planning::plan::DesignPlan::revision(&plan);
         if !store.plans.contains_key(&revision) {
             if store.plans.len() >= MAX_ITEMS {
                 return Err(bad("at most 128 candidate plans"));
             }
-            let bytes = serde_json::to_vec(&plan).map_err(bad)?.len()
-                + serde_json::to_vec(&target).map_err(bad)?.len();
+            let plan_bytes = bounded_json_size(&plan, MAX_STORE_BYTES)?;
+            let bytes = plan_bytes
+                + bounded_json_size(&target, MAX_STORE_BYTES.saturating_sub(plan_bytes))?;
             store.reserve(bytes)?;
             store
                 .plans
@@ -547,6 +554,9 @@ impl CollageneServer {
             .cloned()
             .ok_or_else(|| bad("unknown plan revision"))?;
         let report = verification::engine::verify(&saved.plan, &saved.target);
+        report
+            .validate_standard_for_plan(&saved.plan)
+            .map_err(bad)?;
         let scientific_step_count = report.physical_processing_reports.len()
             + report.reference_step_reports.len()
             + report
@@ -561,14 +571,82 @@ impl CollageneServer {
             "application/json",
             "verified-plan-evidence.json",
         )?;
-        let steps:Vec<_> = report.steps.iter().map(|outcome| {
-            let product = outcome.product.as_ref().map(|m| json!({"revision":m.revision(),"length":m.sequence.len(),"topology":m.topology,
-                "duplex":m.metadata.get("duplex_model").and_then(|s|serde_json::from_str::<Value>(s).ok()),
-                "tracked_modifications":m.metadata.get("tracked_modifications").and_then(|s|serde_json::from_str::<Value>(s).ok())}));
-            json!({"step_index":outcome.step_index,"state":outcome.state,"blocked_by":outcome.blocked_by,"product":product})
-        }).collect();
-        output(
-            json!({"plan_revision":report.plan_revision,"target_revision":report.target_revision,"engine_version":report.engine_version,"status":report.status,"findings":report.findings,"assumptions":report.assumptions,"planned_steps":report.planned_steps,"steps":steps,"exhaustive_alternative_search":report.exhaustive_alternative_search,"scientific_step_count":scientific_step_count,"reference_step_count":reference_step_count,"artifact_id":artifact}),
-        )
+        let standard_review = report.standard_review.as_ref().map(|review| {
+            use collagene_core::cloning::assembly::standards::declaration::DeclaredReviewState;
+            let state = match &review.state {
+                DeclaredReviewState::Assessed(assessment) => json!({
+                    "state": "assessed",
+                    "profile": {
+                        "profile_id": assessment.profile.profile_id,
+                        "profile_identity": assessment.profile.profile_identity,
+                        "name": assessment.profile.name,
+                        "scope": assessment.profile.scope,
+                        "catalog_pin": assessment.profile.catalog_pin,
+                    },
+                    "outcome": assessment.assessment.outcome,
+                    "complete": assessment.assessment.complete,
+                    "violations_observed": assessment.assessment.violations_observed,
+                    "indeterminate_observed": assessment.assessment.indeterminate_observed,
+                    "advisories_observed": assessment.assessment.advisories_observed,
+                    "budgets_hit": assessment.assessment.budgets_hit,
+                    "findings_retained": assessment.assessment.findings.len(),
+                    "report_revision": assessment.report_revision,
+                }),
+                DeclaredReviewState::Unavailable { reasons } => json!({
+                    "state": "unavailable",
+                    "reasons": reasons,
+                }),
+            };
+            json!({
+                "engine_version": review.engine_version,
+                "plan_revision": review.plan_revision,
+                "declaration_revision": review.declaration_revision,
+                "review_revision": review.review_revision,
+                "scope": review.scope,
+                "requested_limits": review.requested_limits,
+                "effective_limits": review.effective_limits,
+                "charge": review.charge,
+                "assessment": state,
+                "full_evidence_artifact": artifact,
+            })
+        });
+        let steps: Vec<_> = report
+            .steps
+            .iter()
+            .map(|outcome| {
+                let product = outcome.product.as_ref().map(|molecule| {
+                    json!({
+                        "revision": molecule.revision(),
+                        "length": molecule.sequence.len(),
+                        "topology": molecule.topology,
+                        "duplex": molecule.metadata.get("duplex_model")
+                            .and_then(|text| serde_json::from_str::<Value>(text).ok()),
+                        "tracked_modifications": molecule.metadata.get("tracked_modifications")
+                            .and_then(|text| serde_json::from_str::<Value>(text).ok()),
+                    })
+                });
+                json!({
+                    "step_index": outcome.step_index,
+                    "state": outcome.state,
+                    "blocked_by": outcome.blocked_by,
+                    "product": product,
+                })
+            })
+            .collect();
+        output(json!({
+            "plan_revision": report.plan_revision,
+            "target_revision": report.target_revision,
+            "engine_version": report.engine_version,
+            "status": report.status,
+            "findings": report.findings,
+            "assumptions": report.assumptions,
+            "standard_review": standard_review,
+            "planned_steps": report.planned_steps,
+            "steps": steps,
+            "exhaustive_alternative_search": report.exhaustive_alternative_search,
+            "scientific_step_count": scientific_step_count,
+            "reference_step_count": reference_step_count,
+            "artifact_id": artifact,
+        }))
     }
 }

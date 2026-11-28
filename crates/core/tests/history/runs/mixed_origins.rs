@@ -46,6 +46,7 @@ fn digest_fixture() -> (Workspace, digest::Capsule, EventBinding) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Original actual PCR".into(),
         target_revision: target.revision(),
         inputs: vec![input("stock", source)],
@@ -127,6 +128,7 @@ fn prepared_plan(
     let source = w.revisions[&pin.revision].clone();
     assert_eq!(source.sequence.as_str(), CUT);
     let plan = DesignPlan {
+        standard: None,
         name: "PCR from exact saved digest fragment".into(),
         target_revision: target.revision(),
         inputs: vec![input("fragment", source)],

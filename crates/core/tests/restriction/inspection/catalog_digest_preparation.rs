@@ -30,6 +30,7 @@ fn single(m: Molecule) -> (DesignPlan, Molecule) {
     .unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "pinned nonstarter digest".into(),
             target_revision: target.revision(),
             inputs: vec![input("original", m)],
@@ -124,6 +125,7 @@ fn shared_pinned_preparation_feeds_actual_cohesive_ligation_against_independent_
     let original = serde_json::to_value(&inputs).unwrap();
     let target = circle("independent expected circle", "CTAGCCCCAAAAGCTAGCGGGTTTTG");
     let recipe = l::Recipe {
+        standard: None,
         name: "nonstarter catalog ligation".into(),
         fragments: ["a", "b"]
             .into_iter()
@@ -191,6 +193,7 @@ fn optional_repair_is_explicit_and_uses_existing_tracked_end_transform() {
     )
     .unwrap();
     let recipe = a::Recipe {
+        standard: None,
         name: "explicit postdigest repair".into(),
         fragments: vec![a::FragmentSpec {
             generation: None,
@@ -261,6 +264,7 @@ fn catalog_pin_does_not_upgrade_unknown_tracked_methylation_to_complete_cleavage
     let target = Molecule::dna("independent BamHI cut", "GATCCTTAAG", Topology::Linear).unwrap();
     let selection = c::select(&c::builtin_catalog().unwrap(), &["bamhi".into()]).unwrap();
     let mut plan = DesignPlan {
+        standard: None,
         name: "catalog digest of unknown Dam material".into(),
         target_revision: target.revision(),
         inputs: vec![input("original", source)],
@@ -305,6 +309,7 @@ fn reversed_digest_intent_uses_actual_global_bottom_interval_not_reversed_top_re
     )
     .unwrap();
     let recipe = l::Recipe {
+        standard: None,
         name: "explicit reversed cohesive arm".into(),
         fragments: vec![l::Fragment {
             source: a::FragmentSpec {

@@ -26,6 +26,7 @@ fn source() -> Molecule {
 }
 fn plan(m: &Molecule) -> DesignPlan {
     DesignPlan {
+        standard: None,
         name: "tail candidate".into(),
         target_revision: m.revision(),
         inputs: vec![PlanInput {

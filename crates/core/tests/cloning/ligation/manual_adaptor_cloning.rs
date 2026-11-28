@@ -83,6 +83,7 @@ fn fixture() -> (DesignPlan, Molecule) {
     .unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "Annealed adaptor into a separately digested backbone".into(),
             target_revision: target.revision(),
             inputs,

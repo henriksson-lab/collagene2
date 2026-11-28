@@ -24,6 +24,7 @@ fn fixture() -> (Workspace, DesignPlan) {
     let s = Molecule::dna("source", "GATATCAAAA", Topology::Circular).unwrap();
     let t = Molecule::dna("independent target", "GATATCAAAA", Topology::Circular).unwrap();
     let p = DesignPlan {
+        standard: None,
         name: "digest PNK ligation".into(),
         target_revision: t.revision(),
         inputs: vec![PlanInput {
@@ -581,6 +582,7 @@ fn matched_profile_limit_requires_explicit_incomplete_capture_and_keeps_both_rol
     )
     .unwrap();
     let p = DesignPlan {
+        standard: None,
         name: "profile repeat budget".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -666,6 +668,7 @@ fn native_loaded_product_metadata_never_grants_physical_input_authority() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "metadata cannot authorize physical treatment".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

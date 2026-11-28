@@ -58,6 +58,7 @@ pub fn native_source(
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual unequal-offset native strands".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -177,6 +178,7 @@ pub fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
         }],
     };
     let row = library::SelectedConstruct {
+        standard: None,
         id: "native-circle".into(),
         name: "Independent bottom10 circle".into(),
         choices: vec![library::ChoiceSelection {

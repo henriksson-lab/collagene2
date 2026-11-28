@@ -106,7 +106,7 @@ fn arguments(source: &Value, target: &Value, setup: Option<&ReactionConditions>)
     json!({
         "inputs":[{"id":"source","document":source}],
         "target":target,
-        "recipe":{
+        "recipe":{"standard": null,
             "name":"Selected EcoRI product with separately retained documentary setup",
             "fragments":[{
                 "source":{

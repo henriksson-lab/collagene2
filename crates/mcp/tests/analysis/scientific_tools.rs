@@ -381,7 +381,7 @@ async fn pairwise_alignment_returns_exact_coordinates_gaps_and_both_source_bindi
         full["alignment"]["differences"],
         json!([{"kind":"Deletion","reference_start":4,"reference_end":8,"query_start":4,"query_end":4,"reference_bases":"CCCC","query_bases":""}])
     );
-    let embedded = s.call("align_sequences",json!({"reference":document(&flank),"query":document(&insert),"options":AlignmentOptions{mode:AlignmentMode::QueryInReference,..opts}})).await;
+    let embedded = s.call("align_sequences",json!({"reference":document(&flank),"query":document(&insert),"options":AlignmentOptions{mode:AlignmentMode::QueryInReference,global_storage:collagene_core::alignment::grid::GlobalStorage::Full,..opts}})).await;
     assert_eq!(embedded["score"], 8);
     assert_eq!(embedded["reference_range"], json!([3, 7]));
     assert_eq!(embedded["query_range"], json!([0, 4]));
@@ -461,4 +461,68 @@ async fn scientific_tool_schemas_require_explicit_source_bindings_and_options() 
         );
     }
     s.finish().await;
+}
+
+#[tokio::test]
+async fn adaptive_alignment_summary_preserves_unproven_scope_source_lengths_and_full_receipt() {
+    use collagene_core::alignment::{
+        self,
+        grid::{GlobalStorage, StopReason},
+    };
+    let session = Session::new().await;
+    let reference = linear("independent design", "AAAA");
+    let query = linear("supplied consensus", "CCCC");
+    session.import(vec![reference.clone(), query.clone()]).await;
+    let options = AlignmentOptions {
+        mode: AlignmentMode::Global,
+        max_cells: 6,
+        scoring: alignment::Scoring {
+            gap_open: -1,
+            gap_extend: -1,
+            ..Default::default()
+        },
+        global_storage: GlobalStorage::Adaptive {
+            initial_radius: 0,
+            maximum_radius: 4,
+            max_attempts: 8,
+        },
+    };
+    let args = json!({"reference":document(&reference),"query":document(&query),"options":options});
+    let before = session.call("list_documents", json!({})).await;
+    let summary = session.call("align_sequences", args.clone()).await;
+    assert_eq!(summary["reference_length"], 4);
+    assert_eq!(summary["query_length"], 4);
+    assert_eq!(summary["score"], -12);
+    assert_eq!(summary["search"]["evaluated_cells"], 5);
+    assert_eq!(summary["search"]["unrestricted_optimum_proven"], false);
+    assert_eq!(summary["search"]["stop_reason"], "CellLimit");
+    let artifact = session.artifact(&summary).await;
+    let report: alignment::Alignment =
+        serde_json::from_value(artifact["alignment"].clone()).unwrap();
+    report.validate_search(4, 4).unwrap();
+    assert_eq!(report.search.stop_reason, StopReason::CellLimit);
+    assert_eq!(
+        report.search,
+        serde_json::from_value::<alignment::grid::SearchEvidence>(summary["search"].clone())
+            .unwrap()
+    );
+    let context = alignment::review::revision(
+        &reference,
+        &query,
+        &alignment::review::Options::Stored(options),
+    )
+    .unwrap();
+    assert_eq!(summary["context_revision"], context);
+    assert_eq!(artifact["context_revision"], context);
+    let mut missing = args.clone();
+    missing["options"]
+        .as_object_mut()
+        .unwrap()
+        .remove("global_storage");
+    session.reject("align_sequences", missing).await;
+    let mut stale = args;
+    stale["query"] = json!({"id":query.revision(),"revision":"0".repeat(64)});
+    session.reject("align_sequences", stale).await;
+    assert_eq!(session.call("list_documents", json!({})).await, before);
+    session.finish().await;
 }

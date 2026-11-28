@@ -961,6 +961,7 @@ pub fn design(
     }
     let base = &r.intent.base.base;
     let recipe = assembly_recipe::Recipe {
+        standard: None,
         name: base.name.clone(),
         fragments,
         overlaps: vec![r.overlap; geometry.len() - 1 + usize::from(base.circular)],

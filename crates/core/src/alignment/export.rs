@@ -13,7 +13,7 @@ use std::io::{self, Write};
 
 pub const MAX_EXPORT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_NAME_BYTES: usize = 4096;
-const CONTRACT: &str = "pairwise-export-1";
+const CONTRACT: &str = "pairwise-export-2";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -90,7 +90,7 @@ pub fn preflight(record: &Record, reference_name: &str, query_name: &str) -> Res
             return Err(bad("invalid source display name"));
         }
     }
-    if record.schema_version != 1 {
+    if record.schema_version != pairwise_history::VERSION {
         return Err(Error::Unsupported("pairwise export record schema".into()));
     }
     for binding in [&record.reference, &record.query] {
@@ -238,6 +238,15 @@ fn blocks(
         serde_json::to_string(&report.options).map_err(|e| bad(&e.to_string()))?
     ))?;
     b.paragraph(format!("Source lengths: reference {}, query {}. Topologies: reference {:?}, query {:?}. Reference origin offset {}; query reverse complement {}. Evaluated candidates {}. Exhaustive requested reference origins {}; exhaustive requested query orientations {}; best score proven {}.",report.reference_length,report.query_length,c.reference_topology,c.query_topology,c.reference_origin,c.query_reversed,c.evaluated_candidates,c.exhaustive_reference_origins,c.exhaustive_query_orientations,c.optimality_proven))?;
+    b.paragraph(format!("Actual cumulative DP cells across candidates: {}. Selected-path unrestricted optimum proven: {}. Selected-path storage {:?}; stop {:?}; attempts {}. No proof enumerates all tied correspondences.",c.evaluated_cells,a.search.unrestricted_optimum_proven,a.search.storage,a.search.stop_reason,a.search.attempts.len()))?;
+    for (index, candidate) in c.candidate_evidence.iter().enumerate() {
+        b.paragraph(format!("Candidate {}: origin {}; reverse {}; score {:?}; disposition {:?}; actual cells {}. Individual candidate optimum proven {}.",index+1,candidate.reference_origin,candidate.query_reversed,candidate.score,candidate.disposition,candidate.search.as_ref().map_or(0,|search|search.evaluated_cells),candidate.search.as_ref().is_some_and(|search|search.unrestricted_optimum_proven)))?;
+        if let Some(search) = &candidate.search {
+            for attempt in &search.attempts {
+                b.paragraph(format!("  Domain {:?}; cells {}; score {}; omitted-path bound {:?}; own unrestricted optimum proven {}.",attempt.domain,attempt.evaluated_cells,attempt.score,attempt.off_band_bound,attempt.unrestricted_optimum_proven))?;
+            }
+        }
+    }
     b.paragraph(format!("Score {}. Reported aligned intervals (zero-based half-open, oriented): reference [{}, {}), query [{}, {}). Paired coverage: reference {:.6}%, query {:.6}%. Certain matches {}; compatible ambiguous {}; disjoint mismatches {}; inserted query bases {}; deleted reference bases {}. Unaligned flanks: reference {} left / {} right; query {} left / {} right.",a.score,a.reference_start,a.reference_end,a.query_start,a.query_end,a.stats.reference_coverage*100.,a.stats.query_coverage*100.,a.stats.certain_matches,a.stats.ambiguous_compatible,a.stats.mismatches,a.stats.inserted_query_bases,a.stats.deleted_reference_bases,a.reference_start,report.reference_length-a.reference_end,a.query_start,report.query_length-a.query_end))?;
     for warning in c.warnings.iter().chain(&a.warnings) {
         b.paragraph(format!("Warning: {warning}"))?;

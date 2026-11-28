@@ -88,6 +88,7 @@ fn fixture() -> (Workspace, Request) {
         ],
     };
     let row = SelectedConstruct {
+        standard: None,
         id: "good".into(),
         name: "Literal AACCTTAA".into(),
         choices: vec![

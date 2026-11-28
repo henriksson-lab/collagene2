@@ -95,6 +95,7 @@ fn anchored_primer_pair_design_retains_tails_source_and_candidate_coordinates() 
 fn embedded_pdf_worker_reverifies_instead_of_accepting_a_claimed_status() {
     let target = Molecule::dna("PDF target", "ACGT", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Empty invalid plan".into(),
         target_revision: target.revision(),
         inputs: vec![],

@@ -131,6 +131,7 @@ fn pcr() -> (DesignPlan, Molecule) {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "ordered primer graph".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

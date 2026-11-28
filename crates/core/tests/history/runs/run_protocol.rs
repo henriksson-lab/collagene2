@@ -22,6 +22,7 @@ fn fixture() -> (Workspace, DesignPlan, EventBinding, Vec<InputEventBinding>) {
         revision: w.documents[i].head.clone(),
     };
     let plan = DesignPlan {
+        standard: None,
         name: "reverse".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

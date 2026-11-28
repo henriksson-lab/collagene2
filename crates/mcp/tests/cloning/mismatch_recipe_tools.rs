@@ -69,7 +69,7 @@ async fn explicit_mismatch_recipe_keeps_policy_oligos_independent_target_and_imm
     policy.binding.min_three_prime_exact = 2;
     let forward = Primer::new("Forward mutation at source position3", "AGACCGAT", "").unwrap();
     let reverse = Primer::new("Reverse mutation at source position31", "TCCAGGTC", "").unwrap();
-    let args = json!({"inputs":[{"id":"source","document":original}],"target":target,"recipe":{"name":"Explicit mismatch primers, independently required mutant","fragments":[{"source":{"generation":null,"role":"mutant","input_id":"source","preparation":{"MismatchPcr":{"forward":forward,"reverse":reverse,"options":policy}} ,"reverse":false},"treatment":null}],"circular":false,"allow_nicked":false}});
+    let args = json!({"inputs":[{"id":"source","document":original}],"target":target,"recipe":{"standard": null,"name":"Explicit mismatch primers, independently required mutant","fragments":[{"source":{"generation":null,"role":"mutant","input_id":"source","preparation":{"MismatchPcr":{"forward":forward,"reverse":reverse,"options":policy}} ,"reverse":false},"treatment":null}],"circular":false,"allow_nicked":false}});
     let proposed = call(&client, "propose_ligation_assembly", args.clone()).await;
     assert_eq!(proposed["verified"], false);
     assert_eq!(

@@ -376,6 +376,7 @@ pub fn compile(
         }
     });
     let plan = DesignPlan {
+        standard: None,
         name: "TOPO from declared native sources".into(),
         target_revision: target.revision(),
         inputs: inputs

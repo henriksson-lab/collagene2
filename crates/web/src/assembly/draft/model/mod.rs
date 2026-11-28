@@ -401,6 +401,10 @@ pub(crate) fn validate_controls(
     methods: &MethodsState,
     junction_edits: &[assembly_junction_edit::Edit],
 ) -> Result<(), String> {
+    if let Some(standard) = &methods.standard {
+        standard.validate_storage()?;
+    }
+
     if !token(&name, 256)
         || count == 0
         || count > 12
@@ -1582,3 +1586,7 @@ mod substitution_tests;
 #[cfg(test)]
 #[path = "tests/tailing_tests.rs"]
 mod tailing_tests;
+
+#[cfg(test)]
+#[path = "tests/standard_tests.rs"]
+mod standard_tests;

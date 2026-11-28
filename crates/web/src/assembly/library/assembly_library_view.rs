@@ -337,6 +337,29 @@ fn bin_label(proposal: &Proposal, id: &str) -> String {
     id.to_owned()
 }
 
+fn standard_impact(proposal: &Proposal, id: &str) -> Option<String> {
+    let before = proposal
+        .before()
+        .alternatives
+        .as_ref()
+        .and_then(|library| library.rows.iter().find(|row| row.id == id));
+    let after_library = proposal.after().alternatives.as_ref();
+    let after = after_library.and_then(|library| library.rows.iter().find(|row| row.id == id));
+    let old = before.and_then(|row| row.edits.methods.standard.as_ref());
+    let current = after.and_then(|row| row.edits.methods.standard.as_ref());
+    match (old, current) {
+        (None, None) => None,
+        (Some(_), None) => Some("Declared part standard removed; its exact prior profile/source/body settings remain in recovery evidence.".into()),
+        (_, Some(standard)) => {
+            let result = after_library.zip(after).ok_or_else(|| "The standard's construct is unavailable.".to_string()).and_then(|(library, row)| standard.validate_choices(library, row));
+            Some(match result {
+                Err(error) => format!("Declared source format needs explicit rebinding: {error} Previous numeric body boundaries were not reinterpreted."),
+                Ok(()) => "Declared source/profile/body pins retained. Reordered roles require fresh whole-order grammar review; no historical format pass is restored.".into(),
+            })
+        }
+    }
+}
+
 #[component]
 fn LibraryImpacts(proposal: Arc<Proposal>) -> impl IntoView {
     let page = RwSignal::new(0usize);
@@ -347,6 +370,7 @@ fn LibraryImpacts(proposal: Arc<Proposal>) -> impl IntoView {
         <p>{format!("Primer neighbor review: {} · removed preparation bins: {}",row.primer_review_bins.iter().map(|id|bin_label(proposal,id)).collect::<Vec<_>>().join(", "),row.removed_preparation_bins.iter().map(|id|bin_label(proposal,id)).collect::<Vec<_>>().join(", "))}</p>
         <p>{format!("Internal changes retained {} · previous changes kept in recovery {}",row.retained_internal_edits,row.recovered_internal_edits)}</p>
 <p>{format!("Retained literal junctions {} · previous junction declarations kept in recovery {} · new junctions (one-based) {:?}",row.retained_junctions,row.recovered_junctions,row.new_junctions.iter().map(|index|index+1).collect::<Vec<_>>())}</p>
+        {standard_impact(proposal, &row.construct_id).map(|message| view! { <p class="helper">{message}</p> })}
         <p>{format!("Overlap text changed {} · source-role order changed {} · previous candidate declaration cleared {}",row.overlap_text_changed,row.role_order_changed,row.candidate_cleared)}</p>
     </article>}).collect_view())}<p>{move||format!("Impact page {} of {pages} · {count} construct records",page.get().min(pages-1)+1)}</p>
     <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|value|*value=value.saturating_sub(1))>"Previous impacts"</button>

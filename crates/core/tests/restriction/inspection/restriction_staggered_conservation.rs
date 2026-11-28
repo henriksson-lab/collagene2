@@ -42,6 +42,7 @@ fn unequal_native_source_conserves_both_actual_strands_in_repeated_no_cut_inspec
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Explicit unequal oligo annealing".into(),
         target_revision: target.revision(),
         inputs: vec![input("top", top.clone()), input("bottom", bottom.clone())],

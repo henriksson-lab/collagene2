@@ -250,6 +250,7 @@ fn physical_reconstruction_is_checked_against_predeclared_internal_changes() {
     let target = s::build(&inputs, &r, None).unwrap().target;
     assert_eq!(target.sequence.as_str(), INTENDED);
     let mut plan = DesignPlan {
+        standard: None,
         name: "Check independently declared substitutions".into(),
         target_revision: target.revision(),
         inputs: inputs.clone(),

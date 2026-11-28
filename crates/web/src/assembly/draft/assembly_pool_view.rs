@@ -479,7 +479,7 @@ pub fn AssemblyPoolView(
             let warnings=notes.iter().skip(current_page*40).take(40).map(|note|view!{<li>{note.clone()}</li>}).collect_view();
             let probe_count=saved.report.verification.assumptions.len();
             let probe_pages=probe_count.div_ceil(40).max(1);let probe_current=probe_page.get().min(probe_pages-1);
-            let probe_findings=crate::protocol::verification_view::findings(&saved.report.verification.findings);
+            let probe_findings=crate::protocol::verification_view::report(&saved.report.verification);
             let probe_notes=saved.report.verification.assumptions.iter().map(|assumption|format!("Assumption: {assumption}"))
                 .skip(probe_current*40).take(40).map(|note|view!{<li>{note}</li>}).collect_view();
             let pool=saved.pool.as_ref().map(|pool|{

@@ -363,6 +363,7 @@ pub fn MultiSitePanel(
             .collect();
         on_candidate.run((
             Candidate::new(DesignPlan {
+                standard: None,
                 name: format!(
                     "Multi-parent {:?} reference exchange to {}",
                     bound.request.reaction.reaction, bound.target.name

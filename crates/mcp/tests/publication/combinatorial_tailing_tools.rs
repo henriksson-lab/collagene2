@@ -176,6 +176,7 @@ fn fixture(profile: Profile) -> (Workspace, Design, SelectedConstruct) {
             .collect(),
     };
     let c = SelectedConstruct {
+        standard: None,
         id: "correct".into(),
         name: "Independent tailed circle".into(),
         choices: vec![

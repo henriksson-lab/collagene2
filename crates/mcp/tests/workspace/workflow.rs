@@ -79,7 +79,7 @@ async fn candidate_verification_and_artifact_workflow() {
             .await
             .is_err()
     );
-    let proposal = json!({"name":"Independent expected assembly","target":reference("target"),"inputs":[{"id":"left","document":reference("left")},{"id":"right","document":reference("right")}],"steps":[{"Overlap":{"fragments":[{"Input":"left"},{"Input":"right"}],"overlaps":[4],"circular":false}}]});
+    let proposal = json!({"standard": null,"name":"Independent expected assembly","target":reference("target"),"inputs":[{"id":"left","document":reference("left")},{"id":"right","document":reference("right")}],"steps":[{"Overlap":{"fragments":[{"Input":"left"},{"Input":"right"}],"overlaps":[4],"circular":false}}]});
     let mut forged = proposal.clone();
     forged["verified"] = json!(true);
     let forged_result = client
@@ -349,7 +349,7 @@ async fn binary_snapshot_to_candidate_preserves_revisions_and_has_no_trusted_ver
     let reference = |m: &Molecule| json!({"id":m.revision(),"revision":m.revision()});
     let candidate = call!(
         "propose_plan",
-        json!({"name":"Binary exchange","target":reference(&target),"inputs":[{"id":"left","document":reference(&left)},{"id":"right","document":reference(&right)}],"steps":[{"Overlap":{"fragments":[{"Input":"left"},{"Input":"right"}],"overlaps":[4],"circular":false}}]})
+        json!({"standard": null,"name":"Binary exchange","target":reference(&target),"inputs":[{"id":"left","document":reference(&left)},{"id":"right","document":reference(&right)}],"steps":[{"Overlap":{"fragments":[{"Input":"left"},{"Input":"right"}],"overlaps":[4],"circular":false}}]})
     );
     let exported = call!(
         "export_candidate",
@@ -438,7 +438,7 @@ async fn restriction_ligation_tools_keep_nicks_and_strand_geometry_explicit() {
         digest["fragments"][0]["duplex"]["ends"][0]["chemistry"]["five_prime"],
         "Phosphate"
     );
-    let proposal = json!({"name":"Nicked restriction ligation","target":reference("ligation_target"),"inputs":[{"id":"vector","document":reference("vector_fixture")},{"id":"insert","document":reference("insert_fixture")}],"steps":[{"Digest":{"template":{"Input":"vector"},"enzymes":["EcoRI"],"fragment_index":0}},{"Digest":{"template":{"Input":"insert"},"enzymes":["EcoRI"],"fragment_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Dephosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":2},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":true,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]});
+    let proposal = json!({"standard": null,"name":"Nicked restriction ligation","target":reference("ligation_target"),"inputs":[{"id":"vector","document":reference("vector_fixture")},{"id":"insert","document":reference("insert_fixture")}],"steps":[{"Digest":{"template":{"Input":"vector"},"enzymes":["EcoRI"],"fragment_index":0}},{"Digest":{"template":{"Input":"insert"},"enzymes":["EcoRI"],"fragment_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Dephosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":2},"reverse":false},{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":true,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]});
     let candidate = call!("propose_plan", proposal.clone());
     let bound = json!({"plan_revision":candidate["plan_revision"]});
     let report = call!("verify_plan", bound.clone());

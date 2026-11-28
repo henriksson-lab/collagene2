@@ -614,6 +614,7 @@ pub fn compile_inverse_pcr(
         options: Default::default(),
     });
     let plan = DesignPlan {
+        standard: None,
         name: format!("Inverse-PCR replacement in {}", source.name),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -812,6 +813,7 @@ impl InversePcrDesign {
     /// Readonly receipt/shape check. Fresh verification still determines material.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification.validate_standard_for_plan(&self.plan)?;
         serde_json::to_writer(&mut SizeLimit(0), self).map_err(|_| Error::TooLarge)?;
         validate_inverse_fields(
             expected,

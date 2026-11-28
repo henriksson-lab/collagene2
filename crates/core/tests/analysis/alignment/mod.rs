@@ -12,3 +12,5 @@ mod pairwise_export;
 mod pairwise_export_protocol;
 mod pairwise_history;
 mod pairwise_review;
+
+mod banded_global;

@@ -7,4 +7,5 @@ pub mod overlap;
 pub mod pcr;
 pub mod recombination;
 pub mod restriction;
+pub mod screening;
 pub mod topo;

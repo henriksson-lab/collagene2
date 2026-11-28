@@ -6,7 +6,7 @@ use crate::alignment::{
 use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
 
-pub const ENGINE_VERSION: &str = "pairwise-review-1";
+pub const ENGINE_VERSION: &str = "pairwise-review-2";
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub enum Options {
@@ -45,18 +45,7 @@ impl Options {
     }
     pub fn validate(self) -> Result<(), Error> {
         let options = self.alignment();
-        let s = options.scoring;
-        if !(1..=10_000).contains(&s.match_score)
-            || !(-10_000..=0).contains(&s.mismatch_score)
-            || s.ambiguous_score < s.mismatch_score
-            || s.ambiguous_score > s.match_score
-            || !(-10_000..=-1).contains(&s.gap_open)
-            || !(-10_000..=-1).contains(&s.gap_extend)
-            || options.max_cells == 0
-            || options.max_cells > alignment::HARD_MAX_CELLS
-        {
-            return Err(bad("invalid native scoring or cell bounds"));
-        }
+        options.validate_for_lengths(0, 0)?;
         if let Self::Whole(o) = self {
             if o.alignment.mode != AlignmentMode::Global
                 || o.max_origins == 0
@@ -81,6 +70,9 @@ pub fn revision(
     reference.validate()?;
     query.validate()?;
     options.validate()?;
+    options
+        .alignment()
+        .validate_for_lengths(reference.sequence.len(), query.sequence.len())?;
     if reference.sequence.alphabet() == collagene_model::Alphabet::Protein
         || reference.sequence.alphabet() != query.sequence.alphabet()
     {
@@ -90,16 +82,9 @@ pub fn revision(
 }
 pub fn compare(reference: &Molecule, query: &Molecule, options: &Options) -> Result<Report, Error> {
     let context_revision = revision(reference, query, options)?;
-    let comparison=match options {
-        Options::Stored(o)=>MoleculeComparison {
-            alignment:alignment::align(&reference.sequence,&query.sequence,o)?,
-            reference_revision:reference.revision(),query_revision:query.revision(),
-            reference_origin:0,query_reversed:false,
-            reference_topology:reference.topology,query_topology:query.topology,
-            evaluated_candidates:1,exhaustive_reference_origins:true,exhaustive_query_orientations:true,optimality_proven:true,
-            warnings:vec!["Stored origin/orientation policy: no circular rotation or reverse-complement search was requested. Local/query-in-reference flanks outside the alignment are not verified.".into()],
-        },
-        Options::Whole(o)=>alignment::compare_molecules(reference,query,o)?,
+    let comparison = match options {
+        Options::Stored(options) => MoleculeComparison::stored(reference, query, options)?,
+        Options::Whole(options) => alignment::compare_molecules(reference, query, options)?,
     };
     let report = Report {
         engine_version: ENGINE_VERSION.into(),
@@ -135,7 +120,7 @@ impl Report {
             || (c.reference_topology != Topology::Circular && c.reference_origin != 0)
             || c.evaluated_candidates == 0
             || c.evaluated_candidates > 128
-            || a.algorithm != "collagene-affine-pairwise-1"
+            || a.algorithm != "collagene-affine-pairwise-2"
             || a.options != self.options.alignment()
             || !digest(&a.reference_hash)
             || !digest(&a.query_hash)
@@ -149,36 +134,6 @@ impl Report {
             || a.differences.len() > alignment::MAX_ALIGNMENT_COLUMNS
         {
             return Err(bad("invalid comparison receipt identity or bounds"));
-        }
-        match a.options.mode {
-            AlignmentMode::Global
-                if a.reference_start != 0
-                    || a.reference_end != self.reference_length
-                    || a.query_start != 0
-                    || a.query_end != self.query_length =>
-            {
-                return Err(bad("global alignment must cover both complete inputs"));
-            }
-            AlignmentMode::QueryInReference
-                if a.query_start != 0 || a.query_end != self.query_length =>
-            {
-                return Err(bad(
-                    "query-in-reference alignment must cover the complete query",
-                ));
-            }
-            AlignmentMode::Local
-                if (a.reference_aligned.is_empty()
-                    && (a.reference_start != 0
-                        || a.reference_end != 0
-                        || a.query_start != 0
-                        || a.query_end != 0))
-                    || (!a.reference_aligned.is_empty() && a.score <= 0) =>
-            {
-                return Err(bad(
-                    "local alignment must have positive score or canonical empty coordinates",
-                ));
-            }
-            _ => {}
         }
         if c.optimality_proven
             && !(c.exhaustive_reference_origins && c.exhaustive_query_orientations)
@@ -196,9 +151,10 @@ impl Report {
                 if c.reference_origin != 0
                     || c.query_reversed
                     || c.evaluated_candidates != 1
+                    || c.candidate_evidence.len() != 1
                     || !c.exhaustive_reference_origins
                     || !c.exhaustive_query_orientations
-                    || !c.optimality_proven
+                    || c.optimality_proven != a.search.unrestricted_optimum_proven
                 {
                     return Err(bad(
                         "stored policy does not perform orientation/origin search",
@@ -206,6 +162,7 @@ impl Report {
                 }
             }
             Options::Whole(o) => {
+                self.validate_candidate_scope(o)?;
                 if (!o.both_query_strands && c.query_reversed)
                     || (!o.reference_rotations && c.reference_origin != 0)
                 {
@@ -215,8 +172,62 @@ impl Report {
                 }
             }
         }
-        validate_alignment(a, self.reference_length, self.query_length)?;
+        let total = match self.options {
+            Options::Stored(options) => options.max_cells,
+            Options::Whole(options) => options.max_total_cells,
+        };
+        c.validate_search(self.reference_length, self.query_length, total)?;
         crate::encoding::bounded_json::hash(self)?;
+        Ok(())
+    }
+    /// Check the actual retained candidate roster against the declared search
+    /// policy. An optimum certificate cannot restore an omitted orientation or
+    /// origin; the exact-identity shortcut may prove score without claiming that
+    /// it enumerated those other placements.
+    fn validate_candidate_scope(&self, options: ComparisonOptions) -> Result<(), Error> {
+        use std::collections::{BTreeMap, BTreeSet};
+        let comparison = &self.comparison;
+        let rotate =
+            comparison.reference_topology == Topology::Circular && options.reference_rotations;
+        let per_orientation = if rotate {
+            self.reference_length.min(options.max_origins)
+        } else {
+            1
+        };
+        let mut groups: BTreeMap<bool, BTreeSet<usize>> = BTreeMap::new();
+        for candidate in &comparison.candidate_evidence {
+            if (!options.both_query_strands && candidate.query_reversed)
+                || (!rotate && candidate.reference_origin != 0)
+            {
+                return Err(bad(
+                    "candidate roster exceeds requested orientation/origin policy",
+                ));
+            }
+            let origins = groups.entry(candidate.query_reversed).or_default();
+            if !origins.insert(candidate.reference_origin) || origins.len() > per_orientation {
+                return Err(bad(
+                    "candidate roster repeats or exceeds requested origin bound",
+                ));
+            }
+        }
+        if comparison.exhaustive_query_orientations
+            && (!groups.contains_key(&false)
+                || options.both_query_strands && !groups.contains_key(&true))
+        {
+            return Err(bad(
+                "claimed exhaustive query scope omits a requested orientation",
+            ));
+        }
+        if comparison.exhaustive_reference_origins {
+            let expected = if rotate { self.reference_length } else { 1 };
+            for origins in groups.values() {
+                if origins.len() != expected || origins.iter().copied().ne(0..expected) {
+                    return Err(bad(
+                        "claimed exhaustive reference scope omits requested origins",
+                    ));
+                }
+            }
+        }
         Ok(())
     }
     /// Bind letters, native coordinate systems and options to actual source models.
@@ -307,7 +318,7 @@ impl Report {
     }
 }
 
-fn validate_alignment(
+pub(super) fn validate_alignment(
     a: &Alignment,
     reference_length: usize,
     query_length: usize,
@@ -453,8 +464,18 @@ fn validate_alignment(
         || stats.deleted_reference_bases != deleted
         || stats.reference_span_bases != r - a.reference_start
         || stats.query_span_bases != q - a.query_start
-        || stats.reference_coverage != paired as f64 / reference_length as f64
-        || stats.query_coverage != paired as f64 / query_length as f64
+        || stats.reference_coverage
+            != if reference_length == 0 {
+                0.0
+            } else {
+                paired as f64 / reference_length as f64
+            }
+        || stats.query_coverage
+            != if query_length == 0 {
+                0.0
+            } else {
+                paired as f64 / query_length as f64
+            }
         || stats.certain_identity != identity
         || stats.compatible_identity != compatible
     {

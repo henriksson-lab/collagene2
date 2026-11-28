@@ -378,6 +378,7 @@ pub fn design(inputs: &[PlanInput], target: &Molecule, request: &Request) -> Res
         designs.push(report);
     }
     let recipe = Recipe {
+        standard: None,
         name: request.name.clone(),
         fragments,
         overlaps: vec![

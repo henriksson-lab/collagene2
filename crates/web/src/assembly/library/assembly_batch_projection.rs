@@ -68,6 +68,10 @@ fn typed_row(
         }
     }
     let state = &row.edits.methods;
+    if let Some(standard) = &state.standard {
+        standard.validate_choices(library, row)?;
+    }
+
     let mut preparation_state = state.clone();
     let method = match state.mode {
         Mode::Overlap => {
@@ -226,6 +230,7 @@ fn typed_row(
             .collect()
     };
     let value = SelectedConstruct {
+        standard: state.standard_declaration()?,
         id: row.id.clone(),
         name: row.edits.name.clone(),
         choices: selections(library, row),

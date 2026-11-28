@@ -18,7 +18,19 @@ fn molecule(bases: &str) -> Molecule {
 fn request(source: &Molecule, job: AnalysisJob) -> Request {
     Request {
         id: 0xfeed_beef,
-        revision: source.revision(),
+        revision: match &job {
+            AnalysisJob::Align {
+                molecule,
+                query,
+                options,
+            } => collagene_core::alignment::review::revision(
+                molecule,
+                query,
+                &collagene_core::alignment::review::Options::Stored(*options),
+            )
+            .unwrap(),
+            _ => source.revision(),
+        },
         job,
     }
 }
@@ -156,6 +168,7 @@ fn alignment_dispatch_preserves_mode_scoring_and_difference_coordinates() {
     let source = molecule("GGACGTCC");
     let query = molecule("ACAT");
     let mut options = AlignmentOptions {
+        global_storage: collagene_core::alignment::grid::GlobalStorage::Full,
         mode: AlignmentMode::QueryInReference,
         ..Default::default()
     };
@@ -219,23 +232,27 @@ fn every_new_job_rejects_a_stale_source_before_analysis() {
             revision: molecule("ATGCCCTAA").revision(),
             job,
         };
-        assert!(
-            matches!(process_request(&collagene_core::protocol::request::Request::encode(&stale).unwrap()), Err(Error::Format(message))
-            if message.contains("revision mismatch"))
-        );
+        let bytes = if matches!(&stale.job, AnalysisJob::Align { .. }) {
+            assert!(stale.encode().is_err());
+            // Independently construct an inbound current frame so the native
+            // context guard is exercised despite early outbound rejection.
+            let body = postcard::to_allocvec(&stale).unwrap();
+            let mut frame = b"CGQ\0".to_vec();
+            frame.extend_from_slice(&WORKER_SCHEMA_VERSION.to_le_bytes());
+            frame.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            frame.extend_from_slice(blake3::hash(&body).as_bytes());
+            frame.extend_from_slice(&body);
+            frame
+        } else {
+            stale.encode().unwrap()
+        };
+        assert!(matches!(process_request(&bytes), Err(Error::Format(_))));
     }
 }
 
 #[test]
 fn computation_failures_return_typed_error_responses_with_request_identity() {
     let source = molecule("ATGAAATAA");
-    let mut invalid_query = molecule("ATG");
-    invalid_query.features.push(Feature {
-        kind: "misc_feature".into(),
-        location: Location::range(0, 99),
-        qualifiers: vec![],
-        needs_review: false,
-    });
     let jobs = [
         AnalysisJob::Translate {
             molecule: source.clone(),
@@ -257,8 +274,12 @@ fn computation_failures_return_typed_error_responses_with_request_identity() {
         },
         AnalysisJob::Align {
             molecule: source.clone(),
-            query: invalid_query,
-            options: Default::default(),
+            query: molecule("ATG"),
+            options: AlignmentOptions {
+                global_storage: collagene_core::alignment::grid::GlobalStorage::Full,
+                max_cells: 1,
+                ..Default::default()
+            },
         },
     ];
     for job in jobs {

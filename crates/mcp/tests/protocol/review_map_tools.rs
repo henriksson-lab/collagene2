@@ -99,6 +99,7 @@ fn fixture() -> (Workspace, String, EventBinding, EventBinding, Molecule) {
     let input_event = event(&original, 0);
     let target_event = event(&original, 1);
     let plan = DesignPlan {
+        standard: None,
         name: "Retained literal PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

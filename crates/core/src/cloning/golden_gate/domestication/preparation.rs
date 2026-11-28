@@ -443,6 +443,7 @@ pub fn materialize(
                 request.origin.as_ref(),
             )?;
             (crate::planning::plan::DesignPlan {
+                standard: None,
                 name: format!("Sequential inverse-PCR domestication of {}", input.molecule.name),
                 target_revision: target.revision(), inputs: vec![input.clone()], steps,
             }, MethodEvidence::InversePcrRounds { rounds: evidence }, vec!["Every round consumes the preceding real step product. Intermediate intended sequence frames declare primer bases only; they are never invented stocks, saved origins or additional plan inputs. Template removal, isolation, transformation and empirical success are not modeled.".into()])
@@ -514,6 +515,7 @@ pub fn materialize(
             let template = append_origin(INPUT_ID, request.origin.as_ref(), &mut steps);
             let outer = compiled.preparation.append(template, &mut steps)?;
             let mut plan = crate::planning::plan::DesignPlan {
+                standard: None,
                 name: format!("Overlap-extension domestication of {}", input.molecule.name),
                 target_revision: target.revision(),
                 inputs: vec![input.clone()],
@@ -578,6 +580,7 @@ impl Prepared {
     /// primer ranking, PCR simulation, native replay, or status adoption.
     pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
         self.verification.validate_documentary()?;
+        self.verification.validate_standard_for_plan(&self.plan)?;
         serde_json::to_writer(&mut Bytes(0), self).map_err(|_| Error::TooLarge)?;
         if self.context_revision != expected || !digest(expected) || self.plan.inputs.len() != 1 {
             return Err(bad("prepared context/input malformed"));

@@ -40,6 +40,7 @@ fn saved(sources: Vec<Molecule>, target: Molecule, steps: Vec<Operation>) -> (Mo
         })
         .collect();
     let plan = DesignPlan {
+        standard: None,
         name: "Independent source preparation".into(),
         target_revision: target.revision(),
         inputs,

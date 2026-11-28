@@ -616,6 +616,7 @@ mod tests {
         )
         .unwrap();
         let candidate = Candidate::new(DesignPlan {
+            standard: None,
             name: "proposal".into(),
             target_revision: intent.target.revision(),
             inputs,
@@ -726,6 +727,7 @@ mod tests {
         let (_, rows) =
             crate::cloning::preparation::cloning_preparations::prepared_rows(&state, 3).unwrap();
         let recipe = ligation_recipe::Recipe {
+            standard: None,
             name: "Backbone and annealed insert".into(),
             circular: true,
             allow_nicked: false,
@@ -944,6 +946,7 @@ mod tests {
         let (_, rows) =
             crate::cloning::preparation::cloning_preparations::prepared_rows(&state, 3).unwrap();
         let recipe = ligation_recipe::Recipe {
+            standard: None,
             name: "Literal intent, actual paired oligos".into(),
             circular: true,
             allow_nicked: false,
@@ -1202,6 +1205,7 @@ mod tests {
             crate::cloning::preparation::cloning_preparations::prepared_rows(&swapped.methods, 3)
                 .unwrap();
         let recipe = ligation_recipe::Recipe {
+            standard: None,
             name: "Opposite ordered oligos".into(),
             circular: true,
             allow_nicked: false,
@@ -1714,6 +1718,7 @@ mod tests {
         let intent = substitutions::build(&inputs, &request, None).unwrap();
         assert_eq!(intent.target.sequence.as_str(), "ACTACCCCGGGGTAAC");
         let candidate = Candidate::new(DesignPlan {
+            standard: None,
             name: "Explicit mismatch PCR".into(),
             target_revision: intent.target.revision(),
             inputs,
@@ -1849,6 +1854,7 @@ mod tests {
         let intent = edits::build(&inputs, &request, None).unwrap();
         assert_eq!(intent.target.sequence.as_str(), "ACGATTCCCCGGTAAC");
         let candidate = Candidate::new(DesignPlan {
+            standard: None,
             name: "Unedited PCR cannot satisfy literal indels".into(),
             target_revision: intent.target.revision(),
             inputs,

@@ -74,6 +74,7 @@ fn source(family: usize) -> (Workspace, EventBinding, Preparation) {
                 molecule: m,
             };
             let plan = DesignPlan {
+                standard: None,
                 name: "Actual native source termini".into(),
                 target_revision: event(&w, 1).revision.clone(),
                 inputs: vec![input],
@@ -233,6 +234,7 @@ fn original_run_and_derived_oe_share_native_cost_and_stop_the_batch_before_unres
         let rows = (0..20)
             .map(|i| {
                 batch::RowRequest::Ready(library::SelectedConstruct {
+                    standard: None,
                     id: format!("row-{i}"),
                     name: format!("Bounded declaration {i}"),
                     choices: vec![

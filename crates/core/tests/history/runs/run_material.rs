@@ -44,6 +44,7 @@ fn pcr() -> Commit {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Fresh saved PCR material".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -161,6 +162,7 @@ fn named_circular_pcr_ligation_retains_both_unsealed_origin_nicks() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "One phosphorylated and one hydroxyl PCR fragment".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -316,6 +318,7 @@ fn blocked_noti_reconstruction_preserves_four_literal_cpg_positions_and_generati
         cpg: MethylationState::FullyModified,
     };
     let plan = DesignPlan {
+        standard: None,
         name: "Declared CpG generation and blocked NotI".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {
@@ -557,6 +560,7 @@ fn documentary_origin_and_forged_preview_summary_do_not_promote_reference_only_o
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Sequence-only overlap reference".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

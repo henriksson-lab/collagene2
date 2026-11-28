@@ -152,6 +152,7 @@ fn repair_plan() -> (DesignPlan, Molecule) {
     let target = Molecule::dna("independent", "AATTCAAAAGAATT", Topology::Linear).unwrap();
     (
         DesignPlan {
+            standard: None,
             name: "repair".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

@@ -118,7 +118,7 @@ async fn fixture(c: &Client) -> (Value, Value, Vec<Value>, Value) {
         json!({"inputs":inputs,"target":target,"request":request}),
     )
     .await;
-    let recipe = json!({"name":"Ambiguous same-fusion physical pool","fragments":proposal["fragments"].as_array().unwrap().iter().map(|source|json!({"source":source,"treatment":null})).collect::<Vec<_>>(),"circular":true,"allow_nicked":false});
+    let recipe = json!({"standard": null,"name":"Ambiguous same-fusion physical pool","fragments":proposal["fragments"].as_array().unwrap().iter().map(|source|json!({"source":source,"treatment":null})).collect::<Vec<_>>(),"circular":true,"allow_nicked":false});
     (
         inputs,
         target,

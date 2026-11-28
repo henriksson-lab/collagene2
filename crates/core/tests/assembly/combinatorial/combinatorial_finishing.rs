@@ -199,6 +199,7 @@ fn fixture(saved: bool) -> (Workspace, design::Design, design::SelectedConstruct
         ],
     };
     let row = design::SelectedConstruct {
+        standard: None,
         id: "native-circle".into(),
         name: "Independent literal forty".into(),
         choices: vec![

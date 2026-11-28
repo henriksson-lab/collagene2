@@ -90,7 +90,7 @@ async fn digest_repair_preview_preserves_sources_and_a_separate_target_is_recons
         report["repair"]["repair"]["duplex"]["top"]["bases"],
         "AATTCAAAAGAATT"
     );
-    let plan=call(&client,"propose_plan",json!({"name":"repair and close","target":target,"inputs":[{"id":"s","document":source}],"steps":[{"Digest":{"template":{"Input":"s"},"enzymes":["EcoRI"],"fragment_index":0}},{"RepairEnds":{"template":{"Step":0},"method":"Blunt"}},{"Ligate":{"fragments":[{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]})).await;
+    let plan=call(&client,"propose_plan",json!({"standard": null,"name":"repair and close","target":target,"inputs":[{"id":"s","document":source}],"steps":[{"Digest":{"template":{"Input":"s"},"enzymes":["EcoRI"],"fragment_index":0}},{"RepairEnds":{"template":{"Step":0},"method":"Blunt"}},{"Ligate":{"fragments":[{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]})).await;
     let checked = call(
         &client,
         "verify_plan",
@@ -143,7 +143,7 @@ async fn annealing_is_explicitly_unphosphorylated_until_the_plan_performs_termin
         "Hydroxyl"
     );
     let steps = json!([{"AnnealOligos":{"top":{"Input":"top"},"bottom":{"Input":"bottom"},"options":value,"candidate_index":0}},{"TreatEnds":{"template":{"Step":0},"treatment":"Phosphorylate"}},{"Ligate":{"fragments":[{"source":{"Step":1},"reverse":false}],"circular":true,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]);
-    let plan=call(&client,"propose_plan",json!({"name":"declared oligos","target":target,"inputs":[{"id":"top","document":top},{"id":"bottom","document":bottom}],"steps":steps})).await;
+    let plan=call(&client,"propose_plan",json!({"standard": null,"name":"declared oligos","target":target,"inputs":[{"id":"top","document":top},{"id":"bottom","document":bottom}],"steps":steps})).await;
     let checked = call(
         &client,
         "verify_plan",
@@ -152,7 +152,7 @@ async fn annealing_is_explicitly_unphosphorylated_until_the_plan_performs_termin
     .await;
     assert_eq!(checked["status"], "ConsistentUnderAssumptions");
     let bad_steps = json!([{"AnnealOligos":{"top":{"Input":"top"},"bottom":{"Input":"bottom"},"options":value,"candidate_index":0}},{"Ligate":{"fragments":[{"source":{"Step":0},"reverse":false}],"circular":true,"allow_nicked":false,"options":collagene_core::cloning::ligation::outcomes::Options::default()}}]);
-    let plan=call(&client,"propose_plan",json!({"name":"missing phosphorylation","target":target,"inputs":[{"id":"top","document":top},{"id":"bottom","document":bottom}],"steps":bad_steps})).await;
+    let plan=call(&client,"propose_plan",json!({"standard": null,"name":"missing phosphorylation","target":target,"inputs":[{"id":"top","document":top},{"id":"bottom","document":bottom}],"steps":bad_steps})).await;
     assert_eq!(
         call(
             &client,

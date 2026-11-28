@@ -560,6 +560,7 @@ pub fn design(inputs: &[PlanInput], r: &Request) -> Result<Report, Error> {
         designs.push(d);
     }
     let recipe = assembly_recipe::Recipe {
+        standard: None,
         name: r.base.name.clone(),
         fragments,
         overlaps: vec![r.overlap; intent.fragments.len() - 1 + usize::from(r.base.circular)],

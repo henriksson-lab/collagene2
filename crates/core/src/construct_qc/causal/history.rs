@@ -136,7 +136,7 @@ impl History {
             .collect::<Result<BTreeMap<_, _>, Error>>()?;
         let mut cleavage = CleavageBudget::new(100_000_000)?;
         let mut builder = Builder {
-            replay: ReplayBudget::qc_job(&mut cleavage),
+            replay: ReplayBudget::shared_job(&mut cleavage),
             workspace,
             budget: trace_budget,
             maximum: request.limits.max_history_events,

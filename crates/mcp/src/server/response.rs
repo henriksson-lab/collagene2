@@ -11,6 +11,29 @@ pub(crate) fn bad(message: impl ToString) -> ErrorData {
 pub(crate) fn bounded_json<T: Serialize>(value: &T) -> Result<String, ErrorData> {
     bounded_json_limit(value, MAX_STORE_BYTES)
 }
+/// Count admission bytes without first allocating a copy of the serialized input.
+pub(crate) fn bounded_json_size<T: Serialize>(value: &T, cap: usize) -> Result<usize, ErrorData> {
+    struct Count {
+        bytes: usize,
+        cap: usize,
+    }
+    impl std::io::Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.bytes = self
+                .bytes
+                .checked_add(bytes.len())
+                .filter(|count| *count <= self.cap)
+                .ok_or_else(|| std::io::Error::other("JSON admission exceeds session budget"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count { bytes: 0, cap };
+    serde_json::to_writer(&mut count, value).map_err(bad)?;
+    Ok(count.bytes)
+}
 pub(crate) fn bounded_json_limit<T: Serialize>(value: &T, cap: usize) -> Result<String, ErrorData> {
     struct Sink {
         bytes: Vec<u8>,

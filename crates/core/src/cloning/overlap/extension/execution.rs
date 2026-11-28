@@ -168,7 +168,7 @@ pub(crate) fn execute_scoped(
         tracked,
         preparation,
         capture,
-        if replay.is_qc_job() {
+        if replay.is_shared_job() {
             Some(&mut replay.pcr)
         } else {
             None

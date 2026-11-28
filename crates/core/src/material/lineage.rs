@@ -34,7 +34,16 @@ pub struct ProductBinding { pub step_index:usize, pub document_id:String, pub ev
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
-pub struct RecordedAssessment { pub engine_version:String, pub status:Status, pub findings:Vec<crate::verification::checks::CheckFinding>, pub assumptions:Vec<String>, pub exhaustive_alternative_search:bool }
+pub struct RecordedAssessment {
+    #[serde(deserialize_with="crate::encoding::required_option")]
+    #[cfg_attr(feature="json-schema",schemars(required))]
+    pub standard_review: Option<crate::cloning::assembly::standards::declaration::DeclaredReview>,
+    pub engine_version: String,
+    pub status: Status,
+    pub findings: Vec<crate::verification::checks::CheckFinding>,
+    pub assumptions: Vec<String>,
+    pub exhaustive_alternative_search: bool,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature="json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -200,7 +209,7 @@ fn validate_texts(values: &[String], limit: usize) -> Result<(), Error> {
     Ok(())
 }
 fn validate_record(r: &RunRecord) -> Result<(), Error> {
-    if r.schema_version != 1
+    if r.schema_version != 2
         || r.plan_schema != crate::documents::workspace::PLAN_SCHEMA_VERSION
         || !digest(&r.run_id)
         || r.assessment.engine_version.is_empty()
@@ -211,6 +220,13 @@ fn validate_record(r: &RunRecord) -> Result<(), Error> {
     }
     if r.assessment.findings.len() > 10_000 {
         return Err(Error::TooLarge);
+    }
+    match (&r.plan.standard, &r.assessment.standard_review) {
+        (Some(declaration), Some(review)) => {
+            review.validate_binding(&r.plan_revision, declaration)?
+        }
+        (None, None) => {}
+        _ => return Err(bad("declared standard and retained advisory review differ")),
     }
     for finding in &r.assessment.findings {
         finding.validate()?;
@@ -450,6 +466,7 @@ pub fn record_run(
     }
     let mut report = verification::engine::verify(plan, target);
     report.validate_documentary()?;
+    report.validate_standard_for_plan(plan)?;
     let physical_graphs = std::mem::take(&mut report.physical_processing_reports);
     let reference_graphs = std::mem::take(&mut report.reference_step_reports);
     if report.steps.len() != plan.steps.len()
@@ -468,7 +485,7 @@ pub fn record_run(
         ));
     }
     let mut r = RunRecord {
-        schema_version: 1,
+        schema_version: 2,
         plan_schema: crate::documents::workspace::PLAN_SCHEMA_VERSION,
         run_id: String::new(),
         plan_revision: report.plan_revision.clone(),
@@ -491,6 +508,7 @@ pub fn record_run(
             })
             .collect::<Result<Vec<_>, Error>>()?,
         assessment: RecordedAssessment {
+            standard_review: report.standard_review,
             engine_version: report.engine_version,
             status: report.status,
             findings: report.findings,
@@ -579,6 +597,7 @@ pub fn replay_run(w: &Workspace, id: &str) -> Result<ReplayReport, Error> {
     let r = load_run(w, id)?;
     let report = verification::engine::verify(&r.plan, resolve(w, &r.target)?);
     report.validate_documentary()?;
+    report.validate_standard_for_plan(&r.plan)?;
     let products_match = report.steps.len() == r.products.len()
         && report.steps.iter().zip(&r.products).all(|(step, binding)| {
             step.state == crate::verification::evidence::StepState::Reconstructed
@@ -637,6 +656,8 @@ impl ReplayReport {
             return Err(bad("replay workspace changed"));
         }
         let record = load_run(workspace, &self.run_id)?;
+        self.current_report
+            .validate_standard_for_plan(&record.plan)?;
         let products_match = self.current_report.steps.len() == record.products.len()
             && self
                 .current_report

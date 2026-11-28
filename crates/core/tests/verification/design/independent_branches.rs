@@ -28,6 +28,7 @@ fn plan(steps: Vec<Operation>) -> (DesignPlan, Molecule) {
     let source = molecule();
     (
         DesignPlan {
+            standard: None,
             name: "independent branch fixture".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {

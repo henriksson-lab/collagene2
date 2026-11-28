@@ -137,6 +137,7 @@ fn selected(inputs: &[topo::Input], preparation: topo::Request) -> adapter::Requ
 
 fn plan(inputs: &[topo::Input], request: adapter::Request, target: &Molecule) -> DesignPlan {
     DesignPlan {
+        standard: None,
         name: "Actual original TA material and independently specified product".into(),
         target_revision: target.revision(),
         inputs: inputs
@@ -444,6 +445,7 @@ fn portable_product_summaries_and_tracked_step_ancestry_cannot_restore_material(
         .clone();
     assert!(chemistry::has_unmapped_physical_evidence(&imported));
     let imported_plan = DesignPlan {
+        standard: None,
         name: "Portable summary is no material".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

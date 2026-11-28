@@ -57,6 +57,7 @@ fn candidate(profiled: bool, top: Terminus, bottom: Terminus) -> (DesignPlan, Mo
     };
     (
         DesignPlan {
+            standard: None,
             name: "blocked end review".into(),
             target_revision: target.revision(),
             inputs: vec![

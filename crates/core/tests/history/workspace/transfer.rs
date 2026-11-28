@@ -10,6 +10,7 @@ fn fixture() -> (PlanningWorkspace, Candidate) {
     let right = Molecule::dna("right", "CCCCGGGG", Topology::Linear).unwrap();
     let target = Molecule::dna("target", "AAAACCCCGGGG", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Independent target".into(),
         target_revision: target.revision(),
         inputs: vec![
@@ -173,7 +174,14 @@ fn native_candidate_and_planning_counts_reject_before_decoding_any_claimed_eleme
     // A custom admission error, rather than an invalid-varint error, proves the
     // count is rejected before an Operation, PlanInput or Molecule is requested.
     for count in [1001, 1_000_000] {
-        let prefix = postcard::to_allocvec(&("a".repeat(64), "bounded", "b".repeat(64))).unwrap();
+        // Candidate revision, required nullable declaration, then plan name/target.
+        let prefix = postcard::to_allocvec(&(
+            "a".repeat(64),
+            None::<collagene_core::cloning::assembly::standards::declaration::Declaration>,
+            "bounded",
+            "b".repeat(64),
+        ))
+        .unwrap();
         for steps in [false, true] {
             let mut payload = prefix.clone();
             if steps {
@@ -209,7 +217,7 @@ fn native_candidate_and_planning_counts_reject_before_decoding_any_claimed_eleme
 
 #[test]
 fn current_operation_collection_prefixes_admit_only_existing_semantic_capacities() {
-    // Current Candidate31 Operation tags whose first field is a variable Source,
+    // Current Operation tags whose first field is a variable Source,
     // OrientedSource or TopoSource list. Invalid varint bytes after the count
     // expose Postcard's known count hint but cannot decode the first element.
     for tag in [1u32, 4, 6, 10, 14, 15, 18, 19, 20, 23, 25] {

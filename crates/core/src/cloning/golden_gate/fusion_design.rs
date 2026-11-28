@@ -389,6 +389,7 @@ fn fixed(
     let mut ends = vec![None; r.base.rows.len()];
     if !rows.is_empty() {
         let recipe = ligation_recipe::Recipe {
+            standard: None,
             name: r.base.base.name.clone(),
             fragments: rows.iter().map(|(_, r)| r.clone()).collect(),
             circular: false,
@@ -752,6 +753,7 @@ pub fn materialize(
         let _ = i;
     }
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: r.base.base.name.clone(),
         fragments,
         circular: r.base.base.circular,

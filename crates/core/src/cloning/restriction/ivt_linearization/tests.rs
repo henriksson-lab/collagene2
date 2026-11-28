@@ -438,6 +438,7 @@ fn saved_material_replays_the_existing_origin_instead_of_redeclaring_its_generat
     let mut target = original.clone();
     target.name = "Independent unchanged PCR template".into();
     let plan = DesignPlan {
+        standard: None,
         name: "Literal original-source PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

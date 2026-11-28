@@ -125,6 +125,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         },
     };
     let row = SelectedConstruct {
+        standard: None,
         id: "chosen-ab".into(),
         name: "Chosen AB".into(),
         choices: ids

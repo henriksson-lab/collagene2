@@ -34,6 +34,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, Recipe) {
     )
     .unwrap();
     let recipe = Recipe {
+        standard: None,
         name: "Literal ordered overlap".into(),
         fragments: ["left", "right"]
             .into_iter()

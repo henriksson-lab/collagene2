@@ -41,6 +41,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, lig::Recipe) {
     )
     .unwrap();
     let recipe = lig::Recipe {
+        standard: None,
         name: "Original backbone and two separately ordered oligos".into(),
         circular: true,
         allow_nicked: false,

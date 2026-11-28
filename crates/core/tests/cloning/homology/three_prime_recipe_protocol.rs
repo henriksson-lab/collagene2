@@ -48,6 +48,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, assembly_recipe::Recipe) {
         vec![input("a", A), input("b", B)],
         Molecule::dna("Independent sealed circle", CIRCLE, Topology::Circular).unwrap(),
         assembly_recipe::Recipe {
+            standard: None,
             name: "Explicit physical homology closure".into(),
             fragments: ["a", "b"]
                 .into_iter()
@@ -202,6 +203,7 @@ fn standalone_resection_uses_operation25_evidence4_and_never_hides_under_old_fra
     use collagene_core::planning::plan::{DesignPlan, Operation, Source};
     let target = Molecule::dna("Independent shortened top", "AGTCCGATG", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Declared accessible source then shorten actual strands".into(),
         target_revision: target.revision(),
         inputs: vec![input("a", A)],

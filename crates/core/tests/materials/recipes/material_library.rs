@@ -184,6 +184,7 @@ fn actual_bottom_pcr_work_counts_both_seventeen_base_frame_and_real_coverage_sca
         }],
     };
     let row = library::SelectedConstruct {
+        standard: None,
         id: "bottom-pcr".into(),
         name: "Literal17 native PCR".into(),
         choices: vec![library::ChoiceSelection {

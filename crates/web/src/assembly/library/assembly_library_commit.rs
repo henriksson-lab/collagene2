@@ -40,6 +40,12 @@ fn captures(frame: &Workspace, draft: &Draft) -> Result<Vec<EventBinding>, Strin
         }
         pins.push(pin.clone());
     }
+    for pin in crate::assembly::draft::assembly_standard_model::declared_events(draft) {
+        combinatorial_design::resolve_event(frame, pin).map_err(|error| error.to_string())?;
+        if !pins.contains(pin) {
+            pins.push(pin.clone());
+        }
+    }
     Ok(pins)
 }
 fn normalize(mut pins: Vec<EventBinding>) -> Result<Vec<EventBinding>, String> {

@@ -525,6 +525,7 @@ fn native_run_history_and_fromrun_material_survive_working_restart() {
     )
     .unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "Actual original PCR".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

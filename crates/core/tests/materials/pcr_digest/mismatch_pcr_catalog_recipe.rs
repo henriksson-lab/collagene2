@@ -67,6 +67,7 @@ fn prep(repair: Option<EndRepairMethod>) -> Preparation {
 }
 fn recipe(preparation: Preparation) -> lig::Recipe {
     lig::Recipe {
+        standard: None,
         name: "Mutant PCR and actual pinned digest".into(),
         fragments: vec![lig::Fragment {
             source: FragmentSpec {
@@ -189,6 +190,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
     let original = Molecule::dna("Original6bp", "AAACCC", Topology::Linear).unwrap();
     let original_target = target("AAACCC");
     let plan = DesignPlan {
+        standard: None,
         name: "Origin exactPCR".into(),
         inputs: vec![input(original.clone())],
         target_revision: original_target.revision(),
@@ -500,6 +502,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
         },
     };
     let construct = SelectedConstruct {
+        standard: None,
         id: "checked-mutant".into(),
         name: "Checked mutant BsaI fragment".into(),
         choices: vec![ChoiceSelection {
@@ -553,6 +556,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
     let original_target =
         Molecule::dna("Independent full58bp amplicon", AMPLICON, Topology::Linear).unwrap();
     let origin_plan = DesignPlan {
+        standard: None,
         name: "Save actual BsaI-flanked mutant PCR".into(),
         target_revision: original_target.revision(),
         inputs: vec![input(source.clone())],

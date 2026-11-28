@@ -97,7 +97,7 @@ fn exact_event_capture_reopens_historically_and_deduplicates_without_mutating_do
     without_record.attachments.remove(&hash);
     assert_eq!(serde_json::to_value(without_record).unwrap(), before);
     let reopened = pairwise_history::load(&saved, &hash).unwrap();
-    assert_eq!(reopened.schema_version, 1);
+    assert_eq!(reopened.schema_version, pairwise_history::VERSION);
     assert_eq!(reopened.reference, reference);
     assert_eq!(reopened.query, query);
     assert_eq!(reopened.report.comparison.alignment.differences.len(), 1);
@@ -182,7 +182,7 @@ fn tampered_bindings_scores_versions_or_attachment_roles_fail_without_publishing
     assert!(pairwise_history::load(&spoofed, &spoofed_hash).is_err());
     assert!(pairwise_history::list(&spoofed).is_err());
     changed = original.clone();
-    changed["schema_version"] = 2.into();
+    changed["schema_version"] = (pairwise_history::VERSION + 1).into();
     let (version, version_hash) = insert_record(&saved, &changed);
     assert!(pairwise_history::load(&version, &version_hash).is_err());
     changed = original;

@@ -61,6 +61,7 @@ fn request() -> Request {
 }
 fn recipe(request: Extension) -> ligation_recipe::Recipe {
     ligation_recipe::Recipe {
+        standard: None,
         name: "Physical OE, selected EcoRI fragment and explicit fill".into(),
         fragments: vec![ligation_recipe::Fragment {
             source: FragmentSpec {

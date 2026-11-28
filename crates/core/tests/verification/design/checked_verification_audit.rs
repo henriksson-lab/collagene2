@@ -38,6 +38,7 @@ fn checked(template: Source, name: &str) -> Operation {
 }
 fn plan(source: Molecule, target: &Molecule, steps: Vec<Operation>) -> DesignPlan {
     DesignPlan {
+        standard: None,
         name: "independent positional audit".into(),
         target_revision: target.revision(),
         inputs: vec![PlanInput {

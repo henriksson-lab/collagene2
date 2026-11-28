@@ -183,6 +183,9 @@ struct Budget {
 }
 impl Budget {
     fn plan_resources(&mut self, plan: &DesignPlan) -> Result<(), Error> {
+        if let Some(declaration) = &plan.standard {
+            declaration.validate()?;
+        }
         add(&mut self.steps, plan.steps.len(), MAX_STEPS)?;
         add(&mut self.inputs, plan.inputs.len(), 1000)?;
         crate::encoding::bounded_json::preflight(plan, MAX_AGGREGATE_ORIGIN_BYTES)?;
@@ -206,6 +209,9 @@ impl Budget {
         }
     }
     fn plan(&mut self, plan: &DesignPlan) -> Result<(), Error> {
+        if let Some(declaration) = &plan.standard {
+            declaration.validate()?;
+        }
         add(&mut self.steps, plan.steps.len(), MAX_STEPS)?;
         add(&mut self.inputs, plan.inputs.len(), 1000)?;
         if plan.steps.is_empty()
@@ -675,6 +681,9 @@ pub fn plan_resource_preflight(plan: &DesignPlan) -> Result<(), Error> {
     )
 }
 pub fn plan_preflight(plan: &DesignPlan) -> Result<(), Error> {
+    if let Some(declaration) = &plan.standard {
+        declaration.validate()?;
+    }
     if origins(plan).is_empty() {
         return Ok(());
     }
@@ -1404,6 +1413,7 @@ impl ReplayEvidence {
             product.validate()?;
         }
         let candidate = transfer::decode_candidate_shallow(&self.origin.candidate)?;
+        report.validate_standard_for_plan(&candidate.plan)?;
         if report.plan_revision != candidate.plan_revision
             || report.target_revision != self.origin.target_event.revision
             || report.status == Status::Invalid
@@ -1487,7 +1497,7 @@ fn replay_native(
     };
     let (mut report, mut states, trace) = match capture {
         Some((replay, trace_budget)) => {
-            if replay.is_qc_job() {
+            if replay.is_shared_job() {
                 match trace_budget {
                     Some(trace_budget) => {
                         let (report, states, trace) =
@@ -1541,6 +1551,7 @@ fn replay_native(
         }
     };
     report.validate_documentary()?;
+    report.validate_standard_for_plan(&candidate.plan)?;
     if report.status == Status::Invalid
         || report.steps.len() != origin.products.len()
         || !report
@@ -1629,6 +1640,7 @@ mod scoped_replay_tests {
         let target =
             Molecule::dna("independent target", "ACGACCCCGGGGTAAC", Topology::Linear).unwrap();
         let plan = DesignPlan {
+            standard: None,
             name: "saved exact PCR".into(),
             target_revision: target.revision(),
             inputs: vec![PlanInput {
@@ -1673,7 +1685,7 @@ mod scoped_replay_tests {
             .unwrap()
             .clone();
         let mut cleavage = CleavageBudget::new(100_000_000).unwrap();
-        let mut baseline = ReplayBudget::qc_job(&mut cleavage);
+        let mut baseline = ReplayBudget::shared_job(&mut cleavage);
         let (fresh, _, trace, actual) =
             replay_scoped(&origin, &saved, &mut baseline, None).unwrap();
         assert_eq!(fresh.reference, saved);
@@ -1682,7 +1694,7 @@ mod scoped_replay_tests {
         assert!(work > 0);
 
         let mut cleavage = CleavageBudget::new(100_000_000).unwrap();
-        let mut shared = ReplayBudget::qc_job(&mut cleavage);
+        let mut shared = ReplayBudget::shared_job(&mut cleavage);
         shared.pcr = ExactSearchBudget::new(work + work / 2).unwrap();
         assert!(replay_scoped(&origin, &saved, &mut shared, None).is_ok());
         assert_eq!(shared.pcr_used(), work);

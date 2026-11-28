@@ -166,6 +166,7 @@ fn staggered_physical_pcr_templates_need_a_two_strand_model_not_a_top_projection
     let source = Molecule::dna("BsaI source", "AAAGGTCTCTAGTCCCCC", Topology::Linear).unwrap();
     let target = Molecule::dna("PCR target", "AAAGGTCTCTAGTC", Topology::Linear).unwrap();
     let plan = DesignPlan {
+        standard: None,
         name: "PCR from staggered digest".into(),
         target_revision: target.revision(),
         inputs: vec![input("source", source)],
@@ -206,6 +207,7 @@ fn saved_physical_projection_cannot_bypass_overlap_end_state_checks() {
     let other = Molecule::dna("other", "GAAT", Topology::Linear).unwrap();
     let target = Molecule::dna("target", "GGGAAT", Topology::Linear).unwrap();
     let mut plan = DesignPlan {
+        standard: None,
         name: "No chemistry laundering through native projection".into(),
         target_revision: target.revision(),
         inputs: vec![input("physical", physical), input("other", other)],

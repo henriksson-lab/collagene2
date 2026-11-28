@@ -57,6 +57,7 @@ fn fixture(a: &str, b: &str, right_a: &str, right_b: &str) -> (Vec<PlanInput>, M
     };
     let designed = primers::design(&inputs, &target, &request).unwrap();
     let recipe = ligation_recipe::Recipe {
+        standard: None,
         name: "Ordered substrate declarations".into(),
         fragments: designed
             .fragments
@@ -196,6 +197,7 @@ fn missing_middle_preparation_and_metadata_only_end_claims_withhold_the_entire_p
         .collect();
     let request = Request {
         recipe: ligation_recipe::Recipe {
+            standard: None,
             name: "Only selected raw references".into(),
             fragments: rows,
             circular: true,
@@ -231,6 +233,7 @@ fn bounded_search_retains_candidates_without_claiming_complete_or_exhaustive_mix
     let target = Molecule::dna("independent original circle", A, Topology::Circular).unwrap();
     let r = Request {
         recipe: ligation_recipe::Recipe {
+            standard: None,
             name: "Explicit intact prepared circle".into(),
             fragments: vec![ligation_recipe::Fragment {
                 source: FragmentSpec {

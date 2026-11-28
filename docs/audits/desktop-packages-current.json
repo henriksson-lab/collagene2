@@ -1,84 +1,93 @@
 {
   "date": "2026-11-28",
-  "source_commit": "c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
-  "workflow_run": 46157048843,
-  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46157048843",
+  "source_commit": "190ae08e7842322adbfae9d887d76dfcaf319bae",
+  "workflow_run": 46178350413,
+  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46178350413",
   "conclusion": "success",
   "profile": "development",
   "developer_signed": false,
   "jobs": [
     {
-      "id": 141018816622,
+      "id": 141088508931,
       "platform": "windows-latest",
       "payloads": [
         "portable executable"
       ],
-      "artifact": "desktop-packages-unsigned-windows-latest-development-c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
-      "artifact_bytes": 52805008,
-      "artifact_id": 15268272472,
+      "artifact": "desktop-packages-unsigned-windows-latest-development-190ae08e7842322adbfae9d887d76dfcaf319bae",
+      "artifact_bytes": 53978795,
+      "artifact_id": 15277607291,
+      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46178350413/artifacts/15277607291",
       "conclusion": "success",
-      "artifact_digest": "sha256:df75d731ab6c72747c9b0861fc08ce2442549123072a017ac3aee46c136df899"
+      "artifact_digest": "sha256:4ad67e5aba1a24b32e9020197c5402c706b5ad3194bb18f7e09eb12e61fb5b85"
     },
     {
-      "id": 141018816647,
+      "id": 141088508919,
       "platform": "macos-latest",
       "payloads": [
         "DMG installer",
         "permission-preserving app tar.gz"
       ],
-      "artifact": "desktop-packages-unsigned-macos-latest-development-c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
-      "artifact_bytes": 129272557,
-      "artifact_id": 15268488208,
+      "artifact": "desktop-packages-unsigned-macos-latest-development-190ae08e7842322adbfae9d887d76dfcaf319bae",
+      "artifact_bytes": 133029141,
+      "artifact_id": 15277946306,
+      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46178350413/artifacts/15277946306",
       "conclusion": "success",
-      "artifact_digest": "sha256:5cbbf4f666b059e9633543ab4dab978eee2f2916ad3d74d2a1739618fa0963b1"
+      "artifact_digest": "sha256:afb53a8fbbbab6889a4138d9161afa030de2483f4c597b02c72c56cf52a1f39f"
     },
     {
-      "id": 141018816661,
+      "id": 141088508955,
       "platform": "ubuntu-22.04",
       "payloads": [
         "Debian package"
       ],
-      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
-      "artifact_bytes": 63349003,
-      "artifact_id": 15268881025,
+      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-190ae08e7842322adbfae9d887d76dfcaf319bae",
+      "artifact_bytes": 65053978,
+      "artifact_id": 15277721882,
+      "artifact_url": "https://github.com/henriksson-lab/collagene2/actions/runs/46178350413/artifacts/15277721882",
       "conclusion": "success",
-      "artifact_digest": "sha256:155ba7e9b0fdd6fb539afc7307724837b2e60772b7701f8774fc8b258cf27e25"
+      "artifact_digest": "sha256:09bda52ea325479424f60f2c90cf9d0fed7e84c9944b83984b9ba8193aaa3e4e"
     }
   ],
-  "evidence": "Exact-head GitHub job conclusions and live artifact inventory; source staging requires exact platform payload kinds, bounded counts/sizes/checksums and actual packaged executable stdio MCP smoke. Windows also inspects imported system DLLs. One same-run fresh frontend artifact is reused.",
+  "evidence": "Exact-head completed GitHub jobs and unexpired artifact inventory/digests. Required CI staging checks expected platform payload kinds and bounded manifests, runs packaged executable stdio MCP smoke, and checks Windows system DLL imports. One same-run fresh frontend is reused. Artifact archives were not downloaded or installed locally for this record.",
   "limitations": [
-    "No installer GUI, installation, offline GUI or chosen-remote acceptance is claimed.",
-    "Windows requires the OS WebView2 runtime; macOS output is the hosted runner architecture.",
-    "This last successful package inventory predates published checkpoint 39d70f4. It does not establish packaging, scientific or full CI acceptance of that checkpoint or the current source."
+    "No installer GUI, installation, offline GUI, chosen-remote or final product acceptance is claimed.",
+    "Windows requires the OS WebView2 runtime; macOS output uses the hosted runner architecture.",
+    "These published artifacts exclude the current uncommitted screening/alignment/standards batch."
   ],
   "frontend": {
-    "job_id": 141015898912,
-    "artifact_id": 15268148437,
-    "bytes": 31208675,
-    "artifact_digest": "sha256:d740656eb5f1e0fdf08198ac9657ab4642d056e08dc22d02a413a3fdd11111fa",
+    "job_id": 141082064507,
+    "artifact_id": 15277520953,
+    "bytes": 30103601,
+    "artifact_digest": "sha256:7f8a431efe3a1271233d18e368e8be23f24a07b675575644780fe2ba56397431",
     "conclusion": "success"
   },
   "check_workflow": {
-    "run_id": 46157048740,
-    "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46157048740",
-    "conclusion": "failure",
-    "source_commit": "c58c95c6b2cec3ca3601cffc69fd19c50cf52f06",
-    "scope": "Two stale schema assertions fail in the scientific jobs on Windows, macOS and Linux; the web job fails cargo fmt --all -- --check. This is not a scientific or full-CI green claim; current uncommitted corrections are excluded."
-  },
-  "subsequent_checkpoint": {
-    "source_commit": "39d70f4cb4e64e23ec038ad66d150b0f644803e0",
-    "desktop_run": 46165940229,
-    "desktop_conclusion": "failure",
-    "check_run": 46165940016,
-    "check_conclusion": "failure",
-    "findings": [
-      "Two PDF assertions expect obsolete verifier prose on all three scientific platforms.",
-      "Frontend asset packaging rejects an asset-size limit; the old diagnostic does not identify the asset and exact observed size."
+    "run_id": 46178350510,
+    "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46178350510",
+    "conclusion": "success",
+    "source_commit": "190ae08e7842322adbfae9d887d76dfcaf319bae",
+    "jobs": [
+      {
+        "id": 141082064490,
+        "name": "Scientific core on windows-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 141082064645,
+        "name": "Scientific core on ubuntu-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 141082064665,
+        "name": "Scientific core on macos-latest",
+        "conclusion": "success"
+      },
+      {
+        "id": 141082064729,
+        "name": "web",
+        "conclusion": "success"
+      }
     ],
-    "current_source_corrections": [
-      "PDF assertions updated for typed verdicts and current independently bound target diagnostics.",
-      "Frontend-only development-derived profile uses opt-level=1 with debug=0; packaging retains existing limits and reports actual observed sizes."
-    ],
-    "verification": "Current-source native/WASM checks and selected packager/PDF fixtures pass in the causal/history integration batch. Actual frontend-profile bundling and exact-head desktop packaging remain pending CI; no size measurement or package success is claimed."
+    "scope": "Scientific checks on Windows/macOS/Linux and web checks pass for this exact published source. Current uncommitted feature extensions and GUI/provider/installation acceptance are excluded."
   }
 }

@@ -57,6 +57,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, assembly_recipe::Recipe) {
         vec![input("a", A), input("b", B)],
         Molecule::dna("Independent sealed circle", CIRCLE, Topology::Circular).unwrap(),
         assembly_recipe::Recipe {
+            standard: None,
             name: "Explicit physical homology closure".into(),
             fragments: ["a", "b"]
                 .into_iter()
@@ -313,6 +314,7 @@ fn saved_homology_replays_actual_material_for_pcr_and_digest_and_retains_histori
         )
         .unwrap();
         let recipe = ligation_recipe::Recipe {
+            standard: None,
             name: "Actual homology product reuse".into(),
             fragments: vec![ligation_recipe::Fragment {
                 source: FragmentSpec {

@@ -77,6 +77,7 @@ fn fixture(gc: bool) -> (Vec<PlanInput>, Molecule, Recipe) {
         inputs,
         target,
         Recipe {
+            standard: None,
             profile: if gc {
                 collagene_core::cloning::ligation::tailing_recipe::Profile::Gc
             } else {

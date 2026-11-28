@@ -1,12 +1,14 @@
 //! Bounded synonymous DNA design and an independent sequence/constraint checker.
 //! Preferences are declared integer scores, not expression or organism fitness models.
+pub mod hosts;
+
 use crate::sequence::{analysis::base_mask, translation};
 use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io::Write};
 
-pub const CODON_ENGINE_VERSION: &str = "codon-design-1";
-pub const CONSTRAINED_ENGINE_VERSION: &str = "codon-constrained-1";
+pub const CODON_ENGINE_VERSION: &str = "codon-design-2";
+pub const CONSTRAINED_ENGINE_VERSION: &str = "codon-constrained-2";
 pub const MAX_RESIDUES: usize = 10_000;
 const MAX_FRONTIER_BYTES: usize = 16 * 1024 * 1024;
 const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
@@ -17,6 +19,80 @@ const MAX_SOURCE_BYTES: usize = 4 * 1024 * 1024;
 pub struct CodonWeight {
     pub codon: String,
     pub weight: u32,
+}
+/// Exactly one active preference source; manual drafts never shadow host data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub enum CodonPreferences {
+    Uniform,
+    Explicit {
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, CodonWeight, 64>")]
+        weights: Vec<CodonWeight>,
+    },
+    ReferenceHost {
+        reference: hosts::Reference,
+    },
+}
+impl CodonPreferences {
+    pub fn expanded_weights(&self, genetic_code: u8) -> Result<Vec<CodonWeight>, Error> {
+        let weights = match self {
+            Self::Uniform => return Ok(vec![]),
+            Self::Explicit { weights } => {
+                if weights.is_empty() || weights.len() > 64 {
+                    return Err(bad("explicit preferences require 1..64 codon weights"));
+                }
+                weights.clone()
+            }
+            Self::ReferenceHost { reference } => {
+                let profile = hosts::resolve(reference)?;
+                if profile.dataset.genetic_code != genetic_code {
+                    return Err(bad("genetic code differs from the pinned reference host"));
+                }
+                profile.preferences()?
+            }
+        };
+        let mut codons = BTreeSet::new();
+        for weight in &weights {
+            if weight.codon.len() != 3
+                || !concrete(&weight.codon)
+                || weight.weight > 1_000_000
+                || !codons.insert(&weight.codon)
+            {
+                return Err(bad(
+                    "codon weights require distinct uppercase DNA triplets and integers0..1000000",
+                ));
+            }
+        }
+        Ok(weights)
+    }
+}
+/// Retained derived evidence, not another active input preference source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(deny_unknown_fields)]
+pub struct PreferenceEvidence {
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, CodonWeight, 64>")]
+    pub expanded_weights: Vec<CodonWeight>,
+    pub reference_host: Option<hosts::HostProfile>,
+}
+impl PreferenceEvidence {
+    fn validate(&self) -> Result<(), Error> {
+        if let Some(profile) = &self.reference_host {
+            profile.validate()?;
+            if self.expanded_weights != profile.preferences()? {
+                return Err(bad(
+                    "retained host preferences differ from observed source data",
+                ));
+            }
+        } else if !self.expanded_weights.is_empty() {
+            CodonPreferences::Explicit {
+                weights: self.expanded_weights.clone(),
+            }
+            .expanded_weights(1)?;
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -45,7 +121,7 @@ pub struct WindowGc {
 #[serde(deny_unknown_fields)]
 pub struct DesignOptions {
     pub genetic_code: u8,
-    pub codon_weights: Vec<CodonWeight>,
+    pub preferences: CodonPreferences,
     pub forbidden_motifs: Vec<String>,
     pub left_context: String,
     pub right_context: String,
@@ -55,11 +131,23 @@ pub struct DesignOptions {
     pub beam_width: usize,
     pub max_work: u64,
 }
+impl DesignOptions {
+    pub fn preference_evidence(&self) -> Result<PreferenceEvidence, Error> {
+        let reference_host = match &self.preferences {
+            CodonPreferences::ReferenceHost { reference } => Some(hosts::resolve(reference)?),
+            _ => None,
+        };
+        Ok(PreferenceEvidence {
+            expanded_weights: self.preferences.expanded_weights(self.genetic_code)?,
+            reference_host,
+        })
+    }
+}
 impl Default for DesignOptions {
     fn default() -> Self {
         Self {
             genetic_code: 1,
-            codon_weights: vec![],
+            preferences: CodonPreferences::Uniform,
             forbidden_motifs: vec![],
             left_context: String::new(),
             right_context: String::new(),
@@ -86,6 +174,7 @@ pub struct CheckReport {
     pub source_revision: String,
     pub candidate_revision: String,
     pub options_revision: String,
+    pub preference_evidence: PreferenceEvidence,
     pub target_protein: String,
     pub translated_protein: String,
     pub complete: bool,
@@ -104,6 +193,7 @@ pub struct DesignReport {
     pub engine_version: String,
     pub source_revision: String,
     pub options_revision: String,
+    pub preference_evidence: PreferenceEvidence,
     pub target_protein: String,
     pub options: DesignOptions,
     pub candidate: Option<Molecule>,
@@ -145,7 +235,7 @@ constrained_dto! {pub struct ConstrainedCheckReport {
     pub scoped_violations:Vec<i64>,pub complete:bool,pub satisfies:Option<bool>,pub work_used:u64,pub warnings:Vec<String>,
 }}
 constrained_dto! {#[doc="Search evidence for the positional policy; not a legacy unconstrained-optimality report."] pub struct ConstrainedOutcome {
-    pub source_revision:String,pub options_revision:String,pub target_protein:String,pub options:DesignOptions,
+    pub source_revision:String,pub options_revision:String,pub preference_evidence:PreferenceEvidence,pub target_protein:String,pub options:DesignOptions,
     pub candidate:Option<Molecule>,pub score:Option<u64>,pub status:DesignStatus,pub search_complete:bool,
     pub work_used:u64,pub pruned_states:usize,pub limits:Vec<String>,pub warnings:Vec<String>,
 }}
@@ -214,25 +304,13 @@ impl DesignOptions {
             || self.right_context.len() > 2048
             || !concrete(&self.left_context)
             || !concrete(&self.right_context)
-            || self.codon_weights.len() > 64
             || self.forbidden_motifs.len() > 64
         {
             return Err(bad(
                 "contexts must be concrete uppercase DNA <=2048 bases; at most64 codon weights/motifs",
             ));
         }
-        let mut codons = BTreeSet::new();
-        for w in &self.codon_weights {
-            if w.codon.len() != 3
-                || !concrete(&w.codon)
-                || w.weight > 1_000_000
-                || !codons.insert(&w.codon)
-            {
-                return Err(bad(
-                    "codon weights require distinct uppercase DNA triplets and integers0..1000000",
-                ));
-            }
-        }
+        self.preferences.expanded_weights(self.genetic_code)?;
         for m in &self.forbidden_motifs {
             if m.is_empty() || m.len() > 128 || !m.bytes().all(|b| b"ACGTRYSWKMBDHVN".contains(&b))
             {
@@ -443,11 +521,36 @@ fn warnings(m: &Molecule) -> Vec<String> {
     }
     out
 }
-fn weight(o: &DesignOptions, c: &str) -> u32 {
-    o.codon_weights
-        .iter()
-        .find(|w| w.codon == c)
-        .map_or(1, |w| w.weight)
+struct Weights([u32; 64]);
+impl Weights {
+    fn new(o: &DesignOptions) -> Result<Self, Error> {
+        let mut values = [1; 64];
+        for weight in o.preferences.expanded_weights(o.genetic_code)? {
+            values[Self::index(&weight.codon).ok_or_else(|| bad("invalid codon preference"))?] =
+                weight.weight;
+        }
+        Ok(Self(values))
+    }
+    fn index(codon: &str) -> Option<usize> {
+        if codon.len() != 3 {
+            return None;
+        }
+        codon.bytes().try_fold(0, |index, base| {
+            Some(
+                index * 4
+                    + match base {
+                        b'A' => 0,
+                        b'C' => 1,
+                        b'G' => 2,
+                        b'T' => 3,
+                        _ => return None,
+                    },
+            )
+        })
+    }
+    fn score(&self, codon: &str) -> u32 {
+        Self::index(codon).map_or(1, |index| self.0[index])
+    }
 }
 fn codons(code: u8) -> Result<Vec<(String, u8)>, Error> {
     let mut out = vec![];
@@ -575,6 +678,7 @@ pub fn check(
     o: &DesignOptions,
 ) -> Result<CheckReport, Error> {
     o.validate()?;
+    let weights = Weights::new(o)?;
     let protein = target(source, o)?;
     source_bounds(candidate)?;
     guard_evidence(candidate, o.genetic_code)?;
@@ -589,6 +693,7 @@ pub fn check(
         source_revision: source.revision(),
         candidate_revision: candidate.revision(),
         options_revision: options_revision(o)?,
+        preference_evidence: o.preference_evidence()?,
         target_protein: protein,
         translated_protein: String::new(),
         complete: true,
@@ -633,7 +738,7 @@ pub fn check(
         }
         for c in candidate.sequence.as_str().as_bytes().chunks_exact(3) {
             work.take(1)?;
-            let w = weight(o, std::str::from_utf8(c).unwrap());
+            let w = weights.score(std::str::from_utf8(c).unwrap());
             r.score += u64::from(w);
             if w == 0 && r.violations.len() < 256 {
                 r.violations
@@ -753,11 +858,13 @@ fn design_internal(
     policy: Option<&ConstrainedPolicy>,
 ) -> Result<(DesignReport, Option<ConstrainedCheckReport>, u64), Error> {
     o.validate()?;
+    let weights = Weights::new(o)?;
     let protein = target(source, o)?;
     let mut r = DesignReport {
         engine_version: CODON_ENGINE_VERSION.into(),
         source_revision: source.revision(),
         options_revision: options_revision(o)?,
+        preference_evidence: o.preference_evidence()?,
         target_protein: protein.clone(),
         options: o.clone(),
         candidate: None,
@@ -862,7 +969,7 @@ fn design_internal(
             .iter()
             .filter(|(c, a)| {
                 *a == aa
-                    && weight(o, c) > 0
+                    && weights.score(c) > 0
                     && runtime.as_ref().is_none_or(|r| r.allowed(source, i, c))
             })
             .collect::<Vec<_>>();
@@ -914,7 +1021,7 @@ fn design_internal(
                         }
                         next.push(State {
                             tail,
-                            score: s.score + u64::from(weight(o, c)),
+                            score: s.score + u64::from(weights.score(c)),
                             changed: s.changed
                                 + runtime.as_ref().map_or(0, |_| {
                                     source.sequence.as_str().as_bytes()[i * 3..i * 3 + 3]
@@ -1083,6 +1190,10 @@ fn design_internal(
                 "codon_design:options".into(),
                 serde_json::to_string(o).map_err(|_| Error::TooLarge)?,
             );
+            m.metadata.insert(
+                "codon_design:preference_evidence".into(),
+                serde_json::to_string(&r.preference_evidence).map_err(|_| Error::TooLarge)?,
+            );
             if let Some(policy) = policy {
                 m.metadata.insert(
                     "codon_constrained:engine".into(),
@@ -1136,6 +1247,7 @@ fn digest(s: &str) -> bool {
 }
 impl CheckReport {
     pub fn validate(&self) -> Result<(), Error> {
+        self.preference_evidence.validate()?;
         if self.engine_version != CODON_ENGINE_VERSION
             || ![
                 &self.source_revision,
@@ -1170,6 +1282,7 @@ impl CheckReport {
         if self.source_revision != source.revision()
             || self.candidate_revision != candidate.revision()
             || self.options_revision != options_revision(o)?
+            || self.preference_evidence != o.preference_evidence()?
             || self.target_protein != required
         {
             return Err(bad("checker source/candidate/options binding mismatch"));
@@ -1197,6 +1310,7 @@ impl DesignReport {
         if self.engine_version != CODON_ENGINE_VERSION
             || !digest(&self.source_revision)
             || self.options_revision != options_revision(&self.options)?
+            || self.preference_evidence != self.options.preference_evidence()?
             || self.target_protein.is_empty()
             || self.target_protein.len() > MAX_RESIDUES
             || self.work_used > self.options.max_work
@@ -1655,6 +1769,7 @@ pub fn design_constrained(
     let outcome = ConstrainedOutcome {
         source_revision: base.source_revision,
         options_revision: base.options_revision,
+        preference_evidence: base.preference_evidence,
         target_protein: base.target_protein,
         options: base.options,
         candidate: base.candidate,
@@ -1754,6 +1869,7 @@ impl ConstrainedDesignReport {
             || self.policy_revision != constrained_policy_revision(&self.policy)?
             || !digest(&d.source_revision)
             || d.options_revision != options_revision(&d.options)?
+            || d.preference_evidence != d.options.preference_evidence()?
             || d.target_protein.len() > MAX_RESIDUES
             || d.work_used > d.options.max_work
             || self.total_work_used < d.work_used
@@ -1788,6 +1904,7 @@ impl ConstrainedDesignReport {
                 source_bounds(m)?;
                 c.validate_binding(expected)?;
                 if c.policy_revision != self.policy_revision
+                    || c.base.preference_evidence != d.preference_evidence
                     || c.base.source_revision != d.source_revision
                     || c.base.candidate_revision != m.revision()
                     || c.base.options_revision != d.options_revision

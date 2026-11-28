@@ -4,13 +4,13 @@ use collagene_model::{Molecule, Topology};
 fn annotated_exports_retain_full_supported_codon_evidence_without_imported_authority() {
     let mut m = Molecule::dna("designed", "ATGAAGTGGTAA", Topology::Linear).unwrap();
     for (k, v) in [
-        ("engine", "codon-design-1".into()),
+        ("engine", collagene_core::sequence::codon_design::CODON_ENGINE_VERSION.into()),
         ("source_revision", "a".repeat(64)),
         ("options_revision", "b".repeat(64)),
         ("required_protein", "MKW*".into()),
         (
             "options",
-            "{\"genetic_code\":1,\"codon_weights\":[{\"codon\":\"AAG\",\"weight\":100}]}".into(),
+            "{\"genetic_code\":1,\"preferences\":{\"Explicit\":{\"weights\":[{\"codon\":\"AAG\",\"weight\":100}]}}}".into(),
         ),
     ] {
         m.metadata.insert(format!("codon_design:{k}"), v);

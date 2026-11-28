@@ -94,9 +94,10 @@ data-integrity checks proportional to the implementation changes.
 
 | Priority | Concrete source gap | Required outcome |
 | --- | --- | --- |
-| 1 | F26 host codon data | Integrate the unregistered bounded MG1655 CDS/GFF derivation, run its seven authored cases, emit a compact pinned runtime profile, and add UI/MCP profile selection. Source capture/checksums are verified; observed preferences must not imply calibrated expression. |
-| 2 | F25 bounded CRISPR extensions | Add DNA/RNA bulge/variant models, further supported nuclease profiles and licensed calibrated scoring where recorded in scope. Existing selected-record Hamming search is implemented; deferred large-reference/BAM work does not gain priority. |
-| 3 | F34 reference coverage | Broaden independently supported antibody reference/species coverage and biological calibration. Protected codon ranges and North regions are implemented and should not be reopened. |
+| Complete | F26 host codon data | Pinned MG1655 runtime profile, independent all-192-count agreement, exclusive preference sources, retained evidence and UI/MCP selection are implemented. Native/WASM checks and 61 focused cases pass; observed preferences do not imply calibrated expression. |
+| 1 | F25 bounded CRISPR extensions | Integrate bounded DNA/RNA bulge evidence and variant models, source-bound added nuclease presets, distinct design/screening PAM policy and appropriately licensed empirical scoring. The alignment kernel is authored but unregistered/unexecuted. Existing selected-record Hamming search is implemented; deferred large-reference/BAM work does not gain priority. [Research](audits/crispr-extensions-current.md). |
+| 2 | F21 restriction reaction conditions | Bind chosen supplier formulations and buffer/temperature/time to saved recipes; assess joint-digest documentary activity and compatible recorded conditions; retain star-activity uncertainty and add supported source-strain presets. Current geometry and methylation functionality remain. [Source triage](audits/cloning-gap-triage-current.md). |
+| 3 | F34 antibody competitor coverage | User-confirmed scope: map Benchling and Geneious Biologics GUI/workflows and actual supported analysis, schemes, species/chains, liabilities and exports. Extend the conditional human-reference implementation from documented gaps, with independently supported reference coverage/calibration. |
 
 Hosted MCP, portable SVG/PNG export, the27-table genetic-code catalogue and
 image attachments are implemented with their verification scopes above. Their

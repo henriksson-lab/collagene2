@@ -1,0 +1,22 @@
+{
+  "method": "Independent Python stdlib: direct GFF locus-product exclusion sets; per-CDS codon tallies; explicit code-11 boundary assertions",
+  "compared_values": 192,
+  "all_values_match": true,
+  "assembly": "GCF_000005845.2",
+  "rust_profile_identity": "52d52265b4f997e5f95c2d4178bcfc575e5002bef278a7a327a9efe6f8d61f43",
+  "source_sha256": {
+    "GCF_000005845.2_ASM584v2_cds_from_genomic.fna.gz": "8b7b48b7b905313082141db4b77807b7aafebca7a5c40bbd42832baacd1cfd9b",
+    "GCF_000005845.2_ASM584v2_genomic.gff.gz": "afdf03dc1d06e423d874ee29d9e0df14f5d32baf893f4da9f93aa721eb5f495e",
+    "GCF_000005845.2_ASM584v2_assembly_report.txt": "ca161bcfe8d1842b2160ca3fa20b480956d8242895115c53f5f819a11e895362",
+    "annotation_hashes.txt": "f4bf0e53a7b4ea673c0bad04a677893648b297764c74feed2c0e9521861e5f3e"
+  },
+  "codon_order": "AAA AAC AAG AAT ACA ACC ACG ACT AGA AGC AGG AGT ATA ATC ATG ATT CAA CAC CAG CAT CCA CCC CCG CCT CGA CGC CGG CGT CTA CTC CTG CTT GAA GAC GAG GAT GCA GCC GCG GCT GGA GGC GGG GGT GTA GTC GTG GTT TAA TAC TAG TAT TCA TCC TCG TCT TGA TGC TGG TGT TTA TTC TTG TTT",
+  "observed_loci": 4318,
+  "admitted_loci": 4294,
+  "internal_codons": 1322130,
+  "pseudogenes": 18,
+  "translation_exceptions": 6,
+  "counts": [44804,28585,13583,23129,9138,31216,19115,11737,2594,21351,1437,11510,5517,33639,33272,40625,20468,12930,38556,17136,11189,7254,31161,9262,4642,29500,7105,28158,5173,14869,70911,14629,52923,25442,23731,42575,26834,34206,45238,20269,10385,39656,14606,32902,14500,20396,34789,24333,0,16204,0,21301,9351,11431,11861,11173,0,8592,20224,6827,18375,22039,18128,29644],
+  "initiation_counts": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,3870,4,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,338,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,80,0],
+  "terminal_stop_counts": [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2749,0,305,0,0,0,0,0,1240,0,0,0,0,0,0,0]
+}

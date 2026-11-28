@@ -4929,3 +4929,45 @@ All three Desktop build/embedded-MCP smoke jobs for preview source `48a82bc`
 now pass on Windows, macOS and Linux (run 46084717977). This is build/headless
 MCP evidence; installed GUI/offline/remote acceptance remains outstanding. The
 new 203-tool native exchange code awaits its own exact-source CI after publication.
+
+### Current F26 host-preference integration
+
+The MG1655 bounded Rust derivation succeeded and an independent raw-source tally
+matched all 192 count values. A compact pinned runtime catalogue now feeds one
+exclusive Uniform/Explicit/ReferenceHost preference representation, precomputed
+score lookup, required retained preference evidence, web selection and two MCP
+discovery/profile tools (214 total). Worker 128 and codon design/constrained engine 2
+reject superseded internal outputs. Combined native/WASM checks and 61 focused
+cases pass, including nine derivation/runtime cases, independent count agreement,
+retained provenance, MCP discovery/design/check and preference-selection models. No
+browser/application HTTP checks have run. The isolated Windows fixture correction
+9d3c76e preserves exact captured bytes under core.autocrlf without weakening the
+provenance tests.
+
+
+### Current competitor coverage and CRISPR research findings
+
+The user confirmed that antibody capabilities supported by Benchling and Geneious
+should also be provided here. F34 remains in scope. Parallel primary-source GUI
+and workflow research will map their actual analysis, scheme/species/chain scope,
+tracks, controls and exports against the current conditional human-reference
+implementation. Use those findings to extend concrete requirements; do not treat
+numbering alone as complete competitor parity. Antibody analysis is specialized
+sequence functionality rather than a prerequisite for plasmid construction.
+
+The next CRISPR batch must distinguish canonical design PAMs from a broader
+explicit screening policy. Primary SaCas9 evidence includes recognition outside
+its preferred NNGRRT design PAM; one PAM field must not imply exhaustive broader
+screening. DNA/RNA bulges require bounded global alignment evidence, original
+coordinates, explicit completeness and current-engine replay. The authored kernel
+is unregistered and its six tests are not yet executed. Additional nuclease cut
+marks remain nominal planning geometry, never inferred physical end products.
+Empirical scoring needs exact data-specific license/provenance and applicable
+assay/context; paper or software licensing alone does not admit every dataset.
+[Research and implementation consequences](audits/crispr-extensions-current.md).
+
+The short delivery queue must be reconciled against older required-work language
+for restriction reaction conditions and contig handling before claiming all source
+work complete. Further scalable genome/index/BAM expansion retains its existing
+low priority; it must not displace cloning functionality. Final user review of the
+current application remains the primary acceptance step.

@@ -1,6 +1,6 @@
 # Codon design and reverse translation
 
-The independently implemented `codon_design` engine (`codon-design-1`) designs synonymous, concrete linear DNA against a separately bound source. It supports both a canonical protein document and a complete, concrete linear DNA coding sequence in frame zero. DNA sources are first translated to derive the required protein; a candidate cannot supply or change that requirement. At least one actual amino acid is required. A single terminal `*` is preserved as a stop codon; internal/multiple stops, ambiguous residues, U/O recoding, ambiguous DNA, partial codons and RNA sources are unsupported.
+The independently implemented `codon_design` engine (`codon-design-2`) designs synonymous, concrete linear DNA against a separately bound source. It supports both a canonical protein document and a complete, concrete linear DNA coding sequence in frame zero. DNA sources are first translated to derive the required protein; a candidate cannot supply or change that requirement. At least one actual amino acid is required. A single terminal `*` is preserved as a stop codon; internal/multiple stops, ambiguous residues, U/O recoding, ambiguous DNA, partial codons and RNA sources are unsupported.
 
 All 27 extant NCBI tables use the shared embedded translator and [captured NCBI catalogue](GENETIC_CODE_CATALOG.md). Context-dependent sense/stop codons translate to unresolved `X`: they cannot become safe codon choices, satisfy a definite required residue, or establish a terminal stop. Coding-DNA sources containing those codons are refused by the existing canonical-residue requirement. Protein-source design can use other definite synonymous codons in the selected table; a requested terminal stop is unsatisfiable if that table has no definite stop. Ordinary codon decoding applies at every position: this design profile does not recode alternative initiators as methionine. It does not infer promoter, RBS, signal peptide, cleavage, post-translational processing, expression, host fitness, RNA folding or synthesis success. Retained translation exceptions, incompatible `/transl_table` or `/codon_start`, and known modified/cross-linked source evidence reject rather than silently changing the biological requirement.
 
@@ -68,3 +68,28 @@ phase, strand, genetic code and initiation/stop policy, independently checks eve
 affected feature and builds the explicit physical preparation. Positional search
 alone does not establish a synonymous change in a differently framed overlapping
 gene, material stock or experimental success.
+
+## Reference-host preferences
+
+One required preference source is active: `Uniform`, `Explicit { weights }`, or
+`ReferenceHost { reference: { id, identity } }`. Explicit preferences contain1..64
+distinct concrete codons with weights0..1,000,000; zero deliberately forbids a
+codon. A pinned reference host supplies its declared genetic code and observed
+within-family preferences. Hosts do not supplement a hidden manual vector.
+
+The initial MG1655 profile admits4,294 of4,318 annotated CDS loci, excluding18
+pseudogenes and6 translation exceptions. It contains1,322,130 internal sense
+codons; initiation and terminal codons are retained in separate counts. A second
+independent tally matches all192 counts. Source hashes, annotation release and
+exclusion policy bind the profile identity. These are observed reference-CDS
+preferences, not CAI, expression, fitness or success predictions.
+
+Runtime uses a compact4.7KiB profile and resolves one64-entry score table per
+search/check. Genome/GFF parsing is confined to the maintainer derivation API and
+its source fixtures. Reports and annotated exports retain expanded weights and
+the complete selected profile as documentary producer evidence. A fresh matching
+checker is still required before reuse. Changing the selected profile, identity,
+genetic code or retained evidence invalidates the report binding.
+
+The current source batch awaits combined checks; successful source acquisition
+and curation alone are not a published workflow-completion claim.

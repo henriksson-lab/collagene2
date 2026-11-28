@@ -6,7 +6,7 @@ use collagene_core::{
         schema::{AnalysisJob, AnalysisResult},
     },
     sequence::codon_design::{
-        CheckReport, CodonWeight, DesignOptions, DesignReport, DesignStatus, GcBounds, WindowGc,
+        CheckReport, DesignOptions, DesignReport, DesignStatus, GcBounds, WindowGc, hosts,
     },
 };
 use collagene_model::{Alphabet, Molecule, Topology};
@@ -176,7 +176,8 @@ pub fn CodonDesignPanel(
     on_open: Callback<Molecule, Result<(), String>>,
 ) -> impl IntoView {
     let code = RwSignal::new(1u8);
-    let weights = RwSignal::new(String::new());
+    let preferences = RwSignal::new(super::codon_preferences::Preferences::default());
+    let catalogue = StoredValue::new(hosts::catalogue().map_err(|error| error.to_string()));
     let motifs = RwSignal::new(String::new());
     let left = RwSignal::new(String::new());
     let right = RwSignal::new(String::new());
@@ -191,30 +192,23 @@ pub fn CodonDesignPanel(
     let work = RwSignal::new(DesignOptions::default().max_work.to_string());
     let supplied = RwSignal::new(String::new());
     let options = Memo::new(move |_| {
-        if weights.with(|s| s.len() > 4096)
-            || motifs.with(|s| s.len() > 16384)
+        if motifs.with(|s| s.len() > 16384)
             || left.with(|s| s.len() > 8192)
             || right.with(|s| s.len() > 8192)
         {
             return Err("Codon options exceed the browser text input limit.".into());
         }
-        let mut codon_weights = vec![];
-        for line in weights.get().lines().filter(|line| !line.trim().is_empty()) {
-            let fields = line
-                .split(|c: char| c.is_ascii_whitespace() || c == ',' || c == '=')
-                .filter(|v| !v.is_empty())
-                .collect::<Vec<_>>();
-            if fields.len() != 2 {
-                return Err("Use one codon and integer weight per line, for example AAG 100. Unspecified codons have weight 1; zero excludes a codon.".into());
-            }
-            codon_weights.push(CodonWeight {
-                codon: fields[0].to_ascii_uppercase(),
-                weight: whole(fields[1], "codon weight")?,
-            });
-        }
+        let selected_preferences = catalogue.with_value(|result| {
+            preferences.with(|editor| {
+                editor.build(
+                    code.get(),
+                    result.as_ref().map(Vec::as_slice).unwrap_or(&[]),
+                )
+            })
+        })?;
         let o = DesignOptions {
             genetic_code: code.get(),
-            codon_weights,
+            preferences: selected_preferences,
             forbidden_motifs: motifs
                 .get()
                 .split(|c: char| c.is_ascii_whitespace() || c == ',')
@@ -478,8 +472,19 @@ pub fn CodonDesignPanel(
         <h2>"Codon design"</h2>
         <p class="helper">"Reverse translate a protein or redesign a complete, concrete DNA coding sequence. The required protein comes from the active source. A separate check must pass before the DNA can be opened or exported."</p>
         <p class="helper">"Translation uses internal-codon meanings, including a single terminal stop when present. Initiation, expression and synthesis success are not inferred. Context bases are fixed constraints and are not included in the returned coding sequence."</p>
-        <label>"Genetic code"<select aria-label="Codon genetic code" prop:value=move||code.get().to_string() on:change=move|e|code.set(event_target_value(&e).parse().unwrap_or(1))>{collagene_core::sequence::translation::genetic_codes().into_iter().map(|c|view!{<option value=c.id.to_string()>{format!("{} · {}",c.id,c.name)}</option>}).collect_view()}</select></label>
-        <details><summary>"Codon preferences"</summary><p class="helper">"Optional integer weights, one codon per line. Unspecified codons have weight 1; zero excludes a codon. Weights are a linear preference score, not CAI or an organism-specific expression model."</p><textarea aria-label="Codon weights" rows="4" placeholder="AAG 100\nAAA 1" prop:value=move||weights.get() on:input=move|e|weights.set(event_target_value(&e))></textarea></details>
+        <label>"Genetic code"<select aria-label="Codon genetic code" disabled=move||preferences.with(|editor|editor.is_host()) prop:value=move||code.get().to_string() on:change=move|e|code.set(event_target_value(&e).parse().unwrap_or(1))>{collagene_core::sequence::translation::genetic_codes().into_iter().map(|c|view!{<option value=c.id.to_string()>{format!("{} · {}",c.id,c.name)}</option>}).collect_view()}</select></label>
+        <label>"Codon preferences"<select aria-label="Codon preference source" prop:value=move||preferences.with(|editor|editor.key()) on:change=move|event|{
+            let key=event_target_value(&event);
+            catalogue.with_value(|result|preferences.update(|editor|{
+                if let Ok(Some(required_code))=editor.select(&key,result.as_ref().map(Vec::as_slice).unwrap_or(&[])){code.set(required_code);}
+            }));
+        }><option value="uniform">"Uniform"</option><option value="custom">"Custom integer weights"</option>{catalogue.with_value(|result|result.as_ref().map(|entries|entries.iter().map(|host|view!{<option value=format!("host:{}",host.reference.id)>{format!("{} · {}",host.organism,host.assembly)}</option>}).collect_view()).ok())}</select></label>
+        {catalogue.with_value(|result|result.as_ref().err().map(|error|view!{<p class="helper" role="alert">{format!("Curated host catalogue unavailable: {error}. Uniform and custom preferences remain available.")}</p>}))}
+        <p class="helper">"Choose one preference source. Curated hosts use observed reference-CDS codon counts and their declared genetic code. Scores are linear preferences, not CAI or predictions of expression."</p>
+        {move||catalogue.with_value(|result|preferences.with(|editor|editor.host(result.as_ref().map(Vec::as_slice).unwrap_or(&[])).map(|host|view!{
+            <details><summary>"Reference host provenance"</summary><p>{format!("{} · assembly {} · genetic code {}",host.organism,host.assembly,host.genetic_code)}</p><p>{format!("{} admitted loci · {} excluded loci · {} internal codons",host.admitted_loci,host.excluded_loci,host.internal_codons)}</p><p>{host.policy.clone()}</p><p class="helper">{format!("Pinned profile {} · identity {}",host.reference.id,host.reference.identity)}</p><p class="helper">"The genetic code is fixed while this host is selected. Choose Uniform or Custom to change it."</p></details>
+        })))}
+        <details><summary>"Edit custom codon weights"</summary><p class="helper">"Editing selects Custom and replaces the active preference source. Enter 1–64 integer weights, one DNA codon per line. Unspecified codons have weight 1; zero excludes a codon. The custom draft is ignored while Uniform or a reference host is selected."</p><textarea aria-label="Codon weights" rows="4" maxlength="4096" placeholder="AAG 100\nAAA 1" prop:value=move||preferences.with(|editor|editor.custom.clone()) on:input=move|event|preferences.update(|editor|editor.edit(event_target_value(&event)))></textarea></details>
         <label>"Forbidden DNA motifs"<textarea aria-label="Codon forbidden motifs" rows="3" placeholder="GAATTC\nGGTCTC" prop:value=move||motifs.get() on:input=move|e|motifs.set(event_target_value(&e))></textarea></label><p class="helper">"Separate motifs with spaces, commas or newlines. IUPAC motifs are checked on both strands, including context junctions."</p>
         <div class="codon-grid"><label>"Minimum coding GC (%)"<input aria-label="Codon minimum GC" type="number" min="0" max="100" step="0.01" prop:value=move||min_gc.get() on:input=move|e|min_gc.set(event_target_value(&e))/></label><label>"Maximum coding GC (%)"<input aria-label="Codon maximum GC" type="number" min="0" max="100" step="0.01" prop:value=move||max_gc.get() on:input=move|e|max_gc.set(event_target_value(&e))/></label></div>
         <label>"Maximum homopolymer length"<input aria-label="Codon maximum homopolymer" type="number" min="1" step="1" prop:value=move||homopolymer.get() on:input=move|e|homopolymer.set(event_target_value(&e))/></label>

@@ -1,0 +1,406 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "9d3c76ea9e8956cf478cd9bec6d30d5f6bd574ec",
+  "source_scope": "Connected F26 curated host preference batch; excludes unregistered CRISPR alignment research/source.",
+  "versions": {
+    "worker": 128,
+    "codon_design": "codon-design-2",
+    "codon_constrained": "codon-constrained-2",
+    "native_mcp_tools": 214
+  },
+  "compilation": {
+    "native": "passed",
+    "web_worker_wasm": "passed"
+  },
+  "execution": {
+    "unique_cases": 61,
+    "passed": 61,
+    "failed": 0,
+    "ignored_executed": 0,
+    "cases": [
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::captured_mg1655_cds_gff_release_derives_freshly_with_complete_accounting",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::compact_runtime_catalogue_matches_all_independent_counts_and_fresh_derivation",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::independently_specified_internal_counts_start_stop_and_nonzero_weights",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::malformed_and_resource_limits_never_produce_partial_profile",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::mismatched_duplicate_or_missing_locus_coordinates_and_codes_fail",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::pinned_preferences_are_exclusive_nonzero_bound_and_retained_as_documentary_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::profile_identity_and_conservation_checks_reject_forgery",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::scientific_exclusions_are_mutually_exclusive_and_accounted",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "sequence::codon_design::hosts::tests::true_paralog_loci_are_counted_without_protein_or_sequence_deduplication",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::alternate_code_assignments_and_bacterial_internal_decoding_have_literal_targets",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::constrained_weighted_stop_terminated_design_matches_all_216_literal_options",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::default_budget_designs_a_full_kiloresidue_gene_with_bound_source_and_check",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::every_canonical_pair_matches_an_independent_exhaustive_codon_oracle",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::every_context_window_uses_the_full_construct_and_no_partial_short_window_is_invented",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::fixed_junction_contexts_reverse_motifs_and_integer_gc_boundaries_are_not_lost",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_audit::independent_candidate_check_does_not_accept_target_or_options_substitution",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::beam_pruning_cannot_become_a_false_unsatisfiable_or_optimality_claim",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::expanded_tables_are_usable_but_dual_stop_codons_never_become_safe_design_choices",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::homopolymers_cross_left_and_right_junctions_without_including_context_in_product",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::mitochondrial_and_bacterial_decoding_is_ordinary_not_initiation_reencoding",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::motifs_check_both_strands_and_iupac_and_context_only_matches",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::oversized_metadata_evidence_and_deep_locations_reject_before_revision_hashing",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::reverse_translation_is_exact_deterministic_and_retains_declared_provenance",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::search_and_checker_work_exhaustion_are_explicit_and_never_release_unchecked_dna",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::sequence_design_does_not_copy_source_annotation_coordinates_or_edit_original",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::strict_json_and_option_bounds_do_not_silently_normalize_or_ignore_declarations",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::unsupported_biology_and_retained_translation_exceptions_do_not_become_plain_coding_targets",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::violation_detail_truncation_and_binding_preflight_are_explicit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::weights_are_explicit_scores_and_zero_disallows_without_fitness_claims",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::window_gc_and_global_gc_are_exact_integer_counts_and_full_windows_only",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design::wrong_translation_source_options_and_tampered_reports_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::both_strands_and_both_fixed_context_boundaries_keep_true_coding_offsets",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::empty_domains_are_infeasible_but_pruned_or_exhausted_searches_never_claim_minimality",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::failed_checker_cost_is_retained_when_its_candidate_and_receipt_are_withheld",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::genetic_code_is_explicit_and_initiator_interpretation_is_not_silently_added",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::independent_small_enumeration_checks_minimum_changes_weight_and_lexical_ties",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::invalid_source_domains_exceptions_and_stale_policy_context_are_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::positional_edit_distance_precedes_global_preference_without_changing_legacy_design",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::scoped_removal_preserves_a_wanted_identical_site_elsewhere_in_the_same_cds",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::sparse_domains_and_partial_codon_locks_are_inside_the_search",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_design_constrained::successful_total_accounts_for_search_and_the_single_independent_checker",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_protocol::codon_source_evidence_is_bounded_before_revision_hashing",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_protocol::design_and_independent_check_are_source_options_and_candidate_bound",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_protocol::new_tags_reject_old_versions_before_payload_and_retain_ordinary_limits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_provenance::annotated_exports_retain_full_supported_codon_evidence_without_imported_authority",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::codon_provenance::oversized_manual_metadata_is_explicitly_truncated_and_cannot_inject_control_lines",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "sequence",
+        "test": "protein::translation::captured_ncbi_catalogue_retains_all_primary_rows_and_provenance",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::documentary_reply_validation_rejects_bad_context_profile_paths_and_container_shapes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::gcg_omission_warnings_stay_acknowledged_and_explicit_options_bind_the_context",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::physical_and_modified_protein_guards_are_never_overridden_by_acknowledgement",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::snapgene_review_and_prepared_bytes_share_exact_source_and_context_without_spurious_ack",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsolete_headers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::xdna_name_loss_requires_explicit_current_ack_and_preserves_current_sequence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::sequence_export_review_and_preparation_are_source_bound_profiles",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "analysis",
+        "test": "codon_tools::codon_design_and_supplied_candidate_checks_use_bound_sources_and_full_artifacts",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "analysis",
+        "test": "codon_tools::curated_host_tools_expose_pinned_observed_counts_and_original_source_identity",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "analysis",
+        "test": "codon_tools::named_host_preferences_bind_design_and_independent_candidate_check_without_expression_claims",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "analysis",
+        "test": "codon_tools::report_capacity_failure_never_installs_an_orphan_candidate_document",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "biology::codon_preferences::tests::custom_preferences_reject_empty_ambiguous_duplicate_and_excessive_entries",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "biology::codon_preferences::tests::preference_sources_are_exclusive_and_host_identity_and_code_are_pinned",
+        "exit_code": 0
+      }
+    ]
+  },
+  "discovery": {
+    "compared_harnesses": 18,
+    "prior_names_preserved": 1321,
+    "expanded_selected_harnesses": 18,
+    "expanded_selected_names": 1334,
+    "removed_names": {},
+    "note": "Discovery is not execution. Unbuilt prior harnesses are outside this comparison."
+  },
+  "independent_curation": {
+    "profile_identity": "52d52265b4f997e5f95c2d4178bcfc575e5002bef278a7a327a9efe6f8d61f43",
+    "observed_loci": 4318,
+    "admitted_loci": 4294,
+    "internal_codons": 1322130,
+    "independent_count_values_matched": 192,
+    "oracle": "crates/core/src/sequence/codon_design/hosts/data/mg1655/independent_oracle.py"
+  },
+  "acceptance": "No browser, screenshot, application HTTP or live-provider tests executed. Final product review remains."
+}

@@ -355,6 +355,7 @@ pub fn provenance_comments(molecule: &Molecule) -> Vec<String> {
         ("codon_design:options_revision", 64),
         ("codon_design:required_protein", 10_000),
         ("codon_design:options", 32 * 1024),
+        ("codon_design:preference_evidence", 32 * 1024),
     ];
     if codon_keys
         .iter()

@@ -45,10 +45,12 @@ fn roundtrip(request: &Request) -> Response {
 fn design_and_independent_check_are_source_options_and_candidate_bound() {
     let source = source();
     let options = DesignOptions {
-        codon_weights: vec![CodonWeight {
-            codon: "AAG".into(),
-            weight: 100,
-        }],
+        preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+            weights: vec![CodonWeight {
+                codon: "AAG".into(),
+                weight: 100,
+            }],
+        },
         ..Default::default()
     };
     let request = Request {

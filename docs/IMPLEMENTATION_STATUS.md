@@ -13,13 +13,13 @@ scientific operations use Rust libraries, without external scientific programs.
 
 | Item | Current version |
 | --- | --- |
-| Worker protocol | 127 |
+| Worker protocol | 128 |
 | Candidate / workspace plan | 31 / 29 |
 | Assembly draft / batch / release | 20 / 3 / 2 |
 | Scientific / search engine | science-35 / sequence-search-2 |
 | Documentary image engine | documentary-image-1 |
 | Desktop sync | 5 |
-| Native MCP tools | 212 |
+| Native MCP tools | 214 |
 
 Cloning methods, supported external format profiles and platforms are summarized
 in the [README](../README.md). Current workflows include target verification,
@@ -34,6 +34,16 @@ attachments and leave sequence, features, material origins and scientific verdic
 unchanged. Archive encoding is checked before UI attachment installation, with a
 fresh workspace/document/lifetime check afterward. Standalone sequence exports
 omit workspace attachments. [Image workflow](IMAGE_EVIDENCE_WEB.md).
+
+The pinned MG1655 host-preference catalogue is integrated with exclusive uniform,
+explicit or reference-host selection, retained count/weight provenance and web/MCP
+controls. Fresh Rust derivation matches an independent source tally of all 192
+count values. Native/WASM checks and **61 focused cases pass**. Observed codon
+preferences do not predict expression. [Host integration evidence](audits/codon-host-current-integration.json).
+
+The user confirmed antibody capabilities remain in scope where supported by
+Benchling and Geneious. Parallel primary-source GUI/workflow research is mapping
+concrete gaps beyond the existing conditional human-reference tracks.
 
 ## Verification and CI
 
@@ -76,15 +86,12 @@ filesystem API. Do not infer current product acceptance from this older preview.
 
 ## Remaining feature work
 
-- Integrate a curated host codon-frequency profile. Pinned MG1655 CDS/annotation
-  sources are captured; an unregistered bounded derivation owner and seven tests
-  are authored. Fresh derivation, a compact runtime profile and UI/MCP selection
-  remain. This provides observed preferences, not calibrated expression claims.
 - Complete the selected-reference CRISPR bulge/variant extensions and additional
   supported nuclease/scoring profiles recorded in the delivery queue.
-- Broaden independent antibody reference/species coverage and biological
-  calibration. Conditional human-reference numbering and North CDR regions are
-  implemented; unsupported mappings remain explicit.
+- Extend antibody analysis from the Benchling/Geneious GUI and feature comparison,
+  including independently supported scheme/species/chain coverage and calibration.
+- Reconcile older restriction-condition and contig requirements against current
+  cloning source. The short queue previously omitted these plan qualifications.
 - Finish connected ownership follow-up with the next relevant feature changes,
   then current-source graphical/performance/platform review. The published image
   layout inventory covers 1,273 Rust files in 223 directories, at most 17 direct

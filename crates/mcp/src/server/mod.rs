@@ -89,6 +89,7 @@ impl Default for CollageneServer {
         Self {
             session: Session::default(),
             tool_router: Self::analysis_router()
+                + Self::codon_router()
                 + Self::assembly_intents_router()
                 + Self::assembly_router()
                 + Self::catalog_router()

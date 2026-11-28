@@ -2,7 +2,7 @@
 
 `collagene-mcp` exposes the portable scientific core through the official Rust `rmcp` SDK. It uses standard newline-delimited UTF-8 JSON-RPC over stdio, separate from the application's binary worker protocol. stdout is reserved for MCP; startup errors go to stderr. The executable never starts scientific programs or AI clients.
 
-The current source registry has 212 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
+The current source registry has 214 tools, including immutable reference editing and the five SBOL exchange tools. Current internal versions are defined by the [worker/candidate protocol](../crates/core/src/protocol/schema.rs), [workspace plan](../crates/core/src/documents/workspace.rs), [verifier](../crates/core/src/verification/mod.rs) and [assembly draft](../crates/core/src/cloning/assembly/library_history.rs). Noncurrent internal encodings are rejected; they are not migrated or relabeled. External sequence-file profiles keep their own explicitly documented versions. Selected-construct design and batch operations
 add exact-version matrix paging, native inspection, historical capture/list/open
 and explicit fresh replay. [Batch contracts](COMBINATORIAL_BATCHES.md).
 Reference recombination retains explicit profile discovery, source inspection,
@@ -449,11 +449,37 @@ The tool freshly reconstructs every step against the separately bound target bef
 
 ## Codon design and independent checking
 
-`design_codons` accepts an immutable `document` reference and strict `codon_design::DesignOptions`. The source is an explicitly supported protein or exact DNA coding sequence, with genetic code, terminal-stop semantics and limitations declared in the [codon design profile](CODON_DESIGN.md). Explicit integer codon preferences are not organism expression predictions. Returned candidates must pass a separately implemented sequence/translation/constraint checker. Bounded search reports incompleteness and only asserts optimality when proved.
+`list_codon_hosts {}` discovers the embedded curated reference-host catalogue.
+Compact descriptors contain exact `reference: {id, identity}`, organism,
+assembly, genetic code, admitted/excluded loci, internal-codon count and policy.
+`codon_host_profile {reference: {id, identity}}` refuses unknown IDs or changed
+identities, returns the descriptor and a ready-to-use ReferenceHost `preferences`
+value, and saves a full JSON artifact. That artifact retains 64 observed internal
+counts, separate initiation/terminal-stop counts, explicit A/C/G/T lexical
+`codon_order`, 64 resolved integer weights, source URLs and raw/expanded hashes,
+annotation release text, exclusions, derivation policy and profile identity.
+
+The runtime reads the small pinned result, not a genome, GFF file or remote
+provider. The initial MG1655 reference uses assembly GCF_000005845.2 and genetic
+code 11; selecting it requires that explicit design code. Stops and initiators
+are excluded from internal-codon counts. Zero observations do not forbid a codon;
+the declared arithmetic model uses nonzero floor preferences. These are observed
+reference preferences, not CAI, calibrated expression, host fitness, molecular
+or experimental success claims. A supplied organism label or arbitrary imported
+profile cannot replace the registered identity.
+
+
+`design_codons` accepts an immutable `document` reference and strict `codon_design::DesignOptions`. The source is an explicitly supported protein or exact DNA coding sequence, with genetic code, terminal-stop semantics and limitations declared in the [codon design profile](CODON_DESIGN.md). Codon `preferences` are an explicit current enum: `"Uniform"`,
+`{"Explicit":{"weights":[{"codon":"AAG","weight":100}]}}`, or
+`{"ReferenceHost":{"reference":{"id":"…","identity":"…"}}}`. Explicit
+weights require 1–64 entries; an empty Explicit list is invalid. Integer weights
+and observed-host preferences are not organism expression predictions. Returned candidates must pass a separately implemented sequence/translation/constraint checker. Bounded search reports incompleteness and only asserts optimality when proved.
 
 The tool returns bounded source/target/candidate previews, status/work/pruning/score, a full JSON `artifact_id`, and an immutable `candidate` document reference when successful. The candidate and report artifact install atomically after shared session capacity checks. The candidate can be read with `read_sequence_region` and used as an explicit input in a separately target-bound cloning plan. This does not create persistent application writes or physical synthesis/verification authority.
 
-`check_codon_design` accepts separate immutable `source` and `candidate` document references plus the same strict options. It derives the required protein again and checks supplied DNA directly; it does not optimize or trust a report embedded in metadata. It returns complete/unknown/pass/fail evidence, bounded protein/violation previews and a full JSON artifact. Source/candidate revisions and the options revision bind both tools. Artifacts paginate through `read_artifact`; their saved findings remain historical evidence and require a new current check when used again.
+`check_codon_design` accepts separate immutable `source` and `candidate` document references plus the same strict options. It derives the required protein again and checks supplied DNA directly; it does not optimize or trust a report embedded in metadata. It returns complete/unknown/pass/fail evidence, bounded protein/violation previews and a full JSON artifact. Source/candidate revisions and the options revision bind both tools. Named-host
+identity and resolved preferences remain part of the current report context;
+copying the same arithmetic weights into Explicit does not erase provenance. Artifacts paginate through `read_artifact`; their saved findings remain historical evidence and require a new current check when used again.
 
 
 ## Revision-bound window dot plots

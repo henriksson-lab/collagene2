@@ -1,0 +1,14 @@
+[
+  {
+    "file": "GCF_000005845.2_ASM584v2_assembly_report.txt",
+    "bytes": 1112,
+    "sha256": "ca161bcfe8d1842b2160ca3fa20b480956d8242895115c53f5f819a11e895362",
+    "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_assembly_report.txt"
+  },
+  {
+    "file": "md5checksums.txt",
+    "bytes": 1167,
+    "sha256": "433d33545422cffdb762278ecc30256c3c45e8bff9f7859f103ba33f57bc6337",
+    "url": "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/md5checksums.txt"
+  }
+]

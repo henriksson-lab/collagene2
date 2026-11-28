@@ -793,6 +793,7 @@ dependencies = [
  "collagene-variants",
  "crc32fast",
  "csv",
+ "flate2",
  "gb-io",
  "pdf-writer",
  "png 0.18.1",

@@ -62,16 +62,18 @@ fn mitochondrial_and_bacterial_decoding_is_ordinary_not_initiation_reencoding() 
 fn weights_are_explicit_scores_and_zero_disallows_without_fitness_claims() {
     let p = protein("KK");
     let o = DesignOptions {
-        codon_weights: vec![
-            CodonWeight {
-                codon: "AAA".into(),
-                weight: 0,
-            },
-            CodonWeight {
-                codon: "AAG".into(),
-                weight: 17,
-            },
-        ],
+        preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+            weights: vec![
+                CodonWeight {
+                    codon: "AAA".into(),
+                    weight: 0,
+                },
+                CodonWeight {
+                    codon: "AAG".into(),
+                    weight: 17,
+                },
+            ],
+        },
         ..Default::default()
     };
     let r = design(&p, &o).unwrap();
@@ -81,10 +83,12 @@ fn weights_are_explicit_scores_and_zero_disallows_without_fitness_claims() {
     assert_eq!(c.satisfies, Some(false));
     assert!(c.violations.iter().any(|s| s.contains("zero-weight")));
     let o = DesignOptions {
-        codon_weights: vec![CodonWeight {
-            codon: "ATG".into(),
-            weight: 0,
-        }],
+        preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+            weights: vec![CodonWeight {
+                codon: "ATG".into(),
+                weight: 0,
+            }],
+        },
         ..Default::default()
     };
     let r = design(&protein("M"), &o).unwrap();
@@ -185,10 +189,12 @@ fn beam_pruning_cannot_become_a_false_unsatisfiable_or_optimality_claim() {
     let mut o = DesignOptions {
         beam_width: 1,
         max_homopolymer: 4,
-        codon_weights: vec![CodonWeight {
-            codon: "AAA".into(),
-            weight: 10,
-        }],
+        preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+            weights: vec![CodonWeight {
+                codon: "AAA".into(),
+                weight: 10,
+            }],
+        },
         ..Default::default()
     };
     let r = design(&p, &o).unwrap();
@@ -275,16 +281,18 @@ fn strict_json_and_option_bounds_do_not_silently_normalize_or_ignore_declaration
             ..Default::default()
         },
         DesignOptions {
-            codon_weights: vec![
-                CodonWeight {
-                    codon: "ATG".into(),
-                    weight: 1,
-                },
-                CodonWeight {
-                    codon: "ATG".into(),
-                    weight: 2,
-                },
-            ],
+            preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+                weights: vec![
+                    CodonWeight {
+                        codon: "ATG".into(),
+                        weight: 1,
+                    },
+                    CodonWeight {
+                        codon: "ATG".into(),
+                        weight: 2,
+                    },
+                ],
+            },
             ..Default::default()
         },
     ] {
@@ -365,10 +373,12 @@ fn oversized_metadata_evidence_and_deep_locations_reject_before_revision_hashing
 fn violation_detail_truncation_and_binding_preflight_are_explicit() {
     let p = protein(&"K".repeat(500));
     let o = DesignOptions {
-        codon_weights: vec![CodonWeight {
-            codon: "AAA".into(),
-            weight: 0,
-        }],
+        preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+            weights: vec![CodonWeight {
+                codon: "AAA".into(),
+                weight: 0,
+            }],
+        },
         ..Default::default()
     };
     let c = check(&p, &dna(&"AAA".repeat(500)), &o).unwrap();
@@ -406,10 +416,12 @@ fn expanded_tables_are_usable_but_dual_stop_codons_never_become_safe_design_choi
     for (id, residue, uncertain) in [(27, "W", "TGA"), (28, "Q", "TAA"), (31, "E", "TAG")] {
         let o = DesignOptions {
             genetic_code: id,
-            codon_weights: vec![CodonWeight {
-                codon: uncertain.into(),
-                weight: 100_000,
-            }],
+            preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+                weights: vec![CodonWeight {
+                    codon: uncertain.into(),
+                    weight: 100_000,
+                }],
+            },
             ..Default::default()
         };
         let r = design(&protein(residue), &o).unwrap();

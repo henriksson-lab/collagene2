@@ -30,10 +30,12 @@ fn candidate(
 fn positional_edit_distance_precedes_global_preference_without_changing_legacy_design() {
     let source = dna_source("CTGCTG");
     let mut options = base_options();
-    options.codon_weights = vec![CodonWeight {
-        codon: "TTA".into(),
-        weight: 100,
-    }];
+    options.preferences = collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+        weights: vec![CodonWeight {
+            codon: "TTA".into(),
+            weight: 100,
+        }],
+    };
     let legacy = codon::design(&source, &options).unwrap();
     legacy.validate().unwrap();
     assert_eq!(legacy.candidate.unwrap().sequence.as_str(), "TTATTA");
@@ -51,20 +53,22 @@ fn positional_edit_distance_precedes_global_preference_without_changing_legacy_d
 fn sparse_domains_and_partial_codon_locks_are_inside_the_search() {
     let source = dna_source("CTGCTG");
     let mut options = base_options();
-    options.codon_weights = vec![
-        CodonWeight {
-            codon: "TTG".into(),
-            weight: 20,
-        },
-        CodonWeight {
-            codon: "CTT".into(),
-            weight: 5,
-        },
-        CodonWeight {
-            codon: "TTA".into(),
-            weight: 100,
-        },
-    ];
+    options.preferences = collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+        weights: vec![
+            CodonWeight {
+                codon: "TTG".into(),
+                weight: 20,
+            },
+            CodonWeight {
+                codon: "CTT".into(),
+                weight: 5,
+            },
+            CodonWeight {
+                codon: "TTA".into(),
+                weight: 100,
+            },
+        ],
+    };
     let mut policy = ConstrainedPolicy {
         allowed_codons: vec![CodonDomain {
             position: 0,
@@ -147,16 +151,18 @@ fn independent_small_enumeration_checks_minimum_changes_weight_and_lexical_ties(
     let source = dna_source(original);
     let options = DesignOptions {
         forbidden_motifs: vec!["GGTCTC".into()],
-        codon_weights: vec![
-            CodonWeight {
-                codon: "GGG".into(),
-                weight: 10,
-            },
-            CodonWeight {
-                codon: "TTG".into(),
-                weight: 100,
-            },
-        ],
+        preferences: collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+            weights: vec![
+                CodonWeight {
+                    codon: "GGG".into(),
+                    weight: 10,
+                },
+                CodonWeight {
+                    codon: "TTG".into(),
+                    weight: 100,
+                },
+            ],
+        },
         ..base_options()
     };
     let policy = ConstrainedPolicy {

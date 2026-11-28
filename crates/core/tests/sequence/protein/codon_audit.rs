@@ -90,7 +90,7 @@ fn allowed(s: &str, o: &DesignOptions) -> bool {
         return false;
     }
     if s.as_bytes().chunks_exact(3).any(|c| {
-        o.codon_weights
+        declared_weights(o)
             .iter()
             .any(|w| w.codon.as_bytes() == c && w.weight == 0)
     }) {
@@ -136,7 +136,7 @@ fn score(s: &str, o: &DesignOptions) -> u64 {
         .chunks_exact(3)
         .map(|c| {
             u64::from(
-                o.codon_weights
+                declared_weights(o)
                     .iter()
                     .find(|w| w.codon.as_bytes() == c)
                     .map_or(1, |w| w.weight),
@@ -192,24 +192,26 @@ fn constrained_weighted_stop_terminated_design_matches_all_216_literal_options()
     let mut o = DesignOptions::default();
     o.beam_width = 256;
     o.max_homopolymer = 4;
-    o.codon_weights = vec![
-        CodonWeight {
-            codon: "AAA".into(),
-            weight: 40,
-        },
-        CodonWeight {
-            codon: "CTG".into(),
-            weight: 17,
-        },
-        CodonWeight {
-            codon: "TCG".into(),
-            weight: 11,
-        },
-        CodonWeight {
-            codon: "TGA".into(),
-            weight: 5,
-        },
-    ];
+    o.preferences = collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+        weights: vec![
+            CodonWeight {
+                codon: "AAA".into(),
+                weight: 40,
+            },
+            CodonWeight {
+                codon: "CTG".into(),
+                weight: 17,
+            },
+            CodonWeight {
+                codon: "TCG".into(),
+                weight: 11,
+            },
+            CodonWeight {
+                codon: "TGA".into(),
+                weight: 5,
+            },
+        ],
+    };
     o.left_context = "GTC".into();
     o.right_context = "AAC".into();
     for (lo, hi) in [(0, 10000), (2500, 5000), (5000, 7500), (8333, 10000)] {
@@ -295,23 +297,25 @@ fn independent_candidate_check_does_not_accept_target_or_options_substitution() 
 fn alternate_code_assignments_and_bacterial_internal_decoding_have_literal_targets() {
     let mut o = DesignOptions::default();
     o.genetic_code = 2;
-    o.codon_weights = vec![
-        CodonWeight {
-            codon: "ATA".into(),
-            weight: 10,
-        },
-        CodonWeight {
-            codon: "TGA".into(),
-            weight: 10,
-        },
-    ];
+    o.preferences = collagene_core::sequence::codon_design::CodonPreferences::Explicit {
+        weights: vec![
+            CodonWeight {
+                codon: "ATA".into(),
+                weight: 10,
+            },
+            CodonWeight {
+                codon: "TGA".into(),
+                weight: 10,
+            },
+        ],
+    };
     let r = design(&protein("MW"), &o).unwrap();
     assert_eq!(r.candidate.unwrap().sequence.as_str(), "ATATGA");
     let dna = Molecule::dna("mitochondrial coding sequence", "ATATGA", Topology::Linear).unwrap();
     let r = design(&dna, &o).unwrap();
     assert_eq!(r.target_protein, "MW");
     o.genetic_code = 11;
-    o.codon_weights.clear();
+    o.preferences = collagene_core::sequence::codon_design::CodonPreferences::Uniform;
     let dna = Molecule::dna(
         "ordinary codons, no inferred initiation",
         "GTGAAA",
@@ -342,5 +346,16 @@ fn default_budget_designs_a_full_kiloresidue_gene_with_bound_source_and_check() 
         let checked = check(&source, candidate, &options).unwrap();
         assert_eq!(checked.satisfies, Some(true));
         assert!(checked.complete);
+    }
+}
+
+fn declared_weights(options: &DesignOptions) -> &[CodonWeight] {
+    use collagene_core::sequence::codon_design::CodonPreferences;
+    match &options.preferences {
+        CodonPreferences::Uniform => &[],
+        CodonPreferences::Explicit { weights } => weights,
+        CodonPreferences::ReferenceHost { .. } => {
+            panic!("this independent audit fixture declares manual weights")
+        }
     }
 }

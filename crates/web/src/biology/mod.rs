@@ -8,6 +8,8 @@ pub(crate) mod biology_selection;
 pub(crate) mod biology_source_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod codon_design;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod codon_preferences;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod controller;
 #[cfg(target_arch = "wasm32")]

@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **127**,
+same deterministic scientific engines. Current schemas are worker **128**,
 candidate **31** and native workspace plan **29**; the verifier is **science-35**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -627,3 +627,14 @@ without decoding the source twice. UI/archive validation does not decode pixels.
 These records are documentary workspace attachments. Sequence, features, material
 origins, history events and experimental verification remain unchanged. No band
 comparison, quantification or OpenGel integration is performed.
+
+
+## Codon preference representation
+
+Worker 128 uses one required `CodonPreferences` source: Uniform, Explicit weights,
+or a ReferenceHost catalogue identity. Reports retain all 64 expanded weights
+and the pinned host profile when selected. Empty explicit weights, unknown host
+identities and incompatible genetic codes reject. Codon engines are
+`codon-design-2` / `codon-constrained-2`; superseded development outputs have no
+fallback decoder. Report binding independently recomputes the selected preference
+evidence. [Scientific contract](CODON_DESIGN.md).

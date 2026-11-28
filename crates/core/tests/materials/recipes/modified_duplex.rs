@@ -3,7 +3,11 @@ use collagene_core::{
     chemistry::{
         self, EndRepairMethod, EndTreatment, Strand,
         methylation::{MethylationState, Outcome},
-        tracked_duplex::*,
+        tracked_duplex::{
+            CallState, CheckedDigestOptions, Chemical, GenerationAssumptions, ModificationSpan,
+            StrandModifications, TrackedDuplex, checked_digest, checked_selection, digest, ligate,
+            map_digest_fragment, replay_checked,
+        },
     },
     cloning::ligation::tailing::TailingBase,
     sequence::analysis,
@@ -152,8 +156,8 @@ fn fill_in_and_tailing_preserve_existing_calls_but_do_not_copy_template_modifica
             Some(CallState::Unmodified)
         );
         let pcr = TrackedDuplex::exact_pcr(&tailed.duplex.top).unwrap();
-        assert_eq!(summary(&pcr).unwrap().known_modified, 0);
-        assert_eq!(summary(&pcr).unwrap().unknown_eligible, 0);
+        assert_eq!(pcr.summary().unwrap().known_modified, 0);
+        assert_eq!(pcr.summary().unwrap().unknown_eligible, 0);
     }
 }
 #[test]
@@ -231,7 +235,7 @@ fn unknown_legacy_wrapper_retains_large_original_capacity_without_dense_state_ar
     assert!(
         unknown.top_modifications.spans.is_empty() && unknown.bottom_modifications.spans.is_empty()
     );
-    assert_eq!(summary(&unknown).unwrap().unknown_eligible, 1_000_001);
+    assert_eq!(unknown.summary().unwrap().unknown_eligible, 1_000_001);
     assert!(matches!(
         checked_digest(&unknown, &CheckedDigestOptions::default()),
         Err(Error::TooLarge)

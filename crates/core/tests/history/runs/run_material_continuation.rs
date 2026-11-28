@@ -4,7 +4,7 @@ use collagene_core::{
     chemistry::{
         EndTreatment, Strand, Terminus,
         methylation::MethylationState,
-        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+        tracked_duplex::{CallState, Chemical, GenerationAssumptions},
     },
     documents::{
         history::DocumentHistory,
@@ -415,12 +415,7 @@ fn saved_modified_circle_remains_noti_blocked_in_durable_checked_digest() {
         fresh.tracked().generation,
         original_material.tracked().generation
     );
-    assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .known_modified,
-        4
-    );
+    assert_eq!(fresh.tracked().summary().unwrap().known_modified, 4);
 }
 
 #[test]

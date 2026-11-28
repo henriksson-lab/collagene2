@@ -1,6 +1,6 @@
 //! Literal source-strand intent is independent of the later physical recipe.
 use collagene_core::{
-    chemistry::{AnnealOptions, Strand, Terminus, tracked_duplex as modified_duplex},
+    chemistry::{AnnealOptions, Strand, Terminus},
     cloning::{
         assembly::{
             edit_intent as edit,
@@ -143,9 +143,7 @@ fn request(
     strand: Strand,
 ) -> intent::Request {
     let fresh = origin.replay(&source(w, pin)).unwrap();
-    let state = modified_duplex::summary(fresh.tracked())
-        .unwrap()
-        .state_revision;
+    let state = fresh.tracked().summary().unwrap().state_revision;
     intent::Request {
         name: "Independent actual-strand reference".into(),
         fragments: vec![Contribution {

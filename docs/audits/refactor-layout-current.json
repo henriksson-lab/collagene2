@@ -1,11 +1,11 @@
 {
-  "scope": "Current tracked and unignored Rust source, including uncommitted citation work; source audit only, not scientific verification.",
+  "scope": "Current tracked and unignored Rust source, including controller/owner integration batch. Layout evidence does not prove scientific correctness.",
   "files": 1247,
   "directories": 215,
   "largest_files": [
     {
       "path": "crates/web/src/app/mod.rs",
-      "lines": 2869
+      "lines": 2413
     },
     {
       "path": "crates/topo/src/lib.rs",
@@ -16,12 +16,12 @@
       "lines": 2252
     },
     {
-      "path": "crates/web/src/viewer/sequence/sequence_view.rs",
-      "lines": 2244
+      "path": "crates/core/src/cloning/assembly/recipe.rs",
+      "lines": 2245
     },
     {
-      "path": "crates/core/src/cloning/assembly/recipe.rs",
-      "lines": 2240
+      "path": "crates/web/src/viewer/sequence/sequence_view.rs",
+      "lines": 2244
     },
     {
       "path": "crates/web/src/assembly/review/assembly_review.rs",
@@ -61,19 +61,19 @@
     },
     {
       "path": "crates/web/src/viewer/map/renderer.rs",
-      "lines": 1755
+      "lines": 1784
     },
     {
       "path": "crates/web/src/genomes/genomes.rs",
       "lines": 1733
     },
     {
-      "path": "crates/web/src/assembly/library/assembly_batch_projection.rs",
-      "lines": 1653
+      "path": "crates/core/src/chemistry/tracked_duplex.rs",
+      "lines": 1655
     },
     {
-      "path": "crates/core/src/chemistry/tracked_duplex.rs",
-      "lines": 1651
+      "path": "crates/web/src/assembly/library/assembly_batch_projection.rs",
+      "lines": 1653
     },
     {
       "path": "crates/mcp/src/tools/analysis/mod.rs",
@@ -81,7 +81,7 @@
     },
     {
       "path": "crates/core/src/material/derivation/mod.rs",
-      "lines": 1611
+      "lines": 1610
     },
     {
       "path": "crates/web/src/restriction/material_derivation_model.rs",

@@ -914,7 +914,7 @@ pub fn design(
         sequence: template.sequence.clone(),
         topology: template.topology,
         state_revision: match &fresh {
-            Some(f) => crate::chemistry::tracked_duplex::summary(f.tracked())?.state_revision,
+            Some(f) => f.tracked().summary()?.state_revision,
             None => source.revision(),
         },
         context_revision: template.context_revision()?,

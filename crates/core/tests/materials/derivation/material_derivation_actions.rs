@@ -4,7 +4,7 @@ use collagene_core::{
     chemistry::{
         EndRepairMethod, EndTreatment, FivePrime, Strand, Terminus, ThreePrime,
         methylation::MethylationState,
-        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+        tracked_duplex::{CallState, Chemical, GenerationAssumptions},
     },
     cloning::pcr::{material as material_pcr, mutagenesis::PcrOptions},
     documents::workspace::{self, Workspace},
@@ -156,12 +156,7 @@ fn both_encoded_substitutions_and_full_tails_survive_archive_replay_and_downstre
     assert!(!fresh.incomplete());
     assert_eq!(fresh.tracked().duplex.left, Terminus::PCR);
     assert_eq!(fresh.tracked().duplex.right, Terminus::PCR);
-    assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .known_modified,
-        0
-    );
+    assert_eq!(fresh.tracked().summary().unwrap().known_modified, 0);
     let feature = &fresh.reference().features[0];
     assert!(feature.needs_review);
     assert_eq!(feature.location.spans(), vec![(2, 10, false)]);
@@ -414,12 +409,8 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
         Some(CallState::Unmodified)
     );
     assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .known_modified,
-        modified_duplex::summary(old.tracked())
-            .unwrap()
-            .known_modified
+        fresh.tracked().summary().unwrap().known_modified,
+        old.tracked().summary().unwrap().known_modified
     );
     assert_eq!(
         fresh.reference().features[0].location.spans(),
@@ -439,12 +430,7 @@ fn direct_saved_strand_fill_preserves_old_modifications_and_groups_then_enables_
     let result = d::prepare_install(&reopened, &request).unwrap();
     let fresh = d::reconstruct(&result.workspace, &result.receipt.product).unwrap();
     assert_eq!(fresh.reference().sequence.as_str(), "AATCCGATCGTACAGAT");
-    assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .known_modified,
-        0
-    );
+    assert_eq!(fresh.tracked().summary().unwrap().known_modified, 0);
 }
 #[test]
 fn capped_singleton_search_remains_conditional_and_competing_products_cannot_be_selected() {

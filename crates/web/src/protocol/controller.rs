@@ -1,14 +1,12 @@
+use crate::platform::worker;
+use crate::workspace::session::current_event_binding;
 use collagene_core::documents::transfer;
 use collagene_core::material::lineage::EventBinding;
 use collagene_core::planning::plan::DesignPlan;
 use collagene_core::protocol;
-use collagene_core::verification;
-use collagene_core::{
-    documents::workspace, material::lineage as run_lineage,
-    output::quantities as protocol_quantities,
-};
 use collagene_model::Molecule;
 use leptos::prelude::*;
+use wasm_bindgen_futures::spawn_local;
 
 use crate::workspace::session::WorkspaceSession;
 
@@ -22,6 +20,122 @@ pub(crate) struct ProtocolController {
     pub(crate) shell: ShellState,
 }
 impl ProtocolController {
+    pub(crate) fn run_plan(
+        self,
+        state: PlanState,
+    ) -> impl Fn(
+        DesignPlan,
+        Molecule,
+        Option<Vec<collagene_core::material::lineage::InputEventBinding>>,
+        Option<EventBinding>,
+    ) + Copy
+    + 'static {
+        let WorkspaceSession {
+            documents,
+            active,
+            workspace_epoch,
+            ..
+        } = self.session;
+        let ShellState { message, .. } = self.shell;
+        let PlanState {
+            plan_report,
+            last_plan,
+            last_plan_target,
+            last_plan_events,
+            plan_generation,
+            ..
+        } = state;
+        move |plan: DesignPlan,
+              target: Molecule,
+              exact_sources: Option<Vec<collagene_core::material::lineage::InputEventBinding>>,
+              exact_target: Option<collagene_core::material::lineage::EventBinding>| {
+            let expected_epoch = workspace_epoch.get_untracked();
+            let expected_target = exact_target.or_else(|| {
+                documents.with_untracked(|docs| {
+                    docs.get(active.get_untracked()).map(current_event_binding)
+                })
+            });
+            let expected_sources = documents.with_untracked(|docs| {
+                docs.iter()
+                    .map(|d| {
+                        (
+                            d.id.clone(),
+                            d.head_event().to_string(),
+                            d.head_revision().to_string(),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            });
+            state.invalidate_evidence();
+            let revision = target.revision();
+            let generation = plan_generation.get_untracked();
+            let request = protocol::request::Request {
+                id: 0,
+                revision: revision.clone(),
+                job: protocol::schema::AnalysisJob::Verify {
+                    target: target.clone(),
+                    plan: plan.clone(),
+                },
+            };
+            message.set("Reconstructing the assembly in background…".into());
+            spawn_local(async move {
+                let result = worker::analyze(request).await;
+                if plan_generation.try_get_untracked() != Some(generation)
+                    || workspace_epoch.get_untracked() != expected_epoch
+                    || !expected_target.as_ref().is_some_and(|binding| {
+                        documents.with_untracked(|docs| {
+                            crate::protocol::plan_editing_sources::resolve_target(
+                                docs, binding, &revision,
+                            )
+                            .is_ok()
+                        })
+                    })
+                    || documents.with_untracked(|docs| {
+                        docs.iter()
+                            .map(|d| {
+                                (
+                                    d.id.clone(),
+                                    d.head_event().to_string(),
+                                    d.head_revision().to_string(),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    }) != expected_sources
+                {
+                    return;
+                }
+                match result {
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::Verification(report),
+                        ..
+                    }) => {
+                        plan_report.set(Some(report));
+                        last_plan_events.set(exact_sources.map(|bindings| {
+                            (
+                                collagene_core::planning::plan::DesignPlan::revision(&plan),
+                                bindings,
+                            )
+                        }));
+                        last_plan_target.set(expected_target.map(|event| {
+                            (
+                                collagene_core::planning::plan::DesignPlan::revision(&plan),
+                                expected_epoch,
+                                event,
+                            )
+                        }));
+                        last_plan.set(Some((plan, target)));
+                        message.set("Assembly reconstruction finished.".into());
+                    }
+                    Ok(protocol::response::Response {
+                        result: protocol::schema::AnalysisResult::Error(error),
+                        ..
+                    })
+                    | Err(error) => message.set(error),
+                    _ => message.set("Unexpected worker response".into()),
+                }
+            });
+        }
+    }
     pub(crate) fn quantity_binding(
         &self,
         candidate: RwSignal<Option<transfer::Candidate>>,
@@ -146,6 +260,12 @@ pub(crate) struct PlanState {
     >,
     pub(crate) last_plan_target:
         RwSignal<Option<(String, u64, collagene_core::material::lineage::EventBinding)>>,
+    pub(crate) last_plan_events: RwSignal<
+        Option<(
+            String,
+            Vec<collagene_core::material::lineage::InputEventBinding>,
+        )>,
+    >,
     pub(crate) plan_generation: RwSignal<u32>,
 }
 impl PlanState {
@@ -168,6 +288,12 @@ impl PlanState {
             last_plan_target: RwSignal::new(
                 None::<(String, u64, collagene_core::material::lineage::EventBinding)>,
             ),
+            last_plan_events: RwSignal::new(
+                None::<(
+                    String,
+                    Vec<collagene_core::material::lineage::InputEventBinding>,
+                )>,
+            ),
             plan_generation: RwSignal::new(0u32),
         }
     }
@@ -177,6 +303,7 @@ impl PlanState {
         self.plan_report.set(None);
         self.last_plan.set(None);
         self.last_plan_target.set(None);
+        self.last_plan_events.set(None);
     }
     pub(crate) fn restore(
         &self,

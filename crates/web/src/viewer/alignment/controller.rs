@@ -1,9 +1,5 @@
+use collagene_core::documents::transfer;
 use collagene_core::material::lineage::EventBinding;
-use collagene_core::verification;
-use collagene_core::{
-    alignment, documents::workspace, material::lineage as run_lineage,
-    sequence::similarity as sequence_similarity,
-};
 
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
@@ -22,6 +18,133 @@ pub(crate) struct ComparisonController {
     pub(crate) shell: ShellState,
 }
 impl ComparisonController {
+    pub(crate) fn saved_comparisons(
+        &self,
+        candidate: RwSignal<Option<transfer::Candidate>>,
+        stored_candidates: RwSignal<Vec<transfer::Candidate>>,
+    ) -> Memo<Vec<collagene_core::alignment::history::Summary>> {
+        let WorkspaceSession {
+            documents,
+            active,
+            attachments,
+            workspace_name,
+            ..
+        } = self.session;
+        let ShellState { message, .. } = self.shell;
+        Memo::new(move |_| {
+            let frame = WorkspaceSession::snapshot(
+                &documents.get(),
+                active.get_untracked(),
+                candidate.get_untracked().as_ref(),
+                &stored_candidates.get_untracked(),
+                &attachments.get(),
+                &workspace_name.get_untracked(),
+            );
+            match frame.and_then(|frame| {
+                collagene_core::alignment::history::list(&frame).map_err(|e| e.to_string())
+            }) {
+                Ok(summaries) => summaries,
+                Err(error) => {
+                    message.set(format!("Saved comparisons need attention: {error}"));
+                    Vec::new()
+                }
+            }
+        })
+    }
+    pub(crate) fn save_comparison(
+        &self,
+        contig_snapshot: Callback<
+            (),
+            Result<collagene_core::documents::workspace::Workspace, String>,
+        >,
+    ) -> Callback<collagene_core::alignment::history::Record, Result<(), String>> {
+        let WorkspaceSession {
+            workspace_restoring,
+            attachments,
+            ..
+        } = self.session;
+        let ShellState { message, .. } = self.shell;
+        Callback::new(
+            move |record: collagene_core::alignment::history::Record| -> Result<(), String> {
+                if workspace_restoring.get_untracked() {
+                    return Err("Wait for the workspace update to finish.".into());
+                }
+                let frame = contig_snapshot.run(())?;
+                let (staged, _) = collagene_core::alignment::history::capture(
+                    &frame,
+                    &record.reference,
+                    &record.query,
+                    &record.report,
+                )
+                .map_err(|e| e.to_string())?;
+                staged.validate().map_err(|e| e.to_string())?;
+                attachments.set(staged.attachments);
+                message.set("Comparison retained with its exact source versions. Reopening shows historical evidence until explicitly recomputed.".into());
+                Ok(())
+            },
+        )
+    }
+    pub(crate) fn reopen_comparison(
+        &self,
+        contig_snapshot: Callback<
+            (),
+            Result<collagene_core::documents::workspace::Workspace, String>,
+        >,
+    ) -> Callback<String, Result<collagene_core::alignment::history::Record, String>> {
+        let WorkspaceSession {
+            workspace_restoring,
+            ..
+        } = self.session;
+        Callback::new(
+            move |hash: String| -> Result<collagene_core::alignment::history::Record, String> {
+                if workspace_restoring.get_untracked() {
+                    return Err("Wait for the workspace update to finish.".into());
+                }
+                collagene_core::alignment::history::load(&contig_snapshot.run(())?, &hash)
+                    .map_err(|e| e.to_string())
+            },
+        )
+    }
+    pub(crate) fn guard_similarity(
+        &self,
+    ) -> Callback<crate::viewer::alignment::sequence_similarity_model::Capture, Result<(), String>>
+    {
+        let WorkspaceSession {
+            documents,
+            workspace_restoring,
+            workspace_epoch,
+            ..
+        } = self.session;
+        Callback::new(
+        move |capture: crate::viewer::alignment::sequence_similarity_model::Capture| -> Result<(), String> {
+            if workspace_restoring.get() {
+                return Err("The workspace is being restored.".into());
+            }
+            documents.with(|docs| {
+                let d = docs
+                    .iter()
+                    .find(|d| d.id == capture.query.document_id)
+                    .ok_or("The pinned query is unavailable.")?;
+                let m = d
+                    .revision_molecule_ref(&capture.query.event_id)
+                    .map_err(|e| e.to_string())?;
+                if m.revision() != capture.query.revision {
+                    return Err("The pinned query changed.".into());
+                }
+                let current = capture
+                    .subjects
+                    .iter()
+                    .map(|p| {
+                        docs.get(p.index)
+                            .map(|d| (p.index, current_event_binding(d)))
+                            .ok_or_else(|| "A search subject is unavailable.".to_owned())
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                capture.validate_current(workspace_epoch.get(), &capture.query, &current)
+            })
+        },
+    )
+    }
     pub(crate) fn prepare_similarity(
         &self,
     ) -> Callback<

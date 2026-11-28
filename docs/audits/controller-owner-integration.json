@@ -1,0 +1,548 @@
+{
+  "baseline": "82937c1c14a7068b96e11555bb59e079c70a6dfe",
+  "scope": "Completed App/domain-controller ownership, preparation/tracked-duplex methods and renderer State methods; source comparison and focused integration evidence.",
+  "app": {
+    "baseline": "82937c1c14a7068b96e11555bb59e079c70a6dfe",
+    "scope": "Static App callback ownership comparison; no compiler, browser or execution evidence claimed.",
+    "preserved_initializers": [
+      {
+        "initializer": "saved_enzyme_sets",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 140
+      },
+      {
+        "initializer": "save_enzyme_set",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 149
+      },
+      {
+        "initializer": "delete_enzyme_set",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 129
+      },
+      {
+        "initializer": "saved_digests",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 228
+      },
+      {
+        "initializer": "load_digest_setup",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 91
+      },
+      {
+        "initializer": "delete_digest_setup",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 99
+      },
+      {
+        "initializer": "queue_digest_gel",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 179
+      },
+      {
+        "initializer": "fork_digest_source",
+        "owner": "crates/web/src/restriction/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 447
+      },
+      {
+        "initializer": "published_antibody",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 33
+      },
+      {
+        "initializer": "antibody_overlay",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 107
+      },
+      {
+        "initializer": "publish_antibody",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 148
+      },
+      {
+        "initializer": "prepare_antibody",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 120
+      },
+      {
+        "initializer": "select_antibody_residue",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 213
+      },
+      {
+        "initializer": "prepare_protein_liabilities",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 137
+      },
+      {
+        "initializer": "saved_rna",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 96
+      },
+      {
+        "initializer": "resolve_rna",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 155
+      },
+      {
+        "initializer": "save_rna",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 127
+      },
+      {
+        "initializer": "load_rna",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 85
+      },
+      {
+        "initializer": "delete_rna",
+        "owner": "crates/web/src/biology/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 96
+      },
+      {
+        "initializer": "saved_comparisons",
+        "owner": "crates/web/src/viewer/alignment/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 137
+      },
+      {
+        "initializer": "save_comparison",
+        "owner": "crates/web/src/viewer/alignment/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 156
+      },
+      {
+        "initializer": "reopen_comparison",
+        "owner": "crates/web/src/viewer/alignment/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 85
+      },
+      {
+        "initializer": "guard_similarity",
+        "owner": "crates/web/src/viewer/alignment/controller.rs",
+        "source_tokens_preserved": true,
+        "tokens": 240
+      }
+    ],
+    "preserved_count": 23,
+    "rustfmt_normalization": "saved_rna expression closure gained a semantically equivalent block wrapper; strings, reads and operations unchanged.",
+    "run_plan": {
+      "owner": "crates/web/src/protocol/controller.rs",
+      "all_tokens_preserved_except_documented_fixes": true,
+      "fixes": [
+        "Each new verification calls existing PlanState::invalidate_evidence before capturing generation; older concurrent verification can no longer publish over it.",
+        "Completion first checks plan_generation.try_get_untracked()!=Some(generation), rejecting disposed owner before other signal reads.",
+        "PlanState::invalidate_evidence also clears last_plan_events, invalidating complete evidence on restore/source changes as well as each new run."
+      ],
+      "preserved_guards": [
+        "exact workspace epoch",
+        "exact target event plus revision resolved against workspace",
+        "all source document IDs/head events/head revisions",
+        "verification result kind",
+        "success/error publication behavior"
+      ],
+      "preserved_clears": [
+        "last_plan_events, plan_report, last_plan, last_plan_target through the complete invalidate_evidence owner before request"
+      ],
+      "invalidate_evidence_method_tokens_unchanged_except_documented_event_clear": true
+    },
+    "state_ownership": {
+      "last_plan_events": "Same signal type and exact initial value moved from App into existing PlanState; App destructures the owner field. No serialization change.",
+      "antibody": "Private publication signal, guarded publication and reactive overlay remain in one BiologyController method, with no public callback container."
+    },
+    "sizes": {
+      "crates/web/src/app/mod.rs": 2413,
+      "crates/web/src/restriction/controller.rs": 462,
+      "crates/web/src/biology/controller.rs": 670,
+      "crates/web/src/viewer/alignment/controller.rs": 349,
+      "crates/web/src/protocol/controller.rs": 318
+    }
+  },
+  "core": {
+    "source_only": true,
+    "caller_counts": {
+      "catalog_selection": 9,
+      "summary": 61,
+      "operation_count": 2
+    },
+    "method_body_preserved_after_receiver_rebinding_and_same_rustfmt": {
+      "crates/core/src/cloning/assembly/recipe.rs::catalog_selection": true,
+      "crates/core/src/cloning/assembly/recipe.rs::operation_count": true,
+      "crates/core/src/chemistry/tracked_duplex.rs::strand": true,
+      "crates/core/src/chemistry/tracked_duplex.rs::summary": true,
+      "crates/core/src/chemistry/tracked_duplex.rs::checked_digest_preflight": true,
+      "crates/core/src/chemistry/tracked_duplex.rs::index_at": true
+    },
+    "direct_callers": [
+      {
+        "path": "crates/web/src/cloning/preparation/cloning_preparations.rs",
+        "calls": {
+          "catalog_selection": 1
+        }
+      },
+      {
+        "path": "crates/mcp/tests/cloning/overlap_extension_material_tools.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/mcp/tests/methods/topo/topo_tools.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/verification/engine.rs",
+        "calls": {
+          "summary": 3
+        }
+      },
+      {
+        "path": "crates/core/src/material/capsule.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/material/derivation/mod.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/src/material/derivation/digest.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/src/material/derivation/end_repair.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/material/derivation/terminal.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/src/material/derivation/digest_export.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/material/derivation/pcr.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/planning/combinatorial/mod.rs",
+        "calls": {
+          "catalog_selection": 2
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/restriction/run_digest.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/assembly/edited_primers.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/assembly/intent.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/assembly/recipe.rs",
+        "calls": {
+          "catalog_selection": 3
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/ligation/tailing_recipe.rs",
+        "calls": {
+          "operation_count": 1
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/ligation/outcomes.rs",
+        "calls": {
+          "summary": 4
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/ligation/recipe.rs",
+        "calls": {
+          "operation_count": 1
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/overlap/extension/digest.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/overlap/extension/primers.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/src/cloning/golden_gate/domestication/preparation.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/common/material_library.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/common/actual_strand.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/pcr_digest/mismatch_pcr_catalog_recipe.rs",
+        "calls": {
+          "catalog_selection": 3
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/pcr/inverse_pcr_material.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/recipes/native_pcr_frames.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/recipes/material_library.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/derivation/material_derivation_digest_history.rs",
+        "calls": {
+          "summary": 3
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/derivation/material_terminal_processing.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/derivation/material_derivation_actions.rs",
+        "calls": {
+          "summary": 4
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/derivation/material_derivation.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/tests/assembly/recipes/checked_golden_gate.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/assembly/intent/assembly_material_intent.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/history/runs/run_material.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/tests/history/runs/run_material_continuation.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/verification/preparation/domestication_overlap_extension.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/cloning/ligation/ligation_outcomes.rs",
+        "calls": {
+          "summary": 2
+        }
+      },
+      {
+        "path": "crates/core/tests/cloning/topo/chemistry/topo_upstream_pcr.rs",
+        "calls": {
+          "summary": 1
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/recipes/modified_duplex.rs",
+        "calls": {
+          "summary": 3
+        }
+      },
+      {
+        "path": "crates/core/tests/materials/recipes/modified_duplex_audit.rs",
+        "calls": {
+          "summary": 6
+        }
+      }
+    ],
+    "unchanged": "DTOs/variant order, hashes, engine versions, bounds, chemistry, multioperand algorithms, test names/registration",
+    "new_files": 0,
+    "compiler_or_tests_run": false
+  },
+  "renderer": {
+    "path": "crates/web/src/viewer/map/renderer.rs",
+    "body_preservation_after_receiver_conversion": {
+      "reference_position": true,
+      "advance_gesture": true,
+      "feature_spans": true,
+      "nearest_span": true,
+      "draw": true
+    },
+    "normalization": "Whitespace, trailing comma, receiver rename, selected internal reference_position call, rustfmt expression-only draw closure block.",
+    "direct_state_calls": {
+      "reference_position": 4,
+      "advance_gesture": 2,
+      "feature_spans": 2,
+      "nearest_span": 1,
+      "draw": 1
+    },
+    "lines_before": 1755,
+    "lines_after": 1784,
+    "verification": "Static only; file-only rustfmt and whitespace pass; no compiler/tests/browser/application requests."
+  },
+  "verification": {
+    "native": "passed, offline locked j2, existing shared Cargo cache",
+    "wasm": "passed, offline locked j2, existing shared Cargo cache",
+    "execution": {
+      "passed": 107,
+      "failed": 0,
+      "by_harness": {
+        "core/assembly": 15,
+        "core/cloning": 11,
+        "core/collagene_core": 1,
+        "core/history": 14,
+        "core/materials": 52,
+        "core/verification": 7,
+        "mcp/cloning": 3,
+        "mcp/methods": 4
+      }
+    },
+    "test_filter_rationale": "Execute every changed fixture module plus affected native ligation unit case; unchanged web-model cases do not exercise WASM-only controller closures and are not rerun as a proxy.",
+    "browser_or_application_http": "not run, deferred until full in-scope source complete",
+    "runtime_ui_lifecycle": "not claimed by token comparison or native tests",
+    "discovery": {
+      "baseline_cases": 2509,
+      "baseline_harnesses": 33,
+      "current_cases": 2509,
+      "current_harnesses": 33,
+      "all_case_names_preserved": true
+    }
+  },
+  "semantic_change": "New verification dispatch advances existing generation and clears complete PlanState evidence. Completion rejects superseded/disposed owner before source/epoch/target guards. No scientific algorithm, DTO, hash input, schema, engine or supported bounds change.",
+  "source_sha256": {
+    "crates/core/src/chemistry/tracked_duplex.rs": "bc21a703256aca1df17359495d555cb837b5163bd6fe8838315ae8e647bfb48c",
+    "crates/core/src/cloning/assembly/edited_primers.rs": "804da6d4ce03e5961303c1aebfecaf2621672b689ce73fca003148084090460b",
+    "crates/core/src/cloning/assembly/intent.rs": "6c8ef39e24edb98bd1c16722ca4e1656092d964292d348d6afdfc89506a067c0",
+    "crates/core/src/cloning/assembly/recipe.rs": "a8c319d51865be251eb5f8e882d98300ea7312705a59e25b614eaea20663d0c2",
+    "crates/core/src/cloning/golden_gate/domestication/preparation.rs": "41785579b7800fdadc3dd2231be161b17de58273877f3f1abafb404373473f35",
+    "crates/core/src/cloning/ligation/outcomes.rs": "5151e2355f1199dd58d21561b829d4bbbcf03b88534136551b6d26d880314383",
+    "crates/core/src/cloning/ligation/recipe.rs": "bad88d699a0be8c8d6eb4bfdd8f9d80cb94529d6870ac1a55a1777e35117650a",
+    "crates/core/src/cloning/ligation/tailing_recipe.rs": "d33a0876d74de85e2e32a103b8304d9753e4e980da22722d20a29dae0ec6afff",
+    "crates/core/src/cloning/overlap/extension/digest.rs": "6dfcfbeff602d97fc86408af025ce90348495d9fad0017ff7df19edb33d1cdb9",
+    "crates/core/src/cloning/overlap/extension/primers.rs": "108f37be574490887478213ac4e8c6a0311109cb4827ea442a8652f4b210f61d",
+    "crates/core/src/cloning/restriction/run_digest.rs": "923888f28f92d05fa64d48831d41a05287ef8769813f346b79cac4e2f15ccfe2",
+    "crates/core/src/material/capsule.rs": "03243b9c5b0d128a9288f8efacdc3426f2a87fb4f2ba2949db4d6c74d6a331fd",
+    "crates/core/src/material/derivation/digest.rs": "87fdb6c4c4f709e26dec28135968c97ad9ccb1d81e8e0b078bdd8c6abe05a140",
+    "crates/core/src/material/derivation/digest_export.rs": "cad22bf1fbfd5c1cb177068827016081ea2ce05733004c1b4b15cca4b2968cf5",
+    "crates/core/src/material/derivation/end_repair.rs": "d7a2d27c8b60fcbbee00a43c4f46e954d6aed3b4a1048d4a329820a2696766f4",
+    "crates/core/src/material/derivation/mod.rs": "fcf81f853d867239f5348a28c298a02cc49b925b5eb4105bb5947989d598a239",
+    "crates/core/src/material/derivation/pcr.rs": "3af3cca840bf0b10d313817903f8207dddf32b15c12fac787edbc95a1010b4b0",
+    "crates/core/src/material/derivation/terminal.rs": "e516762c33764ac283c564a9a606477fef288217add243e4893b2128a116edbc",
+    "crates/core/src/planning/combinatorial/mod.rs": "e979fa33e7d9c795d4bcc4e9de9a125f246e87e1be9676abf595f657c61e5420",
+    "crates/core/src/verification/engine.rs": "f0fc288fa38e11e5e144190627aa868ac07cc17b19cf52d6ad515b2d97c7942e",
+    "crates/core/tests/assembly/intent/assembly_material_intent.rs": "d12b2024a02a81f510e3d9ca703d9753422b957dfa80ea8845d691f18701cc87",
+    "crates/core/tests/assembly/recipes/checked_golden_gate.rs": "61eab4af607fa6f9fd1fc37cb0011081c1d110d3a4a7f693471aa1c8ff11dc96",
+    "crates/core/tests/cloning/ligation/ligation_outcomes.rs": "66c818a3eae81f6ebdb439d3d12bd2d31d69d4c97052803d20b71cd443482194",
+    "crates/core/tests/cloning/topo/chemistry/topo_upstream_pcr.rs": "7146edb2fde085971004c0764d7b506e37a604cbe41bcdccae35707287289998",
+    "crates/core/tests/common/actual_strand.rs": "c7ce810770b3be4e92bb1688fcb1cfa05adf70e1064c914e21c344dfdadb9fc4",
+    "crates/core/tests/common/material_library.rs": "c242dc786f4cf645ad09a522b49c575dd8a1912c13542cb303789ffcb56048a2",
+    "crates/core/tests/history/runs/run_material.rs": "1e7e46aa80d9238417e5834ddd3d0816ff0b2ceec232ca90cc2865a7f15385eb",
+    "crates/core/tests/history/runs/run_material_continuation.rs": "76f90a298d501039cde493cf324877a6b4b9b4c7207e5138acbf799a2f4a3ffc",
+    "crates/core/tests/materials/derivation/material_derivation.rs": "e98fd1acb79c909c14cefee2fa407c2157799de5f67d866c9ccdcdc112a26b0a",
+    "crates/core/tests/materials/derivation/material_derivation_actions.rs": "5f20a5a55d08c0251bc1858289fabbee5b61a01ecb034c6f075e0f0044cfe36b",
+    "crates/core/tests/materials/derivation/material_derivation_digest_history.rs": "f3725cb7f9979cae09143bc0c120256cf716d5ba75e9035d7bab477bfa711106",
+    "crates/core/tests/materials/derivation/material_terminal_processing.rs": "e0e1cea5635e8245ad4d7ed376006a5be6d9f994c6cc86c8487dcf32eeba85d7",
+    "crates/core/tests/materials/pcr/inverse_pcr_material.rs": "b8ad70bc36b356d377cee773f6e289c107d5669696b77594297ef193ca31e830",
+    "crates/core/tests/materials/pcr_digest/mismatch_pcr_catalog_recipe.rs": "0f2bdd74e30d056031bf507eb3606ea1c060eede17f9ade97bc46523ebc1a2c4",
+    "crates/core/tests/materials/recipes/material_library.rs": "6437a244a2e356dc9be7539f24c082751499c03878a8f0265194b0c09db341c7",
+    "crates/core/tests/materials/recipes/modified_duplex.rs": "b9981623635534cd20a1625e254aaefceed81d3efb6e3beda3758f0429f826b2",
+    "crates/core/tests/materials/recipes/modified_duplex_audit.rs": "959371d7ed0498e90f6396c28b02225b49312d6af9763fcc516e91621ff06dfc",
+    "crates/core/tests/materials/recipes/native_pcr_frames.rs": "9016e5c528914e9ec6d44a5f78e97c8d77f13548df56854a4b478145457e2a9d",
+    "crates/core/tests/verification/preparation/domestication_overlap_extension.rs": "5bbb7bc690ffe3c235806bb5aa22a34ceeaace1f2be1f324c0e3b1dc693b60a5",
+    "crates/mcp/tests/cloning/overlap_extension_material_tools.rs": "6edb93b8d847f98c3598cf950b29c92a57d3c8d4dbbb0702147b37bebf0236d2",
+    "crates/mcp/tests/methods/topo/topo_tools.rs": "a2bebc4a072dbc90608d1e5eb4661f366841446a5e6aae17466f1c16dbb4b582",
+    "crates/web/src/app/mod.rs": "18bbb609cab451d56ee7ed3b67ddb0d955c3285f974e37a652505ec03d321c39",
+    "crates/web/src/biology/controller.rs": "3bc43e4dbbaaeb122449628d6c64e0030b2ec5d671f362a526b7c253ea0b9c0e",
+    "crates/web/src/cloning/preparation/cloning_preparations.rs": "0f23c39c410e6e0c37ec87b824cc6bbbd1c481d73fd3fd0fddab158c406e41ef",
+    "crates/web/src/protocol/controller.rs": "a8cb2fed57a17217f56f8372f2be693b8b8f15bbeaeab9d8c15956f5238f4b6b",
+    "crates/web/src/restriction/controller.rs": "345abf2cd0ae898062e6ac9452b1df73532428dfa93c61b06b2e09c5751c2911",
+    "crates/web/src/viewer/alignment/controller.rs": "7a172e853af841dd6a4afd13b7704c9353cd5622f6c240dc2467c32c0def1ec1",
+    "crates/web/src/viewer/map/renderer.rs": "22b48551bf92907e829cc62b09ee8175b4609591c721affc96d97541b5874282"
+  }
+}

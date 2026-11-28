@@ -869,7 +869,7 @@ impl Execution<'_> {
                         ));
                     }
                     let fresh = crate::material::derivation::replay(origin, resolve(template)?)?;
-                    let modification_summary = modified_duplex::summary(fresh.tracked())?;
+                    let modification_summary = fresh.tracked().summary()?;
                     let duplex_summary = fresh.tracked().duplex.summary()?;
                     let bytes =
                         evidence_bytes(origin, crate::material::derivation::MAX_CAPSULE_BYTES)?
@@ -1649,7 +1649,7 @@ impl Execution<'_> {
                         _ => unreachable!("matched digest operation"),
                     };
                     if !source.generation.is_empty() {
-                        let state = modified_duplex::summary(&source)?;
+                        let state = source.summary()?;
                         if state.known_modified > 0 || state.unknown_eligible > 0 {
                             incomplete.push(format!("Step {} uses legacy assumed-complete cleavage on explicitly tracked modified/unknown material. Use CheckedDigest to establish cleavage under the positional profile.",index+1));
                         }
@@ -2028,7 +2028,7 @@ impl Execution<'_> {
                 );
             }
             if let Some(tracked) = &next_physical {
-                let summary = modified_duplex::summary(tracked)?;
+                let summary = tracked.summary()?;
                 product.metadata.insert(
                     "tracked_modifications".into(),
                     serde_json::to_string(&summary).map_err(|e| Error::Format(e.to_string()))?,

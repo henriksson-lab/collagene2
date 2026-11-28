@@ -129,7 +129,7 @@ pub fn inspect_digest(
         || {
             let mut result = Vec::new();
             for fragment in modified_duplex::digest(&fresh.tracked, &enzymes)? {
-                fragment_modifications.push(modified_duplex::summary(&fragment.duplex)?);
+                fragment_modifications.push(fragment.duplex.summary()?);
                 result.push(chemistry::DigestFragment {
                     duplex: fragment.duplex.duplex,
                     top_start: fragment.top_start,
@@ -148,7 +148,7 @@ pub fn inspect_digest(
         selection: selection.clone(),
         source_material: Some(DigestSourceMaterial {
             duplex: fresh.tracked.duplex.summary()?,
-            modifications: modified_duplex::summary(&fresh.tracked)?,
+            modifications: fresh.tracked.summary()?,
         }),
         fragment_modifications,
         incomplete: fresh.incomplete || !inspection.scan_complete || !inspection.limits.is_empty(),

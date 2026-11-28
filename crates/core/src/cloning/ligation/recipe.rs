@@ -73,9 +73,7 @@ pub fn source_preflight(
         .iter()
         .try_fold(1usize, |total, fragment| {
             total
-                .checked_add(preparation::preparation_operation_count(
-                    &fragment.source.preparation,
-                ))
+                .checked_add(fragment.source.preparation.operation_count())
                 .and_then(|n| {
                     n.checked_add(
                         usize::from(fragment.source.generation.is_some())

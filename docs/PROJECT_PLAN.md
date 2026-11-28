@@ -58,14 +58,18 @@ directory**, and a largest file of **2,869 lines**. There are no size violations
 or 3,000-line warnings. The existing `rust_refactor` binary independently passed
 its production-file size check; no tool build, rewrite or compiler run was needed.
 
-The next ownership batches move App's plan-verification and domain callbacks to
-existing controllers, preparation declaration helpers onto `Preparation`, and
-naturally owned tracked-duplex operations onto `TrackedDuplex`. Review renderer State methods and
-contig identity methods with their next related changes. Group growing domains
-before adding more sibling files. Keep completed proposal/pool, Draft,
-combinatorial, TreeJob and annotation-owner work closed. The citation batch passes native/WASM checks and 427 selected cases, including
-14 new fixtures. Desktop dispatch is now colocated with `NativeState` and passes
-the desktop compiler check. Exact-source cross-platform CI remains required.
+The connected [controller/scientific-owner batch](audits/controller-ownership-2026-11-28.md)
+is implemented in source: App callbacks use existing domain controllers, preparation
+and tracked-duplex operations are methods, and renderer State owns its gesture/draw
+operations. App is now 2,413 lines. New verification requests advance generation
+and invalidate complete evidence; older/disposed completions cannot publish over
+newer work. Native/WASM compilation and 107 focused cases pass, preserving all 2,509 baseline
+case names / 33 harnesses. Exact-source CI remains required. Keep
+completed proposal/pool, Draft, combinatorial, TreeJob, native dispatch and
+annotation/citation owner work closed. Contig identity methods and domain grouping
+remain tied to their next relevant feature changes rather than isolated cosmetic
+build cycles. The preceding citation/native-dispatch checkpoint passed local
+checks and scientific/desktop CI at `82937c1`.
 
 These are focused ownership changes, not a general rewrite. Keep types and their
 meaningful implementations cohesive, update callers directly, preserve test

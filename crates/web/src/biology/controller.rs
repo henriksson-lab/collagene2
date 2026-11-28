@@ -1,13 +1,7 @@
 use collagene_core::documents::transfer;
 use collagene_core::material::lineage::EventBinding;
-use collagene_core::verification;
-use collagene_core::{
-    alignment, cloning::restriction::selection as restriction_selection, documents::workspace,
-    material::lineage as run_lineage,
-    protein::liability_annotation as protein_liability_annotation, protein_liabilities,
-    sequence::editing,
-};
-use collagene_model::Location;
+use collagene_core::sequence::editing;
+use collagene_model::{Location, Molecule};
 use leptos::prelude::*;
 
 use crate::workspace::session::WorkspaceSession;
@@ -28,6 +22,305 @@ pub(crate) struct BiologyController {
     pub(crate) shell: ShellState,
 }
 impl BiologyController {
+    pub(crate) fn antibody_publication(
+        &self,
+    ) -> (
+        Memo<Option<std::sync::Arc<crate::biology::antibody::antibody_overlay::Overlay>>>,
+        Callback<
+            Option<std::sync::Arc<crate::biology::antibody::antibody_overlay::Overlay>>,
+            Result<(), String>,
+        >,
+    ) {
+        let WorkspaceSession {
+            documents,
+            active,
+            workspace_restoring,
+            workspace_epoch,
+            ..
+        } = self.session;
+        let published_antibody = RwSignal::new(
+            None::<std::sync::Arc<crate::biology::antibody::antibody_overlay::Overlay>>,
+        );
+        let antibody_overlay = Memo::new(move |_| {
+            if workspace_restoring.get() {
+                return None;
+            }
+            let p = published_antibody.get()?;
+            documents.with(|docs| {
+                let doc = docs.get(active.get())?;
+                p.capture
+                    .guard(
+                        workspace_epoch.get(),
+                        &current_event_binding(doc),
+                        &p.capture.options,
+                        &p.capture.limits,
+                        &p.capture.selection,
+                    )
+                    .ok()?;
+                Some(p)
+            })
+        });
+        let publish_antibody = Callback::new(
+            move |value: Option<
+                std::sync::Arc<crate::biology::antibody::antibody_overlay::Overlay>,
+            >|
+                  -> Result<(), String> {
+                if let Some(p) = &value {
+                    if workspace_restoring.get_untracked() {
+                        return Err("Wait for the workspace update to finish.".into());
+                    }
+                    documents.with_untracked(|docs| {
+                        p.capture.guard(
+                            workspace_epoch.get_untracked(),
+                            &current_event_binding(&docs[active.get_untracked()]),
+                            &p.capture.options,
+                            &p.capture.limits,
+                            &p.capture.selection,
+                        )
+                    })?;
+                }
+                published_antibody.set(value);
+                Ok(())
+            },
+        );
+        (antibody_overlay, publish_antibody)
+    }
+    pub(crate) fn prepare_antibody(&self) -> Callback<EventBinding, Result<Molecule, String>> {
+        let WorkspaceSession {
+            documents,
+            active,
+            workspace_restoring,
+            ..
+        } = self.session;
+        Callback::new(move |binding: EventBinding| -> Result<Molecule, String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            documents.with_untracked(|docs| {
+                let doc = &docs[active.get_untracked()];
+                if current_event_binding(doc) != binding {
+                    return Err("The active protein source event changed.".into());
+                }
+                collagene_core::antibody_numbering::source_revision(&doc.molecule)
+                    .map_err(|e| e.to_string())?;
+                Ok(doc.molecule.clone())
+            })
+        })
+    }
+    pub(crate) fn select_antibody_residue(
+        &self,
+        biology_directed: RwSignal<Option<crate::biology::biology_selection::DirectedSelection>>,
+    ) -> Callback<
+        (
+            crate::biology::antibody::antibody_model::Capture,
+            usize,
+            usize,
+        ),
+        Result<(), String>,
+    > {
+        let WorkspaceSession {
+            documents,
+            active,
+            workspace_restoring,
+            workspace_epoch,
+            ..
+        } = self.session;
+        let ViewerSelection {
+            selection,
+            selected_feature,
+            search_regions,
+            ..
+        } = self.viewer;
+        Callback::new(
+            move |(capture, start, end): (
+                crate::biology::antibody::antibody_model::Capture,
+                usize,
+                usize,
+            )|
+                  -> Result<(), String> {
+                if workspace_restoring.get_untracked() {
+                    return Err("Wait for the workspace update to finish.".into());
+                }
+                documents.with_untracked(|docs| {
+                    let doc = &docs[active.get_untracked()];
+                    capture.guard(
+                        workspace_epoch.get_untracked(),
+                        &current_event_binding(doc),
+                        &capture.options,
+                        &capture.limits,
+                        &capture.selection,
+                    )?;
+                    if start >= end || end > doc.molecule.sequence.len() {
+                        return Err("Invalid source residue range.".into());
+                    }
+                    Ok::<_, String>(())
+                })?;
+                batch(|| {
+                    selected_feature.set(None);
+                    search_regions.set(None);
+                    biology_directed.set(None);
+                    selection.set(Some((start, end)));
+                });
+                Ok(())
+            },
+        )
+    }
+    pub(crate) fn prepare_protein_liabilities(
+        &self,
+    ) -> Callback<
+        (EventBinding, collagene_core::protein_liabilities::Options),
+        Result<Molecule, String>,
+    > {
+        let WorkspaceSession {
+            documents,
+            active,
+            workspace_restoring,
+            ..
+        } = self.session;
+        Callback::new(
+            move |(binding, options): (
+                EventBinding,
+                collagene_core::protein_liabilities::Options,
+            )|
+                  -> Result<Molecule, String> {
+                if workspace_restoring.get_untracked() {
+                    return Err("Wait for the workspace update to finish.".into());
+                }
+                documents.with_untracked(|docs| {
+                    let doc = &docs[active.get_untracked()];
+                    if current_event_binding(doc) != binding {
+                        return Err("The active protein source event changed.".into());
+                    }
+                    collagene_core::protein_liabilities::request_revision(&doc.molecule, &options)
+                        .map_err(|e| e.to_string())?;
+                    Ok(doc.molecule.clone())
+                })
+            },
+        )
+    }
+    pub(crate) fn saved_rna(
+        &self,
+        candidate: RwSignal<Option<transfer::Candidate>>,
+        stored_candidates: RwSignal<Vec<transfer::Candidate>>,
+    ) -> Memo<Result<Vec<collagene_core::documents::rna_history::Summary>, String>> {
+        let WorkspaceSession {
+            documents,
+            active,
+            attachments,
+            workspace_name,
+            ..
+        } = self.session;
+        Memo::new(move |_| {
+            WorkspaceSession::snapshot(
+                &documents.get(),
+                active.get_untracked(),
+                candidate.get_untracked().as_ref(),
+                &stored_candidates.get_untracked(),
+                &attachments.get(),
+                &workspace_name.get_untracked(),
+            )
+            .and_then(|w| {
+                collagene_core::documents::rna_history::list(&w).map_err(|e| e.to_string())
+            })
+        })
+    }
+    pub(crate) fn resolve_rna(&self) -> Callback<EventBinding, Result<Molecule, String>> {
+        let WorkspaceSession {
+            documents,
+            workspace_restoring,
+            ..
+        } = self.session;
+        Callback::new(move |binding: EventBinding| -> Result<Molecule, String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            documents.with_untracked(|docs| {
+                let d = docs
+                    .iter()
+                    .find(|d| d.id == binding.document_id)
+                    .ok_or("The pinned RNA document is unavailable.")?;
+                let m = d
+                    .revision_molecule_ref(&binding.event_id)
+                    .map_err(|e| e.to_string())?;
+                if collagene_core::rna_chemistry::source_revision(m).map_err(|e| e.to_string())?
+                    != binding.revision
+                {
+                    return Err("The pinned RNA source revision differs.".into());
+                }
+                Ok(m.clone())
+            })
+        })
+    }
+    pub(crate) fn save_rna(
+        &self,
+        contig_snapshot: Callback<
+            (),
+            Result<collagene_core::documents::workspace::Workspace, String>,
+        >,
+    ) -> Callback<(u64, collagene_core::documents::rna_history::Record), Result<(), String>> {
+        let WorkspaceSession {
+            workspace_restoring,
+            workspace_epoch,
+            attachments,
+            ..
+        } = self.session;
+        Callback::new(
+        move |(epoch, record): (u64, collagene_core::documents::rna_history::Record)| -> Result<(), String> {
+            if workspace_restoring.get_untracked() || workspace_epoch.get_untracked() != epoch {
+                return Err("The workspace changed; calculate RNA chemistry again.".into());
+            }
+            let (next, _) =
+                collagene_core::documents::rna_history::capture(&contig_snapshot.run(())?, &record)
+                    .map_err(|e| e.to_string())?;
+            attachments.set(next.attachments);
+            Ok(())
+        },
+    )
+    }
+    pub(crate) fn load_rna(
+        &self,
+        contig_snapshot: Callback<
+            (),
+            Result<collagene_core::documents::workspace::Workspace, String>,
+        >,
+    ) -> Callback<String, Result<collagene_core::documents::rna_history::Record, String>> {
+        let WorkspaceSession {
+            workspace_restoring,
+            ..
+        } = self.session;
+        Callback::new(
+            move |hash: String| -> Result<collagene_core::documents::rna_history::Record, String> {
+                if workspace_restoring.get_untracked() {
+                    return Err("Wait for the workspace update to finish.".into());
+                }
+                collagene_core::documents::rna_history::load(&contig_snapshot.run(())?, &hash)
+                    .map_err(|e| e.to_string())
+            },
+        )
+    }
+    pub(crate) fn delete_rna(
+        &self,
+        contig_snapshot: Callback<
+            (),
+            Result<collagene_core::documents::workspace::Workspace, String>,
+        >,
+    ) -> Callback<String, Result<(), String>> {
+        let WorkspaceSession {
+            workspace_restoring,
+            attachments,
+            ..
+        } = self.session;
+        Callback::new(move |hash: String| -> Result<(), String> {
+            if workspace_restoring.get_untracked() {
+                return Err("Wait for the workspace update to finish.".into());
+            }
+            let next =
+                collagene_core::documents::rna_history::delete(&contig_snapshot.run(())?, &hash)
+                    .map_err(|e| e.to_string())?;
+            attachments.set(next.attachments);
+            Ok(())
+        })
+    }
     pub(crate) fn open_translated_protein(
         &self,
         candidate: RwSignal<Option<transfer::Candidate>>,

@@ -11,7 +11,6 @@ use super::limitations;
 use super::summary_shape;
 use super::workspace_source;
 use crate::chemistry;
-use crate::chemistry::tracked_duplex as modified_duplex;
 use crate::chemistry::tracked_duplex::ModificationSummary;
 use crate::chemistry::tracked_duplex::TrackedDuplex;
 use crate::documents::workspace::Workspace;
@@ -149,8 +148,8 @@ pub fn preview_terminal_processing(
         product,
         source_duplex: fresh.tracked.duplex.summary()?,
         duplex: tracked.duplex.summary()?,
-        source_modifications: modified_duplex::summary(&fresh.tracked)?,
-        modifications: modified_duplex::summary(&tracked)?,
+        source_modifications: fresh.tracked.summary()?,
+        modifications: tracked.summary()?,
         incomplete: fresh.incomplete,
         findings,
         findings_total,

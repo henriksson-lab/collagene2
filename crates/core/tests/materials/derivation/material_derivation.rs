@@ -1,7 +1,7 @@
 //! Literal target-free PCR → archive restart → real EcoRI fragments → independent
 //! assembly target. References alone never manufacture private material state.
 use collagene_core::{
-    chemistry::{Duplex, FivePrime, tracked_duplex as modified_duplex},
+    chemistry::{Duplex, FivePrime},
     cloning::{pcr::material as material_pcr, restriction::catalog as catalog_digest},
     documents::{
         history::DocumentHistory,
@@ -135,7 +135,7 @@ fn ordinary_pcr_restart_redigest_and_assembly_replay_form_one_complete_native_wo
     assert!(Duplex::from_molecule(fresh.reference()).is_err());
     assert_eq!(fresh.tracked().duplex.left.five_prime, FivePrime::Hydroxyl);
     assert_eq!(fresh.tracked().duplex.right.five_prime, FivePrime::Hydroxyl);
-    let mods = modified_duplex::summary(fresh.tracked()).unwrap();
+    let mods = fresh.tracked().summary().unwrap();
     assert_eq!(mods.known_modified, 0);
     assert_eq!(mods.unknown_eligible, 0);
     let pcr_capsule = d::capsule(&w, &pcr_pin).unwrap();
@@ -625,7 +625,7 @@ fn an_actual_reusable_incomplete_origin_stays_incomplete_after_new_unmodified_pc
         "AGTCCGATGCTATTCGAATTCC"
     );
     assert!(fresh.findings_total() >= fresh.findings().len());
-    let mods = modified_duplex::summary(fresh.tracked()).unwrap();
+    let mods = fresh.tracked().summary().unwrap();
     assert_eq!(mods.known_modified, 0);
     assert_eq!(mods.unknown_eligible, 0);
 }

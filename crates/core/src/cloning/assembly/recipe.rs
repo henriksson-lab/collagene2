@@ -26,6 +26,65 @@ dto! {pub enum OverlapFinishing {
     HomologyAnnealing {policy:crate::cloning::overlap::annealing::Options},
 }}
 dto! {pub enum Preparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},DeclaredDuplex{left:crate::chemistry::Terminus,right:crate::chemistry::Terminus},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},AnnealedOligos{bottom_input_id:String,options:crate::chemistry::AnnealOptions,candidate_index:usize},FromRun{origin:crate::material::capsule::Capsule,preparation:RunPreparation},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},FromDerived{origin:crate::material::derivation::Capsule,preparation:RunPreparation}}}
+impl Preparation {
+    /// Literal catalog pin used by a preparation, including a flat saved-origin
+    /// child. This is structural lookup only, never replay or cleavage authority.
+    pub fn catalog_selection(
+        &self,
+    ) -> Option<&crate::cloning::restriction::catalog::CatalogSelection> {
+        match self {
+            Preparation::CatalogDigest { selection, .. }
+            | Preparation::PcrCatalogDigest { selection, .. }
+            | Preparation::MismatchPcrCatalogDigest { selection, .. }
+            | Preparation::OverlapExtensionPcrCatalogDigest { selection, .. } => Some(selection),
+            Preparation::FromRun { preparation, .. }
+            | Preparation::FromDerived { preparation, .. } => match preparation {
+                RunPreparation::CatalogDigest { selection, .. }
+                | RunPreparation::PcrCatalogDigest { selection, .. }
+                | RunPreparation::MismatchPcrCatalogDigest { selection, .. }
+                | RunPreparation::OverlapExtensionPcrCatalogDigest { selection, .. } => {
+                    Some(selection)
+                }
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+    /// Exact flat operation count, for host/preflight limits before any model copy.
+    /// It counts the declared graph only and does not establish reaction completion.
+    pub(crate) fn operation_count(&self) -> usize {
+        let repair =
+            |repair: &Option<crate::chemistry::EndRepairMethod>| usize::from(repair.is_some());
+        match self {
+            Preparation::WholeLinear => 0,
+            Preparation::ExactPcr { .. }
+            | Preparation::MismatchPcr { .. }
+            | Preparation::DeclaredDuplex { .. }
+            | Preparation::AnnealedOligos { .. } => 1,
+            Preparation::Digest { repair: r, .. }
+            | Preparation::CatalogDigest { repair: r, .. } => 1 + repair(r),
+            Preparation::PcrCatalogDigest { repair: r, .. }
+            | Preparation::MismatchPcrCatalogDigest { repair: r, .. } => 2 + repair(r),
+            Preparation::OverlapExtensionPcr { .. } => 4,
+            Preparation::OverlapExtensionPcrCatalogDigest { repair: r, .. } => 5 + repair(r),
+            Preparation::FromRun { preparation, .. }
+            | Preparation::FromDerived { preparation, .. } => {
+                1 + match preparation {
+                    RunPreparation::WholeLinear => 0,
+                    RunPreparation::ExactPcr { .. } | RunPreparation::MismatchPcr { .. } => 1,
+                    RunPreparation::Digest { repair: r, .. }
+                    | RunPreparation::CatalogDigest { repair: r, .. } => 1 + repair(r),
+                    RunPreparation::PcrCatalogDigest { repair: r, .. }
+                    | RunPreparation::MismatchPcrCatalogDigest { repair: r, .. } => 2 + repair(r),
+                    RunPreparation::OverlapExtensionPcr { .. } => 4,
+                    RunPreparation::OverlapExtensionPcrCatalogDigest { repair: r, .. } => {
+                        5 + repair(r)
+                    }
+                }
+            }
+        }
+    }
+}
 dto! {pub enum RunPreparation {WholeLinear,Digest{enzymes:Vec<String>,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},CatalogDigest{selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},ExactPcr{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand},PcrCatalogDigest{forward:Primer,reverse:Primer,template_strand:crate::chemistry::Strand,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},MismatchPcr{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions},MismatchPcrCatalogDigest{forward:Primer,reverse:Primer,options:crate::cloning::pcr::mutagenesis::PcrOptions,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>},OverlapExtensionPcr{request:crate::cloning::overlap::extension::pcr::Request},OverlapExtensionPcrCatalogDigest{request:crate::cloning::overlap::extension::pcr::Request,selection:crate::cloning::restriction::catalog::CatalogSelection,fragment_index:usize,repair:Option<crate::chemistry::EndRepairMethod>}}}
 /// Actual cleavage model selected by the compiling workflow, never inferred from metadata.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -72,61 +131,7 @@ fn starter_selection(
         .collect::<Result<Vec<_>, _>>()?;
     crate::cloning::restriction::catalog::select(&catalog, &ids)
 }
-/// Literal catalog pin used by a preparation, including a flat saved-origin
-/// child. This is structural lookup only, never replay or cleavage authority.
-pub fn preparation_catalog_selection(
-    preparation: &Preparation,
-) -> Option<&crate::cloning::restriction::catalog::CatalogSelection> {
-    match preparation {
-        Preparation::CatalogDigest { selection, .. }
-        | Preparation::PcrCatalogDigest { selection, .. }
-        | Preparation::MismatchPcrCatalogDigest { selection, .. }
-        | Preparation::OverlapExtensionPcrCatalogDigest { selection, .. } => Some(selection),
-        Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
-            match preparation {
-                RunPreparation::CatalogDigest { selection, .. }
-                | RunPreparation::PcrCatalogDigest { selection, .. }
-                | RunPreparation::MismatchPcrCatalogDigest { selection, .. }
-                | RunPreparation::OverlapExtensionPcrCatalogDigest { selection, .. } => {
-                    Some(selection)
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    }
-}
-/// Exact flat operation count, for host/preflight limits before any model copy.
-/// It counts the declared graph only and does not establish reaction completion.
-pub(crate) fn preparation_operation_count(preparation: &Preparation) -> usize {
-    let repair = |repair: &Option<crate::chemistry::EndRepairMethod>| usize::from(repair.is_some());
-    match preparation {
-        Preparation::WholeLinear => 0,
-        Preparation::ExactPcr { .. }
-        | Preparation::MismatchPcr { .. }
-        | Preparation::DeclaredDuplex { .. }
-        | Preparation::AnnealedOligos { .. } => 1,
-        Preparation::Digest { repair: r, .. } | Preparation::CatalogDigest { repair: r, .. } => {
-            1 + repair(r)
-        }
-        Preparation::PcrCatalogDigest { repair: r, .. }
-        | Preparation::MismatchPcrCatalogDigest { repair: r, .. } => 2 + repair(r),
-        Preparation::OverlapExtensionPcr { .. } => 4,
-        Preparation::OverlapExtensionPcrCatalogDigest { repair: r, .. } => 5 + repair(r),
-        Preparation::FromRun { preparation, .. } | Preparation::FromDerived { preparation, .. } => {
-            1 + match preparation {
-                RunPreparation::WholeLinear => 0,
-                RunPreparation::ExactPcr { .. } | RunPreparation::MismatchPcr { .. } => 1,
-                RunPreparation::Digest { repair: r, .. }
-                | RunPreparation::CatalogDigest { repair: r, .. } => 1 + repair(r),
-                RunPreparation::PcrCatalogDigest { repair: r, .. }
-                | RunPreparation::MismatchPcrCatalogDigest { repair: r, .. } => 2 + repair(r),
-                RunPreparation::OverlapExtensionPcr { .. } => 4,
-                RunPreparation::OverlapExtensionPcrCatalogDigest { repair: r, .. } => 5 + repair(r),
-            }
-        }
-    }
-}
+
 impl RunPreparation {
     /// Bounded conversion to the existing preparation vocabulary; no recursion,
     /// chemistry restoration, or scientific computation.
@@ -879,7 +884,7 @@ fn preparation_preflight_inner(
     let catalog = crate::sequence::analysis::starter_enzymes();
     let pinned_catalog = if fragments
         .iter()
-        .any(|f| preparation_catalog_selection(&f.preparation).is_some())
+        .any(|f| f.preparation.catalog_selection().is_some())
     {
         Some(crate::cloning::restriction::catalog::builtin_catalog()?)
     } else {
@@ -982,7 +987,7 @@ pub(crate) fn preparation_work(
         _ => preparation,
     };
     let catalog = crate::sequence::analysis::starter_enzymes();
-    let pinned = if preparation_catalog_selection(effective).is_some() {
+    let pinned = if effective.catalog_selection().is_some() {
         Some(crate::cloning::restriction::catalog::builtin_catalog()?)
     } else {
         None
@@ -1052,7 +1057,7 @@ pub(crate) fn preparation_work_from_frame(
     };
     let frame = source.with_strand(strand)?;
     let catalog = crate::sequence::analysis::starter_enzymes();
-    let pinned = if preparation_catalog_selection(effective).is_some() {
+    let pinned = if effective.catalog_selection().is_some() {
         Some(crate::cloning::restriction::catalog::builtin_catalog()?)
     } else {
         None

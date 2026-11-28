@@ -301,12 +301,7 @@ struct Piece<'a> {
     destination: Strand,
     offset: usize,
 }
-fn strand<'a>(source: &'a TrackedDuplex, s: Strand) -> (&'a Sequence, &'a StrandModifications) {
-    match s {
-        Strand::Top => (&source.duplex.top, &source.top_modifications),
-        Strand::Bottom => (&source.duplex.bottom, &source.bottom_modifications),
-    }
-}
+
 fn from_pieces(
     duplex: Duplex,
     pieces: &[Piece<'_>],
@@ -321,7 +316,7 @@ fn from_pieces(
     };
     let mut covered = [vec![], vec![]];
     for p in pieces {
-        let (seq, mods) = strand(p.source, p.strand);
+        let (seq, mods) = p.source.strand(p.strand);
         let target = match p.destination {
             Strand::Top => &out.duplex.top,
             Strand::Bottom => &out.duplex.bottom,
@@ -382,7 +377,7 @@ fn from_pieces(
             }
             end = b;
         }
-        if end != strand(&out, s).0.len() {
+        if end != out.strand(s).0.len() {
             return Err(bad("incomplete strand ancestry"));
         }
     }
@@ -418,6 +413,66 @@ fn duplex_preflight(duplex: &Duplex) -> Result<(), Error> {
     duplex.validate()
 }
 impl TrackedDuplex {
+    fn strand(&self, s: Strand) -> (&Sequence, &StrandModifications) {
+        match s {
+            Strand::Top => (&self.duplex.top, &self.top_modifications),
+            Strand::Bottom => (&self.duplex.bottom, &self.bottom_modifications),
+        }
+    }
+    /// Summarize actual positional states after validating this tracked operand.
+    pub fn summary(&self) -> Result<ModificationSummary, Error> {
+        self.validate()?;
+        let mut counts = [0usize; 3];
+        for s in [Strand::Top, Strand::Bottom] {
+            let (seq, mods) = self.strand(s);
+            for c in [Chemical::N6A, Chemical::C5C] {
+                for (a, b, state) in mods.intervals(c, 0, seq.len()) {
+                    let count = seq.as_str().as_bytes()[a..b]
+                        .iter()
+                        .filter(|b| **b == base(c))
+                        .count();
+                    counts[match state {
+                        CallState::Unknown => 0,
+                        CallState::Unmodified => 1,
+                        CallState::Modified => 2,
+                    }] += count;
+                }
+            }
+        }
+        Ok(ModificationSummary {
+            engine_version: ENGINE_VERSION.into(),
+            state_revision: hash(self)?,
+            top_length: self.duplex.top.len(),
+            bottom_length: self.duplex.bottom.len(),
+            known_modified: counts[2],
+            unknown_eligible: counts[0],
+            known_unmodified: counts[1],
+            generation: self.generation.clone(),
+        })
+    }
+    pub fn checked_digest_preflight(&self, o: &CheckedDigestOptions) -> Result<(), Error> {
+        o.validate()?;
+        if self.duplex.top.len() > MAX_BASES || self.duplex.bottom.len() > MAX_BASES {
+            return Err(Error::TooLarge);
+        }
+        self.validate()
+    }
+    fn index_at(&self, s: Strand, reference: usize) -> Option<usize> {
+        match s {
+            Strand::Top => (reference < self.duplex.top.len()).then_some(reference),
+            Strand::Bottom => {
+                let end = self.duplex.bottom_start + self.duplex.bottom.len() as i64;
+                let index = end - 1 - reference as i64;
+                if self.duplex.topology == Topology::Circular {
+                    Some(index.rem_euclid(self.duplex.bottom.len() as i64) as usize)
+                } else {
+                    usize::try_from(index)
+                        .ok()
+                        .filter(|i| *i < self.duplex.bottom.len())
+                }
+            }
+        }
+    }
     pub fn validate(&self) -> Result<(), Error> {
         if self.duplex.top.len() > collagene_model::MAX_SEQUENCE_LEN
             || self.duplex.bottom.len() > collagene_model::MAX_SEQUENCE_LEN
@@ -551,7 +606,7 @@ impl TrackedDuplex {
         c: Chemical,
         index: usize,
     ) -> Result<Option<CallState>, Error> {
-        let (seq, mods) = strand(self, s);
+        let (seq, mods) = self.strand(s);
         if index >= seq.len() {
             return Err(bad("modification lookup outside strand"));
         }
@@ -681,7 +736,7 @@ fn slice_pieces<'a>(
     len: usize,
     destination: Strand,
 ) -> Result<Vec<Piece<'a>>, Error> {
-    let n = strand(source, s).0.len();
+    let n = source.strand(s).0.len();
     if len > n {
         return Err(bad("fragment traverses a source strand more than once"));
     }
@@ -866,36 +921,7 @@ pub fn ligate(
     }
     from_pieces(product, &aligned, &[], tracked.generation.clone())
 }
-pub fn summary(source: &TrackedDuplex) -> Result<ModificationSummary, Error> {
-    source.validate()?;
-    let mut counts = [0usize; 3];
-    for s in [Strand::Top, Strand::Bottom] {
-        let (seq, mods) = strand(source, s);
-        for c in [Chemical::N6A, Chemical::C5C] {
-            for (a, b, state) in mods.intervals(c, 0, seq.len()) {
-                let count = seq.as_str().as_bytes()[a..b]
-                    .iter()
-                    .filter(|b| **b == base(c))
-                    .count();
-                counts[match state {
-                    CallState::Unknown => 0,
-                    CallState::Unmodified => 1,
-                    CallState::Modified => 2,
-                }] += count;
-            }
-        }
-    }
-    Ok(ModificationSummary {
-        engine_version: ENGINE_VERSION.into(),
-        state_revision: hash(source)?,
-        top_length: source.duplex.top.len(),
-        bottom_length: source.duplex.bottom.len(),
-        known_modified: counts[2],
-        unknown_eligible: counts[0],
-        known_unmodified: counts[1],
-        generation: source.generation.clone(),
-    })
-}
+
 /// Reconstruct private homology-assembly state only from freshly supplied tracked
 /// operands. Documentary mappings cannot be used as a material-import channel.
 pub fn homology_assemble(
@@ -1048,36 +1074,14 @@ impl CheckedDigestOptions {
         Ok(())
     }
 }
-pub fn source_preflight(source: &TrackedDuplex, o: &CheckedDigestOptions) -> Result<(), Error> {
-    o.validate()?;
-    if source.duplex.top.len() > MAX_BASES || source.duplex.bottom.len() > MAX_BASES {
-        return Err(Error::TooLarge);
-    }
-    source.validate()
-}
-fn index_at(source: &TrackedDuplex, s: Strand, reference: usize) -> Option<usize> {
-    match s {
-        Strand::Top => (reference < source.duplex.top.len()).then_some(reference),
-        Strand::Bottom => {
-            let end = source.duplex.bottom_start + source.duplex.bottom.len() as i64;
-            let index = end - 1 - reference as i64;
-            if source.duplex.topology == Topology::Circular {
-                Some(index.rem_euclid(source.duplex.bottom.len() as i64) as usize)
-            } else {
-                usize::try_from(index)
-                    .ok()
-                    .filter(|i| *i < source.duplex.bottom.len())
-            }
-        }
-    }
-}
+
 fn evidence_at(
     source: &TrackedDuplex,
     s: Strand,
     c: Chemical,
     reference: usize,
 ) -> Option<PositionEvidence> {
-    let index = index_at(source, s, reference)?;
+    let index = source.index_at(s, reference)?;
     source
         .state_at(s, c, index)
         .ok()
@@ -1227,7 +1231,7 @@ pub fn checked_digest_with_budget(
     o: &CheckedDigestOptions,
     budget: &mut CleavageBudget,
 ) -> Result<CheckedDigestReport, Error> {
-    source_preflight(source, o)?;
+    source.checked_digest_preflight(o)?;
     let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
     let enzymes = o.selection.resolved_enzymes(&catalog)?;
     let sequence = Molecule::dna(
@@ -1559,7 +1563,7 @@ impl CheckedDigestReport {
         source: &TrackedDuplex,
         o: &CheckedDigestOptions,
     ) -> Result<(), Error> {
-        source_preflight(source, o)?;
+        source.checked_digest_preflight(o)?;
         self.validate()?;
         if self.engine_version != ENGINE_VERSION
             || self.profile_version != PROFILE_VERSION

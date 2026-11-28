@@ -2,9 +2,7 @@
 //! given a fabricated independent target merely to fit the cloning-run schema.
 use collagene_core::{
     chemistry::{
-        Duplex, FivePrime,
-        methylation::MethylationState,
-        tracked_duplex::{self as modified_duplex, GenerationAssumptions},
+        Duplex, FivePrime, methylation::MethylationState, tracked_duplex::GenerationAssumptions,
     },
     cloning::{overlap::assembly as homology_assembly, restriction::catalog as catalog_digest},
     documents::{
@@ -179,7 +177,7 @@ fn real_saved_pcr_opens_an_independent_cut_fragment_without_target_bootstrap_and
     assert_eq!(fresh.tracked().duplex.left.five_prime, FivePrime::Phosphate);
     assert_eq!(fresh.tracked().duplex.right.five_prime, FivePrime::Hydroxyl);
     assert!(fresh.tracked().duplex.nicks.is_empty());
-    let summary = modified_duplex::summary(fresh.tracked()).unwrap();
+    let summary = fresh.tracked().summary().unwrap();
     assert_eq!(summary.known_modified, 0);
     assert_eq!(summary.unknown_eligible, 0);
     let capsule = d::capsule(&reopened, product).unwrap();
@@ -338,11 +336,11 @@ fn declared_original_modifications_survive_actual_full_circle_cleavage_and_capsu
         unreachable!()
     };
     let original = run_material::reconstruct(&w, &origin.selection).unwrap();
-    let expected = modified_duplex::summary(original.tracked()).unwrap();
+    let expected = original.tracked().summary().unwrap();
     assert!(expected.known_modified > 0);
     let prepared = d::prepare_install(&w, &request).unwrap();
     let fresh = d::reconstruct(&prepared.workspace, &prepared.receipt.product).unwrap();
-    let actual = modified_duplex::summary(fresh.tracked()).unwrap();
+    let actual = fresh.tracked().summary().unwrap();
     assert_eq!(actual.known_modified, expected.known_modified);
     assert_eq!(actual.unknown_eligible, expected.unknown_eligible);
     assert_eq!(

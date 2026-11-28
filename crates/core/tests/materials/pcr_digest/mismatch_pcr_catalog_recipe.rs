@@ -2,7 +2,7 @@
 use collagene_core::{
     chemistry::{EndRepairMethod, FivePrime, Polarity},
     cloning::{
-        assembly::recipe::{self as assembly_recipe, FragmentSpec, Preparation, RunPreparation},
+        assembly::recipe::{FragmentSpec, Preparation, RunPreparation},
         ligation::recipe as lig,
         pcr::mutagenesis::PcrOptions,
         restriction::catalog as catalog_digest,
@@ -226,7 +226,7 @@ fn saved_origin_chain_replays_before_mismatch_digest_and_explicit_repair() {
         },
     });
     assert_eq!(
-        assembly_recipe::preparation_catalog_selection(&r.fragments[0].source.preparation),
+        r.fragments[0].source.preparation.catalog_selection(),
         Some(&pin())
     );
     // Filling the actual two 5′ extensions adds right TCGA to the top reference.
@@ -446,10 +446,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
         fragment_index: 1,
         repair: None,
     };
-    assert_eq!(
-        assembly_recipe::preparation_catalog_selection(&preparation),
-        Some(&selection)
-    );
+    assert_eq!(preparation.catalog_selection(), Some(&selection));
     let w = Workspace::from_documents(
         "Explicit single-fragment Golden Gate",
         vec![source.clone(), intended.clone()],
@@ -580,10 +577,7 @@ fn actual_bsa_i_mutant_fragment_passes_golden_gate_filter_and_saved_catalog_repl
             repair: None,
         },
     };
-    assert_eq!(
-        assembly_recipe::preparation_catalog_selection(&existing),
-        Some(&selection)
-    );
+    assert_eq!(existing.catalog_selection(), Some(&selection));
     let replayed = lig::preview(
         &[input(saved)],
         &intended,

@@ -130,7 +130,7 @@ fn wrong_independent_target_state_source_alias_and_undeclared_or_different_origi
 #[test]
 fn actual_bottom_pcr_work_counts_both_seventeen_base_frame_and_real_coverage_scan() {
     use collagene_core::{
-        chemistry::{Strand, tracked_duplex as modified_duplex},
+        chemistry::Strand,
         cloning::assembly::recipe::{Preparation, RunPreparation},
         material::run::MaterialOrigin,
         planning::combinatorial::batch,
@@ -141,9 +141,7 @@ fn actual_bottom_pcr_work_counts_both_seventeen_base_frame_and_real_coverage_sca
     assert_eq!(source.sequence.len(), 13);
     let fresh = origin.replay(source).unwrap();
     assert_eq!(fresh.tracked().duplex.bottom.len(), 17);
-    let state = modified_duplex::summary(fresh.tracked())
-        .unwrap()
-        .state_revision;
+    let state = fresh.tracked().summary().unwrap().state_revision;
     let MaterialOrigin::Run(capsule) = origin.clone() else {
         unreachable!()
     };

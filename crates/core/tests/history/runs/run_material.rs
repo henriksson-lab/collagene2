@@ -4,7 +4,7 @@ use collagene_core::{
     chemistry::{
         Strand, Terminus,
         methylation::MethylationState,
-        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+        tracked_duplex::{CallState, Chemical, GenerationAssumptions},
     },
     documents::{history::DocumentHistory, workspace::Workspace},
     material::{
@@ -131,7 +131,7 @@ fn named_pcr_reference_reconstructs_actual_hydroxyl_duplex_without_mutating_work
     assert_eq!(tracked.duplex.left, Terminus::PCR);
     assert_eq!(tracked.duplex.right, Terminus::PCR);
     assert!(tracked.duplex.nicks.is_empty() && tracked.generation.is_empty());
-    let modifications = modified_duplex::summary(tracked).unwrap();
+    let modifications = tracked.summary().unwrap();
     assert_eq!(modifications.known_modified, 0);
     assert_eq!(modifications.unknown_eligible, 0);
     assert_eq!(fresh.report().status, Status::ConsistentUnderAssumptions);
@@ -367,7 +367,7 @@ fn blocked_noti_reconstruction_preserves_four_literal_cpg_positions_and_generati
             .collect::<Vec<_>>();
         assert_eq!(positions, vec![3, 7]);
     }
-    assert_eq!(modified_duplex::summary(tracked).unwrap().known_modified, 4);
+    assert_eq!(tracked.summary().unwrap().known_modified, 4);
     assert_eq!(tracked.generation.len(), 1);
     assert_eq!(tracked.generation[0].source_revision, source.revision());
     assert_eq!(tracked.generation[0].assumptions, assumptions);

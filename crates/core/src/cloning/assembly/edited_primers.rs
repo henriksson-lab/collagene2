@@ -295,8 +295,7 @@ fn source_frames(
         result.push(SourceFrame {
             input_id: contribution.input_id.clone(),
             template_strand,
-            state_revision: crate::chemistry::tracked_duplex::summary(material.tracked())?
-                .state_revision,
+            state_revision: material.tracked().summary()?.state_revision,
             sequence: sequence.clone(),
             topology: duplex.topology,
         });

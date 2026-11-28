@@ -158,7 +158,7 @@ fn sources<'a>(
                 "Ligation outcomes: operands must be linear duplex fragments".into(),
             ));
         }
-        let summary = modified_duplex::summary(material)?;
+        let summary = material.summary()?;
         descriptors.push(Source {
             key: key.into(),
             state_revision: summary.state_revision,
@@ -239,7 +239,7 @@ impl Search<'_> {
             .collect::<Vec<_>>();
         let actual =
             modified_duplex::ligate(&materials, self.request.circular, self.request.allow_nicked)?;
-        let modifications = modified_duplex::summary(&actual)?;
+        let modifications = actual.summary()?;
         Ok(Product {
             path: self.path(p),
             sequence: actual.duplex.top.clone(),
@@ -444,7 +444,7 @@ pub(crate) fn analyze_fresh(
             "native ligation did not conserve the declared stored strand lengths",
         ));
     }
-    let modifications = modified_duplex::summary(&actual)?;
+    let modifications = actual.summary()?;
     let product = Product {
         path: request.intended.clone(),
         sequence: actual.duplex.top.clone(),
@@ -733,7 +733,7 @@ mod native_tests {
         .into_parts();
         assert_eq!(actual.duplex.top.as_str(), "AGTCGACT");
         assert_eq!(
-            modified_duplex::summary(&actual).unwrap().state_revision,
+            actual.summary().unwrap().state_revision,
             report.intended.modifications.state_revision
         );
         report.intended.sequence = Sequence::dna("AAAAAAAA").unwrap();

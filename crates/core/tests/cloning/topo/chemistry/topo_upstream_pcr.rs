@@ -253,7 +253,7 @@ fn modified_upstream_template_is_copied_into_new_material_and_portable_summary_i
             .any(|s| s.sequence.as_str() == "GGTG")
     );
     let actual = e.tracked.as_ref().unwrap();
-    let after = collagene_core::chemistry::tracked_duplex::summary(actual).unwrap();
+    let after = actual.summary().unwrap();
     assert_eq!(after.known_modified, 0);
     assert!(after.unknown_eligible > 0);
     assert!(actual.generation.is_empty());

@@ -86,7 +86,7 @@ impl Request {
             inspection_revision: self.recipe.inspection_revision(source)?,
             molecule,
             duplex: tracked.duplex.summary()?,
-            modifications: super::modified_duplex::summary(&tracked)?,
+            modifications: tracked.summary()?,
             incomplete,
             findings,
             findings_total,

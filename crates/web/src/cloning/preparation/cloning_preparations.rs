@@ -1247,7 +1247,7 @@ pub(crate) fn ligation_request(
     if state.mode == Mode::GoldenGate {
         let geometry = state.golden_gate.enzyme.profile();
         for fragment in &fragments {
-            let selection=collagene_core::cloning::assembly::recipe::preparation_catalog_selection(&fragment.preparation)
+            let selection=fragment.preparation.catalog_selection()
                 .ok_or("Golden Gate rows require a pinned Type IIS catalog digest, including an explicit exact or intentional-mismatch PCR followed by digestion.")?;
             if selection.enzymes.len() != 1
                 || !selection.enzymes.iter().all(|entry| {

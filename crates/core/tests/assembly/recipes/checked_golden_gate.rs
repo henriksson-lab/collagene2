@@ -88,7 +88,7 @@ fn source_dcm_uncertainty_is_positional_not_a_generation_record_flag() {
     // R0535's conflicting Dcm context is unsupported, never silently HFv2.
     let source = Molecule::dna("Dcm overlap", "AACCAGGTCTCAAAAAAAA", Topology::Circular).unwrap();
     let mut actual = generated(&source, MethylationState::FullyModified);
-    assert!(m::summary(&actual).unwrap().known_modified > 0);
+    assert!(actual.summary().unwrap().known_modified > 0);
     actual.generation.clear(); // Native kernel unit test: chemical spans remain identical.
     let mut budget = CleavageBudget::new(100_000_000).unwrap();
     let result = golden_gate::simulate_tracked(

@@ -76,7 +76,7 @@ pub fn inspect(
     let context_revision = inspection_revision(c, s, role, m, origin, o)?;
     let fresh = crate::material::capsule::replay(origin, m)?;
     let origin_report = fresh.evidence.decode_report()?;
-    let source_modifications = modified_duplex::summary(&fresh.tracked)?;
+    let source_modifications = fresh.tracked.summary()?;
     let source_duplex = fresh.tracked.duplex.summary()?;
     let enzymes = s.resolved_enzymes(c)?;
     let mut fragment_modifications = vec![];
@@ -84,7 +84,7 @@ pub fn inspect(
         let fragments = modified_duplex::digest(&fresh.tracked, &enzymes)?;
         let mut result = Vec::with_capacity(fragments.len());
         for fragment in fragments {
-            fragment_modifications.push(modified_duplex::summary(&fragment.duplex)?);
+            fragment_modifications.push(fragment.duplex.summary()?);
             result.push(chemistry::DigestFragment {
                 duplex: fragment.duplex.duplex,
                 top_start: fragment.top_start,

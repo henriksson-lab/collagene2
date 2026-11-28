@@ -1,5 +1,5 @@
 use collagene_core::{
-    chemistry::{AnnealOptions, Strand, Terminus, tracked_duplex as modified_duplex},
+    chemistry::{AnnealOptions, Strand, Terminus},
     cloning::{
         assembly::{
             intent::Selector,
@@ -127,9 +127,7 @@ pub fn fixture() -> (Workspace, library::Design, library::SelectedConstruct) {
     };
     let fresh = origin.replay(&w.revisions[&source.revision]).unwrap();
     assert_eq!(fresh.tracked().duplex.bottom_start, 4);
-    let state = modified_duplex::summary(fresh.tracked())
-        .unwrap()
-        .state_revision;
+    let state = fresh.tracked().summary().unwrap().state_revision;
     let catalog = catalog_digest::builtin_catalog().unwrap();
     let eco = catalog
         .edition()

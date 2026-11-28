@@ -11,7 +11,6 @@ use super::preview_receipt_shape;
 use super::preview_source_shape;
 use super::source_origin_preflight;
 use crate::chemistry;
-use crate::chemistry::tracked_duplex as modified_duplex;
 use crate::chemistry::tracked_duplex::ModificationSummary;
 use crate::sequence::analysis::Primer;
 use crate::verification;
@@ -169,7 +168,7 @@ pub(super) fn mismatch_from_fresh(
         context_revision,
         source_revision: source.revision(),
         source_duplex: fresh.tracked.duplex.summary()?,
-        source_modifications: modified_duplex::summary(&fresh.tracked)?,
+        source_modifications: fresh.tracked.summary()?,
         incomplete: fresh.incomplete || !preview.report.enumeration_complete,
         preview,
         findings,

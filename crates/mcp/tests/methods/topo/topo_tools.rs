@@ -557,12 +557,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     )
     .unwrap();
     assert_eq!(actual.top.as_str(), "AAGGGGCATCCCTTCACCATGACG");
-    assert_eq!(
-        collagene_core::chemistry::tracked_duplex::summary(&actual)
-            .unwrap()
-            .known_modified,
-        0
-    );
+    assert_eq!(actual.summary().unwrap().known_modified, 0);
     assert!(actual.generation.is_empty());
     let mut stale = sources.clone();
     stale[0]["document"]["revision"] = json!("0".repeat(64));

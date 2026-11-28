@@ -1,9 +1,6 @@
 //! Literal independent targets and native saved-template ancestry, not imported summaries.
 use collagene_core::{
-    chemistry::{
-        EndTreatment, FivePrime,
-        tracked_duplex::{self as modified_duplex, ModificationSummary},
-    },
+    chemistry::{EndTreatment, FivePrime, tracked_duplex::ModificationSummary},
     cloning::{
         pcr::mutagenesis::{self, InversePcrOptions},
         restriction::catalog as catalog_digest,
@@ -393,18 +390,8 @@ fn new_run_exports_new_oligos_protocol_and_replays_without_changing_original_hea
             .replay(&w.revisions[&product.revision])
             .unwrap();
     assert!(fresh.tracked().duplex.nicks.is_empty());
-    assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .known_modified,
-        0
-    );
-    assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .unknown_eligible,
-        0
-    );
+    assert_eq!(fresh.tracked().summary().unwrap().known_modified, 0);
+    assert_eq!(fresh.tracked().summary().unwrap().unknown_eligible, 0);
     // The explicit phosphorylated linear intermediate is real, not inferred from final DNA.
     let linear: collagene_core::chemistry::DuplexSummary =
         serde_json::from_str(&replay.current_report.products[2].metadata["duplex_model"]).unwrap();

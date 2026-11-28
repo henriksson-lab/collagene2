@@ -1,6 +1,13 @@
 //! Original-coordinate chemical oracle independent of implementation mappings.
 use collagene_core::{
-    chemistry::{Strand, methylation::MethylationState as M, tracked_duplex::*},
+    chemistry::{
+        Strand,
+        methylation::MethylationState as M,
+        tracked_duplex::{
+            CallState, Chemical, GenerationAssumptions, StrandModifications, TrackedDuplex, digest,
+            ligate,
+        },
+    },
     sequence::analysis::Enzyme,
 };
 use collagene_model::{Molecule, Topology};
@@ -120,8 +127,8 @@ fn all_origins_and_orientations_preserve_actual_strand_chemical_positions_throug
             assert_mapped(&closed.top_modifications, &text, top);
             assert_mapped(&closed.bottom_modifications, &bottom, (n - top) % n);
             assert_eq!(
-                summary(&closed).unwrap().known_modified,
-                summary(&tracked).unwrap().known_modified
+                closed.summary().unwrap().known_modified,
+                tracked.summary().unwrap().known_modified
             );
         }
     }
@@ -214,12 +221,12 @@ fn fill_in_keeps_original_dam_calls_and_marks_each_added_adenine_unmodified() {
             assert_eq!(state(s, Chemical::N6A, i), CallState::Unmodified);
         }
     }
-    assert_eq!(summary(&repaired).unwrap().known_modified, 2);
+    assert_eq!(repaired.summary().unwrap().known_modified, 2);
     assert_eq!(
-        summary(&repaired).unwrap().known_unmodified,
-        summary(&f).unwrap().known_unmodified + 4
+        repaired.summary().unwrap().known_unmodified,
+        f.summary().unwrap().known_unmodified + 4
     );
     let closed = ligate(&[repaired], true, false).unwrap();
     assert_eq!(closed.duplex.top.as_str(), "AATTCAAAAGATCGAATT");
-    assert_eq!(summary(&closed).unwrap().known_modified, 2);
+    assert_eq!(closed.summary().unwrap().known_modified, 2);
 }

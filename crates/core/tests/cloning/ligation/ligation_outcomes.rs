@@ -166,8 +166,8 @@ fn reversing_actual_unequal_thirteen_seventeen_strands_never_invents_or_discards
     let insert = annealed("AGTCCGATGCTAC", "GTAGGTAGCATCGGACT", 12);
     assert_eq!(insert.duplex.top.len(), 13);
     assert_eq!(insert.duplex.bottom.len(), 17);
-    let unknown = tracked::summary(&vector).unwrap().unknown_eligible
-        + tracked::summary(&insert).unwrap().unknown_eligible;
+    let unknown =
+        vector.summary().unwrap().unknown_eligible + insert.summary().unwrap().unknown_eligible;
     let before = insert.clone();
     let mut r = request(false);
     r.intended[1].reverse = true;

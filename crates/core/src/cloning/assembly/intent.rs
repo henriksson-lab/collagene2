@@ -448,7 +448,7 @@ pub(crate) fn resolve<'a>(
         let fresh = &cache[&key];
         material_keys.insert(b.input_id.clone(), key);
         let d = &fresh.tracked().duplex;
-        let state = crate::chemistry::tracked_duplex::summary(fresh.tracked())?.state_revision;
+        let state = fresh.tracked().summary()?.state_revision;
         descriptors.push(MaterialDescriptor {
             input_id: b.input_id.clone(),
             event: b.event.clone(),

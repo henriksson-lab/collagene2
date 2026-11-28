@@ -40,14 +40,22 @@ scientific, binary selector or current version changes are intended. Independent
 static reviews cover both worker execution and material authority; they do not
 replace runtime or graphical acceptance. The ownership checkpoint `ba76722` passed scientific CI on Windows/macOS/Linux and desktop packaging; later source changes retain their own CI gate.
 
-The refreshed [refactor plan](audits/REFACTOR_PLAN.md) identifies proposal/pool
-owners, natural methods, import facades and TreeJob cleanup as the next coherent
-ownership batch. These ownership changes now pass native/WASM checks and 495
-focused cases, with all 2,451 baseline test names preserved; see the
-[implementation evidence](audits/ownership-implementation-2026-11-28.md).
-Coordinate-bearing qualifier projection is now implemented in
-the current source, with its own scientific validation below. Full product, installed-platform and graphical acceptance remain open;
-browser/application HTTP checks stay deferred as instructed.
+The proposal/pool, natural Design/Draft/TreeJob methods and import-facade batch
+already passes native/WASM checks and 495 cases; the
+[implementation record](audits/ownership-implementation-2026-11-28.md) retains its
+scope. These are completed findings, not a queue to repeat.
+
+The connected [controller/owner batch](audits/controller-ownership-2026-11-28.md)
+is now implemented in source: App's verification and persistence callbacks use
+existing domain controllers, Preparation/TrackedDuplex own their operations, and
+renderer State owns its gesture/draw methods. App is 2,413 lines. Each verification
+now advances generation and rejects superseded/disposed completions; complete
+PlanState invalidation also clears input-event bindings. Native/WASM checks and
+107 focused cases pass, preserving all 2,509 case names / 33 harnesses. Exact-source
+CI remains required; the preceding `82937c1` passed scientific and desktop CI.
+This adds no scientific representation,
+schema, hash or engine version. The [current refactor queue](audits/REFACTOR_PLAN.md)
+retains only connected remaining work. Graphical/platform acceptance stays open.
 
 ## Next connected cloning batch
 
@@ -114,7 +122,7 @@ location permits fresh reannotation. Separate native replace, destination paste
 and annotation-only strand-flip refusal boundaries remain in place.
 
 The native MCP registry now contains 209 tools, including
-`edit_reference_document`: seven explicit immutable reference operations use the
+`edit_reference_document`: nine explicit immutable reference operations use the
 same core guards, exact source identity and atomic result admission. Receipts
 state reference-only authority; no physical material, cloning verification or
 native history is invented. Thin WebMCP permissions do not expand.

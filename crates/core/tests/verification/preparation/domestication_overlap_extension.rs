@@ -320,12 +320,7 @@ fn saved_native_history_and_protocols_keep_original_source_and_independent_targe
         let fresh = origin.replay(&w.revisions[&p.revision]).unwrap();
         assert_eq!(fresh.reference().sequence.as_str(), EDITED);
         assert!(fresh.tracked().duplex.nicks.is_empty());
-        assert_eq!(
-            collagene_core::chemistry::tracked_duplex::summary(fresh.tracked())
-                .unwrap()
-                .known_modified,
-            0
-        );
+        assert_eq!(fresh.tracked().summary().unwrap().known_modified, 0);
     }
 }
 #[test]

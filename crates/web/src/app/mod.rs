@@ -5,13 +5,11 @@ use crate::workspace::tabs::{DocumentItems, DocumentTabs};
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod shell;
 
-use crate::platform::worker;
 use crate::viewer::map::renderer::MapRenderer;
 use crate::workspace::session::RestoredWorkspace;
 use crate::workspace::session::WorkspaceSession;
 use collagene_core::documents::transfer;
 use collagene_core::formats::sequence as formats;
-use collagene_core::material::lineage::EventBinding;
 use collagene_core::planning::plan::DesignPlan;
 use collagene_core::planning::plan::Operation;
 use collagene_core::planning::plan::Source;
@@ -34,7 +32,6 @@ use collagene_model::Topology;
 use leptos::html;
 use leptos::prelude::*;
 use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::spawn_local;
 use web_sys::HtmlCanvasElement;
 use web_sys::HtmlInputElement;
 
@@ -188,6 +185,7 @@ pub fn App() -> impl IntoView {
         plan_report,
         last_plan,
         last_plan_target,
+        last_plan_events,
         plan_generation,
     } = plan_state;
 
@@ -795,12 +793,6 @@ pub fn App() -> impl IntoView {
     let second_repair = RwSignal::new("none".to_owned());
     let first_modifications = crate::cloning::methods::checked_cloning::AssumptionSignals::new();
     let second_modifications = crate::cloning::methods::checked_cloning::AssumptionSignals::new();
-    let last_plan_events = RwSignal::new(
-        None::<(
-            String,
-            Vec<collagene_core::material::lineage::InputEventBinding>,
-        )>,
-    );
 
     let allow_nicked = RwSignal::new(false);
 
@@ -1280,100 +1272,12 @@ pub fn App() -> impl IntoView {
         pending_material,
         stored_candidates,
     );
-    let run_plan =
-        move |plan: DesignPlan,
-              target: Molecule,
-              exact_sources: Option<Vec<collagene_core::material::lineage::InputEventBinding>>,
-              exact_target: Option<collagene_core::material::lineage::EventBinding>| {
-            let expected_epoch = workspace_epoch.get_untracked();
-            let expected_target = exact_target.or_else(|| {
-                documents.with_untracked(|docs| {
-                    docs.get(active.get_untracked()).map(current_event_binding)
-                })
-            });
-            let expected_sources = documents.with_untracked(|docs| {
-                docs.iter()
-                    .map(|d| {
-                        (
-                            d.id.clone(),
-                            d.head_event().to_string(),
-                            d.head_revision().to_string(),
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            });
-            last_plan_events.set(None);
-            plan_report.set(None);
-            last_plan.set(None);
-            last_plan_target.set(None);
-            let revision = target.revision();
-            let generation = plan_generation.get_untracked();
-            let request = protocol::request::Request {
-                id: 0,
-                revision: revision.clone(),
-                job: protocol::schema::AnalysisJob::Verify {
-                    target: target.clone(),
-                    plan: plan.clone(),
-                },
-            };
-            message.set("Reconstructing the assembly in background…".into());
-            spawn_local(async move {
-                let result = worker::analyze(request).await;
-                if plan_generation.get_untracked() != generation
-                    || workspace_epoch.get_untracked() != expected_epoch
-                    || !expected_target.as_ref().is_some_and(|binding| {
-                        documents.with_untracked(|docs| {
-                            crate::protocol::plan_editing_sources::resolve_target(
-                                docs, binding, &revision,
-                            )
-                            .is_ok()
-                        })
-                    })
-                    || documents.with_untracked(|docs| {
-                        docs.iter()
-                            .map(|d| {
-                                (
-                                    d.id.clone(),
-                                    d.head_event().to_string(),
-                                    d.head_revision().to_string(),
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                    }) != expected_sources
-                {
-                    return;
-                }
-                match result {
-                    Ok(protocol::response::Response {
-                        result: protocol::schema::AnalysisResult::Verification(report),
-                        ..
-                    }) => {
-                        plan_report.set(Some(report));
-                        last_plan_events.set(exact_sources.map(|bindings| {
-                            (
-                                collagene_core::planning::plan::DesignPlan::revision(&plan),
-                                bindings,
-                            )
-                        }));
-                        last_plan_target.set(expected_target.map(|event| {
-                            (
-                                collagene_core::planning::plan::DesignPlan::revision(&plan),
-                                expected_epoch,
-                                event,
-                            )
-                        }));
-                        last_plan.set(Some((plan, target)));
-                        message.set("Assembly reconstruction finished.".into());
-                    }
-                    Ok(protocol::response::Response {
-                        result: protocol::schema::AnalysisResult::Error(error),
-                        ..
-                    })
-                    | Err(error) => message.set(error),
-                    _ => message.set("Unexpected worker response".into()),
-                }
-            });
-        };
+    let run_plan = ProtocolController {
+        session,
+        viewer,
+        shell,
+    }
+    .run_plan(plan_state);
     let verify_candidate = AssemblyController {
         session,
         viewer,
@@ -1794,56 +1698,14 @@ pub fn App() -> impl IntoView {
         shell,
     }
     .apply_annotation_batch(candidate, stored_candidates);
-    let saved_enzyme_sets = Memo::new(move |_| {
-        let frame = WorkspaceSession::snapshot(
-            &documents.get(),
-            active.get_untracked(),
-            candidate.get_untracked().as_ref(),
-            &stored_candidates.get_untracked(),
-            &attachments.get(),
-            &workspace_name.get_untracked(),
-        );
-        match frame.and_then(|frame| {
-            collagene_core::cloning::restriction::enzyme_sets::list(&frame)
-                .map_err(|e| e.to_string())
-        }) {
-            Ok(sets) => sets,
-            Err(error) => {
-                message.set(format!("Saved enzyme sets need attention: {error}"));
-                Vec::new()
-            }
-        }
-    });
-    let save_enzyme_set = Callback::new(
-        move |set: collagene_core::cloning::restriction::enzyme_sets::Set| -> Result<(), String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            let (staged, _) = collagene_core::cloning::restriction::enzyme_sets::store(
-                &contig_snapshot.run(())?,
-                &set,
-            )
-            .map_err(|e| e.to_string())?;
-            staged.validate().map_err(|e| e.to_string())?;
-            attachments.set(staged.attachments);
-            message.set(format!("Saved enzyme set: {}", set.name));
-            Ok(())
-        },
-    );
-    let delete_enzyme_set = Callback::new(move |hash: String| -> Result<(), String> {
-        if workspace_restoring.get_untracked() {
-            return Err("Wait for the workspace update to finish.".into());
-        }
-        let staged = collagene_core::cloning::restriction::enzyme_sets::delete(
-            &contig_snapshot.run(())?,
-            &hash,
-        )
-        .map_err(|e| e.to_string())?;
-        staged.validate().map_err(|e| e.to_string())?;
-        attachments.set(staged.attachments);
-        message.set("Deleted saved enzyme set.".into());
-        Ok(())
-    });
+    let restriction_controller = RestrictionController {
+        session,
+        viewer,
+        shell,
+    };
+    let saved_enzyme_sets = restriction_controller.saved_enzyme_sets(candidate, stored_candidates);
+    let save_enzyme_set = restriction_controller.save_enzyme_set(contig_snapshot);
+    let delete_enzyme_set = restriction_controller.delete_enzyme_set(contig_snapshot);
     let resolve_retained_source = Callback::new(
         move |event: collagene_core::material::lineage::EventBinding| -> Result<Molecule, String> {
             documents.with_untracked(|docs| {
@@ -1863,226 +1725,31 @@ pub fn App() -> impl IntoView {
             })
         },
     );
-    let saved_digests = Memo::new(move |_| {
-        let assets = attachments.get();
-        if !assets
-            .values()
-            .any(|asset| asset.kind == collagene_core::cloning::restriction::setups::KIND)
-        {
-            return Vec::new();
-        }
-        let frame = WorkspaceSession::snapshot(
-            &documents.get(),
-            active.get_untracked(),
-            candidate.get_untracked().as_ref(),
-            &stored_candidates.get_untracked(),
-            &assets,
-            &workspace_name.get_untracked(),
-        );
-        match frame.and_then(|frame| {
-            collagene_core::cloning::restriction::setups::list(&frame).map_err(|e| e.to_string())
-        }) {
-            Ok(mut setups) => {
-                setups.sort_by(|a, b| {
-                    a.name
-                        .cmp(&b.name)
-                        .then(a.attachment_hash.cmp(&b.attachment_hash))
-                });
-                setups
-            }
-            Err(error) => {
-                message.set(format!("Saved digest setups need attention: {error}"));
-                Vec::new()
-            }
-        }
-    });
+    let saved_digests = restriction_controller.saved_digests(candidate, stored_candidates);
     let save_digest_setup = RestrictionController {
         session,
         viewer,
         shell,
     }
     .save_digest_setup(contig_snapshot);
-    let load_digest_setup = Callback::new(
-        move |hash: String| -> Result<collagene_core::cloning::restriction::setups::Record, String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            collagene_core::cloning::restriction::setups::load(&contig_snapshot.run(())?, &hash)
-                .map_err(|e| e.to_string())
-        },
+    let load_digest_setup = restriction_controller.load_digest_setup(contig_snapshot);
+    let delete_digest_setup = restriction_controller.delete_digest_setup(contig_snapshot);
+    let queue_digest_gel = restriction_controller.queue_digest_gel(
+        contig_snapshot,
+        resolve_retained_source,
+        gel_digest_seeds,
     );
-    let delete_digest_setup = Callback::new(move |hash: String| -> Result<(), String> {
-        if workspace_restoring.get_untracked() {
-            return Err("Wait for the workspace update to finish.".into());
-        }
-        let staged =
-            collagene_core::cloning::restriction::setups::delete(&contig_snapshot.run(())?, &hash)
-                .map_err(|e| e.to_string())?;
-        attachments.set(staged.attachments);
-        Ok(())
-    });
-    let queue_digest_gel =
-        Callback::new(
-            move |(name, recipe): (
-                String,
-                collagene_core::cloning::restriction::setups::Recipe,
-            )|
-                  -> Result<(), String> {
-                if workspace_restoring.get_untracked() {
-                    return Err("Wait for the workspace update to finish.".into());
-                }
-                recipe
-                    .validate_for_workspace(&contig_snapshot.run(())?)
-                    .map_err(|e| e.to_string())?;
-                resolve_retained_source.run(recipe.source.clone())?;
-                if gel_digest_seeds.with_untracked(Vec::len) >= 32 {
-                    return Err("The pending gel queue reached its 32-lane limit.".into());
-                }
-                gel_digest_seeds.update(|seeds| {
-                    seeds.push(crate::restriction::gel::DigestLaneSeed {
-                        name,
-                        recipe,
-                        epoch: workspace_epoch.get_untracked(),
-                    })
-                });
-                panel.set("gel");
-                Ok(())
-            },
-        );
-    let fork_digest_source = Callback::new(move |source:collagene_core::material::lineage::EventBinding| ->Result<crate::sources::identity::SourceInfo,String> {
-        if workspace_restoring.get_untracked(){return Err("Wait for the workspace update to finish.".into());}
-        let mut docs=documents.get_untracked();
-        let original=docs.iter().find(|doc|doc.id==source.document_id).ok_or("The retained digest source is unavailable.")?;
-        let molecule=original.revision_molecule(&source.event_id).map_err(|e|e.to_string())?;
-        if molecule.revision()!=source.revision{return Err("The saved digest source revision differs from its retained event.".into());}
-        let prefix=format!("digest-source-{}",&source.revision[..16]);let mut suffix=1usize;
-        let id=loop{let id=format!("{prefix}-{suffix}");if !docs.iter().any(|doc|doc.id==id){break id;}suffix+=1;};
-        let fork=original.fork_event(&source.event_id,id).map_err(|e|e.to_string())?;
-        let info=recombination_source_info(&fork);let index=docs.len();docs.push(fork);
-        if docs.len()>1000||docs.iter().map(|doc|document_bytes(&doc.molecule)).sum::<usize>()>MAX_WORKSPACE_BYTES {
-            return Err("The source fork exceeds this workspace's document or size limit.".into());
-        }
-        let frame=WorkspaceSession::snapshot(&docs,index,candidate.get_untracked().as_ref(),&stored_candidates.get_untracked(),
-            &attachments.get_untracked(),&workspace_name.get_untracked())?;
-        frame.validate().map_err(|e|e.to_string())?;
-        batch(||{documents.set(docs);active.set(index);selection.set(None);selected_feature.set(None);search_regions.set(None);});
-        message.set("Opened an editable copy of the exact digest source; original source heads and saved evidence are unchanged.".into());
-        Ok(info)
-    });
-
-    let published_antibody =
-        RwSignal::new(None::<std::sync::Arc<crate::biology::antibody::antibody_overlay::Overlay>>);
-    let antibody_overlay = Memo::new(move |_| {
-        if workspace_restoring.get() {
-            return None;
-        }
-        let p = published_antibody.get()?;
-        documents.with(|docs| {
-            let doc = docs.get(active.get())?;
-            p.capture
-                .guard(
-                    workspace_epoch.get(),
-                    &current_event_binding(doc),
-                    &p.capture.options,
-                    &p.capture.limits,
-                    &p.capture.selection,
-                )
-                .ok()?;
-            Some(p)
-        })
-    });
-    let publish_antibody = Callback::new(
-        move |value: Option<
-            std::sync::Arc<crate::biology::antibody::antibody_overlay::Overlay>,
-        >|
-              -> Result<(), String> {
-            if let Some(p) = &value {
-                if workspace_restoring.get_untracked() {
-                    return Err("Wait for the workspace update to finish.".into());
-                }
-                documents.with_untracked(|docs| {
-                    p.capture.guard(
-                        workspace_epoch.get_untracked(),
-                        &current_event_binding(&docs[active.get_untracked()]),
-                        &p.capture.options,
-                        &p.capture.limits,
-                        &p.capture.selection,
-                    )
-                })?;
-            }
-            published_antibody.set(value);
-            Ok(())
-        },
-    );
-    let prepare_antibody =
-        Callback::new(move |binding: EventBinding| -> Result<Molecule, String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            documents.with_untracked(|docs| {
-                let doc = &docs[active.get_untracked()];
-                if current_event_binding(doc) != binding {
-                    return Err("The active protein source event changed.".into());
-                }
-                collagene_core::antibody_numbering::source_revision(&doc.molecule)
-                    .map_err(|e| e.to_string())?;
-                Ok(doc.molecule.clone())
-            })
-        });
-    let select_antibody_residue = Callback::new(
-        move |(capture, start, end): (
-            crate::biology::antibody::antibody_model::Capture,
-            usize,
-            usize,
-        )|
-              -> Result<(), String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            documents.with_untracked(|docs| {
-                let doc = &docs[active.get_untracked()];
-                capture.guard(
-                    workspace_epoch.get_untracked(),
-                    &current_event_binding(doc),
-                    &capture.options,
-                    &capture.limits,
-                    &capture.selection,
-                )?;
-                if start >= end || end > doc.molecule.sequence.len() {
-                    return Err("Invalid source residue range.".into());
-                }
-                Ok::<_, String>(())
-            })?;
-            batch(|| {
-                selected_feature.set(None);
-                search_regions.set(None);
-                biology_directed.set(None);
-                selection.set(Some((start, end)));
-            });
-            Ok(())
-        },
-    );
-    let prepare_protein_liabilities =
-        Callback::new(
-            move |(binding, options): (
-                EventBinding,
-                collagene_core::protein_liabilities::Options,
-            )|
-                  -> Result<Molecule, String> {
-                if workspace_restoring.get_untracked() {
-                    return Err("Wait for the workspace update to finish.".into());
-                }
-                documents.with_untracked(|docs| {
-                    let doc = &docs[active.get_untracked()];
-                    if current_event_binding(doc) != binding {
-                        return Err("The active protein source event changed.".into());
-                    }
-                    collagene_core::protein_liabilities::request_revision(&doc.molecule, &options)
-                        .map_err(|e| e.to_string())?;
-                    Ok(doc.molecule.clone())
-                })
-            },
-        );
+    let fork_digest_source =
+        restriction_controller.fork_digest_source(candidate, stored_candidates);
+    let biology_controller = BiologyController {
+        session,
+        viewer,
+        shell,
+    };
+    let (antibody_overlay, publish_antibody) = biology_controller.antibody_publication();
+    let prepare_antibody = biology_controller.prepare_antibody();
+    let select_antibody_residue = biology_controller.select_antibody_residue(biology_directed);
+    let prepare_protein_liabilities = biology_controller.prepare_protein_liabilities();
     let select_protein_liability = BiologyController {
         session,
         viewer,
@@ -2095,149 +1762,26 @@ pub fn App() -> impl IntoView {
         shell,
     }
     .annotate_protein_liability(candidate);
-    let saved_rna = Memo::new(move |_| {
-        WorkspaceSession::snapshot(
-            &documents.get(),
-            active.get_untracked(),
-            candidate.get_untracked().as_ref(),
-            &stored_candidates.get_untracked(),
-            &attachments.get(),
-            &workspace_name.get_untracked(),
-        )
-        .and_then(|w| collagene_core::documents::rna_history::list(&w).map_err(|e| e.to_string()))
-    });
-    let resolve_rna = Callback::new(move |binding: EventBinding| -> Result<Molecule, String> {
-        if workspace_restoring.get_untracked() {
-            return Err("Wait for the workspace update to finish.".into());
-        }
-        documents.with_untracked(|docs| {
-            let d = docs
-                .iter()
-                .find(|d| d.id == binding.document_id)
-                .ok_or("The pinned RNA document is unavailable.")?;
-            let m = d
-                .revision_molecule_ref(&binding.event_id)
-                .map_err(|e| e.to_string())?;
-            if collagene_core::rna_chemistry::source_revision(m).map_err(|e| e.to_string())?
-                != binding.revision
-            {
-                return Err("The pinned RNA source revision differs.".into());
-            }
-            Ok(m.clone())
-        })
-    });
-    let save_rna = Callback::new(
-        move |(epoch, record): (u64, collagene_core::documents::rna_history::Record)| -> Result<(), String> {
-            if workspace_restoring.get_untracked() || workspace_epoch.get_untracked() != epoch {
-                return Err("The workspace changed; calculate RNA chemistry again.".into());
-            }
-            let (next, _) =
-                collagene_core::documents::rna_history::capture(&contig_snapshot.run(())?, &record)
-                    .map_err(|e| e.to_string())?;
-            attachments.set(next.attachments);
-            Ok(())
-        },
-    );
-    let load_rna = Callback::new(
-        move |hash: String| -> Result<collagene_core::documents::rna_history::Record, String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            collagene_core::documents::rna_history::load(&contig_snapshot.run(())?, &hash)
-                .map_err(|e| e.to_string())
-        },
-    );
-    let delete_rna = Callback::new(move |hash: String| -> Result<(), String> {
-        if workspace_restoring.get_untracked() {
-            return Err("Wait for the workspace update to finish.".into());
-        }
-        let next = collagene_core::documents::rna_history::delete(&contig_snapshot.run(())?, &hash)
-            .map_err(|e| e.to_string())?;
-        attachments.set(next.attachments);
-        Ok(())
-    });
-    let saved_comparisons = Memo::new(move |_| {
-        let frame = WorkspaceSession::snapshot(
-            &documents.get(),
-            active.get_untracked(),
-            candidate.get_untracked().as_ref(),
-            &stored_candidates.get_untracked(),
-            &attachments.get(),
-            &workspace_name.get_untracked(),
-        );
-        match frame.and_then(|frame| {
-            collagene_core::alignment::history::list(&frame).map_err(|e| e.to_string())
-        }) {
-            Ok(summaries) => summaries,
-            Err(error) => {
-                message.set(format!("Saved comparisons need attention: {error}"));
-                Vec::new()
-            }
-        }
-    });
-    let save_comparison = Callback::new(
-        move |record: collagene_core::alignment::history::Record| -> Result<(), String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            let frame = contig_snapshot.run(())?;
-            let (staged, _) = collagene_core::alignment::history::capture(
-                &frame,
-                &record.reference,
-                &record.query,
-                &record.report,
-            )
-            .map_err(|e| e.to_string())?;
-            staged.validate().map_err(|e| e.to_string())?;
-            attachments.set(staged.attachments);
-            message.set("Comparison retained with its exact source versions. Reopening shows historical evidence until explicitly recomputed.".into());
-            Ok(())
-        },
-    );
-    let reopen_comparison = Callback::new(
-        move |hash: String| -> Result<collagene_core::alignment::history::Record, String> {
-            if workspace_restoring.get_untracked() {
-                return Err("Wait for the workspace update to finish.".into());
-            }
-            collagene_core::alignment::history::load(&contig_snapshot.run(())?, &hash)
-                .map_err(|e| e.to_string())
-        },
-    );
+    let saved_rna = biology_controller.saved_rna(candidate, stored_candidates);
+    let resolve_rna = biology_controller.resolve_rna();
+    let save_rna = biology_controller.save_rna(contig_snapshot);
+    let load_rna = biology_controller.load_rna(contig_snapshot);
+    let delete_rna = biology_controller.delete_rna(contig_snapshot);
+    let comparison_controller = ComparisonController {
+        session,
+        viewer,
+        shell,
+    };
+    let saved_comparisons = comparison_controller.saved_comparisons(candidate, stored_candidates);
+    let save_comparison = comparison_controller.save_comparison(contig_snapshot);
+    let reopen_comparison = comparison_controller.reopen_comparison(contig_snapshot);
     let prepare_similarity = ComparisonController {
         session,
         viewer,
         shell,
     }
     .prepare_similarity();
-    let guard_similarity = Callback::new(
-        move |capture: crate::viewer::alignment::sequence_similarity_model::Capture| -> Result<(), String> {
-            if workspace_restoring.get() {
-                return Err("The workspace is being restored.".into());
-            }
-            documents.with(|docs| {
-                let d = docs
-                    .iter()
-                    .find(|d| d.id == capture.query.document_id)
-                    .ok_or("The pinned query is unavailable.")?;
-                let m = d
-                    .revision_molecule_ref(&capture.query.event_id)
-                    .map_err(|e| e.to_string())?;
-                if m.revision() != capture.query.revision {
-                    return Err("The pinned query changed.".into());
-                }
-                let current = capture
-                    .subjects
-                    .iter()
-                    .map(|p| {
-                        docs.get(p.index)
-                            .map(|d| (p.index, current_event_binding(d)))
-                            .ok_or_else(|| "A search subject is unavailable.".to_owned())
-                    })
-                    .collect::<Result<Vec<_>, String>>()?;
-                capture.validate_current(workspace_epoch.get(), &capture.query, &current)
-            })
-        },
-    );
+    let guard_similarity = comparison_controller.guard_similarity();
     let navigate_comparison = ComparisonController {
         session,
         viewer,

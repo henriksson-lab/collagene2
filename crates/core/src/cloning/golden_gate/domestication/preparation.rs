@@ -494,9 +494,7 @@ pub fn materialize(
                 topology: template.topology,
                 context_revision: template.context_revision()?,
                 state_revision: match &fresh {
-                    Some(f) => {
-                        crate::chemistry::tracked_duplex::summary(f.tracked())?.state_revision
-                    }
+                    Some(f) => f.tracked().summary()?.state_revision,
                     None => input.revision.clone(),
                 },
             };

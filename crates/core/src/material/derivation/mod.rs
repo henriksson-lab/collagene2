@@ -1001,7 +1001,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
         event_id: derived.head_event().into(),
         revision: derived.head_revision().into(),
     };
-    let modifications = modified_duplex::summary(&fresh.tracked)?;
+    let modifications = fresh.tracked.summary()?;
     let record = Record {
         schema_version: 2,
         engine_version: ENGINE_VERSION.into(),
@@ -1255,8 +1255,7 @@ fn replay_fields(
     if reference.revision() != record.product.revision
         || reference != fresh.reference()
         || fresh.incomplete != record.incomplete
-        || modified_duplex::summary(fresh.tracked())?.state_revision
-            != record.product_state_revision
+        || fresh.tracked().summary()?.state_revision != record.product_state_revision
     {
         return Err(bad(
             "actual replay differs from saved material product/state/limitations",

@@ -177,8 +177,7 @@ pub fn inspect(
             Ok::<_, Error>(OriginSummary {
                 selection: origin.selection(),
                 source: origin.event().clone(),
-                material_revision: crate::chemistry::tracked_duplex::summary(material.tracked())?
-                    .state_revision,
+                material_revision: material.tracked().summary()?.state_revision,
                 incomplete: material.incomplete(),
                 findings: material.findings().to_vec(),
                 findings_total: material.findings_total(),

@@ -228,6 +228,420 @@ struct State {
     _resize: Option<ResizeListener>,
 }
 
+impl State {
+    fn reference_position(
+        &self,
+        x: f64,
+        y: f64,
+        width: f64,
+        height: f64,
+        clamp_linear: bool,
+    ) -> Option<usize> {
+        let n = self.molecule.sequence.len();
+        if n == 0 || width <= 0. || height <= 0. {
+            return None;
+        }
+        let normalized = if self.molecule.topology == Topology::Circular {
+            ((y - height / 2.).atan2(x - width / 2.) - self.rotation + PI / 2.).rem_euclid(TAU)
+                / TAU
+        } else {
+            let radius = map_labels::radius(View {
+                width,
+                height,
+                rotation: self.rotation,
+                zoom: self.zoom,
+                topology: self.molecule.topology,
+            });
+            if radius <= 0. {
+                return None;
+            }
+            let p = ((x - width / 2.) / radius + 0.8) / 1.6;
+            if !clamp_linear && !(0.0..=1.0).contains(&p) {
+                return None;
+            }
+            p.clamp(0., 1.)
+        };
+        Some(((normalized * n as f64).floor() as usize).min(n - 1))
+    }
+
+    fn advance_gesture(&mut self, x: f64, y: f64) {
+        let Some(mut drag) = self.drag.take() else {
+            return;
+        };
+        let rect = self.canvas.get_bounding_client_rect();
+        if !x.is_finite()
+            || !y.is_finite()
+            || rect.width() <= 0.
+            || rect.height() <= 0.
+            || self.molecule.sequence.is_empty()
+        {
+            self.range_preview.clear();
+            return;
+        }
+        let local_x = x - rect.left();
+        let local_y = y - rect.top();
+        let angle = (local_y - rect.height() / 2.).atan2(local_x - rect.width() / 2.);
+        let delta = shortest_angle(drag.last_angle, angle);
+        drag.last_angle = angle;
+        drag.moved |= (x - drag.initial_x).hypot(y - drag.initial_y) > 4.;
+        if self.selection_mode {
+            drag.sweep = (drag.sweep + delta).clamp(-4. * TAU, 4. * TAU);
+            if let Some(base) =
+                self.reference_position(local_x, local_y, rect.width(), rect.height(), true)
+            {
+                drag.end_base = base;
+            }
+            if drag.moved {
+                self.range_preview = if self.molecule.topology == Topology::Circular {
+                    circular_selection(
+                        self.molecule.sequence.len(),
+                        drag.start_position,
+                        drag.sweep,
+                    )
+                } else {
+                    vec![(
+                        drag.start_base.min(drag.end_base),
+                        drag.start_base.max(drag.end_base) + 1,
+                    )]
+                };
+            }
+        } else if drag.moved && self.molecule.topology == Topology::Circular {
+            self.rotation = (self.rotation + delta).rem_euclid(TAU);
+        }
+        self.drag = Some(drag);
+    }
+
+    fn feature_spans(&self, index: usize, nearest: (usize, usize)) -> Vec<(usize, usize)> {
+        let Some(located) = self
+            .geometry
+            .located
+            .iter()
+            .find(|located| located.index == index)
+        else {
+            return vec![nearest];
+        };
+        let mut spans = located
+            .spans
+            .iter()
+            .map(|&(a, b, _)| (a, b))
+            .collect::<Vec<_>>();
+        if let Some(first) = spans.iter().position(|span| *span == nearest) {
+            spans.rotate_left(first);
+        }
+        if spans.is_empty() {
+            spans.push(nearest);
+        }
+        spans
+    }
+
+    fn nearest_span(&self, index: usize, pos: usize) -> Option<(usize, usize)> {
+        let located = self.geometry.located.get(
+            self.geometry
+                .located
+                .binary_search_by_key(&index, |f| f.index)
+                .ok()?,
+        )?;
+        let n = self.molecule.sequence.len();
+        located
+            .spans
+            .iter()
+            .min_by_key(|&&(a, b, _)| {
+                if pos >= a && pos < b {
+                    return 0;
+                }
+                let direct = if pos < a { a - pos } else { pos - (b - 1) };
+                if self.molecule.topology == Topology::Circular {
+                    direct.min((pos + n - a) % n).min((b - 1 + n - pos) % n)
+                } else {
+                    direct
+                }
+            })
+            .map(|&(a, b, _)| (a, b))
+    }
+
+    fn draw(&mut self) -> Option<LabelStats> {
+        let rect = self.canvas.get_bounding_client_rect();
+        let w = rect.width().max(0.);
+        let h = rect.height().max(0.);
+        if w <= 0. || h <= 0. || self.molecule.sequence.is_empty() {
+            self.drag = None;
+            self.range_preview.clear();
+        }
+        let view = View {
+            width: w,
+            height: h,
+            rotation: self.rotation,
+            zoom: self.zoom,
+            topology: self.molecule.topology,
+        };
+        let radius = map_labels::radius(view);
+        let dpr = web_sys::window()
+            .map(|w| w.device_pixel_ratio())
+            .filter(|v| v.is_finite() && *v > 0.)
+            .unwrap_or(1.)
+            .min(2.);
+        let pw = (w * dpr).ceil().max(1.) as u32;
+        let ph = (h * dpr).ceil().max(1.) as u32;
+        if self.canvas.width() != pw || self.canvas.height() != ph {
+            self.canvas.set_width(pw);
+            self.canvas.set_height(ph);
+        }
+        if self.overlay.width() != pw || self.overlay.height() != ph {
+            self.overlay.set_width(pw);
+            self.overlay.set_height(ph);
+        }
+        let gl = &self.gl;
+        gl.viewport(0, 0, pw as i32, ph as i32);
+        gl.clear_color(0.985, 0.990, 0.987, 1.);
+        gl.clear(Gl::COLOR_BUFFER_BIT);
+        gl.use_program(Some(&self.program));
+        gl.bind_buffer(Gl::ARRAY_BUFFER, Some(&self.buffer));
+        let pos = gl.get_attrib_location(&self.program, "a_pos") as u32;
+        let color = gl.get_attrib_location(&self.program, "a_color") as u32;
+        gl.enable_vertex_attrib_array(pos);
+        gl.vertex_attrib_pointer_with_i32(pos, 2, Gl::FLOAT, false, 24, 0);
+        gl.enable_vertex_attrib_array(color);
+        gl.vertex_attrib_pointer_with_i32(color, 4, Gl::FLOAT, false, 24, 8);
+        gl.uniform2f(
+            gl.get_uniform_location(&self.program, "u_aspect").as_ref(),
+            if w > 0. { (radius * 2. / w) as f32 } else { 0. },
+            if h > 0. { (radius * 2. / h) as f32 } else { 0. },
+        );
+        gl.uniform1f(
+            gl.get_uniform_location(&self.program, "u_rotation")
+                .as_ref(),
+            if self.molecule.topology == Topology::Circular {
+                self.rotation as f32
+            } else {
+                0.
+            },
+        );
+        gl.uniform1f(
+            gl.get_uniform_location(&self.program, "u_zoom").as_ref(),
+            1.,
+        );
+        gl.draw_arrays(Gl::TRIANGLES, 0, self.vertices);
+        let ctx = &self.overlay_ctx;
+        let _ = ctx.set_transform(
+            if w > 0. { pw as f64 / w } else { 1. },
+            0.,
+            0.,
+            if h > 0. { ph as f64 / h } else { 1. },
+            0.,
+            0.,
+        );
+        ctx.clear_rect(0., 0., w, h);
+        let _ = self.canvas.set_attribute(
+            "data-map-selection-mode",
+            if self.selection_mode {
+                "select"
+            } else {
+                "rotate"
+            },
+        );
+        let _ = self.canvas.set_attribute(
+            "data-range-preview",
+            &serde_json::to_string(&self.range_preview).unwrap_or_else(|_| "[]".into()),
+        );
+        if w > 0. && h > 0. {
+            if self.molecule.topology == Topology::Circular {
+                draw_selection_sectors(
+                    ctx,
+                    &self.selection_spans,
+                    self.molecule.sequence.len(),
+                    view,
+                    radius,
+                    "rgba(25,128,104,0.14)",
+                );
+                draw_selection_sectors(
+                    ctx,
+                    &self.range_preview,
+                    self.molecule.sequence.len(),
+                    view,
+                    radius,
+                    "rgba(25,128,104,0.20)",
+                );
+            } else if !self.range_preview.is_empty() {
+                ctx.save();
+                ctx.set_fill_style_str("rgba(25,128,104,0.25)");
+                let n = self.molecule.sequence.len();
+                if n > 0 {
+                    for &(a, b) in &self.range_preview {
+                        if a < b && b <= n {
+                            let x = w / 2. + (a as f64 / n as f64 * 1.6 - 0.8) * radius;
+                            ctx.fill_rect(
+                                x,
+                                h / 2. - 9.,
+                                (b - a) as f64 / n as f64 * 1.6 * radius,
+                                18.,
+                            );
+                        }
+                    }
+                }
+                ctx.restore();
+            }
+            draw_selected_feature_outline(self, view, radius);
+        }
+        if w > 0. && h > 0. {
+            ctx.set_text_align("center");
+            ctx.set_font("600 19px system-ui");
+            ctx.set_fill_style_str("#254b44");
+            let linear = self.molecule.topology == Topology::Linear;
+            let _ = ctx.fill_text(
+                &self.display_title,
+                w / 2.,
+                if linear { h - 42. } else { h / 2. - 6. },
+            );
+            ctx.set_font("14px system-ui");
+            ctx.set_fill_style_str("#72817c");
+            let _ = ctx.fill_text(
+                &self.display_subtitle,
+                w / 2.,
+                if linear { h - 18. } else { h / 2. + 20. },
+            );
+            ctx.set_font("12px system-ui");
+            ctx.set_fill_style_str("#87938e");
+            let n = self.molecule.sequence.len();
+            if n > 0 {
+                if linear {
+                    for i in 0..=4 {
+                        let x = w / 2. + (i as f64 / 4. * 1.6 - 0.8) * radius;
+                        let _ = ctx.fill_text(&(i * n / 4).max(1).to_string(), x, h / 2. - 8.);
+                    }
+                } else {
+                    for i in 0..8 {
+                        let a = i as f64 / 8. * TAU - PI / 2. + self.rotation;
+                        let _ = ctx.fill_text(
+                            &(i * n / 8 + 1).to_string(),
+                            w / 2. + a.cos() * radius * 0.56,
+                            h / 2. + a.sin() * radius * 0.56 + 4.,
+                        );
+                    }
+                }
+            }
+        }
+        self.pcr_hits = self
+            .pcr_overlay
+            .as_ref()
+            .map(|overlay| pcr_overlay_draw::map(ctx, overlay, view, self.molecule.sequence.len()))
+            .unwrap_or_default();
+        let restrictions = self
+            .restriction_cache
+            .as_mut()
+            .map(|cache| cache.draw(ctx, view, self.selected_restriction));
+        let (total, markers, labels, limited) = if let Some(frame) = restrictions {
+            self.restriction_hits = frame.hits;
+            (frame.total, frame.markers, frame.labels, frame.limited)
+        } else {
+            self.restriction_hits.clear();
+            (0, 0, 0, false)
+        };
+        for (key, value) in [
+            ("total", total),
+            ("displayed", markers),
+            ("omitted", total.saturating_sub(markers)),
+            ("labels-displayed", labels),
+            ("labels-omitted", total.saturating_sub(labels)),
+        ] {
+            let value = value.to_string();
+            let name = format!("data-restriction-{key}");
+            if self.canvas.get_attribute(&name).as_deref() != Some(value.as_str()) {
+                let _ = self.canvas.set_attribute(&name, &value);
+            }
+        }
+        let value = if limited { "true" } else { "false" };
+        if self
+            .canvas
+            .get_attribute("data-restriction-limited")
+            .as_deref()
+            != Some(value)
+        {
+            let _ = self.canvas.set_attribute("data-restriction-limited", value);
+        }
+        let dataset=serde_json::to_string(&self.restriction_hits.iter().filter(|hit|hit.label).map(|hit|serde_json::json!({
+            "index":hit.index,"x":hit.rect.x,"y":hit.rect.y,"width":hit.rect.width,"height":hit.rect.height,
+        })).collect::<Vec<_>>()).unwrap_or_else(|_|"[]".into());
+        if self
+            .canvas
+            .get_attribute("data-restriction-hits")
+            .as_deref()
+            != Some(dataset.as_str())
+        {
+            let _ = self.canvas.set_attribute("data-restriction-hits", &dataset);
+        }
+        let _ = self
+            .canvas
+            .set_attribute("data-restriction-source", &self.revision);
+        let frame = self.labels.as_mut().map(|cache| {
+            cache.draw(
+                ctx,
+                &view,
+                self.selected_feature,
+                self.rendered_geometry_count,
+            )
+        });
+        let (hits, mut stats) = if let Some(frame) = frame {
+            (frame.hits, frame.stats)
+        } else {
+            (
+                Vec::new(),
+                LabelStats {
+                    total: self.annotation_total,
+                    omitted: self.annotation_total,
+                    limited: true,
+                    ..LabelStats::default()
+                },
+            )
+        };
+        stats.limited |= self.geometry_limited;
+        let hits_changed = self.label_hits.len() != hits.len()
+            || self
+                .label_hits
+                .iter()
+                .zip(&hits)
+                .any(|(a, b)| a.feature_index != b.feature_index || a.rect != b.rect);
+        self.label_hits = hits;
+        // Numeric QA hit rectangles are bounded by the 128-label display budget.
+        // Serialize only when displayed rectangles/identities actually changed.
+        if hits_changed || self.hit_dataset.is_empty() {
+            let dataset = serde_json::to_string(&self.label_hits.iter().map(|hit|serde_json::json!({
+                "index":hit.feature_index,"x":hit.rect.x,"y":hit.rect.y,"width":hit.rect.width,"height":hit.rect.height,
+            })).collect::<Vec<_>>()).unwrap_or_else(|_|"[]".into());
+            let _ = self.canvas.set_attribute("data-label-hits", &dataset);
+            self.hit_dataset = dataset;
+        }
+        // Publish the source binding only after the matching frame/hits are ready.
+        // A new source with zero labels must replace the previous source'self hit data.
+        if self.canvas.get_attribute("data-label-source").as_deref() != Some(self.revision.as_str())
+        {
+            let _ = self
+                .canvas
+                .set_attribute("data-label-source", &self.revision);
+        }
+        if self.label_stats.as_ref() != Some(&stats) {
+            for (key, value) in [
+                ("total", stats.total),
+                ("displayed", stats.displayed),
+                ("omitted", stats.omitted),
+                ("abbreviated", stats.abbreviated),
+                ("unplaced", stats.unplaced),
+            ] {
+                let _ = self
+                    .canvas
+                    .set_attribute(&format!("data-label-{key}"), &value.to_string());
+            }
+            let _ = self.canvas.set_attribute(
+                "data-label-limited",
+                if stats.limited { "true" } else { "false" },
+            );
+            self.label_stats = Some(stats.clone());
+            Some(stats)
+        } else {
+            None
+        }
+    }
+}
+
 pub(crate) fn shader(gl: &Gl, kind: u32, source: &str) -> Result<WebGlShader, String> {
     let shader = gl.create_shader(kind).ok_or("Cannot create shader")?;
     gl.shader_source(&shader, source);
@@ -681,8 +1095,7 @@ impl MapRenderer {
         }
         let local_x = x - rect.left();
         let local_y = y - rect.top();
-        let Some(base) =
-            reference_position(&s, local_x, local_y, rect.width(), rect.height(), true)
+        let Some(base) = s.reference_position(local_x, local_y, rect.width(), rect.height(), true)
         else {
             return;
         };
@@ -748,7 +1161,7 @@ impl MapRenderer {
         }
         let dragging = s.drag.is_some();
         if dragging {
-            advance_gesture(&mut s, x, y);
+            s.advance_gesture(x, y);
         }
         drop(s);
         self.emit_restriction_hover(hovered);
@@ -763,7 +1176,7 @@ impl MapRenderer {
         }
         let mut s = self.0.borrow_mut();
         // Include the release position even when no final move was dispatched.
-        advance_gesture(&mut s, x, y);
+        s.advance_gesture(x, y);
         let drag = s.drag.take()?;
         let spans = std::mem::take(&mut s.range_preview);
         if drag.moved {
@@ -797,12 +1210,12 @@ impl MapRenderer {
                 && local_y >= hit.rect.y
                 && local_y < hit.rect.bottom()
         }) {
-            let pos = reference_position(&s, local_x, local_y, rect.width(), rect.height(), true)?;
-            return nearest_span(&s, hit.feature_index, pos).map(|span| MapHit {
+            let pos = s.reference_position(local_x, local_y, rect.width(), rect.height(), true)?;
+            return s.nearest_span(hit.feature_index, pos).map(|span| MapHit {
                 feature_index: Some(hit.feature_index),
                 restriction_index: None,
                 span,
-                spans: feature_spans(&s, hit.feature_index, span),
+                spans: s.feature_spans(hit.feature_index, span),
             });
         }
         if let Some(hit) = s
@@ -831,7 +1244,7 @@ impl MapRenderer {
                 spans: vec![(hit.start, hit.end)],
             });
         }
-        let pos = reference_position(&s, local_x, local_y, rect.width(), rect.height(), false)?;
+        let pos = s.reference_position(local_x, local_y, rect.width(), rect.height(), false)?;
         let view_radius = map_labels::radius(View {
             width: rect.width(),
             height: rect.height(),
@@ -868,7 +1281,7 @@ impl MapRenderer {
                     feature_index: Some(located.index),
                     restriction_index: None,
                     span: (a, b),
-                    spans: feature_spans(&s, located.index, (a, b)),
+                    spans: s.feature_spans(located.index, (a, b)),
                 });
             }
         }
@@ -1073,7 +1486,7 @@ impl MapRenderer {
             if let Some(s) = weak.upgrade() {
                 let mut s = s.borrow_mut();
                 s.queued = false;
-                let changed = draw(&mut s);
+                let changed = s.draw();
                 let on_labels = s.on_labels.clone();
                 drop(s);
                 if let Some(stats) = changed {
@@ -1215,130 +1628,6 @@ fn subtitle(m: &Molecule) -> String {
             m.sequence.alphabet().short_unit()
         ),
     }
-}
-
-fn reference_position(
-    s: &State,
-    x: f64,
-    y: f64,
-    width: f64,
-    height: f64,
-    clamp_linear: bool,
-) -> Option<usize> {
-    let n = s.molecule.sequence.len();
-    if n == 0 || width <= 0. || height <= 0. {
-        return None;
-    }
-    let normalized = if s.molecule.topology == Topology::Circular {
-        ((y - height / 2.).atan2(x - width / 2.) - s.rotation + PI / 2.).rem_euclid(TAU) / TAU
-    } else {
-        let radius = map_labels::radius(View {
-            width,
-            height,
-            rotation: s.rotation,
-            zoom: s.zoom,
-            topology: s.molecule.topology,
-        });
-        if radius <= 0. {
-            return None;
-        }
-        let p = ((x - width / 2.) / radius + 0.8) / 1.6;
-        if !clamp_linear && !(0.0..=1.0).contains(&p) {
-            return None;
-        }
-        p.clamp(0., 1.)
-    };
-    Some(((normalized * n as f64).floor() as usize).min(n - 1))
-}
-
-fn advance_gesture(s: &mut State, x: f64, y: f64) {
-    let Some(mut drag) = s.drag.take() else {
-        return;
-    };
-    let rect = s.canvas.get_bounding_client_rect();
-    if !x.is_finite()
-        || !y.is_finite()
-        || rect.width() <= 0.
-        || rect.height() <= 0.
-        || s.molecule.sequence.is_empty()
-    {
-        s.range_preview.clear();
-        return;
-    }
-    let local_x = x - rect.left();
-    let local_y = y - rect.top();
-    let angle = (local_y - rect.height() / 2.).atan2(local_x - rect.width() / 2.);
-    let delta = shortest_angle(drag.last_angle, angle);
-    drag.last_angle = angle;
-    drag.moved |= (x - drag.initial_x).hypot(y - drag.initial_y) > 4.;
-    if s.selection_mode {
-        drag.sweep = (drag.sweep + delta).clamp(-4. * TAU, 4. * TAU);
-        if let Some(base) =
-            reference_position(s, local_x, local_y, rect.width(), rect.height(), true)
-        {
-            drag.end_base = base;
-        }
-        if drag.moved {
-            s.range_preview = if s.molecule.topology == Topology::Circular {
-                circular_selection(s.molecule.sequence.len(), drag.start_position, drag.sweep)
-            } else {
-                vec![(
-                    drag.start_base.min(drag.end_base),
-                    drag.start_base.max(drag.end_base) + 1,
-                )]
-            };
-        }
-    } else if drag.moved && s.molecule.topology == Topology::Circular {
-        s.rotation = (s.rotation + delta).rem_euclid(TAU);
-    }
-    s.drag = Some(drag);
-}
-fn feature_spans(s: &State, index: usize, nearest: (usize, usize)) -> Vec<(usize, usize)> {
-    let Some(located) = s
-        .geometry
-        .located
-        .iter()
-        .find(|located| located.index == index)
-    else {
-        return vec![nearest];
-    };
-    let mut spans = located
-        .spans
-        .iter()
-        .map(|&(a, b, _)| (a, b))
-        .collect::<Vec<_>>();
-    if let Some(first) = spans.iter().position(|span| *span == nearest) {
-        spans.rotate_left(first);
-    }
-    if spans.is_empty() {
-        spans.push(nearest);
-    }
-    spans
-}
-
-fn nearest_span(s: &State, index: usize, pos: usize) -> Option<(usize, usize)> {
-    let located = s.geometry.located.get(
-        s.geometry
-            .located
-            .binary_search_by_key(&index, |f| f.index)
-            .ok()?,
-    )?;
-    let n = s.molecule.sequence.len();
-    located
-        .spans
-        .iter()
-        .min_by_key(|&&(a, b, _)| {
-            if pos >= a && pos < b {
-                return 0;
-            }
-            let direct = if pos < a { a - pos } else { pos - (b - 1) };
-            if s.molecule.topology == Topology::Circular {
-                direct.min((pos + n - a) % n).min((b - 1 + n - pos) % n)
-            } else {
-                direct
-            }
-        })
-        .map(|&(a, b, _)| (a, b))
 }
 
 /// Exact reference boundaries share the same camera angle as the GPU geometry.
@@ -1492,264 +1781,4 @@ fn draw_selected_feature_outline(s: &State, view: View, radius: f64) {
         ctx.stroke();
     }
     ctx.restore();
-}
-
-fn draw(s: &mut State) -> Option<LabelStats> {
-    let rect = s.canvas.get_bounding_client_rect();
-    let w = rect.width().max(0.);
-    let h = rect.height().max(0.);
-    if w <= 0. || h <= 0. || s.molecule.sequence.is_empty() {
-        s.drag = None;
-        s.range_preview.clear();
-    }
-    let view = View {
-        width: w,
-        height: h,
-        rotation: s.rotation,
-        zoom: s.zoom,
-        topology: s.molecule.topology,
-    };
-    let radius = map_labels::radius(view);
-    let dpr = web_sys::window()
-        .map(|w| w.device_pixel_ratio())
-        .filter(|v| v.is_finite() && *v > 0.)
-        .unwrap_or(1.)
-        .min(2.);
-    let pw = (w * dpr).ceil().max(1.) as u32;
-    let ph = (h * dpr).ceil().max(1.) as u32;
-    if s.canvas.width() != pw || s.canvas.height() != ph {
-        s.canvas.set_width(pw);
-        s.canvas.set_height(ph);
-    }
-    if s.overlay.width() != pw || s.overlay.height() != ph {
-        s.overlay.set_width(pw);
-        s.overlay.set_height(ph);
-    }
-    let gl = &s.gl;
-    gl.viewport(0, 0, pw as i32, ph as i32);
-    gl.clear_color(0.985, 0.990, 0.987, 1.);
-    gl.clear(Gl::COLOR_BUFFER_BIT);
-    gl.use_program(Some(&s.program));
-    gl.bind_buffer(Gl::ARRAY_BUFFER, Some(&s.buffer));
-    let pos = gl.get_attrib_location(&s.program, "a_pos") as u32;
-    let color = gl.get_attrib_location(&s.program, "a_color") as u32;
-    gl.enable_vertex_attrib_array(pos);
-    gl.vertex_attrib_pointer_with_i32(pos, 2, Gl::FLOAT, false, 24, 0);
-    gl.enable_vertex_attrib_array(color);
-    gl.vertex_attrib_pointer_with_i32(color, 4, Gl::FLOAT, false, 24, 8);
-    gl.uniform2f(
-        gl.get_uniform_location(&s.program, "u_aspect").as_ref(),
-        if w > 0. { (radius * 2. / w) as f32 } else { 0. },
-        if h > 0. { (radius * 2. / h) as f32 } else { 0. },
-    );
-    gl.uniform1f(
-        gl.get_uniform_location(&s.program, "u_rotation").as_ref(),
-        if s.molecule.topology == Topology::Circular {
-            s.rotation as f32
-        } else {
-            0.
-        },
-    );
-    gl.uniform1f(gl.get_uniform_location(&s.program, "u_zoom").as_ref(), 1.);
-    gl.draw_arrays(Gl::TRIANGLES, 0, s.vertices);
-    let ctx = &s.overlay_ctx;
-    let _ = ctx.set_transform(
-        if w > 0. { pw as f64 / w } else { 1. },
-        0.,
-        0.,
-        if h > 0. { ph as f64 / h } else { 1. },
-        0.,
-        0.,
-    );
-    ctx.clear_rect(0., 0., w, h);
-    let _ = s.canvas.set_attribute(
-        "data-map-selection-mode",
-        if s.selection_mode { "select" } else { "rotate" },
-    );
-    let _ = s.canvas.set_attribute(
-        "data-range-preview",
-        &serde_json::to_string(&s.range_preview).unwrap_or_else(|_| "[]".into()),
-    );
-    if w > 0. && h > 0. {
-        if s.molecule.topology == Topology::Circular {
-            draw_selection_sectors(
-                ctx,
-                &s.selection_spans,
-                s.molecule.sequence.len(),
-                view,
-                radius,
-                "rgba(25,128,104,0.14)",
-            );
-            draw_selection_sectors(
-                ctx,
-                &s.range_preview,
-                s.molecule.sequence.len(),
-                view,
-                radius,
-                "rgba(25,128,104,0.20)",
-            );
-        } else if !s.range_preview.is_empty() {
-            ctx.save();
-            ctx.set_fill_style_str("rgba(25,128,104,0.25)");
-            let n = s.molecule.sequence.len();
-            if n > 0 {
-                for &(a, b) in &s.range_preview {
-                    if a < b && b <= n {
-                        let x = w / 2. + (a as f64 / n as f64 * 1.6 - 0.8) * radius;
-                        ctx.fill_rect(
-                            x,
-                            h / 2. - 9.,
-                            (b - a) as f64 / n as f64 * 1.6 * radius,
-                            18.,
-                        );
-                    }
-                }
-            }
-            ctx.restore();
-        }
-        draw_selected_feature_outline(s, view, radius);
-    }
-    if w > 0. && h > 0. {
-        ctx.set_text_align("center");
-        ctx.set_font("600 19px system-ui");
-        ctx.set_fill_style_str("#254b44");
-        let linear = s.molecule.topology == Topology::Linear;
-        let _ = ctx.fill_text(
-            &s.display_title,
-            w / 2.,
-            if linear { h - 42. } else { h / 2. - 6. },
-        );
-        ctx.set_font("14px system-ui");
-        ctx.set_fill_style_str("#72817c");
-        let _ = ctx.fill_text(
-            &s.display_subtitle,
-            w / 2.,
-            if linear { h - 18. } else { h / 2. + 20. },
-        );
-        ctx.set_font("12px system-ui");
-        ctx.set_fill_style_str("#87938e");
-        let n = s.molecule.sequence.len();
-        if n > 0 {
-            if linear {
-                for i in 0..=4 {
-                    let x = w / 2. + (i as f64 / 4. * 1.6 - 0.8) * radius;
-                    let _ = ctx.fill_text(&(i * n / 4).max(1).to_string(), x, h / 2. - 8.);
-                }
-            } else {
-                for i in 0..8 {
-                    let a = i as f64 / 8. * TAU - PI / 2. + s.rotation;
-                    let _ = ctx.fill_text(
-                        &(i * n / 8 + 1).to_string(),
-                        w / 2. + a.cos() * radius * 0.56,
-                        h / 2. + a.sin() * radius * 0.56 + 4.,
-                    );
-                }
-            }
-        }
-    }
-    s.pcr_hits = s
-        .pcr_overlay
-        .as_ref()
-        .map(|overlay| pcr_overlay_draw::map(ctx, overlay, view, s.molecule.sequence.len()))
-        .unwrap_or_default();
-    let restrictions = s
-        .restriction_cache
-        .as_mut()
-        .map(|cache| cache.draw(ctx, view, s.selected_restriction));
-    let (total, markers, labels, limited) = if let Some(frame) = restrictions {
-        s.restriction_hits = frame.hits;
-        (frame.total, frame.markers, frame.labels, frame.limited)
-    } else {
-        s.restriction_hits.clear();
-        (0, 0, 0, false)
-    };
-    for (key, value) in [
-        ("total", total),
-        ("displayed", markers),
-        ("omitted", total.saturating_sub(markers)),
-        ("labels-displayed", labels),
-        ("labels-omitted", total.saturating_sub(labels)),
-    ] {
-        let value = value.to_string();
-        let name = format!("data-restriction-{key}");
-        if s.canvas.get_attribute(&name).as_deref() != Some(value.as_str()) {
-            let _ = s.canvas.set_attribute(&name, &value);
-        }
-    }
-    let value = if limited { "true" } else { "false" };
-    if s.canvas
-        .get_attribute("data-restriction-limited")
-        .as_deref()
-        != Some(value)
-    {
-        let _ = s.canvas.set_attribute("data-restriction-limited", value);
-    }
-    let dataset=serde_json::to_string(&s.restriction_hits.iter().filter(|hit|hit.label).map(|hit|serde_json::json!({
-        "index":hit.index,"x":hit.rect.x,"y":hit.rect.y,"width":hit.rect.width,"height":hit.rect.height,
-    })).collect::<Vec<_>>()).unwrap_or_else(|_|"[]".into());
-    if s.canvas.get_attribute("data-restriction-hits").as_deref() != Some(dataset.as_str()) {
-        let _ = s.canvas.set_attribute("data-restriction-hits", &dataset);
-    }
-    let _ = s
-        .canvas
-        .set_attribute("data-restriction-source", &s.revision);
-    let frame = s
-        .labels
-        .as_mut()
-        .map(|cache| cache.draw(ctx, &view, s.selected_feature, s.rendered_geometry_count));
-    let (hits, mut stats) = if let Some(frame) = frame {
-        (frame.hits, frame.stats)
-    } else {
-        (
-            Vec::new(),
-            LabelStats {
-                total: s.annotation_total,
-                omitted: s.annotation_total,
-                limited: true,
-                ..LabelStats::default()
-            },
-        )
-    };
-    stats.limited |= s.geometry_limited;
-    let hits_changed = s.label_hits.len() != hits.len()
-        || s.label_hits
-            .iter()
-            .zip(&hits)
-            .any(|(a, b)| a.feature_index != b.feature_index || a.rect != b.rect);
-    s.label_hits = hits;
-    // Numeric QA hit rectangles are bounded by the 128-label display budget.
-    // Serialize only when displayed rectangles/identities actually changed.
-    if hits_changed || s.hit_dataset.is_empty() {
-        let dataset = serde_json::to_string(&s.label_hits.iter().map(|hit|serde_json::json!({
-            "index":hit.feature_index,"x":hit.rect.x,"y":hit.rect.y,"width":hit.rect.width,"height":hit.rect.height,
-        })).collect::<Vec<_>>()).unwrap_or_else(|_|"[]".into());
-        let _ = s.canvas.set_attribute("data-label-hits", &dataset);
-        s.hit_dataset = dataset;
-    }
-    // Publish the source binding only after the matching frame/hits are ready.
-    // A new source with zero labels must replace the previous source's hit data.
-    if s.canvas.get_attribute("data-label-source").as_deref() != Some(s.revision.as_str()) {
-        let _ = s.canvas.set_attribute("data-label-source", &s.revision);
-    }
-    if s.label_stats.as_ref() != Some(&stats) {
-        for (key, value) in [
-            ("total", stats.total),
-            ("displayed", stats.displayed),
-            ("omitted", stats.omitted),
-            ("abbreviated", stats.abbreviated),
-            ("unplaced", stats.unplaced),
-        ] {
-            let _ = s
-                .canvas
-                .set_attribute(&format!("data-label-{key}"), &value.to_string());
-        }
-        let _ = s.canvas.set_attribute(
-            "data-label-limited",
-            if stats.limited { "true" } else { "false" },
-        );
-        s.label_stats = Some(stats.clone());
-        Some(stats)
-    } else {
-        None
-    }
 }

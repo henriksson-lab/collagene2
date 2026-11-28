@@ -1031,7 +1031,7 @@ fn preparation_shape(preparation: &assembly_recipe::Preparation) -> Result<(), E
         }
         _ => {}
     }
-    if let Some(selection) = assembly_recipe::preparation_catalog_selection(preparation) {
+    if let Some(selection) = preparation.catalog_selection() {
         selection.validate()?;
     }
 
@@ -1804,7 +1804,7 @@ pub(crate) fn resolve_validated(
                 if let Method::OrderedTypeIis { enzyme, .. } = method {
                     let profile = enzyme.profile();
                     for row in &rows {
-                        let selection=assembly_recipe::preparation_catalog_selection(&row.preparation).ok_or_else(||bad("Golden Gate needs pinned existing-site or explicit PCR/catalog-digest preparation"))?;
+                        let selection=row.preparation.catalog_selection().ok_or_else(||bad("Golden Gate needs pinned existing-site or explicit PCR/catalog-digest preparation"))?;
                         if selection.enzymes.len() != 1
                             || !selection.enzymes.iter().all(|entry| {
                                 entry.enzyme.recognition == profile.recognition

@@ -179,8 +179,7 @@ fn assert_material(w: &Workspace, receipt: &native::Receipt, incomplete: bool) {
     assert_eq!(material.reference().sequence.as_str(), AMPLICON);
     assert_eq!(material.incomplete(), incomplete);
     assert_eq!(material.tracked().duplex.bottom_start, 0);
-    let modifications =
-        collagene_core::chemistry::tracked_duplex::summary(material.tracked()).unwrap();
+    let modifications = material.tracked().summary().unwrap();
     assert_eq!(modifications.known_modified, 0);
     assert_eq!(modifications.unknown_eligible, 0);
     let table: collagene_core::formats::oligos::OligoTable =

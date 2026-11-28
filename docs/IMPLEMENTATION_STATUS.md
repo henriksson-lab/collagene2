@@ -4,11 +4,17 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
-The refreshed [three-part organization audit](audits/REFACTOR_PLAN.md) records
-remaining App/controller and natural-method work, with completed refactors removed
-from the pending queue. The [current layout](audits/refactor-layout-current.json)
-covers 1,247 Rust files / 215 directories, at most 17 direct files per directory,
-and a largest file of 2,869 lines. There are no size violations or warnings.
+The [controller/scientific-owner batch](audits/controller-ownership-2026-11-28.md)
+is implemented in source: App delegates complete verification and persistence
+behavior to existing controllers; Preparation/TrackedDuplex and renderer State
+own their operations. App is 2,413 lines. Verification dispatch now advances its
+generation and clears complete evidence, rejecting superseded/disposed results.
+Native/WASM checks and 107 focused cases pass; all 2,509 baseline case names
+in 33 harnesses are preserved. Exact-source CI remains required. The
+[current refactor queue](audits/REFACTOR_PLAN.md) retains connected remaining work.
+The [layout inventory](audits/refactor-layout-current.json) covers 1,247 Rust files /
+215 directories, at most 17 direct files per directory, with no size violations or
+3,000-line warnings.
 
 The connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) passes
 native/WASM checks and 1,349 selected cases, including 21 new core/SDK fixtures;
@@ -18,7 +24,8 @@ exact surviving-source coverage and explicit source-only bibliography. Native/WA
 model/core/SDK fixtures. Discovery preserves prior cases with one semantic rename
 and adds 14 cases (2,509 cases / 33 harnesses). The NativeState dispatch methods
 also pass the desktop compiler check. Exact-source cross-platform CI remains
-required for these changes. Full-product acceptance
+required for current source changes; the preceding `82937c1` passed scientific
+and desktop CI. Full-product acceptance
 remains open; historical checkpoints retain their original scope.
 
 Scientific, MCP and web ownership refactors are implemented with direct caller

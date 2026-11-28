@@ -101,9 +101,7 @@ pub fn fixture() -> (
         fresh.tracked().duplex.bottom.as_str(),
         "AATTCGTAAGAATTCCGTAGC"
     );
-    let state = collagene_core::chemistry::tracked_duplex::summary(fresh.tracked())
-        .unwrap()
-        .state_revision;
+    let state = fresh.tracked().summary().unwrap().state_revision;
     let request = assembly_intent::Request {
         name: "Independent actual-bottom window".into(),
         fragments: vec![Contribution {

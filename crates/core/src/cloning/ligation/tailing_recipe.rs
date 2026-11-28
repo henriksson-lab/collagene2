@@ -54,9 +54,7 @@ fn shape(recipe: &Recipe) -> Result<(), Error> {
     let mut operations = 1usize;
     for fragment in &recipe.fragments {
         operations = operations
-            .checked_add(preparation::preparation_operation_count(
-                &fragment.source.preparation,
-            ))
+            .checked_add(fragment.source.preparation.operation_count())
             .and_then(|n| {
                 n.checked_add(
                     usize::from(matches!(fragment.action, Action::AddTail { .. }))

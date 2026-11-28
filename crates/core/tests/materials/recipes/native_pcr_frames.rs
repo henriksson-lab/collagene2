@@ -1,6 +1,6 @@
 //! Independent actual13/17 strand oracles. No bottom Molecule replaces the saved stock.
 use collagene_core::{
-    chemistry::{AnnealOptions, Strand, Terminus, tracked_duplex as modified_duplex},
+    chemistry::{AnnealOptions, Strand, Terminus},
     cloning::pcr::material as material_pcr,
     documents::workspace::{self, Workspace},
     material::{
@@ -202,12 +202,7 @@ fn bottom_seventeen_seeds_native_pcr_and_maps_only_real_original_top_annotations
     assert_eq!(result.tracked().duplex.bottom.len(), 17);
     assert_eq!(result.tracked().duplex.left, Terminus::PCR);
     assert_eq!(result.tracked().duplex.right, Terminus::PCR);
-    assert_eq!(
-        modified_duplex::summary(result.tracked())
-            .unwrap()
-            .known_modified,
-        0
-    );
+    assert_eq!(result.tracked().summary().unwrap().known_modified, 0);
     assert!(prepared.receipt.primer_attachment.is_some());
     assert_eq!(prepared.workspace.revisions[&event.revision], *source);
     assert_eq!(workspace::save_workspace(&reopened).unwrap(), before);

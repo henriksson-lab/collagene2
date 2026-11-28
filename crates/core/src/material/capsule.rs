@@ -1,7 +1,7 @@
 //! Bounded existing typed-plan packages preserve an origin's reconstruction scope.
 //! Embedded bytes are recipes, never serialized material or verifier authority.
 use crate::{
-    chemistry::tracked_duplex::{self as modified_duplex, TrackedDuplex},
+    chemistry::tracked_duplex::TrackedDuplex,
     documents::{
         transfer::{self, Candidate},
         workspace::Workspace,
@@ -1383,7 +1383,7 @@ pub(crate) fn replay(origin: &Capsule, source: &Molecule) -> Result<Replayed, Er
         .and_then(Option::take)
         .ok_or_else(|| bad("selected origin has no reusable physical strand/modification state"))?;
     tracked.validate()?;
-    let material_revision = modified_duplex::summary(&tracked)?.state_revision;
+    let material_revision = tracked.summary()?.state_revision;
     let incomplete = report.status == Status::Incomplete;
     let mut writer = Bounded(Vec::new());
     serde_json::to_writer(&mut writer, &report).map_err(|_| Error::TooLarge)?;

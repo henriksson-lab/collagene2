@@ -3,7 +3,7 @@ use collagene_core::{
     chemistry::{
         EndTreatment, FivePrime, Strand, ThreePrime,
         methylation::MethylationState,
-        tracked_duplex::{self as modified_duplex, CallState, Chemical, GenerationAssumptions},
+        tracked_duplex::{CallState, Chemical, GenerationAssumptions},
     },
     cloning::ligation::tailing::TailingBase,
     documents::workspace::{self, Workspace},
@@ -565,12 +565,8 @@ fn cut_created_oh_and_original_dam_calls_survive_tailing_and_phosphorylation_wit
     );
     assert_eq!(fresh.tracked().duplex.left.five_prime, FivePrime::Hydroxyl);
     assert_eq!(
-        modified_duplex::summary(fresh.tracked())
-            .unwrap()
-            .known_modified,
-        modified_duplex::summary(old.tracked())
-            .unwrap()
-            .known_modified
+        fresh.tracked().summary().unwrap().known_modified,
+        old.tracked().summary().unwrap().known_modified
     );
 }
 #[test]

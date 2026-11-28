@@ -251,3 +251,74 @@ fn selection() -> collagene_core::antibody_numbering::domain_tracks::Selection {
             collagene_core::antibody_numbering::domain_tracks::RegionDefinition::Imgt,
     }
 }
+
+#[test]
+fn north_source_regions_keep_literal_alignment_gaps_and_exact_row_authority() {
+    let (_, _, o, l) = inputs();
+    let raw = format!("--{}---{}ARDYGMDVAAADA--{J}--", &V[..25], &V[25..]);
+    let doc = f::import_alignment(
+        format!(">a\n{raw}\n>b\n{raw}\n").as_bytes(),
+        AlignmentFormat::AlignedFasta,
+        Alphabet::Protein,
+        "North row fixture",
+    )
+    .unwrap();
+    let pin = a::source(&doc, &doc.rows[0].id).unwrap();
+    let c = n::domain_tracks::Selection {
+        numbering_scheme: n::domain_tracks::NumberingScheme::Imgt,
+        region_definition: n::domain_tracks::RegionDefinition::North2011,
+    };
+    let revision = a::request_revision(&doc, &pin, &o, &l, &c).unwrap();
+    let q = Request {
+        id: 45,
+        revision: revision.clone(),
+        job: AnalysisJob::AnalyzeAlignmentAntibody {
+            alignment: doc.clone(),
+            source: pin.clone(),
+            options: o.clone(),
+            limits: l.clone(),
+            selection: c.clone(),
+        },
+    };
+    let mut session = protocol::session::AnalysisSession::default();
+    let reply = Response::decode(&session.process_request(&q.encode().unwrap()).unwrap()).unwrap();
+    let AnalysisResult::AlignmentAntibody(report) = reply.result else {
+        panic!("North alignment response")
+    };
+    assert_eq!(reply.revision, revision);
+    assert_eq!(report.analysis.selection, c);
+    for (i, start, end) in [(0, 22, 35), (1, 49, 59), (2, 96, 109)] {
+        assert_eq!(
+            report.analysis.tracks[0].cdrs[i].status,
+            n::domain_tracks::CdrStatus::Mapped { start, end }
+        );
+    }
+    assert_eq!(report.at_column(0, 24).unwrap().source_index, 22);
+    assert_eq!(
+        report.at_column(0, 24).unwrap().region,
+        Some(n::domain_tracks::Region::Cdr1)
+    );
+    assert_eq!(report.at_column(0, 30).unwrap().source_index, 25);
+    assert_eq!(
+        report.at_column(0, 39).unwrap().region,
+        Some(n::domain_tracks::Region::Cdr1)
+    );
+    assert_eq!(
+        report.at_column(0, 40).unwrap().region,
+        Some(n::domain_tracks::Region::Fr2)
+    );
+    assert_eq!(report.at_column(0, 101).unwrap().source_index, 96);
+    for gap in [0, 1, 27, 28, 29, 114, 115] {
+        assert!(report.at_column(0, gap).is_none());
+    }
+    report.validate_for(&doc, &pin, &o, &l, &c).unwrap();
+    let other = a::source(&doc, &doc.rows[1].id).unwrap();
+    assert!(report.validate_source(&doc, &other, &o, &l, &c).is_err());
+    let mut changed = c;
+    changed.region_definition = n::domain_tracks::RegionDefinition::Imgt;
+    assert!(
+        report
+            .validate_source(&doc, &pin, &o, &l, &changed)
+            .is_err()
+    );
+}

@@ -4,10 +4,10 @@ use super::*;
 use crate::{domain_candidates as d, v_mapping};
 use std::collections::BTreeSet;
 
-pub const TRACK_ENGINE: &str = "antibody-domain-tracks-4";
+pub const TRACK_ENGINE: &str = "antibody-domain-tracks-5";
 const CHART: &str = "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html";
 data! {pub enum NumberingScheme {Imgt,Kabat1991,Chothia1997}}
-data! {pub enum RegionDefinition {Imgt,Kabat1991,ChothiaCanonical}}
+data! {pub enum RegionDefinition {Imgt,Kabat1991,ChothiaCanonical,North2011}}
 data! {pub struct Selection {pub numbering_scheme:NumberingScheme,pub region_definition:RegionDefinition}}
 data! {pub enum Region {Fr1,Cdr1,Fr2,Cdr2,Fr3,Cdr3,Fr4}}
 data! {pub enum AssignmentEvidence {InvariantVReference,ConditionalLoopRule,JFr4Reference,PublishedFrameworkCorrespondence,PublishedWindowRule}}
@@ -33,7 +33,7 @@ data! {pub struct Report {
     pub evidence:d::Report,pub selection:Selection,pub tracks:Vec<Track>,
 }}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-domain-track-rules-4\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
+    hash(b"antibody-domain-track-rules-5\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
         "IMGT regions FR1 1..26 CDR1 27..38 FR2 39..55 CDR2 56..65 FR3 66..104 CDR3 105..117 FR4 118..128; decimal insertions at111/112 only; invariant reference framework assignments; conditional loop rules; complete J FR4; unresolved rows retained; no representative start or inferred insertion labels"),65536).expect("fixed track rules")
 }
 /// Current IMGT region boundaries, applied to established IMGT labels only.

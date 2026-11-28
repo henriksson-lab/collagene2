@@ -1,0 +1,75 @@
+{
+  "baseline": "7f6951bb1aff7abc5a9c3c6ce59d476c2b37b64b",
+  "scope": "North2011 conditional structural-region selection, native/WASM, protein/alignment worker and readonly native SDK. Not whole-application or biological calibration.",
+  "versions": {
+    "worker": 124,
+    "track_engine": 5,
+    "alternate_rules": 3,
+    "alignment_engine": 4,
+    "candidate": 31,
+    "draft": 20,
+    "native_workspace": 29,
+    "scientific_verifier": 35
+  },
+  "compilation": {
+    "native": "passed, offline locked j2, existing shared Cargo cache",
+    "wasm": "passed, offline locked j2, existing shared Cargo cache"
+  },
+  "focused_execution": {
+    "passed": 48,
+    "failed": 0,
+    "by_harness": {
+      "antibody-numbering/alternate_tracks": 9,
+      "antibody-numbering/collagene_antibody_numbering": 3,
+      "antibody-numbering/domain_tracks": 7,
+      "antibody-numbering/north_regions": 5,
+      "antibody-numbering/numbering_windows": 5,
+      "core/sequence": 12,
+      "mcp/analysis": 1,
+      "web/collagene-web": 6
+    }
+  },
+  "discovery": {
+    "previous_cases": 2509,
+    "previous_harnesses": 33,
+    "all_previous_names_preserved": true,
+    "current_cases": 2540,
+    "current_harnesses": 38,
+    "new_source_cases": 10,
+    "additional_existing_cases_in_newly_selected_harnesses": 21,
+    "added_cases_in_prior_harnesses": [
+      [
+        "core/sequence",
+        "protein::alignment_antibody_protocol::north_source_regions_keep_literal_alignment_gaps_and_exact_row_authority"
+      ],
+      [
+        "core/sequence",
+        "protein::antibody_protocol::north_regions_survive_worker_transport_without_requiring_the_display_numbering_window"
+      ]
+    ]
+  },
+  "independent_review": "Primary-source and source-kernel review found no concrete defect; facts/derivations in north-primary-definition.json. Conditional reference correspondence, not structural or numbering certification.",
+  "not_claimed": [
+    "all discovered cases executed",
+    "current-source cross-platform CI",
+    "browser/visual acceptance",
+    "installed-platform acceptance",
+    "independent natural numbering calibration"
+  ],
+  "source_sha256": {
+    "crates/antibody-numbering/src/alternate_tracks.rs": "b5908da9befc5ecd01c58fd8ed8e0f8e45bc439042642cc7b0fa62c11369f90e",
+    "crates/antibody-numbering/src/domain_tracks.rs": "0349f748092405e0e4085a1b40b70dc11ca5a0df641b40d594c246404e26e562",
+    "crates/antibody-numbering/src/lib.rs": "6bf4b538f02d9de3bc50c2a2d4fc75c342180a604fd70537631acdb78ec3bbe4",
+    "crates/antibody-numbering/src/north.rs": "0faec69cfab882d6aa464959177f43a4689a1eaedab29222a137cf50ce9fc29d",
+    "crates/antibody-numbering/tests/north_regions.rs": "1046bd7e753cc71ad2c184db5f5a7c17c76fc31c24d603ad72552fb3d2f3385e",
+    "crates/core/src/protein/antibody_alignment.rs": "3aed3c16307e94fe863fa31fd5b693d8770758ff54f3518cefbe7d27896322ef",
+    "crates/core/src/protocol/schema.rs": "9a435389115b2dc4636f9268251fe8edd1b56b09eea2c13e9d997f9d936392bd",
+    "crates/core/tests/sequence/protein/alignment_antibody_protocol.rs": "c0603cc383ba9b3c188d322beaebbf5f3baf5b87cc1aa26d8fc3c94c0befcb74",
+    "crates/core/tests/sequence/protein/antibody_protocol.rs": "8927e66967174f887b6ddf30109fcc96e3fbeacb2d1a66e60a1869b8197ce412",
+    "crates/mcp/src/tools/analysis/mod.rs": "669c922578bfc885b2f7ce231640784d5b80b59c08ede0ee97aad27fa66fd019",
+    "crates/mcp/tests/analysis/antibody_tools.rs": "a4f3a31bfa02e5cf28b609c68977f765dddedb335bc0a3a6003dbd2d39181710",
+    "crates/web/src/biology/antibody/alignment_antibody_view.rs": "2aeede58ca9a3f7e07538fe4114a9f3318bc5132c6938846277cf44c1717d8f7",
+    "crates/web/src/biology/antibody/antibody_overlay.rs": "5fe8c42fa220c7d9f711a75fba182344c90d2c75d8ca7c02958bdc3cea9f6528",
+    "crates/web/src/biology/antibody/antibody_view.rs": "038a0ee331795331a7a2aaae37e76f9e9bc54c1439a4492fe3d431f77f1879ac"
+  }
+}

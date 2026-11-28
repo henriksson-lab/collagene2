@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **123**,
+same deterministic scientific engines. Current schemas are worker **124**,
 candidate **31** and native workspace plan **29**; the verifier is **science-35**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.

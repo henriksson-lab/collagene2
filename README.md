@@ -14,7 +14,7 @@ These tables summarize implemented capabilities; see the linked profiles for lim
 - Restriction-site filtering, virtual digests, primer design and cloning workflows.
 - Independent target verification, retained intermediate products and alternative cloning products.
 - Saved history, primer orders and HTML/PDF protocols.
-- Protein properties, [conditional antibody numbering](docs/ANTIBODY_NUMBERING.md), [sequence-liability screening](docs/PROTEIN_LIABILITIES.md), declared [RNA chemistry](docs/RNA_MODIFICATIONS.md) and imported structure viewing.
+- Protein properties, [conditional antibody numbering and North CDR regions](docs/ANTIBODY_NUMBERING.md), [sequence-liability screening](docs/PROTEIN_LIABILITIES.md), declared [RNA chemistry](docs/RNA_MODIFICATIONS.md) and imported structure viewing.
 - MCP-assisted design, optional WebMCP, shared plasmid folders and offline desktop storage/sync.
 
 ### Cloning methods

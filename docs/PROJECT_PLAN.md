@@ -53,7 +53,7 @@ not remove outstanding features or weaken the final completion requirements.
 web/worker, scientific core/model, and native/MCP/repository ownership against the
 current working tree. The [current refactor plan](audits/REFACTOR_PLAN.md) is the
 single remaining-work queue. The [full source inventory](audits/refactor-layout-current.json)
-covers **1,247 Rust files / 215 directories**, at most **17 direct Rust files per
+covers **1,249 Rust files / 215 directories**, at most **17 direct Rust files per
 directory**, and a largest file of **2,869 lines**. There are no size violations
 or 3,000-line warnings. The existing `rust_refactor` binary independently passed
 its production-file size check; no tool build, rewrite or compiler run was needed.
@@ -95,6 +95,18 @@ cases: legal non-positional references remain source-only, and numeric
 coverage follows surviving original bases. See the
 [current audit](DELIVERY_AUDIT.md#connected-citation-and-edit-log-batch). Retain exact-source CI gates. See
 the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
+
+**Current feature batch:** North2011 structural CDR regions are implemented in
+source with independent numbering selection, source-bound framework proof,
+protein/alignment UI and MCP integration. Light CDR2 retains its additional
+N-terminal residue, and known regions do not require all interior number labels.
+The [primary-source derivation](ANTIBODY_NUMBERING.md#north-2011-structural-regions)
+uses North's original figures and IMGT framework correspondences. Worker124,
+track engine5 and alignment engine4 reject superseded internal versions; cloning
+candidate/draft/workspace schemas and scientific engine35 are unchanged. Native/
+WASM compiler checks and 48 focused cases pass, including 10 new cases; all 2,509 previous names
+are preserved. Expanded discovery covers 2,540 cases / 38 harnesses. Exact-source
+CI remains required. Broader independent biological calibration, GUI and installed-platform acceptance remain separate requirements.
 
 This order supersedes the older milestone order and any format-first expansion.
 Keep the full agreed scope, existing feature IDs and scientific architecture;
@@ -4740,11 +4752,13 @@ published window catalog, retaining its nonsequential 24,25,26,27,30,30A,30B,31,
 source-bound assembly, required worker selection, both inspectors, source/row
 captures, display labels and MCP discovery/analysis share one current definition.
 Track engine 4, alignment engine 3 and worker schema 121 reject superseded internal formats;
-no compatibility reader is added. [Primary sources and profile](ANTIBODY_NUMBERING.md#canonical-chart-chothia-regions-and-remaining-north-profile).
+no compatibility reader is added. [Primary sources and profile](ANTIBODY_NUMBERING.md#canonical-chart-chothia-regions).
 
-North definitions still require their exact primary figure boundaries, and broader
-independent natural residue-level validation, reference/species calibration and
-whole-product graphical/platform/interoperability acceptance remain open. The
+The canonical-chart batch left North definitions open; the current
+[North2011 profile](ANTIBODY_NUMBERING.md#north-2011-structural-regions) now supplies
+primary-source boundaries and independent fixtures. Broader natural residue-level
+validation, reference/species calibration and whole-product graphical/platform/
+interoperability acceptance remain open. The
 canonical-chart definition is explicitly named rather than silently substituting
 one of the differing conventions called Chothia.
 

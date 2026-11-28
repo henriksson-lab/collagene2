@@ -1,0 +1,131 @@
+{
+  "scope": "Primary-source scientific facts and explicit cross-publication derivations; not code or biological calibration.",
+  "paper": {
+    "doi": "10.1016/j.jmb.2010.10.030",
+    "pmid": "21035459",
+    "pmcid": "PMC3065967",
+    "xml_url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pmc&id=3065967",
+    "fig1_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/3065967/bin/nihms-249534-f0004.jpg",
+    "fig11_url": "https://pmc.ncbi.nlm.nih.gov/articles/instance/3065967/bin/nihms-249534-f0014.jpg"
+  },
+  "derived_imgt_inclusive": {
+    "heavy": [
+      [
+        24,
+        40
+      ],
+      [
+        55,
+        66
+      ],
+      [
+        105,
+        117
+      ]
+    ],
+    "kappa": [
+      [
+        24,
+        40
+      ],
+      [
+        55,
+        69
+      ],
+      [
+        105,
+        117
+      ]
+    ],
+    "lambda": [
+      [
+        24,
+        40
+      ],
+      [
+        55,
+        69
+      ],
+      [
+        105,
+        117
+      ]
+    ]
+  },
+  "conventional_chothia_endpoints_inclusive": {
+    "heavy": [
+      [
+        23,
+        35
+      ],
+      [
+        50,
+        58
+      ],
+      [
+        93,
+        102
+      ]
+    ],
+    "light": [
+      [
+        24,
+        34
+      ],
+      [
+        49,
+        56
+      ],
+      [
+        89,
+        97
+      ]
+    ]
+  },
+  "primary_correspondence_sources": [
+    "https://www.imgt.org/PDF/DCI/27_55-77_2003.pdf (Table2 pp61-62)",
+    "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html",
+    "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTnumberingCDR_VH.html"
+  ],
+  "verified_crossmap": {
+    "IMGT23": "heavy22/light23 first Cys",
+    "IMGT24": "heavy23/light24",
+    "IMGT41": "heavy36/light35 conserved W",
+    "IMGT52": "heavy47/light46",
+    "IMGT53": "heavy48/light47",
+    "IMGT54": "heavy49/light48",
+    "IMGT55": "heavy50/light49",
+    "IMGT66": "heavy58/light53",
+    "IMGT67": "heavy59/light54",
+    "IMGT69": "heavy61/light56",
+    "IMGT70": "heavy62/light57",
+    "IMGT104": "heavy92/light88 second Cys",
+    "IMGT105": "heavy93/light89",
+    "IMGT118": "heavy103/light98 J anchor"
+  },
+  "insertion_interpretation": "Use established labels and source ordering inside proven boundaries. North structural membership does not independently authorize arbitrary labels or a new numbering convention. Actual internal loop residues remain inside the structural region; unmatched/uncertain anchors or correspondence must remain explicit.",
+  "caveats": [
+    "Figure11 uses Honegger-Plueckthun numbering; do not copy its numeric labels as Kabat/Chothia.",
+    "Small Figure11 comparison rows appear inconsistent with text about Martin H2; derive North from its own row and motif plus independently verified framework correspondence.",
+    "No general AHo numbering conversion or AHo middle-loop endpoint table is established by this audit.",
+    "Do not reuse 2003 loop gap allocations; current IMGT central-gap charts govern current numbered loops. Framework correspondence facts are the relevant stable facts."
+  ],
+  "artifacts": {
+    "/tmp/north-primary-efetch.xml": {
+      "bytes": 346660,
+      "sha256": "5cce5f9996f546fab492f07a0bec263624baf2efe19121515ac5e8432a05cc9c"
+    },
+    "/tmp/north-primary-fig1.dat": {
+      "bytes": 54703,
+      "sha256": "c74e338a78100a28777313436c48d8debcc69a31373d8af07628e78bea147c27"
+    },
+    "/tmp/north-primary-fig11.dat": {
+      "bytes": 31027,
+      "sha256": "35a356a48602ef9f5938a8555e8a6bbc64f82039e49453836e99fdb4133a94d6"
+    },
+    "/tmp/north-pyigclassify-primary.xml": {
+      "bytes": 79890,
+      "sha256": "88c85e3150cb83756f0611d9e852239449ed6238aada12cc099bdf8032b635e8"
+    }
+  }
+}

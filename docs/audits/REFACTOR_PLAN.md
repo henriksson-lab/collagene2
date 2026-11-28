@@ -15,12 +15,12 @@ type and its meaningful implementations together. Prefer inherent methods for
 operations that own or query its invariants. Split by genuine domain or
 lifecycle boundaries, never arbitrary chunks or a desire to hit a line count.
 
-The [current full inventory](refactor-layout-current.json) covers **1,247 Rust
+The [current full inventory](refactor-layout-current.json) covers **1,249 Rust
 files / 215 directories** with **zero violations and zero size warnings**.
 The largest directory has **17** direct Rust files; the largest file is
 `web/src/app/mod.rs`, **2,413 lines** after the current controller/owner source batch.
 The existing `/home/mahogny/github/claude/rust_refactor` release binary's read-only
-`module-size-check --include-generated` independently reports **664 compliant
+`module-size-check --include-generated` independently reports **665 compliant
 production files**. It excludes non-production files and supplements the
 repository-wide gate. No helper build, automatic rewrite, compiler run or
 semantic scatter analysis was performed. Ownership findings are source review,

@@ -27,6 +27,7 @@ pub mod alternate_tracks;
 pub mod domain_candidates;
 pub mod domain_tracks;
 pub mod imgt_loops;
+pub mod north;
 pub mod numbering_windows;
 pub mod profile;
 pub mod references;

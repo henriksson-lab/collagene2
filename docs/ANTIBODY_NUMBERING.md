@@ -5,15 +5,16 @@ module for explicit position labels, bounded profile alignment and source-bound
 conditional antibody numbering. Current human V/J reference analysis produces
 conditional IMGT, Kabat1991 and Chothia1997 tracks in workers, the Biology
 inspector, protein/alignment viewers and native MCP, with separately selected
-IMGT, Kabat1991 or canonical-chart Chothia regions. Unresolved paths/positions remain explicit. This is not a
+IMGT, Kabat1991, canonical-chart Chothia or North2011 regions. Unresolved paths/positions remain explicit. This is not a
 calibrated universal antibody/domain classifier or independently certified
 biological numbering system.
 
 Native [published Kabat/Chothia window rules](NUMBERING_WINDOWS.md) now supply
 source-bound, explicitly versioned calculations for selected published profiles.
 Invariant reference frameworks and those window rules now assemble conditional
-full-domain tracks. North region definitions, broader reference/species coverage
-and independent natural residue-level validation remain part of F34. The sections
+full-domain tracks. North2011 structural regions are implemented in the current
+source; broader reference/species coverage and independent natural residue-level
+validation remain part of F34. The sections
 below describe the component contracts and the validation evidence for each stage.
 
 ## Labels and conditional CDR3 allocation
@@ -485,7 +486,7 @@ Tracks are conditional reference/rule assignments, not a calibrated classifier o
 independent biological numbering certification. Candidate truncation and unresolved
 loop diagnostics remain in the same report. Source/options/report reconstruction,
 source bounds, cancellation and existing candidate caps apply. Broader independent
-numbering validation and North region definitions remain required.
+numbering validation remains required; the current North profile is described below.
 
 
 ## Alternate frameworks and independent region definitions
@@ -524,7 +525,7 @@ Chothia numbering does not select a CDR definition implicitly. The independently
 selected `ChothiaCanonical` definition below uses its own verified Chothia map.
 Current finite window coverage and human-reference scope remain explicit.
 
-## Canonical-chart Chothia regions and remaining North profile
+## Canonical-chart Chothia regions
 
 `ChothiaCanonical` explicitly selects the canonical-loop brackets in the primary
 comparison charts, using the later Chothia1997 numbering profile.
@@ -555,13 +556,60 @@ Literal region-boundary fixtures distinguish all three loci, including the lambd
 independent numbering choice. Unsupported Chothia windows can leave known IMGT
 labels with unresolved canonical membership; the remaining loops stay available.
 
-[North et al. (2011)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3065967/) explicitly
-chooses structural loop boundaries separately from numbering. Its descriptions
-and Figure11 also distinguish the authors' reading of the original Chothia
-examples from common later conventions. Exact Figure1/Figure11 boundary evidence
-must be inspected before adding the North profile; secondary software tables do
-not supply the implementation authority. North is not currently exposed in
-workers, UI or MCP. The canonical-chart profile is exposed in all three.
+## North 2011 structural regions
+
+`North2011` selects the structural boundaries in
+[North, Lehmann and Dunbrack (2011)](https://pmc.ncbi.nlm.nih.gov/articles/PMC3065967/),
+using its original [Figure 1](https://pmc.ncbi.nlm.nih.gov/articles/instance/3065967/bin/nihms-249534-f0004.jpg)
+and [Figure 11](https://pmc.ncbi.nlm.nih.gov/articles/instance/3065967/bin/nihms-249534-f0014.jpg).
+The [primary IMGT framework correspondence](https://www.imgt.org/PDF/DCI/27_55-77_2003.pdf)
+(Table 2, pp. 61–62) supplies the bridge below. Figure 11 uses AHo coordinates;
+its small comparison rows are not used as a numeric conversion table. The
+[research record](audits/north-primary-definition.json) retains evidence hashes
+and this derivation's limits.
+
+| North scope | Established IMGT labels, inclusive | Required source flanks, excluded |
+| --- | --- | --- |
+| Heavy/light CDR1 | 24–40 | 23 and 41 |
+| Heavy CDR2 | 55–66 | 54 and 67 |
+| Kappa/lambda CDR2 | 55–69 | 54 and 70 |
+| Heavy/light CDR3 | 105–117 | 104 and 118 |
+
+Light CDR2 includes the additional N-terminal residue: the usual eight-residue
+North interval starts one residue before the seven-residue Kabat interval.
+These are region definitions, independent of the displayed numbering scheme.
+The implementation does not infer AHo labels or reuse historical loop-gap rules.
+
+The runtime `north::Projection` owner derives source intervals from invariant V
+framework correspondences and the established J/FR4 anchor. It fills complete
+loops and intervening framework regions without assigning missing number labels.
+An unsupported interior numbering window therefore need not obscure a known
+North region. Missing or ambiguous flanks leave the corresponding interval
+unresolved; source-order conflicts, stops and interrupted coordinates fail.
+The paper's usual sequence motifs are not treated as universal hard filters.
+Cancellation, the 2,000-residue source cap and the six-issue report limit remain.
+This stays conditional on the existing human-reference evidence and does not
+establish independent biological calibration.
+
+Source, options, limits, selected numbering and region definition, rule hashes,
+actual regions and intervals are freshly reconstructed during validation. Current
+track engine is 5, alternate rules 3, alignment engine 4 and worker schema 124.
+Older internal versions are rejected; candidate 31, draft 20, native workspace
+plan 29 and scientific verifier 35 are unchanged because they do not encode the
+expanded region-definition enum. Protein/alignment inspectors, source/row
+captures, MCP discovery and immutable report artifacts use the same selection.
+
+Native/WASM checks and **48 focused cases pass**, including **10 new cases**
+(three projection-kernel, five independent native and two core transport cases)
+and an expanded actual SDK scenario. The
+[integration record](audits/north-integration.json) separates execution from
+discovery: all 2,509 previous names remain, and expanded selection exposes 2,540
+cases in 38 harnesses, including 21 existing cases newly selected for this check.
+Exact-source cross-platform CI remains required. Fixtures cover literal
+heavy/kappa/lambda slices, the extra light-loop residue, all three numbering
+choices, long unnumbered interiors, decimal insertions, missing/forged flanks,
+stale selections/versions and source/report tampering. GUI/platform acceptance
+and broader natural residue-level validation remain open.
 
 ## Worker, Biology inspector and MCP
 
@@ -638,8 +686,8 @@ and native request/source context without running DP; `validate_for` additionall
 reconstructs the native scientific analysis. UI replies use actual-source map
 validation, and independently supplied scientific evidence needs full reconstruction.
 
-Worker 121 carries job 196/result 186 with required selection under unchanged
-ordinary message limits. The alignment report engine is `alignment-antibody-3`. The
+Worker 124 carries job 196/result 186 with required selection under unchanged
+ordinary message limits. The alignment report engine is `alignment-antibody-4`. The
 protein alignment inspector supplies explicit settings, cancellable row analysis,
 retained-candidate selection, CDR colors, unresolved underlines, exact focused-cell
 numbering/evidence readouts and full report download. Changing rows, alignment,
@@ -652,5 +700,5 @@ stable row ID, requires explicit options/limits/selection and provides at most 2
 candidate summaries plus a full report artifact. It installs no document or other
 scientific state. Neither UI nor MCP modifies imported rows, annotations or source
 bytes, guesses labels for gaps or treats imported column annotations as computed
-confidence. North region definitions, broader independent biology validation
-and whole-product acceptance remain open.
+confidence. Broader independent biology validation and whole-product acceptance
+remain open.

@@ -8,8 +8,9 @@ data! {pub enum WindowIssue {
 }}
 data! {pub struct Issue {pub numbering_scheme:NumberingScheme,pub window:w::Window,pub issue:WindowIssue}}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-alternate-track-rules-2\0", &(
+    hash(b"antibody-alternate-track-rules-3\0", &(
         w::catalog_revision(),
+        crate::north::catalog_revision(),
         "https://www.imgt.org/PDF/DCI/27_55-77_2003.pdf; Table2 framework correspondences",
         ["https://www.imgt.org/IMGTScientificChart/Numbering/CDR1-IMGTgaps.html", "https://www.imgt.org/IMGTScientificChart/Numbering/CDR2-IMGTgaps.html", "https://www.imgt.org/IMGTScientificChart/Numbering/CDR3-IMGTgaps.html"],
         "ChothiaCanonical H1 26..32 L1 kappa26..32 lambda25..32; H2 after plain52 through55 includes52letters; L2 50..52; H3 96..101 L3 91..96; only established Chothia1997 labels; complete intervals require corresponding supported window and exact endpoints",
@@ -243,6 +244,9 @@ fn defined_region(
     match definition {
         RegionDefinition::Kabat1991 => kabat_region(locus, label),
         RegionDefinition::ChothiaCanonical => chothia_canonical_region(locus, label),
+        RegionDefinition::North2011 => Err(Error::Invalid(
+            "North requires invariant IMGT framework flanks",
+        )),
         RegionDefinition::Imgt => Err(Error::Invalid(
             "alternate definition requires its own labels",
         )),
@@ -285,6 +289,9 @@ fn defined_cdrs(
             ),
         ],
         RegionDefinition::Imgt => return Err(Error::Invalid("alternate CDR definition")),
+        RegionDefinition::North2011 => {
+            return Err(Error::Invalid("North requires its source-bound projection"));
+        }
     };
     [
         (Region::Cdr1, w::Window::CysToTrp),
@@ -412,6 +419,15 @@ pub(crate) fn assemble(
         NumberingScheme::Kabat1991 => kabat.as_ref().ok_or(Error::Binding)?.0.clone(),
         NumberingScheme::Chothia1997 => chothia.as_ref().ok_or(Error::Binding)?.0.clone(),
     };
+    let north = if selection.region_definition == RegionDefinition::North2011 {
+        Some(crate::north::Projection::build(
+            raw,
+            &candidate.locus,
+            cancel,
+        )?)
+    } else {
+        None
+    };
     for (i, row) in rows.iter_mut().enumerate() {
         if cancel() {
             return Err(Error::Cancelled);
@@ -428,6 +444,7 @@ pub(crate) fn assemble(
                 .as_ref()
                 .map(|a| chothia_canonical_region(&candidate.locus, &a.position))
                 .transpose()?,
+            RegionDefinition::North2011 => north.as_ref().ok_or(Error::Binding)?.regions[i].clone(),
         };
     }
     let cdrs = match selection.region_definition {
@@ -440,6 +457,7 @@ pub(crate) fn assemble(
             let (rows, issues) = chothia.as_ref().ok_or(Error::Binding)?;
             defined_cdrs(rows, issues, &candidate.locus, &selection.region_definition)?
         }
+        RegionDefinition::North2011 => north.as_ref().ok_or(Error::Binding)?.cdrs.clone(),
     };
     let mut issues = vec![];
     if let Some((_, i)) = kabat {
@@ -447,6 +465,9 @@ pub(crate) fn assemble(
     }
     if let Some((_, i)) = chothia {
         issues.extend(i);
+    }
+    if let Some(north) = north {
+        issues.extend(north.issues);
     }
     Ok((rows, issues, cdrs))
 }

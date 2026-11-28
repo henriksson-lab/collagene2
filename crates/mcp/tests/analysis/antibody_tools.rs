@@ -15,6 +15,24 @@ async fn call(c: &Client, name: &str, args: Value) -> Value {
     assert_ne!(r.is_error, Some(true), "{name}: {:?}", r.content);
     r.structured_content.unwrap()
 }
+async fn artifact_text(c: &Client, artifact_id: &Value) -> String {
+    let mut text = String::new();
+    let mut start = 0;
+    loop {
+        let chunk = call(
+            c,
+            "read_artifact",
+            json!({"artifact_id":artifact_id,"start":start,"max_bytes":16384}),
+        )
+        .await;
+        text.push_str(chunk["text"].as_str().unwrap());
+        assert!(text.len() < 4 * 1024 * 1024);
+        if chunk["done"] == true {
+            return text;
+        }
+        start = chunk["next_start"].as_u64().unwrap();
+    }
+}
 async fn reject(c: &Client, name: &str, args: Value) {
     match c
         .call_tool(
@@ -57,13 +75,15 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     let discovery = call(&c, "list_antibody_profiles", json!({})).await;
     assert_eq!(discovery["v_references"], 354);
     assert_eq!(discovery["j_references"], 23);
-    assert!(
-        discovery["region_definitions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|d| d == "ChothiaCanonical")
-    );
+    for definition in ["ChothiaCanonical", "North2011"] {
+        assert!(
+            discovery["region_definitions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|d| d == definition)
+        );
+    }
     let seq = "EVQLLESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYCARDYGMDVWGQGTLVTVSS";
     let imported = call(
         &c,
@@ -202,6 +222,35 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
     );
     assert_eq!(canonical_result["candidates"][0]["unassigned_residues"], 0);
     assert_eq!(canonical_result["candidates"][0]["unassigned_regions"], 8);
+    let north = t::Selection {
+        numbering_scheme: t::NumberingScheme::Kabat1991,
+        region_definition: t::RegionDefinition::North2011,
+    };
+    let north_result = call(
+        &c,
+        "analyze_antibody",
+        json!({"document":doc,"options":options,"limits":limits,"selection":north}),
+    )
+    .await;
+    assert_eq!(north_result["selection"]["region_definition"], "North2011");
+    assert_ne!(
+        north_result["context_revision"],
+        canonical_result["context_revision"]
+    );
+    let north_report: t::Report =
+        serde_json::from_str(&artifact_text(&c, &north_result["artifact_id"]).await).unwrap();
+    north_report
+        .validate_binding(north_result["context_revision"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(north_report.selection, north);
+    assert_eq!(north_report.tracks[0].unassigned_residues, 8);
+    assert_eq!(north_report.tracks[0].unassigned_regions, 0);
+    for (i, start, end) in [(0, 22, 35), (1, 49, 59), (2, 96, 104)] {
+        assert_eq!(
+            north_report.tracks[0].cdrs[i].status,
+            t::CdrStatus::Mapped { start, end }
+        );
+    }
     // Analyze alignment evidence directly; do not forge an extracted document ref.
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     let input = format!(">row-a\n--{seq}--\n>row-b\n--{seq}--\n");
@@ -253,6 +302,28 @@ async fn antibody_tools_keep_explicit_limits_exact_sources_full_artifacts_and_re
         json!({"alignment":stale,"row_id":row,"options":options,"limits":limits,"selection":canonical}),
     )
     .await;
+    let north_alignment = call(&c, "analyze_alignment_antibody", json!({"alignment":imported["alignment"],"row_id":row,"options":options,"limits":limits,"selection":north})).await;
+    assert_eq!(
+        north_alignment["selection"]["region_definition"],
+        "North2011"
+    );
+    let north_full: collagene_core::protein::antibody_alignment::Report =
+        serde_json::from_str(&artifact_text(&c, &north_alignment["artifact_id"]).await).unwrap();
+    north_full
+        .validate_binding(north_alignment["context_revision"].as_str().unwrap())
+        .unwrap();
+    assert_eq!(north_full.analysis.selection, north);
+    assert_eq!(north_full.at_column(0, 24).unwrap().source_index, 22);
+    assert_eq!(
+        north_full.at_column(0, 24).unwrap().region,
+        Some(t::Region::Cdr1)
+    );
+    assert_eq!(north_full.at_column(0, 98).unwrap().source_index, 96);
+    assert_eq!(
+        north_full.at_column(0, 98).unwrap().region,
+        Some(t::Region::Cdr3)
+    );
+    assert!(north_full.at_column(0, 98).unwrap().assignment.is_none());
     assert_eq!(call(&c,"read_alignment",json!({"alignment":imported["alignment"],"row_start":0,"max_rows":2,"column_start":0,"max_columns":200})).await,alignment_before);
     assert_eq!(call(&c, "list_documents", json!({})).await, before);
     c.cancel().await.unwrap();

@@ -224,3 +224,56 @@ fn canonical_region_selection_survives_worker_transport_with_independent_imgt_la
     old[4..6].copy_from_slice(&120u16.to_le_bytes());
     assert!(session.process_request(&old).is_err());
 }
+
+#[test]
+fn north_regions_survive_worker_transport_without_requiring_the_display_numbering_window() {
+    let (m, o, l) = inputs();
+    let c = t::Selection {
+        numbering_scheme: t::NumberingScheme::Chothia1997,
+        region_definition: t::RegionDefinition::North2011,
+    };
+    let revision = t::request_revision(&m, &o, &l, &c).unwrap();
+    let q = Request {
+        id: 44,
+        revision: revision.clone(),
+        job: AnalysisJob::AnalyzeAntibody {
+            molecule: m.clone(),
+            options: o.clone(),
+            limits: l.clone(),
+            selection: c.clone(),
+        },
+    };
+    let wire = q.encode().unwrap();
+    let mut session = protocol::session::AnalysisSession::default();
+    for bytes in [
+        protocol::execution::process_request(&wire).unwrap(),
+        session.process_request(&wire).unwrap(),
+    ] {
+        let reply = Response::decode(&bytes).unwrap();
+        assert_eq!(reply.revision, revision);
+        let AnalysisResult::Antibody(report) = reply.result else {
+            panic!("North response")
+        };
+        assert_eq!(report.selection, c);
+        assert_eq!(report.tracks[0].unassigned_residues, 8);
+        assert_eq!(report.tracks[0].unassigned_regions, 0);
+        for (i, start, end) in [(0, 22, 35), (1, 49, 59), (2, 96, 104)] {
+            assert_eq!(
+                report.tracks[0].cdrs[i].status,
+                t::CdrStatus::Mapped { start, end }
+            );
+        }
+        report.validate_for(&m, &o, &l, &c).unwrap();
+    }
+    // The immediately superseded development format is not a second reader.
+    let mut previous = wire.clone();
+    previous[4..6].copy_from_slice(&123_u16.to_le_bytes());
+    assert!(protocol::execution::process_request(&previous).is_err());
+    assert!(session.process_request(&previous).is_err());
+    let mut changed = q;
+    let AnalysisJob::AnalyzeAntibody { selection, .. } = &mut changed.job else {
+        unreachable!()
+    };
+    selection.region_definition = t::RegionDefinition::Imgt;
+    assert!(protocol::execution::process_request(&changed.encode().unwrap()).is_err());
+}

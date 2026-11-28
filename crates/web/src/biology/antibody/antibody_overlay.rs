@@ -345,6 +345,7 @@ pub fn definition_label(d: &n::RegionDefinition) -> &'static str {
         n::RegionDefinition::Imgt => "IMGT",
         n::RegionDefinition::Kabat1991 => "Kabat (1991)",
         n::RegionDefinition::ChothiaCanonical => "Chothia (canonical charts)",
+        n::RegionDefinition::North2011 => "North (2011)",
     }
 }
 pub fn issue_text(i: &collagene_core::antibody_numbering::alternate_tracks::Issue) -> String {

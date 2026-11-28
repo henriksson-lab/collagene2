@@ -4,15 +4,27 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
+North2011 CDR regions are implemented in the current source, independently of
+IMGT/Kabat1991/Chothia1997 displayed numbering. Proven framework boundaries retain
+known region coverage even when interior number labels are unresolved; light CDR2
+includes its additional residue. Protein/alignment inspectors, worker and MCP
+share the selection. Primary-source derivation and limits are documented in
+[the antibody contract](ANTIBODY_NUMBERING.md#north-2011-structural-regions).
+Native/WASM checks and 48 focused cases pass, including 10 new cases and
+expanded actual SDK evidence. All 2,509 prior names remain; expanded discovery
+exposes 2,540 cases in 38 harnesses. Exact-source CI remains required. Broader biological
+calibration and full application/platform acceptance remain open.
+
 The [controller/scientific-owner batch](audits/controller-ownership-2026-11-28.md)
 is implemented in source: App delegates complete verification and persistence
 behavior to existing controllers; Preparation/TrackedDuplex and renderer State
 own their operations. App is 2,413 lines. Verification dispatch now advances its
 generation and clears complete evidence, rejecting superseded/disposed results.
 Native/WASM checks and 107 focused cases pass; all 2,509 baseline case names
-in 33 harnesses are preserved. Exact-source CI remains required. The
+in 33 harnesses are preserved. Its `7f6951b` checkpoint passed scientific and desktop
+CI; current source changes retain their own gate. The
 [current refactor queue](audits/REFACTOR_PLAN.md) retains connected remaining work.
-The [layout inventory](audits/refactor-layout-current.json) covers 1,247 Rust files /
+The [layout inventory](audits/refactor-layout-current.json) covers 1,249 Rust files /
 215 directories, at most 17 direct files per directory, with no size violations or
 3,000-line warnings.
 
@@ -35,7 +47,7 @@ maximum of 17 direct files per directory and no file reaching 3,000 lines at
 cases; its scientific CI and desktop packaging passed on Windows/macOS/Linux. See the
 [refactor status](audits/CODE_ORGANIZATION.md) for scope and evidence.
 
-Current source uses worker schema 123, candidate schema 31, draft schema 20,
+Current source uses worker schema 124, candidate schema 31, draft schema 20,
 scientific engine science-35 and 209 native MCP tools. Native sequence edits,
 paste and annotation-only strand flips now share annotation proofs and bounded
 source-evidence handling; MCP receipts expose annotation review counts. The
@@ -2484,9 +2496,11 @@ captures, display labels and MCP discovery/analysis share one current definition
 Track engine 4, alignment engine 3 and worker schema 121 reject superseded internal formats;
 no compatibility reader is added. [Primary sources and profile](ANTIBODY_NUMBERING.md#canonical-chart-chothia-regions-and-remaining-north-profile).
 
-North definitions still require their exact primary figure boundaries, and broader
-independent natural residue-level validation, reference/species calibration and
-whole-product graphical/platform/interoperability acceptance remain open. The
+The canonical-chart batch left North definitions open; the current
+[North2011 profile](ANTIBODY_NUMBERING.md#north-2011-structural-regions) now supplies
+primary-source boundaries and independent fixtures. Broader natural residue-level
+validation, reference/species calibration and whole-product graphical/platform/
+interoperability acceptance remain open. The
 canonical-chart definition is explicitly named rather than silently substituting
 one of the differing conventions called Chothia.
 

@@ -1,8 +1,4 @@
-use collagene_core::{
-    chemistry::Duplex,
-    formats::original as l,
-    protocol,
-};
+use collagene_core::{chemistry::Duplex, formats::original as l, protocol};
 use collagene_model::{Alphabet, Location};
 fn xml(sequence: &str, feature: &str) -> String {
     format!(

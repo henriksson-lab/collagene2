@@ -11,7 +11,6 @@ struct Limits {
     text_bytes: usize,
     original_bytes: usize,
     original_shares_text: bool,
-    retained_metadata_original: bool,
 }
 impl Limits {
     const MODEL: Self = Self {
@@ -22,7 +21,6 @@ impl Limits {
         text_bytes: 8 * 1024 * 1024,
         original_bytes: 4 * 1024 * 1024,
         original_shares_text: true,
-        retained_metadata_original: false,
     };
     const ANNOTATION_EDIT: Self = Self {
         features: 100_000,
@@ -32,7 +30,6 @@ impl Limits {
         text_bytes: 8 * 1024 * 1024,
         original_bytes: 32 * 1024 * 1024,
         original_shares_text: false,
-        retained_metadata_original: true,
     };
 }
 pub struct ModelBudget {
@@ -78,13 +75,13 @@ impl ModelBudget {
             text_bytes: maximum_bytes,
             original_bytes: maximum_bytes,
             original_shares_text: true,
-            retained_metadata_original: true,
         })
     }
     pub(crate) fn retained_metadata(key: &str) -> bool {
         matches!(
             key,
             "trace_original_base64"
+                | "source:original_fasta_base64"
                 | "source:snapgene:original_base64"
                 | "legacy:original_base64"
                 | "fastq:original_base64"
@@ -99,7 +96,9 @@ impl ModelBudget {
             })
     }
     pub(crate) fn metadata_value(&mut self, key: &str, value: &str) -> Result<(), Error> {
-        if self.limits.retained_metadata_original && Self::retained_metadata(key) {
+        // Known raw records share the original_genbank ledger in every mode;
+        // ordinary metadata keeps its separate per-value limit.
+        if Self::retained_metadata(key) {
             self.original(value)
         } else {
             self.text(value, 1024 * 1024)

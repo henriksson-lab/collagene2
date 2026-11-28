@@ -194,6 +194,18 @@ pub struct ImportReport {
     pub warnings: Vec<String>,
 }
 
+impl ImportReport {
+    /// Borrowed aggregate admission for normalized models, retained originals and
+    /// documentary warnings. This does not establish scientific/provider authority.
+    pub fn validate_bounds(&self) -> Result<(), Error> {
+        if self.molecules.len() > 1000 {
+            return Err(Error::TooLarge);
+        }
+        collagene_model::bounds::native_frame_preflight(self.molecules.iter(), MAX_IMPORT_BYTES)?;
+        crate::encoding::bounded_json::preflight(self, MAX_IMPORT_BYTES)
+    }
+}
+
 /// Content-based file import. Trace imports retain exact original attachments in native metadata.
 pub fn import_bytes(bytes: &[u8]) -> Result<ImportReport, Error> {
     if bytes.len() > MAX_IMPORT_BYTES {
@@ -659,13 +671,14 @@ pub fn import_text(text: &str) -> Result<ImportReport, Error> {
     if let Some(profile) = crate::formats::protein::detect(text.as_bytes()) {
         return crate::formats::protein::import_bytes(text.as_bytes(), profile);
     }
+    let original = text;
     let text = text.trim_start_matches('\u{feff}').trim_start();
     if text.starts_with("LOCUS") {
         import_genbank(text)
     } else if text.starts_with("ID ") {
         crate::formats::sequence::embl::import_embl(text)
     } else if text.starts_with('>') {
-        import_fasta(text)
+        import_fasta(original)
     } else {
         let mol = Molecule::dna("Untitled sequence", text, Topology::Linear)?;
         Ok(ImportReport {
@@ -709,10 +722,113 @@ pub fn import_fasta_with_alphabet(text: &str, alphabet: Alphabet) -> Result<Impo
     import_fasta_inner(text, Some(alphabet))
 }
 
-fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportReport, Error> {
-    if text.len() > MAX_IMPORT_BYTES {
-        return Err(Error::TooLarge);
+/// Borrowed exact record boundaries and aggregate retention admission. The first
+/// record includes any leading BOM/blank lines; a later record starts at its
+/// physical header line. Inter-record blank lines belong to the preceding record.
+struct FastaInput<'a> {
+    records: Vec<&'a str>,
+}
+impl<'a> FastaInput<'a> {
+    fn new(text: &'a str) -> Result<Self, Error> {
+        if text.len() > MAX_IMPORT_BYTES {
+            return Err(Error::TooLarge);
+        }
+        let mut starts = Vec::new();
+        let mut offset = 0usize;
+        // Conservatively admit the complete normalized models plus exact base64
+        // source records BEFORE copying headers, sequence strings or encodings.
+        // Structural JSON/key/hash/warning overhead is bounded by 1024 per record
+        // plus 1024 for the report. Original base64 bytes never need JSON escaping.
+        let mut normalized_bytes = 1024usize;
+        for physical in text.split_inclusive('\n') {
+            let line = if offset == 0 {
+                physical.trim_start_matches('\u{feff}')
+            } else {
+                physical
+            }
+            .trim();
+            if let Some(header) = line.strip_prefix('>') {
+                if starts.len() == 1000 {
+                    return Err(Error::TooLarge);
+                }
+                let header = header.trim();
+                if header.is_empty() {
+                    return Err(Error::Format("FASTA header is empty".into()));
+                }
+                if header.len() > 1024 {
+                    return Err(Error::TooLarge);
+                }
+                // Conservative JSON string byte cost, without an escaped copy.
+                let header_bytes = header.chars().try_fold(0usize, |count, c| {
+                    count
+                        .checked_add(match c {
+                            '\"' | '\\' => 2,
+                            c if c <= '\u{1f}' => 6,
+                            c => c.len_utf8(),
+                        })
+                        .ok_or(Error::TooLarge)
+                })?;
+                normalized_bytes = normalized_bytes
+                    .checked_add(header_bytes)
+                    .and_then(|count| count.checked_add(1024))
+                    .ok_or(Error::TooLarge)?;
+                starts.push(if starts.is_empty() { 0 } else { offset });
+            } else if !line.is_empty() {
+                if starts.is_empty() {
+                    return Err(Error::Format(
+                        "FASTA sequence appears before its header".into(),
+                    ));
+                }
+                normalized_bytes = normalized_bytes
+                    .checked_add(line.len())
+                    .ok_or(Error::TooLarge)?;
+            }
+            offset += physical.len();
+        }
+        if starts.is_empty() {
+            return Err(Error::Format("no FASTA records".into()));
+        }
+        let mut retained_bytes = 0usize;
+        for (index, start) in starts.iter().enumerate() {
+            let length = starts.get(index + 1).copied().unwrap_or(text.len()) - start;
+            retained_bytes = retained_bytes
+                .checked_add(length.div_ceil(3).checked_mul(4).ok_or(Error::TooLarge)?)
+                .ok_or(Error::TooLarge)?;
+        }
+        if normalized_bytes
+            .checked_add(retained_bytes)
+            .is_none_or(|n| n > MAX_IMPORT_BYTES)
+        {
+            return Err(Error::TooLarge);
+        }
+        let records = starts
+            .iter()
+            .enumerate()
+            .map(|(index, start)| {
+                &text[*start..starts.get(index + 1).copied().unwrap_or(text.len())]
+            })
+            .collect();
+        Ok(Self { records })
     }
+    fn retain(&self, molecule: &mut Molecule, index: usize) -> Result<(), Error> {
+        let record = self
+            .records
+            .get(index)
+            .ok_or_else(|| Error::Format("FASTA record association changed".into()))?;
+        molecule.metadata.insert(
+            "source:original_fasta_base64".into(),
+            STANDARD.encode(record.as_bytes()),
+        );
+        molecule.metadata.insert(
+            "source:original_fasta_blake3".into(),
+            blake3::hash(record.as_bytes()).to_hex().to_string(),
+        );
+        collagene_model::bounds::annotation_edit_preflight(&[molecule])
+    }
+}
+
+fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportReport, Error> {
+    let input = FastaInput::new(text)?;
     let mut molecules = vec![];
     let mut name: Option<String> = None;
     let mut bases = String::new();
@@ -723,14 +839,16 @@ fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportRe
         mol.sequence = Sequence::new(alphabet, bases)?;
         Ok(mol)
     };
-    for line in text.lines() {
+    for line in text.trim_start_matches('\u{feff}').lines() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
         if let Some(header) = line.strip_prefix('>') {
             if let Some(name) = name.take() {
-                molecules.push(finish(name, &bases, alphabet)?);
+                let mut molecule = finish(name, &bases, alphabet)?;
+                input.retain(&mut molecule, molecules.len())?;
+                molecules.push(molecule);
             }
             if molecules.len() >= 1000 {
                 return Err(Error::TooLarge);
@@ -762,7 +880,9 @@ fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportRe
         }
     }
     if let Some(name) = name {
-        molecules.push(finish(name, &bases, alphabet)?);
+        let mut molecule = finish(name, &bases, alphabet)?;
+        input.retain(&mut molecule, molecules.len())?;
+        molecules.push(molecule);
     }
     if molecules.is_empty() {
         return Err(Error::Format("no FASTA records".into()));
@@ -779,10 +899,12 @@ fn import_fasta_inner(text: &str, explicit: Option<Alphabet>) -> Result<ImportRe
             "Non-DNA alphabet was taken from an explicit [molecule=...] FASTA header.".into(),
         );
     }
-    Ok(ImportReport {
+    let report = ImportReport {
         molecules,
         warnings,
-    })
+    };
+    report.validate_bounds()?;
+    Ok(report)
 }
 
 fn feature_kind_valid(kind: &str) -> bool {

@@ -15,3 +15,5 @@ mod snapgene;
 mod snapgene_export;
 mod snapgene_protein;
 mod xdna_export;
+
+mod fasta_evidence;

@@ -1,0 +1,169 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "f2e5374d0df8a160c99d63582b2b48e30f7c71fe",
+  "status": "verified",
+  "scope": "Exact per-record FASTA retention through canonical local and URL import; atomic provider decoration; existing raw-metadata ledgers and supplied-consensus evidence.",
+  "compiler_runs": [
+    {
+      "target": "native",
+      "stage": 1,
+      "success": true,
+      "errors": []
+    },
+    {
+      "target": "wasm",
+      "stage": 1,
+      "success": true,
+      "errors": []
+    },
+    {
+      "target": "native",
+      "stage": 2,
+      "success": true,
+      "errors": []
+    }
+  ],
+  "passing_cases": 700,
+  "failing_cases": 0,
+  "executed_harnesses": [
+    {
+      "package": "collagene-core",
+      "target": "analysis",
+      "selected": 21,
+      "observed": 21,
+      "binary_sha256": "478a97ec134353189ff88f29de71da4078e50b6366eea04be9ecaeff939d0d8f"
+    },
+    {
+      "package": "collagene-mcp",
+      "target": "analysis",
+      "selected": 2,
+      "observed": 2,
+      "binary_sha256": "06bb2858a287cf9f0acba29a9711a393eb67cfbf8fcce7aff2c7cae920e64597"
+    },
+    {
+      "package": "collagene-model",
+      "target": "citation_sources",
+      "selected": 8,
+      "observed": 8,
+      "binary_sha256": "6f1c4302a8df4b67717874df3f267310a7c539eefb4f388bd7041def1d46914c"
+    },
+    {
+      "package": "collagene-model",
+      "target": "collagene_model",
+      "selected": 17,
+      "observed": 17,
+      "binary_sha256": "ba34a9340f6903e93cde6affb96c3424c60f4fecc88bdb35b50d7f811e036b20"
+    },
+    {
+      "package": "collagene-model",
+      "target": "compatibility",
+      "selected": 7,
+      "observed": 7,
+      "binary_sha256": "e009b386c7e9341ab9a29d816cd3a6d618fb023cf647e2bf4fa212a149dfebb1"
+    },
+    {
+      "package": "collagene-model",
+      "target": "genbank_edits",
+      "selected": 4,
+      "observed": 4,
+      "binary_sha256": "45f1cf56a5eea70286247598357642acbfe1b0b652fc0533103a99cd16aaec93"
+    },
+    {
+      "package": "collagene-model",
+      "target": "retained_fasta_bounds",
+      "selected": 3,
+      "observed": 3,
+      "binary_sha256": "ff95aea71dd5ff85f10fff8dd16ec696074d2153ceed80bad173b7dfcd39e756"
+    },
+    {
+      "package": "collagene-sources",
+      "target": "sources",
+      "selected": 9,
+      "observed": 9,
+      "binary_sha256": "9011b83f7e69dc5a29fc4839d2128ead21bf17fe19c7b7f8e7e9797f9792ab97"
+    },
+    {
+      "package": "collagene-core",
+      "target": "formats",
+      "selected": 175,
+      "observed": 175,
+      "binary_sha256": "8e1b1d8fca1aaeec3fd0b80c35dc4a40507c3d71e6bf3c276b55dff238a68503"
+    },
+    {
+      "package": "collagene-web",
+      "target": "collagene-web",
+      "selected": 454,
+      "observed": 454,
+      "binary_sha256": "5f2aac7bd738fae0cf21f0caeda73a3375b7930def374d83fe7e4d2ada7adc5d"
+    }
+  ],
+  "case_index": "docs/audits/fasta-retention-cases.tsv",
+  "case_index_sha256": "56875fb1752b6bc1d9360f47842e1381fbac6f0ac6425194c08fd2008bfc44b3",
+  "current_input_files": {
+    "crates/core/src/formats/sequence/mod.rs": {
+      "sha256": "f4ca42937b7cf20341f039e7835999cdfa2c8056f37e4313e80c8d3894a4637e",
+      "bytes": 54758
+    },
+    "crates/core/tests/analysis/design_consensus/assessment.rs": {
+      "sha256": "e3578d73fec6b38cb383deb6c2b9aa98c0a1e0cc9c1369bb76f3f53305717772",
+      "bytes": 28616
+    },
+    "crates/core/tests/formats/sequences/fasta_evidence.rs": {
+      "sha256": "af98ac0e4bb5e897f16a463646e34af9df462301abbde349e07e7aac17393f44",
+      "bytes": 6295
+    },
+    "crates/core/tests/formats/sequences/mod.rs": {
+      "sha256": "3b027ec75517ebb6d745d10382b45dae725fe74e9235e54748480f761b8607e5",
+      "bytes": 398
+    },
+    "crates/mcp/tests/analysis/design_consensus/mod.rs": {
+      "sha256": "9d8fce330892752f381a3cb66627faf3afde78e6ef0aa445bbc573ff3b6e9836",
+      "bytes": 12541
+    },
+    "crates/model/src/bounds.rs": {
+      "sha256": "6b3126e6e0cdc80bf72730b3636e36d7e8aa293faeda761eb96b9b60b03a86ee",
+      "bytes": 10335
+    },
+    "crates/model/tests/retained_fasta_bounds.rs": {
+      "sha256": "85ea4bf07f089c9aaedff673bc0a1ebe74552cc968f1a67c9d11d062aec405e9",
+      "bytes": 3222
+    },
+    "crates/sources/Cargo.toml": {
+      "sha256": "0f6ca2e3be304f988b26ffba763e999982c78e0bdc08f15243f8dafb5696152a",
+      "bytes": 840
+    },
+    "crates/sources/src/lib.rs": {
+      "sha256": "6cf9e655c8d18249b5316b863e94ea724e98107030a45ecce1f1955bcf8a8a72",
+      "bytes": 28785
+    },
+    "crates/sources/tests/sources.rs": {
+      "sha256": "d6c47df91425bc65ca6911302f4644779ef9f4524c43857becf9a8b185534e91",
+      "bytes": 13029
+    }
+  },
+  "native_source_stage": 2,
+  "wasm_source_stage": 1,
+  "source_difference": {
+    "path": "crates/model/tests/retained_fasta_bounds.rs",
+    "detail": "Only integration-test expectations changed between source stages: known-original cap is 4MiB per value and shared 8MiB text, not a 4MiB aggregate. No production changes. No test executed the earlier expectation; native harness rebuilt before its sole execution. WASM does not compile this integration-test file."
+  },
+  "stdio_smoke": {
+    "exit_code": 0,
+    "tool_count": 229,
+    "script_sha256": "980dad837cd56755204c392d5aac647375c421abdaeb42e3c1248b2ba275168c",
+    "binary_sha256": "2dddb4f1ee8bc06b5bea7f9f4badd603d8955c864743f992e74e83842384f1dd",
+    "scope": "Default memory-only real executable stdio; optional storage-root/native-workspace/browser-workspace branches not selected."
+  },
+  "limitations": [
+    "No browser, CDP, screenshot, application HTTP, live-provider, installation or GUI acceptance checks.",
+    "Retained exact bytes/digests establish a data-integrity binding, not read quality, provider authentication, material identity, biological function or experimental confirmation.",
+    "Import-scale and scientific-operation bounds remain distinct; successful import does not promise all operations accept that record size.",
+    "Cross-platform and desktop packaging of this source require exact-head CI after publication. Full goal remains active."
+  ],
+  "format_check": {
+    "mode": "rustfmt --check --config skip_children=true",
+    "files": 9,
+    "exit_code": 0,
+    "source_changed": false
+  }
+}

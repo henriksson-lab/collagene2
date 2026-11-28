@@ -219,3 +219,122 @@ fn direct_fasta_preserves_each_original_record_and_redacts_signed_query_provenan
     annotate_import(&mut parsed, &source, raw, "2026-11-23T19:00:00+01:00").unwrap();
     assert_eq!(parsed.molecules[0].metadata["source:retrieved_at"], NOW);
 }
+
+#[test]
+fn url_and_local_fasta_share_literal_records_despite_identical_normalized_calls() {
+    let first = b"\xef\xbb\xbf\r\n  >first documentary header\r\nacgt\r\n\r\n";
+    let second = b" >second\nACGT";
+    let raw = [first.as_slice(), second.as_slice()].concat();
+    let local = formats::import_bytes(&raw).unwrap();
+    let remote = import_download(
+        &parse_source("https://files.example.org/two.fa").unwrap(),
+        &raw,
+        NOW,
+    )
+    .unwrap();
+    assert_eq!(local.molecules.len(), 2);
+    assert_eq!(local.molecules[0].sequence, local.molecules[1].sequence);
+    for (index, literal) in [first.as_slice(), second.as_slice()]
+        .into_iter()
+        .enumerate()
+    {
+        for molecule in [&local.molecules[index], &remote.molecules[index]] {
+            assert_eq!(
+                STANDARD
+                    .decode(&molecule.metadata["source:original_fasta_base64"])
+                    .unwrap(),
+                literal
+            );
+            assert_eq!(
+                molecule.metadata["source:original_fasta_blake3"],
+                blake3::hash(literal).to_hex().as_str()
+            );
+        }
+        assert_eq!(
+            remote.molecules[index].metadata["source:record_index"],
+            index.to_string()
+        );
+        assert_eq!(
+            remote.molecules[index].metadata["source:content_blake3"],
+            blake3::hash(&raw).to_hex().as_str()
+        );
+    }
+}
+
+#[test]
+fn public_annotation_refuses_changed_reports_atomically_for_fasta_and_ncbi() {
+    let raw = b">first\nACGT\n>second\nGGCC\n";
+    let source = parse_source("https://files.example.org/two.fa").unwrap();
+    let canonical = formats::import_bytes(raw).unwrap();
+    let mut cases = Vec::new();
+    let mut changed = canonical.clone();
+    changed.molecules[0].name = "edited".into();
+    cases.push(changed);
+    let mut changed = canonical.clone();
+    changed.molecules[0].sequence =
+        collagene_model::Molecule::dna("calls", "TTTT", Topology::Linear)
+            .unwrap()
+            .sequence;
+    cases.push(changed);
+    let mut changed = canonical.clone();
+    changed.molecules.swap(0, 1);
+    cases.push(changed);
+    let mut changed = canonical.clone();
+    changed.molecules[0]
+        .metadata
+        .insert("source:original_fasta_blake3".into(), "a".repeat(64));
+    cases.push(changed);
+    let mut changed = canonical;
+    changed.warnings.push("Unrelated caller assertion".into());
+    cases.push(changed);
+    for mut changed in cases {
+        let before = serde_json::to_value(&changed).unwrap();
+        assert_eq!(
+            annotate_import(&mut changed, &source, raw, NOW),
+            Err(SourceError::InvalidSequenceData)
+        );
+        assert_eq!(serde_json::to_value(changed).unwrap(), before);
+    }
+    let mut genbank = formats::import_bytes(GB.as_bytes()).unwrap();
+    genbank.molecules[0].name = "Edited imported record".into();
+    let before = serde_json::to_value(&genbank).unwrap();
+    assert_eq!(
+        annotate_import(
+            &mut genbank,
+            &parse_source("TEST000001.2").unwrap(),
+            GB.as_bytes(),
+            NOW
+        ),
+        Err(SourceError::InvalidSequenceData)
+    );
+    assert_eq!(serde_json::to_value(genbank).unwrap(), before);
+}
+
+#[test]
+fn provider_failure_and_aggregate_decoration_refusal_leave_caller_report_unchanged() {
+    let mut report = formats::import_bytes(GB.as_bytes()).unwrap();
+    let before = serde_json::to_value(&report).unwrap();
+    assert_eq!(
+        annotate_import(
+            &mut report,
+            &parse_source("TEST000001.3").unwrap(),
+            GB.as_bytes(),
+            NOW
+        ),
+        Err(SourceError::IdentifierMismatch)
+    );
+    assert_eq!(serde_json::to_value(report).unwrap(), before);
+    let raw = (0..8)
+        .map(|index| format!(">record{index}\nACGT\n"))
+        .collect::<String>();
+    let mut report = formats::import_bytes(raw.as_bytes()).unwrap();
+    let before = serde_json::to_value(&report).unwrap();
+    let source = Source::Direct {
+        url: format!("https://files.example.org/{}", "a".repeat(1024 * 1024)),
+    };
+    assert_eq!(
+        annotate_import(&mut report, &source, raw.as_bytes(), NOW),
+        Err(SourceError::TooLarge)
+    );
+    assert_eq!(serde_json::to_value(report).unwrap(), before);
+}

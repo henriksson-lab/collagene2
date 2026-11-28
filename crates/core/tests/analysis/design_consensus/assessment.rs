@@ -714,3 +714,67 @@ fn long_multibyte_or_sanitized_provider_fields_are_explicit_previews_not_whole_c
         report.validate_request(&workspace, &request).unwrap();
     }
 }
+
+#[test]
+fn actual_local_fasta_originals_survive_cg2_and_edits_without_replacing_current_calls() {
+    use base64::{Engine, engine::general_purpose::STANDARD};
+    use collagene_core::{formats::sequence, protocol};
+    const RAW: &[u8] = b"\xef\xbb\xbf \r\n >Local observation literal\r\n atg caa ccc taa \r\n \t";
+    let imported = sequence::import_bytes(RAW).unwrap().molecules.remove(0);
+    let reopened = protocol::load_document(&protocol::save_document(&imported).unwrap()).unwrap();
+    assert_eq!(
+        STANDARD
+            .decode(&reopened.metadata["source:original_fasta_base64"])
+            .unwrap(),
+        RAW
+    );
+    let edited = reopened.replace(3, 4, "T").unwrap();
+    assert_eq!(edited.sequence.as_str(), "ATGTAACCCTAA");
+    assert_eq!(
+        STANDARD
+            .decode(&edited.metadata["source:original_fasta_base64"])
+            .unwrap(),
+        RAW
+    );
+    let case = coding_literals().remove(1);
+    let mut design = reopened.clone();
+    // Add only an explicitly declared CDS role; do not reconstruct file bytes
+    // from a normalized sequence export or attach a provider claim.
+    design.features = case.molecules().0.features;
+    let (_, mut request) = request(&case);
+    let workspace = Workspace::from_documents(
+        "Local originals are separate historical evidence",
+        vec![design.clone(), edited],
+        1,
+    )
+    .unwrap();
+    request.design = event(&workspace, 0);
+    request.consensus = event(&workspace, 1);
+    request.cds[0].design_cds.source_revision = design.revision();
+    request.cds[0].design_cds.annotation_revision =
+        annotation_revision(&design.features[0]).unwrap();
+    let report = native::assess(&workspace, &request).unwrap();
+    assert_eq!(
+        report.evidence.provenance[0].original.state,
+        native::OriginalState::IntegrityCheckedMatchesCalls
+    );
+    assert_eq!(
+        report.evidence.provenance[1].original.state,
+        native::OriginalState::IntegrityCheckedDifferentCalls
+    );
+    assert_eq!(
+        report.evidence.cds[0]
+            .projected_translation
+            .as_ref()
+            .unwrap()
+            .protein,
+        "M*P*"
+    );
+    assert!(report.evidence.provenance.iter().all(|source| {
+        source
+            .fields
+            .iter()
+            .all(|field| field.key != "source:provider")
+    }));
+    assert!(report.evidence.selected_path_conditional);
+}

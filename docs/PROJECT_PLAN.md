@@ -5670,3 +5670,29 @@ The preceding published `6a79798` checkpoint now passes cross-platform Check run
 46183534013 and desktop run 46183534122. The current
 [package inventory](audits/desktop-packages-current.json) records its Windows,
 macOS and Debian artifacts. These packages exclude the new semantic batch.
+
+### Exact FASTA source retention and next annotation batch
+
+The published semantic checkpoint `f2e5374` passes cross-platform Check run
+46186419235. Its desktop packaging run remains pending at the time of this
+update; the package inventory above still identifies the earlier exact source.
+
+Local and downloaded FASTA now share one canonical parser and exact disjoint
+record-byte retention using the existing raw-record metadata keys. Provider
+decoration validates the actual parsed report and commits atomically. Bounds
+admit normalized calls and encoded originals before amplification, preserve the
+existing native/scientific ledgers and do not raise their ceilings. Native/WASM
+compilation, **700 focused cases** and real default memory-only MCP stdio
+(229 tools) pass. [Contract](audits/fasta-retention-current.md) ·
+[Exact execution evidence](audits/fasta-retention-current-integration.json).
+Original bytes establish retained data integrity, not read quality, biological
+function, sample identity or experimental verification.
+
+F19 is the next parallel integration batch: one bounded annotation-merge owner
+for explicit append, skip and accumulated attribution; actual native reference
+edit receipts; existing web/MCP review controls; independent binding, geometry,
+atomicity and resource fixtures. Overlap and labels do not establish annotation
+identity. Attribution cannot overwrite biological qualifiers or clear review.
+Workers share a canonical contract and contribute to one completed source batch
+before compilation and focused native/WASM execution. These edits are excluded
+from the FASTA execution record. The full implementation goal remains active.

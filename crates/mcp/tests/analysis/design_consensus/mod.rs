@@ -236,3 +236,111 @@ async fn supplied_consensus_sdk_keeps_roles_conditional_coding_pages_and_complet
     client.cancel().await.unwrap();
     service.await.unwrap();
 }
+
+#[tokio::test]
+async fn local_fasta_sdk_exports_exact_record_bytes_and_compares_them_as_unverified_observations() {
+    const DESIGN: &[u8] = b"\xef\xbb\xbf \r\n >local-design\r\n atg caa ccc taa \r\n\r\n";
+    const OBSERVED: &[u8] = b" \t>local-consensus\r\n atg taa ccc taa \r\n \t";
+    let raw = [DESIGN, OBSERVED].concat();
+    let (a, b) = tokio::io::duplex(65536);
+    let service = tokio::spawn(async move {
+        CollageneServer::default()
+            .serve(a)
+            .await
+            .unwrap()
+            .waiting()
+            .await
+            .unwrap();
+    });
+    let client = ().serve(b).await.unwrap();
+    let imported = call(
+        &client,
+        "import_document",
+        json!({"text":std::str::from_utf8(&raw).unwrap()}),
+    )
+    .await;
+    let documents = imported["documents"].as_array().unwrap();
+    assert_eq!(documents.len(), 2);
+    let mut models = Vec::new();
+    for (document, expected) in documents.iter().zip([DESIGN, OBSERVED]) {
+        let exported = call(
+            &client,
+            "export_document",
+            json!({"id":document["id"],"revision":document["revision"]}),
+        )
+        .await;
+        let model = collagene_core::protocol::load_document(
+            &artifact(&client, &exported["artifact_id"]).await,
+        )
+        .unwrap();
+        assert_eq!(
+            STANDARD
+                .decode(&model.metadata["source:original_fasta_base64"])
+                .unwrap(),
+            expected
+        );
+        assert_eq!(
+            model.metadata["source:original_fasta_blake3"],
+            blake3::hash(expected).to_hex().to_string()
+        );
+        assert!(!model.metadata.contains_key("source:provider"));
+        models.push(model);
+    }
+    let workspace =
+        Workspace::from_documents("Exact local records, independent source roles", models, 1)
+            .unwrap();
+    let request = native::Request {
+        schema_version: 1,
+        design: event(&workspace, 0),
+        consensus: event(&workspace, 1),
+        comparison: ComparisonOptions {
+            alignment: AlignmentOptions {
+                global_storage: GlobalStorage::Full,
+                ..Default::default()
+            },
+            both_query_strands: false,
+            reference_rotations: false,
+            max_origins: 1,
+            max_total_cells: 100_000,
+        },
+        consensus_axis: native::ConsensusAxis::StoredTopology,
+        cds: vec![],
+        limits: Default::default(),
+    };
+    let imported_workspace = call(
+        &client,
+        "import_workspace_archive",
+        json!({"data_base64":STANDARD.encode(workspace::save_workspace(&workspace).unwrap())}),
+    )
+    .await;
+    let reference = json!({"id":imported_workspace["workspace"]["id"],"revision":imported_workspace["workspace"]["revision"]});
+    let comparison = call(
+        &client,
+        "assess_design_consensus",
+        json!({"workspace":reference,"request":request}),
+    )
+    .await;
+    let full: native::Report =
+        serde_json::from_slice(&artifact(&client, &comparison["artifact_id"]).await).unwrap();
+    full.validate_request(&workspace, &request).unwrap();
+    assert!(
+        full.evidence
+            .provenance
+            .iter()
+            .all(|source| source.original.state
+                == native::OriginalState::IntegrityCheckedMatchesCalls)
+    );
+    assert_eq!(full.pairwise.comparison.alignment.differences.len(), 1);
+    assert_eq!(
+        full.evidence.provenance[0].original.byte_count,
+        DESIGN.len()
+    );
+    assert_eq!(
+        full.evidence.provenance[1].original.byte_count,
+        OBSERVED.len()
+    );
+    assert!(comparison.get("verified").is_none());
+    assert!(full.evidence.selected_path_conditional);
+    client.cancel().await.unwrap();
+    service.await.unwrap();
+}

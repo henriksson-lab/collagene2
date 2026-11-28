@@ -11,7 +11,6 @@ collagene-core = { path = "../core" }
 thiserror.workspace = true
 blake3.workspace = true
 url = "=2.5.8"
-base64 = "0.22"
 serde_json.workspace = true
 serde.workspace = true
 chrono = { version = "0.4", default-features = false, features = ["std"] }
@@ -22,4 +21,5 @@ tokio = { version = "1", features = ["net", "time", "sync"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [dev-dependencies]
+base64 = "0.22"
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }

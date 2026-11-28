@@ -1,6 +1,5 @@
 //! URL/source adapters, separate from the network-free scientific core.
 //! Public resolution and provenance attachment also compile for browser WASM.
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_core::formats::sequence::{self as formats, ImportReport, MAX_IMPORT_BYTES};
 use collagene_model::Molecule;
 use std::{
@@ -564,34 +563,6 @@ fn validate_genbank_lengths(molecules: &[Molecule]) -> Result<(), SourceError> {
     }
     Ok(())
 }
-fn fasta_records(bytes: &[u8]) -> Vec<&[u8]> {
-    let mut starts = vec![];
-    let mut offset = 0;
-    for line in bytes.split_inclusive(|b| *b == b'\n') {
-        let line = if offset == 0 {
-            line.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(line)
-        } else {
-            line
-        };
-        if line.trim_ascii_start().starts_with(b">") {
-            starts.push(offset);
-        }
-        offset += if offset == 0 && bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
-            line.len() + 3
-        } else {
-            line.len()
-        };
-    }
-    if let Some(first) = starts.first_mut() {
-        *first = 0;
-    }
-    starts
-        .iter()
-        .enumerate()
-        .map(|(i, start)| &bytes[*start..starts.get(i + 1).copied().unwrap_or(bytes.len())])
-        .collect()
-}
-
 /// Apply the shared parser and attach non-secret provenance after a completed download.
 /// Browser callers perform their own fetch/CORS handling and pass an actual UTC retrieval time.
 pub fn annotate_import(
@@ -600,8 +571,38 @@ pub fn annotate_import(
     bytes: &[u8],
     retrieved_at: &str,
 ) -> Result<(), SourceError> {
+    detect_format(bytes)?;
+    // The caller must supply the exact current shared-parser report. This binds
+    // original records, calls, annotations and parser warnings before provider
+    // claims are attached; edited or unrelated reports are never repaired.
+    collagene_model::bounds::native_frame_preflight(report.molecules.iter(), MAX_IMPORT_BYTES)
+        .map_err(|_| SourceError::TooLarge)?;
+    let mut canonical = formats::import_bytes(bytes).map_err(|error| match error {
+        collagene_model::Error::TooLarge => SourceError::TooLarge,
+        _ => SourceError::InvalidSequenceData,
+    })?;
+    if canonical.molecules != report.molecules || canonical.warnings != report.warnings {
+        return Err(SourceError::InvalidSequenceData);
+    }
+    annotate_canonical(&mut canonical, source, bytes, retrieved_at)?;
+    // Publish only after all records and provider-specific checks passed.
+    *report = canonical;
+    Ok(())
+}
+
+// Only fresh shared-parser output reaches this provider stage. Original FASTA
+// record retention belongs exclusively to the core format owner.
+fn annotate_canonical(
+    report: &mut ImportReport,
+    source: &Source,
+    bytes: &[u8],
+    retrieved_at: &str,
+) -> Result<(), SourceError> {
     if retrieved_at.is_empty() || retrieved_at.len() > 64 || !retrieved_at.is_ascii() {
         return Err(SourceError::InvalidConfig);
+    }
+    if matches!(source, Source::Direct { url } if url.len() > MAX_IMPORT_BYTES) {
+        return Err(SourceError::TooLarge);
     }
     source.download_url()?;
     let retrieved_at = chrono::DateTime::parse_from_rfc3339(retrieved_at)
@@ -630,20 +631,35 @@ pub fn annotate_import(
             records: report.molecules.len(),
         });
     }
-    // The portable annotation entry point cannot attach provider authority to an
-    // edited or unrelated caller-supplied document using only an old raw record.
-    if matches!(source, Source::Ena { .. } | Source::Ddbj { .. }) {
-        let parsed = formats::import_bytes(bytes).map_err(|_| SourceError::InvalidSequenceData)?;
-        if parsed.molecules != report.molecules {
-            return Err(SourceError::InvalidSequenceData);
+    let content_hash = blake3::hash(bytes).to_hex().to_string();
+    let canonical_source = source.canonical_url();
+    // Reserve provider decoration for the ENTIRE report before per-record URL
+    // copies. Six bytes per URL byte covers JSON escaping; the remaining 4096
+    // bytes cover fixed keys, bounded provider IDs/time/hashes and warnings.
+    let reserved = canonical_source
+        .len()
+        .checked_mul(6)
+        .and_then(|size| size.checked_add(4096))
+        .and_then(|size| size.checked_mul(report.molecules.len()))
+        .and_then(|size| size.checked_add(1024))
+        .ok_or(SourceError::TooLarge)?;
+    let remaining = MAX_IMPORT_BYTES
+        .checked_sub(reserved)
+        .ok_or(SourceError::TooLarge)?;
+    struct Remaining(usize);
+    impl std::io::Write for Remaining {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_sub(bytes.len())
+                .ok_or_else(|| std::io::Error::other("provider metadata aggregate limit"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
         }
     }
-    let content_hash = blake3::hash(bytes).to_hex().to_string();
-    let fasta = if format == DownloadFormat::Fasta {
-        fasta_records(bytes)
-    } else {
-        vec![]
-    };
+    serde_json::to_writer(Remaining(remaining), &report).map_err(|_| SourceError::TooLarge)?;
     for (index, m) in report.molecules.iter_mut().enumerate() {
         let actual = match format {
             DownloadFormat::GenBank => returned_accession(m),
@@ -693,7 +709,7 @@ pub fn annotate_import(
                     _ => format!("https://www.ncbi.nlm.nih.gov/nuccore/{actual}"),
                 }
             }
-            _ => source.canonical_url(),
+            _ => canonical_source.clone(),
         };
         m.metadata.insert("source:canonical_url".into(), canonical);
         m.metadata.insert(
@@ -727,20 +743,6 @@ pub fn annotate_import(
         if let Some(actual) = actual {
             m.metadata.insert("source:accession_version".into(), actual);
         }
-        if format == DownloadFormat::Fasta {
-            let record = fasta
-                .get(index)
-                .copied()
-                .ok_or(SourceError::InvalidSequenceData)?;
-            m.metadata.insert(
-                "source:original_fasta_base64".into(),
-                STANDARD.encode(record),
-            );
-            m.metadata.insert(
-                "source:original_fasta_blake3".into(),
-                blake3::hash(record).to_hex().to_string(),
-            );
-        }
         // Imported evidence and provenance must still fit a native document payload.
         collagene_core::protocol::save_document(m).map_err(|_| SourceError::TooLarge)?;
     }
@@ -748,6 +750,9 @@ pub fn annotate_import(
         report.warnings.push("FASTA does not declare sequence lengths; transport completion does not establish biological completeness. Original record bytes were retained.".into());
     }
     report.warnings.push("URL-import provenance identifies fetched data; it does not independently verify a complete plasmid, annotations or experimental function. Re-import creates documents rather than overwriting an existing design.".into());
+    report
+        .validate_bounds()
+        .map_err(|_| SourceError::TooLarge)?;
     Ok(())
 }
 pub fn import_download(
@@ -756,7 +761,10 @@ pub fn import_download(
     retrieved_at: &str,
 ) -> Result<ImportReport, SourceError> {
     detect_format(bytes)?;
-    let mut report = formats::import_bytes(bytes).map_err(|_| SourceError::InvalidSequenceData)?;
-    annotate_import(&mut report, source, bytes, retrieved_at)?;
+    let mut report = formats::import_bytes(bytes).map_err(|error| match error {
+        collagene_model::Error::TooLarge => SourceError::TooLarge,
+        _ => SourceError::InvalidSequenceData,
+    })?;
+    annotate_canonical(&mut report, source, bytes, retrieved_at)?;
     Ok(report)
 }

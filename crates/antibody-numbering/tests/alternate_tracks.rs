@@ -2,7 +2,7 @@ use collagene_antibody_numbering::{
     domain_candidates as d,
     domain_tracks::*,
     profile,
-    references::human_references,
+    references::{Species, load},
     v_mapping::{self as v, Locus},
 };
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
@@ -21,6 +21,7 @@ fn source(s: &str) -> Molecule {
 }
 fn options() -> d::Options {
     d::Options {
+        references: collagene_antibody_numbering::v_mapping::ReferenceSelection::human_all(),
         v_scoring: v::Scoring {
             observed_reward: 5,
             frequency_bonus: 8,
@@ -207,7 +208,7 @@ fn unsupported_first_window_does_not_discard_other_windows_or_make_a_partial_cdr
 }
 #[test]
 fn light_locus_boundaries_and_complete_definition_intervals_are_source_bound() {
-    let corpus = human_references().unwrap();
+    let corpus = load(&Species::Human).unwrap();
     for (gene, tail, locus) in [
         ("IGKV1-39*01", "FGQGTKVEIK", Locus::Kappa),
         ("IGLV2-14*01", "FGGGTKLTVL", Locus::Lambda),
@@ -414,7 +415,7 @@ fn canonical_definition_changes_physical_loops_under_each_independent_numbering_
 }
 #[test]
 fn canonical_light_cdrs_are_complete_source_intervals_with_distinct_locus_start_positions() {
-    let corpus = human_references().unwrap();
+    let corpus = load(&Species::Human).unwrap();
     for (gene, tail, locus, start) in [
         ("IGKV1-39*01", "FGQGTKVEIK", Locus::Kappa, 26),
         ("IGLV2-14*01", "FGGGTKLTVL", Locus::Lambda, 25),

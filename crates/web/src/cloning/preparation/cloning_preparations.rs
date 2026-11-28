@@ -1159,6 +1159,7 @@ mod source_generation_tests {
         row.forward = "CAGTGATC".into();
         row.reverse_primer = "GTACGTAC".into();
         row.source_generation = Some(SourceGenerationInput {
+            host: None,
             dam: "fully".into(),
             dcm: "unmodified".into(),
             cpg: "unmodified".into(),

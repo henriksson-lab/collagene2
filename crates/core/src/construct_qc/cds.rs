@@ -4,6 +4,7 @@ use super::*;
 use translation::{InitiationPolicy, TranslationOptions};
 pub(super) struct CodingFrame {
     pub offset: usize,
+    pub genetic_code: u8,
     pub protein: String,
 }
 
@@ -88,6 +89,7 @@ pub(super) fn inspect(checks: &mut Checks<'_>) -> Result<(), Error> {
                 i,
                 CodingFrame {
                     offset: usize::from(translated.codon_start - 1),
+                    genetic_code: translated.translation.options.genetic_code,
                     protein: translated.translation.protein.clone(),
                 },
             );

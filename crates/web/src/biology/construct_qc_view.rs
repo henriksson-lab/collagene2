@@ -358,7 +358,7 @@ pub fn ConstructQcPanel(
                 {native::STATEMENT}
             </p>
             <p class="helper">
-                "Current checks: CDS integrity, stored translation, literal references, declared fusion/junction register, structural element chains and literal copy requirements. Initiation-context, unannotated-ORF, vector-class and history-derived junction checks remain unevaluated."
+                "Current checks: CDS integrity, stored translation, literal references, declared fusion/junction register, structural element chains and literal copy requirements. Explicit initiation-pattern and bounded ORF checks are optional; vector-class and history-derived junction checks remain unevaluated."
             </p>
             <label>
                 "Genetic code when CDS has no /transl_table"
@@ -558,6 +558,7 @@ pub fn ConstructQcPanel(
             <super::construct_qc_elements::ElementDeclarations
                 draft rows get_molecule source epoch status
             />
+            <super::construct_qc_scans::ScanDeclarations draft rows get_molecule status/>
             <button class="button secondary full" disabled=move ||busy.get() on:click=move |_|run.run(())>
                 {
                     move || if busy.get() {"Checking…"}

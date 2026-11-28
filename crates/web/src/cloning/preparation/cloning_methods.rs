@@ -127,6 +127,14 @@ fn SourceGenerationFields(config: RwSignal<MethodsState>, index: usize) -> impl 
         <Show when=move||row().run_origin.is_some()><p class="helper">"Saved Run/Derived material inherits its freshly reconstructed positional state. Original-source declarations are inactive here and cannot replace that state."</p></Show>
         <Show when=move||row().run_origin.is_none()><label class="checkbox-label"><input type="checkbox" aria-label=format!("Declare original source generation {}",index+1) prop:checked=move||row().source_generation.is_some() on:change=move|e|{let enabled=event_target_checked(&e);config.update(|c|if let Some(r)=c.rows.get_mut(index){if r.run_origin.is_none(){r.source_generation=if enabled{Some(Default::default())}else{None};}})}/>"Declare original source generation under the Dam/Dcm/CpG model"</label>
         <p class="helper">"Without a declaration, eligible source positions remain unknown. Declaring this closed model assigns states at original Dam/Dcm/CpG motifs and treats other eligible positions as unmodified; other modification systems are outside its scope. These are explicit source assumptions, not inferred host identity, vendor chemistry or imported metadata."</p>
+        <crate::cloning::methods::checked_cloning::HostChoice
+            selected=Signal::derive(move || row().source_generation.and_then(|form| form.host))
+            disabled=Signal::derive(move || row().run_origin.is_some() || row().source_generation.is_none())
+            on_change=Callback::new(move |host| config.update(|state| {
+                if let Some(form) = state.rows.get_mut(index).and_then(|row| row.source_generation.as_mut()) {
+                    form.host = host;
+                }
+            }))/>
         {[("Dam",0usize),("Dcm",1usize),("CpG",2usize)].into_iter().map(|(label,which)|view!{<label>{format!("{label} original-source state")}<select aria-label=format!("Fragment {} {label} source generation",index+1) disabled=move||row().run_origin.is_some()||row().source_generation.is_none() prop:value=move||{let form=row().source_generation.unwrap_or_default();match which {0=>form.dam,1=>form.dcm,_=>form.cpg}} on:change=move|e|{let value=event_target_value(&e);config.update(|c|if let Some(r)=c.rows.get_mut(index){if r.run_origin.is_none(){if let Some(form)=&mut r.source_generation{match which {0=>form.dam=value,1=>form.dcm=value,_=>form.cpg=value};}}})}><option value="unknown">"Unknown"</option><option value="unmodified">"Explicitly unmodified"</option><option value="fully">"Explicitly fully modified at eligible original motifs"</option><option value="mixed">"Hemi/mixed — unresolved under this model"</option></select></label>}).collect_view()}
         </Show>
         <Show when=move||row().has_pcr_amplicon()><p class="helper">"The declaration precedes this PCR. Standard newly synthesized PCR strands are unmodified under the model; original positional modifications are not copied onto them."</p></Show>

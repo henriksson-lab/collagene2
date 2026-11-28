@@ -11,6 +11,14 @@ use collagene_model::{Alphabet, Molecule, Sequence, Topology};
 fn inputs() -> (Molecule, d::Options, d::Limits) {
     let m=Molecule {name:"Conditional track fixture".into(),sequence:Sequence::new(Alphabet::Protein,"EVQLLESGGGLVQPGGSLRLSCAASGFTFSSYAMSWVRQAPGKGLEWVSAISGSGGSTYYADSVKGRFTISRDNSKNTLYLQMNSLRAEDTAVYYCARDYGMDVWGQGTLVTVSS").unwrap(),topology:Topology::Linear,features:vec![],metadata:Default::default(),original_genbank:None};
     let o = d::Options {
+        references: n::v_mapping::ReferenceSelection {
+            species: n::references::Species::Human,
+            loci: vec![
+                n::v_mapping::Locus::Heavy,
+                n::v_mapping::Locus::Kappa,
+                n::v_mapping::Locus::Lambda,
+            ],
+        },
         v_scoring: n::v_mapping::Scoring {
             observed_reward: 5,
             frequency_bonus: 8,
@@ -142,6 +150,81 @@ fn rewritten_packet_checksums_cannot_hide_inconsistent_tracks_or_context() {
     let mut bad = r.clone();
     bad.engine = "antibody-domain-tracks-1".into();
     refuse(bad);
+}
+
+#[test]
+fn mouse_heavy_reference_context_routes_without_extending_species_or_scheme_scope() {
+    let (mut molecule, mut options, limits) = inputs();
+    molecule.name = "Synthetic conditional mouse-reference routing fixture".into();
+    molecule.sequence = Sequence::new(Alphabet::Protein,
+        "QIQLQQSGPELVKPGASVKISCKASGYTFTDYYINWVKQRPGQGLEWIGWIYPGSGNTKYNEKFKGKATLTVDTSSSTAYMQLSSLTSEDSAVYFCARDYWGTGTTVTVSS").unwrap();
+    options.references = n::v_mapping::ReferenceSelection {
+        species: n::references::Species::MouseC57Bl6,
+        loci: vec![n::v_mapping::Locus::Heavy],
+    };
+    let expected = t::request_revision(&molecule, &options, &limits, &selection()).unwrap();
+    let request = Request {
+        id: 38,
+        revision: expected.clone(),
+        job: AnalysisJob::AnalyzeAntibody {
+            molecule: molecule.clone(),
+            options: options.clone(),
+            limits: limits.clone(),
+            selection: selection(),
+        },
+    };
+    let response = Response::decode(
+        &protocol::execution::process_request(&request.encode().unwrap()).unwrap(),
+    )
+    .unwrap();
+    let AnalysisResult::Antibody(report) = response.result else {
+        panic!("expected mouse-reference analysis");
+    };
+    assert!(!report.tracks.is_empty());
+    assert!(
+        report
+            .tracks
+            .iter()
+            .all(|track| track.locus == n::v_mapping::Locus::Heavy)
+    );
+    assert_eq!(report.evidence.options.references, options.references);
+    assert_eq!(report.evidence.v_evidence.selection, options.references);
+    assert_eq!(report.evidence.v_evidence.mappings.len(), 1);
+    assert_eq!(
+        report.evidence.v_evidence.mappings[0]
+            .training_alleles
+            .len(),
+        92
+    );
+    assert_eq!(
+        report.evidence.v_evidence.mappings[0].omitted_alleles.len(),
+        3
+    );
+    report
+        .validate_for(&molecule, &options, &limits, &selection())
+        .unwrap();
+    let mut human = options.clone();
+    human.references = n::v_mapping::ReferenceSelection::human_all();
+    assert_ne!(
+        expected,
+        t::request_revision(&molecule, &human, &limits, &selection()).unwrap()
+    );
+    assert!(
+        report
+            .validate_for(&molecule, &human, &limits, &selection())
+            .is_err()
+    );
+    let mut light = options.clone();
+    light.references.loci = vec![n::v_mapping::Locus::Kappa];
+    assert!(t::request_revision(&molecule, &light, &limits, &selection()).is_err());
+    let unsupported = t::Selection {
+        numbering_scheme: t::NumberingScheme::Kabat1991,
+        region_definition: t::RegionDefinition::Imgt,
+    };
+    assert!(t::request_revision(&molecule, &options, &limits, &unsupported).is_err());
+    let mut stale = request;
+    stale.revision = t::request_revision(&molecule, &human, &limits, &selection()).unwrap();
+    assert!(protocol::execution::process_request(&stale.encode().unwrap()).is_err());
 }
 
 fn selection() -> collagene_core::antibody_numbering::domain_tracks::Selection {

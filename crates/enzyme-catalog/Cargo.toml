@@ -18,3 +18,6 @@ json-schema = ["dep:schemars"]
 [dependencies.schemars]
 version = "1.2"
 optional = true
+
+[dev-dependencies]
+postcard.workspace = true

@@ -8,7 +8,7 @@ use crate::{
 };
 use collagene_model::{Error, Molecule, Topology};
 use serde::{Deserialize, Serialize};
-pub const ENGINE_VERSION: &str = "genome-crispr-1";
+pub const ENGINE_VERSION: &str = "genome-crispr-2";
 pub const MAX_INTERVAL_BASES: u64 = 200_000;
 macro_rules! dto{($($x:tt)*)=>{#[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
 dto! {pub struct BlockRequest{pub contig_id:String,pub index:u64}}
@@ -59,7 +59,7 @@ fn footprint(p: &NucleaseProfile) -> usize {
     p.guide_length + p.pam.len()
 }
 fn warnings() -> Vec<String> {
-    vec!["Declared PAM and ungapped Hamming geometry only; chromatin, population variants, bulges and experimental activity are not assessed.".into(),"Complete manifest coverage does not attest that provider build labels name a complete real genome. Missing expected components prevent whole-build absence claims.".into()]
+    vec!["This block-stream interface uses the design-profile PAM and zero-bulge alignment policy only. Selected-record bulge or alternate screening-PAM options do not apply here. Chromatin, population variants and experimental activity are not assessed.".into(),"Complete manifest coverage does not attest that provider build labels name a complete real genome. Missing expected components prevent whole-build absence claims.".into()]
 }
 impl GenomeGuideOptions {
     pub fn validate(&self, m: &GenomeManifest) -> Result<(), Error> {
@@ -333,6 +333,8 @@ impl GenomeSearchOptions {
         role(&self.reference_role)?;
         let o = crispr::OffTargetOptions {
             profile: self.profile.clone(),
+            bulges: crispr::BulgePolicy::default(),
+            pam_policy: crispr::PamPolicy::DesignProfile,
             max_mismatches: self.max_mismatches,
             intended: None,
             reference_scope: "Verified owner block stream".into(),
@@ -516,6 +518,8 @@ impl GenomeSearchSession {
             let local = molecule(&dna)?;
             let opts = crispr::OffTargetOptions {
                 profile: self.options.profile.clone(),
+                bulges: crispr::BulgePolicy::default(),
+                pam_policy: crispr::PamPolicy::DesignProfile,
                 max_mismatches: self.options.max_mismatches,
                 intended: None,
                 reference_scope: "Bounded verified owner plus right halo".into(),

@@ -15,6 +15,7 @@ use collagene_core::{
 use collagene_model::{Error, Molecule, Sequence, Topology};
 fn full() -> GenerationAssumptions {
     GenerationAssumptions {
+        host: None,
         dam: MethylationState::FullyModified,
         dcm: MethylationState::FullyModified,
         cpg: MethylationState::FullyModified,
@@ -286,4 +287,42 @@ fn inherited_methyladenine_survives_a_broken_motif_and_single_stranded_sites_can
     let report = checked_digest(&unmodified, &o).unwrap();
     assert_eq!(report.sites[0].outcome, Outcome::Unknown);
     assert!(report.fragments.is_empty());
+}
+
+#[test]
+fn pinned_host_choice_is_documentary_and_cannot_change_or_forge_strand_calls() {
+    use collagene_core::cloning::restriction::catalog::catalog::{
+        Catalog, hosts::MethylaseExpectation,
+    };
+    let catalog = Catalog::builtin().unwrap();
+    let host = catalog
+        .hosts()
+        .iter()
+        .find(|host| host.dam == MethylaseExpectation::Active)
+        .unwrap()
+        .clone();
+    let source = Molecule::dna("host declaration", "AAGATCCAGGCGTT", Topology::Linear).unwrap();
+    let mut declaration = GenerationAssumptions {
+        host: Some(collagene_core::chemistry::source_host::SourceHost::from_current(&host.id).unwrap()),
+        ..Default::default()
+    };
+    let tracked = TrackedDuplex::from_input(&source, &declaration).unwrap();
+    assert_eq!(
+        tracked.state_at(Strand::Top, Chemical::N6A, 3).unwrap(),
+        Some(CallState::Unknown)
+    );
+    assert_eq!(tracked.generation[0].assumptions, declaration);
+    // Chemical assumptions are explicit even when they differ from an expected
+    // host genotype. No genotype is a measurement of this source molecule.
+    declaration.dam = MethylationState::Unmodified;
+    let unmodified = TrackedDuplex::from_input(&source, &declaration).unwrap();
+    assert_eq!(
+        unmodified.state_at(Strand::Top, Chemical::N6A, 3).unwrap(),
+        Some(CallState::Unmodified)
+    );
+    declaration.host.as_mut().unwrap().preset.dam = MethylaseExpectation::Deficient;
+    assert!(TrackedDuplex::from_input(&source, &declaration).is_err());
+    let mut value = serde_json::to_value(GenerationAssumptions::default()).unwrap();
+    value.as_object_mut().unwrap().remove("host");
+    assert!(serde_json::from_value::<GenerationAssumptions>(value).is_err());
 }

@@ -29,6 +29,7 @@ fn fixture() -> (Molecule, DesignPlan) {
             Operation::DeclareSourceModifications {
                 template: Source::Input("s".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unmodified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::Unmodified,

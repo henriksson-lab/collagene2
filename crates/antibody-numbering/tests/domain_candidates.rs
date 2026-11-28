@@ -2,7 +2,7 @@ use collagene_antibody_numbering::{
     Error, Insertion,
     domain_candidates::*,
     profile,
-    references::human_references,
+    references::{Species, load},
     v_mapping::{self, Locus, ProjectionIssue},
 };
 use collagene_model::{Alphabet, Molecule, Sequence, Topology};
@@ -24,6 +24,7 @@ fn source(s: &str) -> Molecule {
 }
 fn options() -> Options {
     Options {
+        references: collagene_antibody_numbering::v_mapping::ReferenceSelection::human_all(),
         v_scoring: v_mapping::Scoring {
             observed_reward: 5,
             frequency_bonus: 8,
@@ -99,7 +100,7 @@ fn heavy_pairing_preserves_all_identical_j_alleles_and_exact_conditional_loop_la
 }
 #[test]
 fn light_loci_and_tandem_constructs_keep_absolute_source_ownership() {
-    let corpus = human_references().unwrap();
+    let corpus = load(&Species::Human).unwrap();
     for (gene, tail, locus) in [
         ("IGKV1-39*01", "FGQGTKVEIK", Locus::Kappa),
         ("IGLV2-14*01", "FGGGTKLTVL", Locus::Lambda),

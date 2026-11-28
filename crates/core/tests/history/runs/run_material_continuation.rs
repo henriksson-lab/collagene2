@@ -106,6 +106,7 @@ fn modified_circle() -> Commit {
             Operation::DeclareSourceModifications {
                 template: Source::Input("src0".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unmodified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::FullyModified,

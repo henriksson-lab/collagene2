@@ -530,7 +530,7 @@ async fn directional_preparation_compiles_actual_sources_without_inventing_repai
     let proposed = call(&c, "propose_plan", json!({
         "name":"Native modified template copied by PCR into TOPO preparation", "target":independent_target,
         "inputs":bindings, "steps":[
-            {"DeclareSourceModifications":{"template":{"Input":"template"},"assumptions":{"dam":"Unknown","dcm":"Unknown","cpg":"FullyModified"}}},
+            {"DeclareSourceModifications":{"template":{"Input":"template"},"assumptions":{"host":null,"dam":"Unknown","dcm":"Unknown","cpg":"FullyModified"}}},
             {"TopoActions":{"sources":upstream_roles,"request":request}}
         ]
     })).await;

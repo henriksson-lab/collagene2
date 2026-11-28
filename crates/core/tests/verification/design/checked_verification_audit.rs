@@ -15,6 +15,7 @@ fn source() -> Molecule {
 }
 fn assumptions(cpg: M) -> GenerationAssumptions {
     GenerationAssumptions {
+        host: None,
         dam: M::Unmodified,
         dcm: M::Unmodified,
         cpg,
@@ -132,7 +133,7 @@ fn unmodified_checked_cut_and_self_ligation_reconstruct_literal_independent_targ
     assert_eq!(verify(&p, &wrong).status, Status::Invalid);
 }
 #[test]
-fn legacy_cleavage_cannot_hide_declared_modifications_and_cut_ligate_preserves_them() {
+fn uncatalogued_cleavage_cannot_hide_declared_modifications_and_cut_ligate_preserves_them() {
     let source = source();
     let p = plan(
         source.clone(),
@@ -165,7 +166,7 @@ fn legacy_cleavage_cannot_hide_declared_modifications_and_cut_ligate_preserves_t
     assert!(
         r.findings
             .iter()
-            .any(|s| s.contains("legacy assumed-complete cleavage"))
+            .any(|s| s.contains("uncatalogued assumed-complete cleavage"))
     );
     assert_eq!(r.products[3].topology, Topology::Circular);
 }

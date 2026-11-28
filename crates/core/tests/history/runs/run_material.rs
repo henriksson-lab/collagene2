@@ -302,6 +302,7 @@ fn blocked_noti_reconstruction_preserves_four_literal_cpg_positions_and_generati
     )
     .unwrap();
     let assumptions = GenerationAssumptions {
+        host: None,
         dam: MethylationState::Unmodified,
         dcm: MethylationState::Unmodified,
         cpg: MethylationState::FullyModified,

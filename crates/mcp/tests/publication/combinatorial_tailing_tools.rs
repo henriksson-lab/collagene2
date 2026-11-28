@@ -240,7 +240,7 @@ async fn ta_gc_sdk_keeps_profile_and_target_verdicts_distinct_and_release_atomic
         wrong.target = TargetDeclaration::Existing(binding(&w, 3));
         let saved=call(&c,"evaluate_combinatorial_batch",json!({"workspace":source,"matrix":{"design":d,"rows":[{"Ready":row},{"Ready":wrong}]}})).await;
         let record = text_artifact(&c, &saved["artifact_id"]).await;
-        assert_eq!(record["schema_version"], 3);
+        assert_eq!(record["schema_version"], 5);
         assert_eq!(record["rows"][0]["status"], "ConsistentUnderAssumptions");
         assert_eq!(record["rows"][1]["status"], "Invalid");
         for i in 0..2 {

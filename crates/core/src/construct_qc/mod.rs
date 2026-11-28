@@ -9,15 +9,19 @@ use std::{
 };
 
 mod cds;
+#[cfg(test)]
+mod context_orf_tests;
 pub mod element_chain;
 #[cfg(test)]
 mod element_tests;
 mod geometry;
+pub mod initiation_context;
 pub mod required_parts;
 #[cfg(test)]
 mod tests;
+pub mod unannotated_orfs;
 
-pub const ENGINE_VERSION: &str = "construct-qc-2";
+pub const ENGINE_VERSION: &str = "construct-qc-3";
 pub const STATEMENT: &str = "Construct QC checks declared structural requirements against the current sequence and annotations. Passing checks do not establish that a construct will express, package, produce titre or behave as intended; failing or indeterminate checks do not establish that it will not.";
 const MAX_FEATURES: usize = 256;
 const MAX_BASES: usize = 2_000_000;
@@ -51,6 +55,8 @@ pub enum Rule {
     UpstreamElement,
     DownstreamElement,
     RequiredPart,
+    InitiationContext,
+    UnannotatedOrf,
     Scope,
 }
 
@@ -151,12 +157,19 @@ pub struct Options {
     )]
     pub required_parts: Vec<required_parts::RequiredPart>,
     pub required_part_limits: required_parts::RequiredPartLimits,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, initiation_context::ContextClaim, 64>"
+    )]
+    pub initiation_contexts: Vec<initiation_context::ContextClaim>,
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    #[cfg_attr(feature = "json-schema", schemars(required))]
+    pub orf_scan: Option<unannotated_orfs::ScanOptions>,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
-            schema_version: 2,
+            schema_version: 3,
             genetic_code: 1,
             annotations: vec![],
             references: vec![],
@@ -166,6 +179,8 @@ impl Default for Options {
             element_chains: vec![],
             required_parts: vec![],
             required_part_limits: Default::default(),
+            initiation_contexts: vec![],
+            orf_scan: None,
         }
     }
 }
@@ -237,6 +252,13 @@ pub struct Report {
         deserialize_with = "collagene_model::decode::bounded_vec::<_, required_parts::ReferenceSearch, 64>"
     )]
     pub required_part_searches: Vec<required_parts::ReferenceSearch>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, initiation_context::ContextEvidence, 64>"
+    )]
+    pub initiation_contexts: Vec<initiation_context::ContextEvidence>,
+    #[serde(deserialize_with = "crate::encoding::required_option")]
+    #[cfg_attr(feature = "json-schema", schemars(required))]
+    pub orf_scan: Option<unannotated_orfs::ScanEvidence>,
     pub required_part_search_work: usize,
     pub required_part_search_engine: String,
     pub statement: String,
@@ -299,6 +321,28 @@ fn location_bases(l: &Location) -> Result<usize, Error> {
         Location::Unresolved(_) => Ok(0),
     }
 }
+/// Canonical contiguous interval, possibly wrapping once and complemented.
+/// Reject richer restored evidence before recursive coordinate validation.
+fn interval_evidence_shape(location: &Location) -> bool {
+    let inner = match location {
+        Location::Complement(inner) => inner.as_ref(),
+        location => location,
+    };
+    let exact_range = |location: &Location| {
+        matches!(
+            location,
+            Location::Range {
+                before: false,
+                after: false,
+                ..
+            }
+        )
+    };
+    match inner {
+        Location::Join(parts) => parts.len() == 2 && parts.iter().all(exact_range),
+        location => exact_range(location),
+    }
+}
 fn add_bases(total: &mut usize, n: usize) -> Result<(), Error> {
     *total = total
         .checked_add(n)
@@ -322,7 +366,10 @@ impl Options {
         {
             return Err(Error::TooLarge);
         }
-        if self.element_chains.len() > 64 || self.required_parts.len() > 64 {
+        if self.element_chains.len() > 64
+            || self.required_parts.len() > 64
+            || self.initiation_contexts.len() > 64
+        {
             return Err(Error::TooLarge);
         }
         collagene_model::bounds::model_preflight(&[m])?;
@@ -331,12 +378,18 @@ impl Options {
         bounded(self, 2 * 1024 * 1024)?;
         m.validate()?;
         if !matches!(m.sequence.alphabet(), Alphabet::Dna | Alphabet::Rna)
-            || self.schema_version != 2
+            || self.schema_version != 3
         {
             return Err(bad("current nucleotide source/options required"));
         }
         translation::CodeDescriptor::for_id(self.genetic_code)?;
         self.required_part_limits.validate()?;
+        if let Some(scan) = &self.orf_scan {
+            scan.validate()?;
+        }
+        for claim in &self.initiation_contexts {
+            claim.validate(m)?;
+        }
         let mut nodes = 0usize;
         let mut extracted = 0usize;
         for f in &m.features {
@@ -576,7 +629,12 @@ impl Checks<'_> {
         if coordinates.len() > 16 || self.findings.len() >= 4096 {
             return Err(Error::TooLarge);
         }
-        let citations=vec![Citation {source:format!("collagene:{ENGINE_VERSION}"),locator:"Bounded canonical literal-reference search; declared role/cardinality only, not functional identity".into()}];
+        let citations = vec![Citation {
+            source: format!("collagene:{ENGINE_VERSION}"),
+            locator: format!(
+                "{rule:?}: bounded current-source structural evidence under declared options; not functional identity"
+            ),
+        }];
         serde_json::to_writer(
             &mut self.budget,
             &(&rule, &verdict, coordinates, reason, &citations),
@@ -641,11 +699,13 @@ pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
     geometry::inspect(&mut checks)?;
     let element_chains = element_chain::inspect(&mut checks)?;
     let required_parts = required_parts::inspect(&mut checks)?;
+    let initiation_contexts = initiation_context::inspect(&mut checks)?;
+    let orf_scan = unannotated_orfs::inspect(&mut checks)?;
     checks.push(
         Rule::Scope,
         Verdict::Informational,
         &[],
-        "Checks cover declared CDS, reference identity, explicit fusion/junction register, declared flanking-element geometry and required literal-reference intervals. Initiation-context, unannotated-ORF and history-derived causal junction checks are not evaluated. No declaration or sequence match verifies biological role/function.",
+        "Checks cover declared CDS, reference identity, explicit fusion/junction register, declared flanking-element geometry, required literal-reference intervals, requested declared initiation-pattern conformity and requested bounded ORF candidates. History-derived causal junction checks are not evaluated. No declaration, motif match or ORF candidate verifies biological role/function or expression.",
     )?;
     let codes = code_pins(m, o)?;
     let references = o
@@ -673,6 +733,8 @@ pub fn assess(m: &Molecule, o: &Options) -> Result<Report, Error> {
         element_chains,
         required_parts: required_parts.reports,
         required_part_searches: required_parts.searches,
+        initiation_contexts,
+        orf_scan,
         required_part_search_work: required_parts.work,
         required_part_search_engine: crate::sequence::search::SEARCH_ENGINE_VERSION.into(),
         statement: STATEMENT.into(),
@@ -708,7 +770,12 @@ impl Report {
                 self.required_part_search_work,
                 &self.required_part_search_engine,
             ),
-            (&self.findings, &self.statement),
+            (
+                &self.findings,
+                &self.statement,
+                &self.initiation_contexts,
+                &self.orf_scan,
+            ),
         ))
     }
     /// Shape/content integrity only; a restored report has no current authority.
@@ -757,6 +824,8 @@ impl Report {
                 location.validate(self.source_length)?;
             }
         }
+        initiation_context::validate_reports(self)?;
+        unannotated_orfs::validate_reports(self)?;
         required_parts::validate_reports(self)?;
         element_chain::validate_reports(self)?;
         let mut ids = BTreeSet::new();

@@ -206,7 +206,7 @@ async fn golden_gate_keeps_actual_strands_sources_completeness_and_separate_targ
             .unwrap()
             .is_empty()
     );
-    let generation = json!({"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"});
+    let generation = json!({"host":null,"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"});
     let inputs = json!([{"id":"A","document":reference(&a)},{"id":"B","document":reference(&b)}]);
     let request = json!({"name":"Declared unmodified reaction","rows":[
         {"role":"A","input_id":"A","generation":generation,"substrate":{"WholeSource":{"origin":null}}},

@@ -15,4 +15,5 @@ thiserror.workspace = true
 schemars = { version = "1.2", optional = true }
 
 [features]
+reference-curation = []
 json-schema = ["dep:schemars", "collagene-model/json-schema"]

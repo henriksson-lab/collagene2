@@ -455,6 +455,7 @@ fn cut_created_oh_and_original_dam_calls_survive_tailing_and_phosphorylation_wit
             Operation::DeclareSourceModifications {
                 template: Source::Input("stock".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::FullyModified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::Unmodified,

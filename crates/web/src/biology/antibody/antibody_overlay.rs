@@ -172,7 +172,13 @@ mod tests {
             metadata: Default::default(),
             original_genbank: None,
         };
-        let (o, l) = crate::biology::antibody::antibody_model::preset(300, 1, 60, 32);
+        let (o, l) = crate::biology::antibody::antibody_model::preset(
+            collagene_core::antibody_numbering::v_mapping::ReferenceSelection::human_all(),
+            300,
+            1,
+            60,
+            32,
+        );
         let c = Capture::prepare(
             7,
             EventBinding {
@@ -381,6 +387,31 @@ pub fn diagnostics(report: &n::Report, index: usize) -> Vec<String> {
         .get(index)
         .map(|t| t.issues.iter().map(issue_text).collect::<Vec<_>>())
         .unwrap_or_default();
+    out.push(crate::biology::antibody::antibody_model::reference_label(
+        &report.evidence.options.references,
+    ));
+    out.push(format!(
+        "Reference corpus identity: {}",
+        report.evidence.v_evidence.corpus_revision
+    ));
+    for mapping in &report.evidence.v_evidence.mappings {
+        out.push(format!(
+            "{:?} model identity: {}",
+            mapping.locus, mapping.model_revision
+        ));
+        out.push(format!(
+            "{:?} reference admission: {} training alleles; {} omitted alleles.",
+            mapping.locus,
+            mapping.training_alleles.len(),
+            mapping.omitted_alleles.len()
+        ));
+        if !mapping.omitted_alleles.is_empty() {
+            out.push(format!(
+                "Omitted allele identities: {}",
+                mapping.omitted_alleles.join(", ")
+            ));
+        }
+    }
     if let Some(c) = report.evidence.candidates.get(index) {
         for (name, o) in [("CDR1", &c.cdr1), ("CDR2", &c.cdr2)] {
             if let d::LoopAssignment::Unresolved { issue, .. } = o {

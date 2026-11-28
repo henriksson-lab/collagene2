@@ -2,3 +2,4 @@
 # Preserve upstream line endings on every checkout, including Windows.
 crates/*/tests/data/** -text
 crates/core/src/sequence/codon_design/hosts/data/** -text
+crates/antibody-numbering/data/** -text

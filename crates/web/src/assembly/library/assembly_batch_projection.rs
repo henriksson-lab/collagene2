@@ -880,6 +880,7 @@ mod tests {
             row.preparation = OverlapPreparation::WholeLinear;
         }
         original.methods.rows[0].source_generation = Some(SourceGenerationInput {
+            host: None,
             dam: "fully".into(),
             dcm: "unmodified".into(),
             cpg: "unknown".into(),

@@ -1,8 +1,9 @@
-//! Sequence alignment facts, not PCR extension, kinetics, thermodynamics or success.
+//! Sequence alignment and scoped duplex parameter facts, not PCR success or kinetics.
 //! Explicit ungapped, 3′-anchored annealing suffixes only. No gap-aware claim.
 mod decode;
 mod identity;
 mod scan;
+pub mod thermodynamics;
 
 use collagene_model::{Alphabet, Error, Sequence, Topology};
 pub use scan::search;

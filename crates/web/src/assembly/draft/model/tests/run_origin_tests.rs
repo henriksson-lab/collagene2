@@ -111,6 +111,7 @@ fn saved_origin_preserves_inactive_original_generation_text_without_redeclaratio
     let mut draft = saved_pcr();
     draft.methods.rows[0].source_generation = Some(
         crate::cloning::preparation::cloning_methods_model::SourceGenerationInput {
+            host: None,
             dam: "unfinished".into(),
             dcm: "fully".into(),
             cpg: "unknown".into(),

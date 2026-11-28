@@ -1,5 +1,6 @@
-//! Bounded guide/PAM geometry and selected-record Hamming off-target search.
-//! No empirical efficiency score, external aligner, bulge model or physical cleavage products.
+//! Bounded guide/PAM geometry and selected-record mismatch/bulge evidence.
+//! No empirical efficiency score, external aligner or physical cleavage products.
+pub mod alignment;
 use crate::sequence::analysis;
 use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
@@ -7,16 +8,56 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
-pub const ENGINE_VERSION: &str = "crispr-1";
+pub const ENGINE_VERSION: &str = "crispr-2";
 const MAX_BYTES: usize = 16 * 1024 * 1024;
 const MAX_GUIDES: usize = 4096;
 const MAX_REFERENCES: usize = 64;
 const MAX_BASES: usize = 20_000_000;
-macro_rules! dto{($($x:tt)*)=>{#[derive(Debug,Clone,PartialEq,Eq,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
-macro_rules! en{($($x:tt)*)=>{#[derive(Debug,Clone,Copy,PartialEq,Eq,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]$($x)*};}
-en! {pub enum PamSide{ThreePrime,FivePrime}}
-dto! {pub struct NucleaseProfile{pub id:String,pub version:String,pub guide_length:usize,pub pam:String,pub pam_side:PamSide,pub nominal_top_offset:i32,pub nominal_bottom_offset:i32,pub custom:bool,pub sources:Vec<String>}}
-dto! {pub struct GuideOptions{pub profile:NucleaseProfile,pub min_gc_bp:u16,pub max_gc_bp:u16,pub max_homopolymer:usize,pub max_candidates:usize,pub max_comparisons:usize}}
+macro_rules! dto {
+    ($($x:tt)*) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+        #[serde(deny_unknown_fields)]
+        $($x)*
+    };
+}
+macro_rules! en {
+    ($($x:tt)*) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+        $($x)*
+    };
+}
+en! {
+    pub enum PamSide {
+        ThreePrime,
+        FivePrime
+    }
+}
+dto! {
+    pub struct NucleaseProfile {
+        pub id: String,
+        pub version: String,
+        pub guide_length: usize,
+        pub pam: String,
+        pub pam_side: PamSide,
+        pub nominal_top_offset: i32,
+        pub nominal_bottom_offset: i32,
+        pub custom: bool,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 8>")]
+        pub sources: Vec<String>
+    }
+}
+dto! {
+    pub struct GuideOptions {
+        pub profile: NucleaseProfile,
+        pub min_gc_bp: u16,
+        pub max_gc_bp: u16,
+        pub max_homopolymer: usize,
+        pub max_candidates: usize,
+        pub max_comparisons: usize
+    }
+}
 impl Default for GuideOptions {
     fn default() -> Self {
         Self {
@@ -29,17 +70,140 @@ impl Default for GuideOptions {
         }
     }
 }
-dto! {pub struct GuideCandidate{pub id:String,pub guide_sequence:String,pub pam_sequence:String,pub guide_positions:Vec<usize>,pub pam_positions:Vec<usize>,pub reverse:bool,pub pam_certain:bool,pub concrete:bool,pub gc_bp:Option<u16>,pub longest_homopolymer:Option<usize>,pub passes_filters:bool,pub nominal_top_cut:Option<usize>,pub nominal_bottom_cut:Option<usize>,pub rejections:Vec<String>}}
-dto! {pub struct GuideReport{pub engine_version:String,pub source_revision:String,pub options_revision:String,pub profile_revision:String,pub batch_revision:String,pub options:GuideOptions,pub source_length:usize,pub circular:bool,pub candidates:Vec<GuideCandidate>,pub complete:bool,pub comparisons:usize,pub limits:Vec<String>,pub warnings:Vec<String>}}
-dto! {pub struct ReferenceInput{pub id:String,pub molecule:Molecule,pub build:Option<String>,pub accession:Option<String>}}
-dto! {pub struct ReferenceRecord{pub id:String,pub revision:String,pub name:String,pub length:usize,pub circular:bool,pub build:Option<String>,pub accession:Option<String>}}
-dto! {pub struct GuideQuery{pub id:String,pub sequence:String}}
-dto! {pub struct IntendedTarget{pub reference_id:String,pub reference_revision:String,pub guide_positions:Vec<usize>,pub pam_positions:Vec<usize>,pub reverse:bool}}
-dto! {pub struct OffTargetOptions{pub profile:NucleaseProfile,pub max_mismatches:usize,pub intended:Option<IntendedTarget>,pub reference_scope:String,pub max_comparisons:usize,pub max_index_entries:usize,pub max_hits:usize}}
+dto! {
+    pub struct GuideCandidate {
+        pub id: String,
+        pub guide_sequence: String,
+        pub pam_sequence: String,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 68>")]
+        pub guide_positions: Vec<usize>,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 16>")]
+        pub pam_positions: Vec<usize>,
+        pub reverse: bool,
+        pub pam_certain: bool,
+        pub concrete: bool,
+        pub gc_bp: Option<u16>,
+        pub longest_homopolymer: Option<usize>,
+        pub passes_filters: bool,
+        pub nominal_top_cut: Option<usize>,
+        pub nominal_bottom_cut: Option<usize>,
+        pub rejections: Vec<String>
+    }
+}
+dto! {
+    pub struct GuideReport {
+        pub engine_version: String,
+        pub source_revision: String,
+        pub options_revision: String,
+        pub profile_revision: String,
+        pub batch_revision: String,
+        pub options: GuideOptions,
+        pub source_length: usize,
+        pub circular: bool,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, GuideCandidate, 4096>")]
+        pub candidates: Vec<GuideCandidate>,
+        pub complete: bool,
+        pub comparisons: usize,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 8>")]
+        pub limits: Vec<String>,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 16>")]
+        pub warnings: Vec<String>
+    }
+}
+dto! {
+    pub struct ReferenceInput {
+        pub id: String,
+        pub molecule: Molecule,
+        pub build: Option<String>,
+        pub accession: Option<String>
+    }
+}
+dto! {
+    pub struct ReferenceRecord {
+        pub id: String,
+        pub revision: String,
+        pub name: String,
+        pub length: usize,
+        pub circular: bool,
+        pub build: Option<String>,
+        pub accession: Option<String>
+    }
+}
+dto! {
+    pub struct GuideQuery {
+        pub id: String,
+        pub sequence: String
+    }
+}
+dto! {
+    pub struct IntendedTarget {
+        pub reference_id: String,
+        pub reference_revision: String,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 68>")]
+        pub guide_positions: Vec<usize>,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 16>")]
+        pub pam_positions: Vec<usize>,
+        pub reverse: bool
+    }
+}
+dto! {
+    /// Explicit sequence-alignment scope; gap bases are separate from mismatches.
+    pub struct BulgePolicy {
+        pub max_dna_bulge_bases: usize,
+        pub max_rna_bulge_bases: usize,
+        pub max_total_bulge_bases: usize,
+        pub max_alignments_per_hit: usize,
+        pub max_retained_alignment_columns: usize,
+    }
+}
+impl Default for BulgePolicy {
+    fn default() -> Self {
+        Self {
+            max_dna_bulge_bases: 0,
+            max_rna_bulge_bases: 0,
+            max_total_bulge_bases: 0,
+            max_alignments_per_hit: 128,
+            max_retained_alignment_columns: 262144,
+        }
+    }
+}
+dto! {
+    pub enum PamPolicy {
+        DesignProfile,
+        DeclaredScreening {
+            pam: String,
+            rationale: String,
+            #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 8>")]
+            sources: Vec<String>
+        },
+    }
+}
+en! {
+    pub enum PamEvidence {
+        Excluded,
+        Possible,
+        Certain
+    }
+}
+dto! {
+    pub struct OffTargetOptions {
+        pub profile: NucleaseProfile,
+        pub bulges: BulgePolicy,
+        pub pam_policy: PamPolicy,
+        pub max_mismatches: usize,
+        pub intended: Option<IntendedTarget>,
+        pub reference_scope: String,
+        pub max_comparisons: usize,
+        pub max_index_entries: usize,
+        pub max_hits: usize
+    }
+}
 impl Default for OffTargetOptions {
     fn default() -> Self {
         Self {
             profile: spcas9(),
+            bulges: BulgePolicy::default(),
+            pam_policy: PamPolicy::DesignProfile,
             max_mismatches: 3,
             intended: None,
             reference_scope: "Explicitly selected reference records".into(),
@@ -49,8 +213,52 @@ impl Default for OffTargetOptions {
         }
     }
 }
-dto! {pub struct OffTargetHit{pub id:String,pub reference_index:usize,pub reference_guide:String,pub pam_sequence:String,pub guide_positions:Vec<usize>,pub pam_positions:Vec<usize>,pub reverse:bool,pub min_mismatches:usize,pub max_mismatches:usize,pub pam_certain:bool,pub definite:bool,pub is_intended:bool,pub nominal_top_cut:Option<usize>,pub nominal_bottom_cut:Option<usize>}}
-dto! {pub struct OffTargetReport{pub engine_version:String,pub batch_revision:String,pub options_revision:String,pub profile_revision:String,pub query:GuideQuery,pub options:OffTargetOptions,pub references:Vec<ReferenceRecord>,pub hits:Vec<OffTargetHit>,pub complete:bool,pub exhaustive_for_selected_records:bool,pub comparisons:usize,pub index_entries:usize,pub index_used:bool,pub limits:Vec<String>,pub warnings:Vec<String>}}
+dto! {
+    pub struct OffTargetHit {
+        pub alignment: alignment::AlignmentEvidence,
+        pub design_pam: PamEvidence,
+        pub id: String,
+        pub reference_index: usize,
+        pub reference_guide: String,
+        pub pam_sequence: String,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 68>")]
+        pub guide_positions: Vec<usize>,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, 16>")]
+        pub pam_positions: Vec<usize>,
+        pub reverse: bool,
+        pub min_mismatches: usize,
+        pub max_mismatches: usize,
+        pub pam_certain: bool,
+        pub definite: bool,
+        pub is_intended: bool,
+        pub nominal_top_cut: Option<usize>,
+        pub nominal_bottom_cut: Option<usize>
+    }
+}
+dto! {
+    pub struct OffTargetReport {
+        pub engine_version: String,
+        pub alignment_model: String,
+        pub batch_revision: String,
+        pub options_revision: String,
+        pub profile_revision: String,
+        pub query: GuideQuery,
+        pub options: OffTargetOptions,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, ReferenceRecord, 64>")]
+        pub references: Vec<ReferenceRecord>,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, OffTargetHit, 4096>")]
+        pub hits: Vec<OffTargetHit>,
+        pub complete: bool,
+        pub exhaustive_for_selected_records: bool,
+        pub comparisons: usize,
+        pub index_entries: usize,
+        pub index_used: bool,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 8>")]
+        pub limits: Vec<String>,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 16>")]
+        pub warnings: Vec<String>
+    }
+}
 pub fn spcas9() -> NucleaseProfile {
     NucleaseProfile {
         id: "spcas9".into(),
@@ -79,6 +287,28 @@ pub fn cas12a() -> NucleaseProfile {
             "https://pmc.ncbi.nlm.nih.gov/articles/PMC7286691/".into(),
         ],
     }
+}
+/// Current source-pinned planning presets. Nominal marks are not physical termini.
+pub fn catalogue() -> Vec<NucleaseProfile> {
+    let mut profiles = vec![spcas9(), cas12a()];
+    for length in [21, 22] {
+        profiles.push(NucleaseProfile{id:format!("sacas9-{length}"),version:"ran-2015-nngrrt-nominal-lminus3-v1".into(),guide_length:length,pam:"NNGRRT".into(),pam_side:PamSide::ThreePrime,nominal_top_offset:length as i32-3,nominal_bottom_offset:length as i32-3,custom:false,sources:vec!["https://pmc.ncbi.nlm.nih.gov/articles/PMC4393360/".into(),"https://media.addgene.org/data/plasmids/61/61592/61592-attachment_iAbvIKnbqNRO.pdf".into()]});
+    }
+    profiles.push(NucleaseProfile {
+        id: "spcas9-vrer".into(),
+        version: "kleinstiver-2015-ngcg-nominal17-v1".into(),
+        guide_length: 20,
+        pam: "NGCG".into(),
+        pam_side: PamSide::ThreePrime,
+        nominal_top_offset: 17,
+        nominal_bottom_offset: 17,
+        custom: false,
+        sources: vec![
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC4540238/".into(),
+            "https://pmc.ncbi.nlm.nih.gov/articles/PMC6286148/".into(),
+        ],
+    });
+    profiles
 }
 fn bad(s: &str) -> Error {
     Error::Unsupported(format!("CRISPR: {s}"))
@@ -137,12 +367,12 @@ impl NucleaseProfile {
     }
     fn current(&self) -> Result<(), Error> {
         self.validate()?;
-        if !self.custom && *self != spcas9() && *self != cas12a() {
+        if !self.custom && !catalogue().contains(self) {
             return Err(bad(
                 "unknown or altered built-in profile; explicitly declare custom geometry",
             ));
         }
-        if self.custom && ["spcas9", "cas12a-tttv"].contains(&self.id.as_str()) {
+        if self.custom && catalogue().iter().any(|p| p.id == self.id) {
             return Err(bad("custom geometry must use a distinct declared identity"));
         }
         Ok(())
@@ -165,9 +395,65 @@ impl GuideOptions {
         Ok(())
     }
 }
+impl BulgePolicy {
+    pub fn validate(&self) -> Result<(), Error> {
+        if self.max_dna_bulge_bases > 4
+            || self.max_rna_bulge_bases > 4
+            || self.max_total_bulge_bases > 4
+            || self.max_total_bulge_bases > self.max_dna_bulge_bases + self.max_rna_bulge_bases
+            || !(1..=256).contains(&self.max_alignments_per_hit)
+            || !(1..=1_000_000).contains(&self.max_retained_alignment_columns)
+        {
+            return Err(bad("invalid explicit bulge/path/retained-column bounds"));
+        }
+        Ok(())
+    }
+    fn enabled(&self) -> bool {
+        self.max_total_bulge_bases > 0
+    }
+    fn limits(&self, mismatches: usize) -> alignment::AlignmentLimits {
+        alignment::AlignmentLimits {
+            max_mismatches: mismatches,
+            max_dna_bulge_bases: self.max_dna_bulge_bases,
+            max_rna_bulge_bases: self.max_rna_bulge_bases,
+            max_total_bulge_bases: self.max_total_bulge_bases,
+            max_alignments: self.max_alignments_per_hit,
+        }
+    }
+}
+impl PamPolicy {
+    pub fn validate(&self, profile: &NucleaseProfile) -> Result<(), Error> {
+        if let Self::DeclaredScreening {
+            pam,
+            rationale,
+            sources,
+        } = self
+        {
+            if pam.len() != profile.pam.len()
+                || Sequence::dna(pam)?.as_str() != pam
+                || !label(rationale, 4096)
+                || sources.len() > 8
+                || sources
+                    .iter()
+                    .any(|s| !label(s, 2048) || !s.starts_with("https://"))
+            {
+                return Err(bad("invalid explicit same-length screening PAM policy"));
+            }
+        }
+        Ok(())
+    }
+    pub fn pattern<'a>(&'a self, profile: &'a NucleaseProfile) -> &'a str {
+        match self {
+            Self::DesignProfile => &profile.pam,
+            Self::DeclaredScreening { pam, .. } => pam,
+        }
+    }
+}
 impl OffTargetOptions {
     pub fn validate(&self) -> Result<(), Error> {
         self.profile.validate()?;
+        self.bulges.validate()?;
+        self.pam_policy.validate(&self.profile)?;
         if self.max_mismatches > 6
             || !label(&self.reference_scope, 4096)
             || self.max_comparisons == 0
@@ -177,7 +463,7 @@ impl OffTargetOptions {
             || self.max_hits == 0
             || self.max_hits > MAX_GUIDES
         {
-            return Err(bad("invalid Hamming/index/hit/work bounds"));
+            return Err(bad("invalid mismatch/alignment/index/hit/work bounds"));
         }
         if let Some(i) = &self.intended {
             if !label(&i.reference_id, 256)
@@ -553,7 +839,7 @@ fn make_candidate(
     }))
 }
 fn warnings() -> Vec<String> {
-    vec!["Sequence/PAM geometry only; nominal cut boundaries do not establish physical cleavage products, repair outcomes or experimental activity.".into(),"Cas12a TTTV/23nt with nominal18/23 offsets is an explicitly declared planning profile. Ortholog, sequence and time-dependent cleavage heterogeneity/gaps are not represented by these nominal boundaries.".into(),"GC/homopolymer thresholds are explicit filters, not an empirical guide-efficiency score. Chromatin, expression, polymorphisms, bulges and alternative PAMs outside the profile are not assessed.".into()]
+    vec!["Sequence/PAM geometry only; nominal cut boundaries do not establish physical cleavage products, repair outcomes or experimental activity.".into(),"Cas12a TTTV/23nt with nominal18/23 offsets is an explicitly declared planning profile. Ortholog, sequence and time-dependent cleavage heterogeneity/gaps are not represented by these nominal boundaries.".into(),"GC/homopolymer thresholds are explicit filters, not an empirical guide-efficiency score. Chromatin, expression, polymorphisms and unselected reference records are not assessed. Off-target alignment/PAM scope is declared separately in its options.".into(),"SaCas9/VRER preset cut marks declare a guide-length-minus-three blunt planning approximation. These are not experimentally guaranteed termini for each sequence, assay or engineered variant.".into()]
 }
 pub fn design_guides(m: &Molecule, o: &GuideOptions) -> Result<GuideReport, Error> {
     let batch = guide_revision(m, o)?;
@@ -660,81 +946,207 @@ fn code(b: u8) -> u128 {
         _ => 3,
     }
 }
+fn pam_evidence(observed: &str, pattern: &str) -> PamEvidence {
+    let mut certain = true;
+    for (a, b) in observed.bytes().zip(pattern.bytes()) {
+        let a = analysis::base_mask(a);
+        let b = analysis::base_mask(b);
+        if a & b == 0 {
+            return PamEvidence::Excluded;
+        }
+        certain &= a & !b == 0;
+    }
+    if certain {
+        PamEvidence::Certain
+    } else {
+        PamEvidence::Possible
+    }
+}
 fn hit_at(
     q: &GuideQuery,
-    r: &ReferenceInput,
+    reference: &ReferenceInput,
     record: &ReferenceRecord,
     reference_index: usize,
-    o: &OffTargetOptions,
+    options: &OffTargetOptions,
     start: usize,
     reverse: bool,
-    work: &mut usize,
-) -> Result<Option<OffTargetHit>, ()> {
-    let pam_certain = match pam_match(
-        &r.molecule,
-        &o.profile,
-        start,
-        reverse,
-        work,
-        o.max_comparisons,
-    )? {
-        Some(c) => c,
-        None => return Ok(None),
+    target_length: usize,
+    work: &mut alignment::AlignmentWork,
+) -> Result<
+    (
+        Option<OffTargetHit>,
+        Option<alignment::AlignmentLimitReached>,
+    ),
+    Error,
+> {
+    use alignment::AlignmentLimitReached;
+    let molecule = &reference.molecule;
+    let (guide_offset, pam_offset) = match options.profile.pam_side {
+        PamSide::ThreePrime => (0, target_length),
+        PamSide::FivePrime => (options.profile.pam.len(), 0),
     };
-    let (go, po) = offsets(&o.profile);
-    let mut minimum = 0;
-    let mut maximum = 0;
-    let mut sequence = String::new();
-    for (j, b) in q.sequence.bytes().enumerate() {
-        spend(work, o.max_comparisons)?;
-        let observed = call(&r.molecule, start + go + j, reverse);
-        let mask = analysis::base_mask(observed);
-        let query = analysis::base_mask(b);
-        minimum += usize::from(mask & query == 0);
-        maximum += usize::from(mask != query);
-        if minimum > o.max_mismatches {
-            return Ok(None);
+    let mut pam_sequence = String::with_capacity(options.profile.pam.len());
+    for j in 0..options.profile.pam.len() {
+        if !work.spend(1) {
+            return Ok((None, Some(AlignmentLimitReached::Work)));
         }
-        sequence.push(observed as char);
+        pam_sequence.push(call(molecule, start + pam_offset + j, reverse) as char);
     }
-    let pam_sequence = (0..o.profile.pam.len())
-        .map(|j| call(&r.molecule, start + po + j, reverse) as char)
+    let screened = pam_evidence(&pam_sequence, options.pam_policy.pattern(&options.profile));
+    if screened == PamEvidence::Excluded {
+        return Ok((None, None));
+    }
+    if !work.spend(target_length) {
+        return Ok((None, Some(AlignmentLimitReached::Work)));
+    }
+    let reference_guide = (0..target_length)
+        .map(|j| call(molecule, start + guide_offset + j, reverse) as char)
         .collect::<String>();
-    let (g, p) = positions(&r.molecule, &o.profile, start, reverse);
-    let is_intended = o.intended.as_ref().is_some_and(|i| {
-        i.reference_id == record.id
-            && i.reference_revision == record.revision
-            && i.reverse == reverse
-            && i.guide_positions == g
-            && i.pam_positions == p
-    });
-    let (top, bottom) = nominal(&r.molecule, &o.profile, start, reverse);
+    let evidence = alignment::align(
+        &Sequence::dna(&q.sequence)?,
+        &Sequence::dna(&reference_guide)?,
+        options.bulges.limits(options.max_mismatches),
+        work,
+    )?;
+    let reached = evidence.limit_reached;
+    if evidence.alignments.is_empty() {
+        return Ok((None, reached));
+    }
+    let guide_positions = (0..target_length)
+        .map(|j| original(molecule.sequence.len(), start + guide_offset + j, reverse))
+        .collect::<Vec<_>>();
+    let pam_positions = (0..options.profile.pam.len())
+        .map(|j| original(molecule.sequence.len(), start + pam_offset + j, reverse))
+        .collect::<Vec<_>>();
+    let design_pam = pam_evidence(&pam_sequence, &options.profile.pam);
+    let exact_alignment = evidence
+        .alignments
+        .iter()
+        .any(|a| a.dna_bulge_bases == 0 && a.rna_bulge_bases == 0 && a.max_mismatches == 0);
+    let is_intended = exact_alignment
+        && design_pam == PamEvidence::Certain
+        && options.intended.as_ref().is_some_and(|i| {
+            i.reference_id == record.id
+                && i.reference_revision == record.revision
+                && i.reverse == reverse
+                && i.guide_positions == guide_positions
+                && i.pam_positions == pam_positions
+        });
+    let unbulged = evidence.complete
+        && evidence
+            .alignments
+            .iter()
+            .all(|a| a.dna_bulge_bases == 0 && a.rna_bulge_bases == 0);
+    let (nominal_top_cut, nominal_bottom_cut) = if unbulged {
+        nominal(molecule, &options.profile, start, reverse)
+    } else {
+        (None, None)
+    };
+    let min_mismatches = evidence
+        .alignments
+        .iter()
+        .map(|a| a.min_mismatches)
+        .min()
+        .unwrap();
+    let max_mismatches = evidence
+        .alignments
+        .iter()
+        .map(|a| a.max_mismatches)
+        .max()
+        .unwrap();
+    let pam_certain = screened == PamEvidence::Certain;
+    let definite = pam_certain && evidence.alignments.iter().any(|a| a.definite);
     let id = hash(&(
         &q.sequence,
         &record.id,
         &record.revision,
-        profile_revision(&o.profile).map_err(|_| ())?,
-        &g,
-        &p,
+        profile_revision(&options.profile)?,
+        hash(options)?,
+        &guide_positions,
+        &pam_positions,
         reverse,
+    ))?;
+    Ok((
+        Some(OffTargetHit {
+            id,
+            reference_index,
+            reference_guide,
+            pam_sequence,
+            guide_positions,
+            pam_positions,
+            reverse,
+            min_mismatches,
+            max_mismatches,
+            pam_certain,
+            design_pam,
+            definite,
+            is_intended,
+            nominal_top_cut,
+            nominal_bottom_cut,
+            alignment: evidence,
+        }),
+        reached,
     ))
-    .map_err(|_| ())?;
-    Ok(Some(OffTargetHit {
-        id,
+}
+/// One shared work/column gate for seed admission, PAM checking and all paths.
+fn admit_hit(
+    report: &mut OffTargetReport,
+    q: &GuideQuery,
+    references: &[ReferenceInput],
+    options: &OffTargetOptions,
+    reference_index: usize,
+    reverse: bool,
+    start: usize,
+    target_length: usize,
+    work: &mut alignment::AlignmentWork,
+    output_bytes: &mut usize,
+) -> Result<bool, Error> {
+    use alignment::AlignmentLimitReached;
+    let (hit, reached) = hit_at(
+        q,
+        &references[reference_index],
+        &report.references[reference_index],
         reference_index,
-        reference_guide: sequence,
-        pam_sequence,
-        guide_positions: g,
-        pam_positions: p,
+        options,
+        start,
         reverse,
-        min_mismatches: minimum,
-        max_mismatches: maximum,
-        pam_certain,
-        definite: pam_certain && maximum <= o.max_mismatches,
-        is_intended,
-        nominal_top_cut: top,
-        nominal_bottom_cut: bottom,
-    }))
+        target_length,
+        work,
+    )?;
+    if let Some(reason) = reached {
+        limit(
+            report,
+            match reason {
+                AlignmentLimitReached::Work => {
+                    "Shared PAM/alignment comparison budget reached; unsearched intervals and paths remain."
+                }
+                AlignmentLimitReached::Alignments => {
+                    "Per-interval alignment path cap reached; tied and other qualifying paths may be missing."
+                }
+                AlignmentLimitReached::RetainedColumns => {
+                    "Shared retained-alignment column budget reached; additional paths/hits may be missing."
+                }
+            },
+        );
+    }
+    if let Some(hit) = hit {
+        let size = serde_json::to_vec(&hit).map_err(|_| Error::TooLarge)?.len() + 1;
+        if report.hits.len() >= options.max_hits
+            || output_bytes.saturating_add(size) > MAX_BYTES - 16384
+        {
+            limit(
+                report,
+                "Off-target hit/output budget reached; additional hits may be missing.",
+            );
+            return Ok(false);
+        }
+        *output_bytes += size;
+        report.hits.push(hit);
+    }
+    Ok(!matches!(
+        reached,
+        Some(AlignmentLimitReached::Work | AlignmentLimitReached::RetainedColumns)
+    ))
 }
 fn limit(r: &mut OffTargetReport, message: &str) {
     r.complete = false;
@@ -754,6 +1166,7 @@ pub fn search_off_targets(
         batch_revision: revision,
         options_revision: hash(o)?,
         profile_revision: profile_revision(&o.profile)?,
+        alignment_model: alignment::MODEL_ID.into(),
         query: q.clone(),
         options: o.clone(),
         references: records(refs),
@@ -766,8 +1179,10 @@ pub fn search_off_targets(
         limits: vec![],
         warnings: warnings(),
     };
-    r.warnings.push("Coverage is ONLY the exact selected immutable records, irrespective of build/accession/scope labels. No genome-wide absence or biological specificity is established. The search model is ungapped Hamming distance plus the declared PAM; bulges, structural variation and other PAMs are excluded.".into());
+    r.warnings.push("Coverage is ONLY the exact selected immutable records, irrespective of build/accession/scope labels. No genome-wide absence or biological specificity is established. The search uses only the explicit mismatch, global full-input DNA/RNA-gap and screening-PAM policies; structural variation and other policies are excluded.".into());
     r.warnings.push("Intended status tags only an exact named role/revision/original guide+PAM coordinate/orientation tuple. Equal DNA at another locus or in another selected record remains a separate hit.".into());
+    r.warnings.push("Alignment model global-full-input-paired-dna-rna-1 consumes every guide and target base; terminal gaps and mixed DNA/RNA gap paths are included. DNA/RNA bulge names describe alignments, not measured heteroduplexes. All qualifying paths are retained within explicit caps, without empirical scoring or best-path selection. Nominal cut marks are withheld for incomplete alignment evidence or when any retained path is gapped.".into());
+    r.warnings.push("Design PAM admission and declared screening masks are distinct; SaCas9 NNGRRT design does not imply NNGRRN alternatives were screened.".into());
     let l = q.sequence.len();
     let total = l + o.profile.pam.len();
     let parts = o.max_mismatches + 1;
@@ -786,6 +1201,10 @@ pub fn search_off_targets(
     'index: for (ri, reference) in refs.iter().enumerate() {
         let m = &reference.molecule;
         let n = m.sequence.len();
+        if o.bulges.enabled() {
+            fallback.push(ri);
+            continue;
+        }
         if total > n {
             continue;
         }
@@ -867,88 +1286,67 @@ pub fn search_off_targets(
             }
         }
     }
+    let mut work =
+        alignment::AlignmentWork::new(o.max_comparisons, o.bulges.max_retained_alignment_columns)?;
+    let _ = work.spend(r.comparisons);
     let mut output_bytes = serde_json::to_vec(&r).map_err(|_| Error::TooLarge)?.len();
     'verify: for (ri, reverse, start) in candidates {
-        match hit_at(
+        if !admit_hit(
+            &mut r,
             q,
-            &refs[ri],
-            &r.references[ri],
-            ri,
+            refs,
             o,
-            start,
+            ri,
             reverse,
-            &mut r.comparisons,
-        ) {
-            Err(()) => {
-                limit(
-                    &mut r,
-                    "Reference classification/index/search comparison budget reached; unsearched records/positions remain.",
-                );
-                break;
-            }
-            Ok(Some(hit)) => {
-                let size = serde_json::to_vec(&hit).map_err(|_| Error::TooLarge)?.len() + 1;
-                if r.hits.len() >= o.max_hits
-                    || output_bytes.saturating_add(size) > MAX_BYTES - 16_384
-                {
-                    limit(
-                        &mut r,
-                        "Off-target hit/output budget reached; additional hits may be missing.",
-                    );
-                    break 'verify;
-                }
-                output_bytes += size;
-                r.hits.push(hit);
-            }
-            Ok(None) => (),
+            start,
+            l,
+            &mut work,
+            &mut output_bytes,
+        )? {
+            break 'verify;
         }
     }
     'fallback: for ri in fallback {
         let m = &refs[ri].molecule;
-        let n = m.sequence.len();
-        let count = if m.topology == Topology::Circular {
-            n
-        } else {
-            n - total + 1
-        };
-        for reverse in [false, true] {
-            for start in 0..count {
-                match hit_at(
-                    q,
-                    &refs[ri],
-                    &r.references[ri],
-                    ri,
-                    o,
-                    start,
-                    reverse,
-                    &mut r.comparisons,
-                ) {
-                    Err(()) => {
-                        limit(
-                            &mut r,
-                            "Reference classification/index/search comparison budget reached; unsearched records/positions remain.",
-                        );
+        for target_length in l - o
+            .bulges
+            .max_rna_bulge_bases
+            .min(o.bulges.max_total_bulge_bases)
+            ..=l + o
+                .bulges
+                .max_dna_bulge_bases
+                .min(o.bulges.max_total_bulge_bases)
+        {
+            let extent = target_length + o.profile.pam.len();
+            if extent > m.sequence.len() {
+                continue;
+            }
+            let count = if m.topology == Topology::Circular {
+                m.sequence.len()
+            } else {
+                m.sequence.len() - extent + 1
+            };
+            for reverse in [false, true] {
+                for start in 0..count {
+                    if !admit_hit(
+                        &mut r,
+                        q,
+                        refs,
+                        o,
+                        ri,
+                        reverse,
+                        start,
+                        target_length,
+                        &mut work,
+                        &mut output_bytes,
+                    )? {
                         break 'fallback;
                     }
-                    Ok(Some(hit)) => {
-                        let size = serde_json::to_vec(&hit).map_err(|_| Error::TooLarge)?.len() + 1;
-                        if r.hits.len() >= o.max_hits
-                            || output_bytes.saturating_add(size) > MAX_BYTES - 16_384
-                        {
-                            limit(
-                                &mut r,
-                                "Off-target hit/output budget reached; additional hits may be missing.",
-                            );
-                            break 'fallback;
-                        }
-                        output_bytes += size;
-                        r.hits.push(hit);
-                    }
-                    Ok(None) => (),
                 }
             }
         }
     }
+    r.comparisons = work.used();
     r.hits.sort_by(|a, b| {
         (a.reference_index, a.reverse, &a.guide_positions).cmp(&(
             b.reference_index,
@@ -966,12 +1364,9 @@ fn geometry(
     n: usize,
     circular: bool,
     profile: &NucleaseProfile,
+    target_length: usize,
 ) -> bool {
-    if n == 0
-        || g.len() != profile.guide_length
-        || p.len() != profile.pam.len()
-        || g.len() + p.len() > n
-    {
+    if n == 0 || g.len() != target_length || p.len() != profile.pam.len() || g.len() + p.len() > n {
         return false;
     }
     let combined = match profile.pam_side {
@@ -998,7 +1393,7 @@ fn geometry(
 impl GuideReport {
     pub fn validate(&self) -> Result<(), Error> {
         self.options.validate()?;
-        if !label(&self.engine_version, 128)
+        if self.engine_version != ENGINE_VERSION
             || ![
                 &self.source_revision,
                 &self.options_revision,
@@ -1035,6 +1430,7 @@ impl GuideReport {
                     self.source_length,
                     self.circular,
                     &self.options.profile,
+                    self.options.profile.guide_length,
                 )
                 || c.guide_sequence.len() != self.options.profile.guide_length
                 || c.pam_sequence.len() != self.options.profile.pam.len()
@@ -1088,7 +1484,8 @@ impl GuideReport {
 impl OffTargetReport {
     pub fn validate(&self) -> Result<(), Error> {
         self.options.validate()?;
-        if !label(&self.engine_version, 128)
+        if self.engine_version != ENGINE_VERSION
+            || self.alignment_model != alignment::MODEL_ID
             || ![
                 &self.batch_revision,
                 &self.options_revision,
@@ -1151,25 +1548,35 @@ impl OffTargetReport {
                     r.length,
                     r.circular,
                     &self.options.profile,
+                    self.options.profile.guide_length,
                 )
             {
                 return Err(bad("intended descriptor revision/geometry mismatch"));
             }
         }
         let mut ids = BTreeSet::new();
+        let mut retained_columns = 0usize;
+        let mut alignment_work = 0usize;
         for h in &self.hits {
             let r = self
                 .references
                 .get(h.reference_index)
                 .ok_or_else(|| bad("off-target reference index outside collection"))?;
-            let intended = self.options.intended.as_ref().is_some_and(|i| {
-                i.reference_id == r.id
-                    && i.reference_revision == r.revision
-                    && i.guide_positions == h.guide_positions
-                    && i.pam_positions == h.pam_positions
-                    && i.reverse == h.reverse
-            });
+            let intended = h.design_pam == PamEvidence::Certain
+                && h.alignment.alignments.iter().any(|a| {
+                    a.dna_bulge_bases == 0 && a.rna_bulge_bases == 0 && a.max_mismatches == 0
+                })
+                && self.options.intended.as_ref().is_some_and(|i| {
+                    i.reference_id == r.id
+                        && i.reference_revision == r.revision
+                        && i.guide_positions == h.guide_positions
+                        && i.pam_positions == h.pam_positions
+                        && i.reverse == h.reverse
+                });
             if !hex(&h.id)
+                || h.guide_positions.len() > 68
+                || h.reference_guide.len() > 68
+                || h.pam_positions.len() > 16
                 || !ids.insert(&h.id)
                 || !geometry(
                     &h.guide_positions,
@@ -1178,8 +1585,21 @@ impl OffTargetReport {
                     r.length,
                     r.circular,
                     &self.options.profile,
+                    h.reference_guide.len(),
                 )
-                || h.reference_guide.len() != self.options.profile.guide_length
+                || !(self.options.profile.guide_length
+                    - self
+                        .options
+                        .bulges
+                        .max_rna_bulge_bases
+                        .min(self.options.bulges.max_total_bulge_bases)
+                    ..=self.options.profile.guide_length
+                        + self
+                            .options
+                            .bulges
+                            .max_dna_bulge_bases
+                            .min(self.options.bulges.max_total_bulge_bases))
+                    .contains(&h.reference_guide.len())
                 || h.pam_sequence.len() != self.options.profile.pam.len()
                 || !h
                     .reference_guide
@@ -1189,7 +1609,39 @@ impl OffTargetReport {
                 || h.min_mismatches > self.options.max_mismatches
                 || h.min_mismatches > h.max_mismatches
                 || h.max_mismatches > self.options.profile.guide_length
-                || h.definite != (h.pam_certain && h.max_mismatches <= self.options.max_mismatches)
+                || h.alignment.alignments.is_empty()
+                || h.definite
+                    != (h.pam_certain && h.alignment.alignments.iter().any(|a| a.definite))
+                || h.min_mismatches
+                    != h.alignment
+                        .alignments
+                        .iter()
+                        .map(|a| a.min_mismatches)
+                        .min()
+                        .unwrap_or(usize::MAX)
+                || h.max_mismatches
+                    != h.alignment
+                        .alignments
+                        .iter()
+                        .map(|a| a.max_mismatches)
+                        .max()
+                        .unwrap_or(usize::MAX)
+                || self.complete && !h.alignment.complete
+                || pam_evidence(
+                    &h.pam_sequence,
+                    self.options.pam_policy.pattern(&self.options.profile),
+                ) == PamEvidence::Excluded
+                || h.pam_certain
+                    != (pam_evidence(
+                        &h.pam_sequence,
+                        self.options.pam_policy.pattern(&self.options.profile),
+                    ) == PamEvidence::Certain)
+                || h.design_pam != pam_evidence(&h.pam_sequence, &self.options.profile.pam)
+                || h.alignment
+                    .alignments
+                    .iter()
+                    .any(|a| a.dna_bulge_bases + a.rna_bulge_bases > 0)
+                    && (h.nominal_top_cut.is_some() || h.nominal_bottom_cut.is_some())
                 || h.is_intended != intended
                 || [h.nominal_top_cut, h.nominal_bottom_cut]
                     .into_iter()
@@ -1204,6 +1656,18 @@ impl OffTargetReport {
             {
                 return Err(bad("invalid off-target hit evidence shape"));
             }
+            retained_columns = retained_columns
+                .checked_add(h.alignment.validate_for(
+                    &Sequence::dna(&self.query.sequence)?,
+                    &Sequence::dna(&h.reference_guide)?,
+                    self.options.bulges.limits(self.options.max_mismatches),
+                )?)
+                .filter(|n| *n <= self.options.bulges.max_retained_alignment_columns)
+                .ok_or(Error::TooLarge)?;
+            alignment_work = alignment_work
+                .checked_add(h.alignment.work)
+                .filter(|n| *n <= self.comparisons)
+                .ok_or(Error::TooLarge)?;
         }
         bounded(self)
     }

@@ -38,7 +38,7 @@ fn roundtrip(revision: String, job: AnalysisJob) -> Response {
         job,
     };
     let bytes = request.encode().unwrap();
-    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 131);
+    assert_eq!(u16::from_le_bytes([bytes[4], bytes[5]]), 133);
     let output = process_request(&bytes).unwrap();
     assert_eq!(
         Response::admitted_frame_limit(&output, output.len()).unwrap(),
@@ -244,12 +244,24 @@ fn collection_worker_keeps_distinct_footprint_and_hypothetical_whole_oligo_tm() 
     mismatched.options.maximum_mismatches = 1;
     let uncertain = collection_binding::assess(&mismatched).unwrap();
     assert!(!uncertain.search.hits.is_empty());
-    assert!(
-        uncertain
-            .thermodynamics
-            .iter()
-            .all(|t| matches!(&t.annealing, collection_binding::TmValue::Unavailable(_)))
-    );
+    assert!(uncertain.thermodynamics.iter().all(|t| matches!(
+        &t.annealing,
+        collection_binding::TmValue::MismatchAvailable(_)
+    )));
+    let collection_binding::TmValue::MismatchAvailable(value) =
+        &uncertain.thermodynamics[0].annealing
+    else {
+        panic!("single internal mismatch estimate")
+    };
+    // Independently sum canonical AC/CG/GA/AA/AC/CG/GT plus A/T ends,
+    // then replace GA/CA and rotated TA/AA using the published table facts.
+    assert!((value.estimate.delta_h_kcal_per_mol - -40.0).abs() < 1e-10);
+    assert!((value.estimate.delta_s_cal_per_mol_kelvin_at_1m - -110.3).abs() < 1e-10);
+    let salt_s = -110.3 + 0.368 * 7.0 * 0.05_f64.ln();
+    let expected = -40_000.0 / (salt_s + 1.987 * (500e-9_f64 / 4.0).ln()) - 273.15;
+    assert!((value.estimate.tm_c - expected).abs() < 1e-10);
+    assert!(!value.estimate.self_complementary);
+    uncertain.validate_for(&mismatched).unwrap();
     let mut forged = uncertain;
     forged.thermodynamics[0].annealing = collection_binding::TmValue::Available(a.clone());
     assert!(forged.validate_binding(&forged.context_revision).is_err());

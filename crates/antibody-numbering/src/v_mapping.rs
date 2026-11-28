@@ -1,16 +1,73 @@
-//! Source-bound correspondence to human IMGT V-prefix reference models.
+//! Source-bound correspondence to explicitly selected species/strain V models.
 //! Integer count scores are declared heuristics, not calibrated domain/chain/
 //! species classification or full rearranged antibody numbering.
 use super::*;
 use crate::{profile, references};
 use collagene_model::PROTEIN_RESIDUES;
 use std::collections::BTreeSet;
-pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-4";
-data! {pub enum Locus {Heavy,Kappa,Lambda}}
-data! {pub struct Scoring {
-    pub observed_reward:i16,pub frequency_bonus:i16,pub unseen_penalty:i16,
-    pub gap_open:i16,pub gap_extend:i16,pub minimum_score:i32,
-}}
+pub const MAPPING_ENGINE: &str = "antibody-v-reference-mapping-5";
+pub const MAX_MODEL_ALLELES: usize = 354;
+data! {
+    pub enum Locus {
+        Heavy,
+        Kappa,
+        Lambda
+    }
+}
+impl Locus {
+    pub(crate) fn source_index(&self) -> usize {
+        match self {
+            Self::Heavy => 0,
+            Self::Kappa => 1,
+            Self::Lambda => 2,
+        }
+    }
+}
+data! {
+    pub struct ReferenceSelection {
+        pub species: references::Species,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Locus, 3>")]
+        pub loci: Vec<Locus>
+    }
+}
+impl ReferenceSelection {
+    pub fn human_all() -> Self {
+        Self {
+            species: references::Species::Human,
+            loci: vec![Locus::Heavy, Locus::Kappa, Locus::Lambda],
+        }
+    }
+    pub fn validate(&self) -> Result<()> {
+        if self.loci.is_empty()
+            || self.loci.len() > 3
+            || self
+                .loci
+                .iter()
+                .enumerate()
+                .any(|(i, locus)| self.loci[..i].contains(locus))
+        {
+            return Err(Error::Invalid(
+                "explicit distinct nonempty reference loci required",
+            ));
+        }
+        if self.species == references::Species::MouseC57Bl6 && self.loci != [Locus::Heavy] {
+            return Err(Error::Invalid(
+                "mouse C57BL/6 reference scope is heavy-chain IGH only",
+            ));
+        }
+        Ok(())
+    }
+}
+data! {
+    pub struct Scoring {
+        pub observed_reward: i16,
+        pub frequency_bonus: i16,
+        pub unseen_penalty: i16,
+        pub gap_open: i16,
+        pub gap_extend: i16,
+        pub minimum_score: i32,
+    }
+}
 impl Scoring {
     pub(crate) fn validate(&self) -> Result<()> {
         if !(1..=500).contains(&self.observed_reward)
@@ -24,36 +81,59 @@ impl Scoring {
         Ok(())
     }
 }
-data! {pub struct ColumnCounts {pub residues:[usize;22],pub gaps:usize}}
-data! {pub struct Model {
-    pub engine:String,pub corpus_revision:String,pub locus:Locus,pub scoring:Scoring,
-    pub training_alleles:Vec<String>,pub omitted_alleles:Vec<String>,pub distinct_proteins:usize,
-    /// Model states retain the explicit provider labels; all-gap positions have
-    /// no emitting state and stay explicit in omitted_positions instead.
-    pub positions:Vec<Position>,pub omitted_positions:Vec<Position>,
-    pub counts:Vec<ColumnCounts>,pub profile:profile::Profile,
-}}
+data! {
+    pub struct ColumnCounts {
+        pub residues: [usize; 22],
+        pub gaps: usize
+    }
+}
+data! {
+    pub struct Model {
+        pub engine: String,
+        pub corpus_revision: String,
+        pub species: references::Species,
+        pub locus: Locus,
+        pub scoring: Scoring,
+        pub training_alleles: Vec<String>,
+        pub omitted_alleles: Vec<String>,
+        pub distinct_proteins: usize,
+        /// Model states retain corpus-declared column labels and their source policy;
+        /// all-gap positions have
+        /// no emitting state and stay explicit in omitted_positions instead.
+        pub positions: Vec<Position>,
+        pub omitted_positions: Vec<Position>,
+        pub counts: Vec<ColumnCounts>,
+        pub profile: profile::Profile,
+    }
+}
+fn admitted(entry: &references::VReference, species: &references::Species) -> bool {
+    entry.non_cysteine_anchors.is_empty()
+        && (*species == references::Species::Human || entry.aligned_protein.as_bytes()[40] == b'W')
+}
 fn model_revision(model: &Model) -> Result<String> {
     hash(
-        b"antibody-v-reference-model-4\0",
+        b"antibody-v-reference-model-5\0",
         &(profile::PROFILE_ENGINE, model),
         1 << 20,
     )
 }
-/// Reconstruct all three models from the current embedded corpus. No caller can
+/// Reconstruct only explicitly selected models from the pinned corpus. No caller can
 /// silently substitute a scoring matrix under an unchanged reference revision.
-pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Vec<Model>> {
+pub fn models(
+    selection: &ReferenceSelection,
+    scoring: &Scoring,
+    cancel: &mut impl FnMut() -> bool,
+) -> Result<Vec<Model>> {
     scoring.validate()?;
+    selection.validate()?;
     if cancel() {
         return Err(Error::Cancelled);
     }
-    let corpus = references::human_references()?;
+    let corpus = references::load(&selection.species)?;
     let corpus_revision = corpus.revision()?;
     let mut models = vec![];
-    for (source, locus) in [Locus::Heavy, Locus::Kappa, Locus::Lambda]
-        .into_iter()
-        .enumerate()
-    {
+    for locus in &selection.loci {
+        let source = locus.source_index();
         let mut training_alleles = vec![];
         let mut omitted_alleles = vec![];
         let mut proteins = BTreeSet::new();
@@ -61,7 +141,7 @@ pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Ve
             if cancel() {
                 return Err(Error::Cancelled);
             }
-            if entry.non_cysteine_anchors.is_empty() {
+            if admitted(entry, &selection.species) {
                 training_alleles.push(entry.allele_ref.clone());
                 proteins.insert(entry.aligned_protein.as_str());
             } else {
@@ -116,15 +196,25 @@ pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Ve
                 allow_insert_after: column < 103,
             });
         }
+        let admission = if selection.species == references::Species::Human {
+            "Human admission: provider-functional V with canonical C23/C104; atypical reference facts remain in corpus"
+        } else {
+            "Mouse C57BL/6 admission: provider-functional IGH V with canonical C23/W41/C104; three atypical functional reference facts remain in corpus"
+        };
         let profile = profile::Profile {
             version: profile::PROFILE_VERSION,
             name: format!(
-                "Human {} V-prefix IMGT reference scores",
+                "{} {} V-prefix IMGT reference scores",
+                if selection.species == references::Species::Human {
+                    "Human"
+                } else {
+                    "Mouse C57BL/6"
+                },
                 corpus.sources()[source].locus
             ),
             provenance: format!(
-                "{}; {}; distinct protein count scores; not a calibrated classifier",
-                MAPPING_ENGINE, corpus_revision
+                "{}; {}; {}; distinct protein count scores; not a calibrated classifier",
+                MAPPING_ENGINE, corpus_revision, admission
             ),
             states,
             gap_open: scoring.gap_open,
@@ -135,7 +225,8 @@ pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Ve
         models.push(Model {
             engine: MAPPING_ENGINE.into(),
             corpus_revision: corpus_revision.clone(),
-            locus,
+            species: selection.species.clone(),
+            locus: locus.clone(),
             scoring: scoring.clone(),
             training_alleles,
             omitted_alleles,
@@ -154,9 +245,16 @@ pub fn models(scoring: &Scoring, cancel: &mut impl FnMut() -> bool) -> Result<Ve
 impl Model {
     pub fn validate(&self) -> Result<()> {
         if self.engine != MAPPING_ENGINE
-            || models(&self.scoring, &mut || false)?
-                .iter()
-                .find(|m| m.locus == self.locus)
+            || models(
+                &ReferenceSelection {
+                    species: self.species.clone(),
+                    loci: vec![self.locus.clone()],
+                },
+                &self.scoring,
+                &mut || false,
+            )?
+            .iter()
+            .find(|m| m.locus == self.locus)
                 != Some(self)
         {
             return Err(Error::Binding);
@@ -164,39 +262,84 @@ impl Model {
         Ok(())
     }
 }
-data! {pub struct Limits {
-    /// Aggregate grid cells across all three models, with each matrix reused for
-    /// lower/upper scoring bounds. Not a separate budget for each locus.
-    pub max_cells:usize,pub max_endpoints_per_locus:usize,pub max_trace_states:usize,
-}}
-data! {pub enum ProjectionIssue {AmbiguousSource,TiedOptimalPaths}}
-data! {pub struct Correspondence {
-    pub source_index:usize,pub residue:char,pub reference_position:Position,
-}}
-data! {pub struct Projection {
-    /// Candidate reference correspondence, not biological scheme certification.
-    pub matches:Vec<Correspondence>,pub deleted_positions:Vec<Position>,
-    /// Query insertions deliberately receive no invented scheme labels.
-    pub unassigned_residues:Vec<usize>,
-}}
-data! {pub struct EndpointProjection {
-    pub end:usize,pub projection:Option<Projection>,pub projection_issue:Option<ProjectionIssue>,
-    /// Positions shared by every optimal state path at this fixed end. None for
-    /// ambiguous sources; tied paths may still share framework/loop boundaries.
-    pub invariant_correspondences:Option<Vec<Correspondence>>,
-}}
-data! {pub struct Mapping {
-    pub locus:Locus,pub model_revision:String,pub alignment:profile::EndpointReport,
-    pub projections:Vec<EndpointProjection>,
-}}
-data! {pub struct Report {
-    pub engine:String,pub source_revision:String,pub corpus_revision:String,pub context_revision:String,
-    pub scoring:Scoring,pub limits:Limits,pub cells:usize,pub invariant_trace_states:usize,pub mappings:Vec<Mapping>,
-}}
+data! {
+    pub struct Limits {
+        /// Aggregate grid cells across all explicitly selected models, with each matrix reused for
+        /// lower/upper scoring bounds. Not a separate budget for each locus.
+        pub max_cells: usize,
+        pub max_endpoints_per_locus: usize,
+        pub max_trace_states: usize,
+    }
+}
+data! {
+    pub enum ProjectionIssue {
+        AmbiguousSource,
+        TiedOptimalPaths
+    }
+}
+data! {
+    pub struct Correspondence {
+        pub source_index: usize,
+        pub residue: char,
+        pub reference_position: Position,
+    }
+}
+data! {
+    pub struct Projection {
+        /// Candidate reference correspondence, not biological scheme certification.
+        pub matches: Vec<Correspondence>,
+        pub deleted_positions: Vec<Position>,
+        /// Query insertions deliberately receive no invented scheme labels.
+        pub unassigned_residues: Vec<usize>,
+    }
+}
+data! {
+    pub struct EndpointProjection {
+        pub end: usize,
+        pub projection: Option<Projection>,
+        pub projection_issue: Option<ProjectionIssue>,
+        /// Positions shared by every optimal state path at this fixed end. None for
+        /// ambiguous sources; tied paths may still share framework/loop boundaries.
+        pub invariant_correspondences: Option<Vec<Correspondence>>,
+    }
+}
+data! {
+    pub struct Mapping {
+        pub locus: Locus,
+        pub model_revision: String,
+        pub alignment: profile::EndpointReport,
+        /// Exact original reference identities admitted to/omitted from this model;
+        /// identical proteins may share scoring weight without losing allele provenance.
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_MODEL_ALLELES>"
+        )]
+        pub training_alleles: Vec<String>,
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_MODEL_ALLELES>"
+        )]
+        pub omitted_alleles: Vec<String>,
+        pub projections: Vec<EndpointProjection>,
+    }
+}
+data! {
+    pub struct Report {
+        pub engine: String,
+        pub source_revision: String,
+        pub corpus_revision: String,
+        pub context_revision: String,
+        pub selection: ReferenceSelection,
+        pub scoring: Scoring,
+        pub limits: Limits,
+        pub cells: usize,
+        pub invariant_trace_states: usize,
+        pub mappings: Vec<Mapping>,
+    }
+}
 /// Return every locus independently; uncalibrated scores of differently sized
 /// profiles must not choose a winning chain type or imply that a domain exists.
 pub fn map_query(
     source: &Molecule,
+    selection: &ReferenceSelection,
     scoring: &Scoring,
     limits: &Limits,
     cancel: &mut impl FnMut() -> bool,
@@ -213,7 +356,7 @@ pub fn map_query(
     {
         return Err(Error::Limit("V-reference aggregate cells"));
     }
-    let models = models(scoring, cancel)?;
+    let models = models(selection, scoring, cancel)?;
     let cells = models
         .iter()
         .try_fold(0_usize, |n, m| {
@@ -225,13 +368,14 @@ pub fn map_query(
         .ok_or(Error::Limit("V-reference aggregate cells"))?;
     let corpus_revision = models[0].corpus_revision.clone();
     let context_revision = hash(
-        b"antibody-v-reference-context-4\0",
+        b"antibody-v-reference-context-5\0",
         &(
             MAPPING_ENGINE,
             profile::PROFILE_ENGINE,
             profile::ENDPOINT_ENGINE,
             &source_revision,
             &corpus_revision,
+            selection,
             scoring,
             limits,
             "all-optimal-path invariant correspondences with aggregate trace work; per-endpoint optima; exact endpoint counts and explicit truncation; distinct protein weighting; C23/C104 required; all-gap positions omitted; no classification; no inferred insertion labels; ambiguous/tied projections withheld",
@@ -242,6 +386,18 @@ pub fn map_query(
     let mut mappings = vec![];
     for model in models {
         let model_revision = model_revision(&model)?;
+        if model
+            .training_alleles
+            .len()
+            .checked_add(model.omitted_alleles.len())
+            .is_none_or(|n| n > MAX_MODEL_ALLELES)
+        {
+            return Err(Error::Limit("model admission identities"));
+        }
+        // Move exact selected-model facts before alignment; no second model or
+        // result-sized identity clone is constructed for the report.
+        let training_alleles = model.training_alleles;
+        let omitted_alleles = model.omitted_alleles;
         let individual_cells = (source.sequence.len() + 1) * (model.profile.states.len() + 1);
         let alignment = profile::align_endpoints(
             source,
@@ -337,6 +493,8 @@ pub fn map_query(
         mappings.push(Mapping {
             locus: model.locus,
             model_revision,
+            training_alleles,
+            omitted_alleles,
             alignment,
             projections,
         });
@@ -349,6 +507,7 @@ pub fn map_query(
         source_revision,
         corpus_revision,
         context_revision,
+        selection: selection.clone(),
         scoring: scoring.clone(),
         limits: limits.clone(),
         cells,
@@ -356,15 +515,54 @@ pub fn map_query(
         mappings,
     })
 }
+impl Mapping {
+    /// Cheap current-corpus admission facts only; no model scoring/alignment work.
+    pub(crate) fn validate_admission(&self, species: &references::Species) -> Result<()> {
+        if self
+            .training_alleles
+            .len()
+            .checked_add(self.omitted_alleles.len())
+            .is_none_or(|n| n > MAX_MODEL_ALLELES)
+        {
+            return Err(Error::Limit("model admission identities"));
+        }
+        let corpus = references::load(species)?;
+        let entries = || {
+            corpus
+                .v_entries()
+                .iter()
+                .filter(|entry| entry.source == self.locus.source_index())
+        };
+        if !self
+            .training_alleles
+            .iter()
+            .map(String::as_str)
+            .eq(entries()
+                .filter(|entry| admitted(entry, species))
+                .map(|entry| entry.allele_ref.as_str()))
+            || !self.omitted_alleles.iter().map(String::as_str).eq(entries()
+                .filter(|entry| !admitted(entry, species))
+                .map(|entry| entry.allele_ref.as_str()))
+        {
+            return Err(Error::Binding);
+        }
+        Ok(())
+    }
+}
 impl Report {
     pub fn validate_for(
         &self,
         source: &Molecule,
+        selection: &ReferenceSelection,
         scoring: &Scoring,
         limits: &Limits,
     ) -> Result<()> {
+        for mapping in &self.mappings {
+            mapping.validate_admission(&selection.species)?;
+        }
         if self.engine != MAPPING_ENGINE
-            || self.mappings.len() != 3
+            || self.selection != *selection
+            || self.mappings.len() != selection.loci.len()
             || self.mappings.iter().any(|m| {
                 m.projections.len() > profile::MAX_ENDPOINTS
                     || m.projections.iter().any(|e| {
@@ -375,7 +573,7 @@ impl Report {
                         })
                     })
             })
-            || *self != map_query(source, scoring, limits, &mut || false)?
+            || *self != map_query(source, selection, scoring, limits, &mut || false)?
         {
             return Err(Error::Binding);
         }

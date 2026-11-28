@@ -5,7 +5,7 @@ use crate::{chemistry::DuplexSummary, cloning::restriction::setups::Recipe};
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 
-pub const ENGINE_VERSION: &str = "material-digest-export-3";
+pub const ENGINE_VERSION: &str = "material-digest-export-4";
 const LOSS: &str = "Detached sequence export does not preserve reusable physical material, exact native history, both strand sequences and offsets, terminal chemistry, internal nicks or positional modification evidence. Any included comments and summaries are documentary only. Retain the native workspace and replay its exact origin for subsequent cloning. Complete cleavage and experimental fragment isolation remain assumptions; no intended target is assessed.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

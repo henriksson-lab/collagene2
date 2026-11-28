@@ -132,7 +132,13 @@ mod tests {
         .unwrap();
         let source = a::source(&doc, &doc.rows[0].id).unwrap();
         let other = a::source(&doc, &doc.rows[1].id).unwrap();
-        let (o, l) = crate::biology::antibody::antibody_model::preset(300, 1, 60, 32);
+        let (o, l) = crate::biology::antibody::antibody_model::preset(
+            collagene_core::antibody_numbering::v_mapping::ReferenceSelection::human_all(),
+            300,
+            1,
+            60,
+            32,
+        );
         let c = Capture::prepare(
             7,
             &doc,
@@ -153,6 +159,16 @@ mod tests {
             collagene_core::antibody_numbering::domain_tracks::RegionDefinition::ChothiaCanonical;
         assert!(c.guard(7, &source, &o, &l, &definition).is_err());
         c.guard(7, &source, &o, &l, &test_selection()).unwrap();
+        let mut reference_change = o.clone();
+        reference_change.references =
+            collagene_core::antibody_numbering::v_mapping::ReferenceSelection {
+                species: collagene_core::antibody_numbering::references::Species::MouseC57Bl6,
+                loci: vec![collagene_core::antibody_numbering::v_mapping::Locus::Heavy],
+            };
+        assert!(
+            c.guard(7, &source, &reference_change, &l, &test_selection())
+                .is_err()
+        );
         assert!(c.guard(7, &other, &o, &l, &test_selection()).is_err());
         assert!(c.guard(8, &source, &o, &l, &test_selection()).is_err());
         let mut options = o;

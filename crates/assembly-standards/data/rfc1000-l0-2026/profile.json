@@ -14,7 +14,7 @@
     "The rules are factual curation of the official live page reviewed 2026-11-28; no immutable upstream document version or raw-byte snapshot hash is asserted."
   ],
   "curation_license": "MIT (independently authored factual curation; upstream prose/assets are not redistributed)",
-  "expected_catalog_edition": "2026-11-28.1",
+  "expected_catalog_edition": "2026-11-28.2",
   "sources": [
     {
       "id": "igem-type-iis-2026-11-28",

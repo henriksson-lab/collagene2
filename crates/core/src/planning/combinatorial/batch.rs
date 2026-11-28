@@ -11,9 +11,9 @@ use crate::{
 use collagene_model::Error;
 use serde::{Deserialize, Serialize};
 use std::{collections::BTreeSet, io};
-pub const KIND: &str = "combinatorial-batch-record-v4";
+pub const KIND: &str = "combinatorial-batch-record-v5";
 pub const ENGINE_VERSION: &str = verification::ENGINE_VERSION;
-const CONTRACT: &str = "combinatorial-batch-5";
+const CONTRACT: &str = "combinatorial-batch-6";
 pub const MAX_RECORD_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 /// Aggregate declared DNA-search/repeat work, not a measured CPU-time claim.
@@ -632,7 +632,7 @@ impl Session {
         }
         let context_revision = record_revision(ENGINE_VERSION, &self.request, &self.rows)?;
         let record = Record {
-            schema_version: 4,
+            schema_version: 5,
             context_revision,
             engine_version: ENGINE_VERSION.into(),
             request: self.request.clone(),
@@ -663,7 +663,7 @@ impl Session {
 }
 fn record_revision(engine: &str, request: &Request, rows: &[RowEvidence]) -> Result<String, Error> {
     count(&(engine, request, rows), MAX_RECORD_BYTES - 1024)?;
-    crate::encoding::bounded_json::hash(&("combinatorial-batch-record-3", engine, request, rows))
+    crate::encoding::bounded_json::hash(&("combinatorial-batch-record-5", engine, request, rows))
 }
 
 impl Record {
@@ -714,7 +714,7 @@ impl Record {
         Ok(())
     }
     pub fn validate(&self) -> Result<(), Error> {
-        if self.schema_version != 4
+        if self.schema_version != 5
             || !digest(&self.context_revision)
             || self.engine_version.is_empty()
             || self.engine_version.len() > 256

@@ -93,7 +93,7 @@ async fn actual_golden_gate_windows_reverse_bottom_coordinates_and_wrong_targets
         .await;
         let target = doc(&imported);
         let plan=call(&c,"propose_plan",json!({"name":"actual selected cut path","inputs":[{"id":"template","document":source}],"target":target,
-            "steps":[Operation::DeclareSourceModifications{template:Source::Input("template".into()),assumptions:collagene_core::chemistry::tracked_duplex::GenerationAssumptions{dam:collagene_core::chemistry::methylation::MethylationState::Unmodified,dcm:collagene_core::chemistry::methylation::MethylationState::Unmodified,cpg:collagene_core::chemistry::methylation::MethylationState::Unmodified}},Operation::GoldenGate{templates:vec![Source::Step(0)],options:GoldenGateOptions{max_fragments:1,..Default::default()},candidate_index:usize::from(reverse)}]})).await;
+            "steps":[Operation::DeclareSourceModifications{template:Source::Input("template".into()),assumptions:collagene_core::chemistry::tracked_duplex::GenerationAssumptions { host: None,dam:collagene_core::chemistry::methylation::MethylationState::Unmodified,dcm:collagene_core::chemistry::methylation::MethylationState::Unmodified,cpg:collagene_core::chemistry::methylation::MethylationState::Unmodified}},Operation::GoldenGate{templates:vec![Source::Step(0)],options:GoldenGateOptions{max_fragments:1,..Default::default()},candidate_index:usize::from(reverse)}]})).await;
         let query = json!({"plan_revision":plan["plan_revision"],"options":collagene_core::cloning::assembly::junctions::Options{flank_bases:4,..Default::default()}});
         let inspected = call(&c, "inspect_assembly_junctions", query.clone()).await;
         assert_eq!(

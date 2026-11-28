@@ -2,6 +2,7 @@
 mod biology_protocol;
 mod crispr;
 mod crispr_audit;
+mod crispr_bulges;
 mod crispr_protocol;
 mod genome_crispr;
 mod methylation;

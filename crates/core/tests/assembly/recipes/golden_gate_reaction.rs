@@ -44,6 +44,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
             reaction::Row {
                 generation: Some(
                     collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        host: None,
                         dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                         dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                         cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
@@ -56,6 +57,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
             reaction::Row {
                 generation: Some(
                     collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        host: None,
                         dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                         dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                         cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,
@@ -76,6 +78,7 @@ fn fixture() -> (Vec<PlanInput>, Molecule, reaction::Request) {
             reaction::Row {
                 generation: Some(
                     collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                        host: None,
                         dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                         dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                         cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,

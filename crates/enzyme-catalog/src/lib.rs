@@ -2,11 +2,13 @@
 //! Immutable, versioned restriction enzyme geometry and documentary evidence.
 //! This crate neither matches DNA nor validates reactions. Documentary facts are
 //! formulation- and assay-context-specific; missing facts never imply compatibility.
+pub mod hosts;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 pub const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error(pub String);
@@ -19,11 +21,16 @@ impl std::error::Error for Error {}
 fn fail<T>(s: &str) -> Result<T, Error> {
     Err(Error(s.into()))
 }
-macro_rules! dto { ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-#[serde(deny_unknown_fields)] pub struct $name { $(pub $field:$ty),* }
-}; }
+macro_rules! dto {
+    ($name:ident { $($(#[$attr:meta])* $field:ident : $ty:ty),* $(,)? }) => {
+        #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+        #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+        #[serde(deny_unknown_fields)]
+        pub struct $name {
+            $($(#[$attr])* pub $field: $ty),*
+        }
+    };
+}
 dto!(Citation {
     source: String,
     locator: String
@@ -32,8 +39,21 @@ dto!(Snapshot {
     sha256: String,
     bytes: u64
 });
-dto!(Source { id:String, publisher:String, url:String, retrieved_on:String, edition:String, snapshot:Option<Snapshot>, snapshot_note:String, facts_blake3:String });
-dto!(Alias { name:String, shared:bool, citations:Vec<Citation> });
+dto!(Source {
+    id: String,
+    publisher: String,
+    url: String,
+    retrieved_on: String,
+    edition: String,
+    snapshot: Option<Snapshot>,
+    snapshot_note: String,
+    facts_blake3: String
+});
+dto!(Alias {
+    name: String,
+    shared: bool,
+    citations: Vec<Citation>
+});
 // Boundaries are between bases, relative to the forward recognition start.
 // The bottom boundary uses the same forward coordinate axis; Type IIS may lie outside it.
 dto!(Geometry {
@@ -41,7 +61,13 @@ dto!(Geometry {
     top_cut: i32,
     bottom_cut: i32
 });
-dto!(Enzyme { id:String, name:String, geometry:Geometry, aliases:Vec<Alias>, citations:Vec<Citation> });
+dto!(Enzyme {
+    id: String,
+    name: String,
+    geometry: Geometry,
+    aliases: Vec<Alias>,
+    citations: Vec<Citation>
+});
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
@@ -85,9 +111,34 @@ pub enum FactValue {
     Methylation(Sensitivity),
     Unknown(String),
 }
-dto!(Evidence { condition:Condition, context:String, value:FactValue, qualifiers:Vec<String>, citations:Vec<Citation> });
-dto!(Formulation { id:String, name:String, enzyme:String, vendor:String, product_code:String, formulation_scope:String, aliases:Vec<Alias>, evidence:Vec<Evidence>, citations:Vec<Citation> });
-dto!(Edition { schema_version:u32, edition:String, curated_on:String, sources:Vec<Source>, enzymes:Vec<Enzyme>, formulations:Vec<Formulation> });
+dto!(Evidence {
+    condition: Condition,
+    context: String,
+    value: FactValue,
+    qualifiers: Vec<String>,
+    citations: Vec<Citation>
+});
+dto!(Formulation {
+    id: String,
+    name: String,
+    enzyme: String,
+    vendor: String,
+    product_code: String,
+    formulation_scope: String,
+    aliases: Vec<Alias>,
+    evidence: Vec<Evidence>,
+    citations: Vec<Citation>
+});
+dto!(Edition {
+    schema_version: u32,
+    edition: String,
+    curated_on: String,
+    sources: Vec<Source>,
+    enzymes: Vec<Enzyme>,
+    formulations: Vec<Formulation>,
+    #[serde(deserialize_with = "hosts::deserialize_hosts")]
+    hosts: Vec<hosts::HostPreset>
+});
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Lookup<'a, T> {
     Missing,
@@ -159,6 +210,11 @@ fn canonicalize(e: &mut Edition) {
     e.sources.sort_by(|a, b| a.id.cmp(&b.id));
     e.enzymes.sort_by(|a, b| a.id.cmp(&b.id));
     e.formulations.sort_by(|a, b| a.id.cmp(&b.id));
+    e.hosts.sort_by(|a, b| a.id.cmp(&b.id));
+    for host in &mut e.hosts {
+        host.citations
+            .sort_by_key(|c| (c.source.clone(), c.locator.clone()));
+    }
     for enzyme in &mut e.enzymes {
         enzyme.aliases.sort_by_key(|a| norm(&a.name));
         enzyme
@@ -198,6 +254,11 @@ fn source_facts(e: &Edition, source: &str) -> Result<String, Error> {
             if v.citations.iter().any(|c| c.source == source) {
                 assertions.push(serde_json::json!({"formulation":f.id,"evidence":v}));
             }
+        }
+    }
+    for host in &e.hosts {
+        if host.citations.iter().any(|c| c.source == source) {
+            assertions.push(serde_json::json!({"host":host.id,"record":host}));
         }
     }
     assertions.sort_by_key(|v| v.to_string());
@@ -465,6 +526,7 @@ fn validate(e: &Edition) -> Result<(), Error> {
         || e.enzymes.is_empty()
         || e.enzymes.len() > 1000
         || e.formulations.len() > 2000
+        || e.hosts.len() > hosts::MAX_HOSTS
     {
         return fail("edition capacity exceeded");
     }
@@ -501,6 +563,14 @@ fn validate(e: &Edition) -> Result<(), Error> {
             .map(|x| (x.id.as_str(), x.name.as_str(), x.aliases.as_slice())),
         &source_ids,
     )?;
+    let mut host_ids = BTreeSet::new();
+    for host in &e.hosts {
+        host.validate()?;
+        if !host_ids.insert(host.id.as_str()) {
+            return fail("duplicate source-host identity");
+        }
+        citations(&host.citations, &source_ids)?;
+    }
     let mut ids = BTreeSet::new();
     for en in &e.enzymes {
         if !ids.insert(en.id.as_str()) {
@@ -625,12 +695,16 @@ fn capacity(e: &Edition) -> Result<(), Error> {
     if e.sources.len() > 128
         || e.enzymes.len() > 1000
         || e.formulations.len() > 2000
+        || e.hosts.len() > hosts::MAX_HOSTS
         || e.enzymes
             .iter()
             .any(|x| x.aliases.len() > 16 || x.citations.len() > 16)
         || e.formulations
             .iter()
             .any(|x| x.aliases.len() > 16 || x.evidence.len() > 64 || x.citations.len() > 16)
+        || e.hosts
+            .iter()
+            .any(|h| h.qualifiers.len() > 16 || h.citations.len() > 16)
     {
         return fail("edition capacity exceeded");
     };

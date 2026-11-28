@@ -11,7 +11,7 @@ use crate::{
 use collagene_model::{Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-pub const ENGINE_VERSION: &str = "modified-duplex-1";
+pub const ENGINE_VERSION: &str = "modified-duplex-2";
 pub const PROFILE_VERSION: &str = "positional-catalog-1";
 const MAX_BASES: usize = 1_000_000;
 const MAX_SPANS: usize = 16_384;
@@ -22,14 +22,33 @@ en! {pub enum Chemical{N6A,C5C}}
 en! {pub enum CallState{Unknown,Unmodified,Modified}}
 dto! {pub struct ModificationSpan{pub chemical:Chemical,pub start:usize,pub end:usize,pub state:CallState}}
 dto! {pub struct StrandModifications{pub n6a_default:CallState,pub c5c_default:CallState,pub spans:Vec<ModificationSpan>}}
-dto! {pub struct GenerationAssumptions{pub dam:MethylationState,pub dcm:MethylationState,pub cpg:MethylationState}}
+dto! {
+    pub struct GenerationAssumptions {
+        /// Documentary source-host choice only. It does not set chemical calls.
+        #[serde(deserialize_with = "crate::encoding::required_option")]
+        #[cfg_attr(feature = "json-schema", schemars(required))]
+        pub host: Option<crate::chemistry::source_host::SourceHost>,
+        pub dam: MethylationState,
+        pub dcm: MethylationState,
+        pub cpg: MethylationState,
+    }
+}
 impl Default for GenerationAssumptions {
     fn default() -> Self {
         Self {
+            host: None,
             dam: MethylationState::Unknown,
             dcm: MethylationState::Unknown,
             cpg: MethylationState::Unknown,
         }
+    }
+}
+impl GenerationAssumptions {
+    pub fn validate(&self) -> Result<(), Error> {
+        if let Some(host) = &self.host {
+            host.validate()?;
+        }
+        Ok(())
     }
 }
 dto! {pub struct GenerationRecord{pub source_revision:String,pub assumptions:GenerationAssumptions}}
@@ -488,6 +507,7 @@ impl TrackedDuplex {
         self.bottom_modifications
             .validate_for(&self.duplex.bottom)?;
         for g in &self.generation {
+            g.assumptions.validate()?;
             if g.source_revision.len() != 64
                 || !g
                     .source_revision
@@ -526,6 +546,7 @@ impl TrackedDuplex {
         Ok(out)
     }
     pub fn from_input(m: &Molecule, a: &GenerationAssumptions) -> Result<Self, Error> {
+        a.validate()?;
         let o = methylation::MethylationOptions::default();
         methylation::source_preflight(m, &o)?;
         let duplex = Duplex::from_molecule(m)?;

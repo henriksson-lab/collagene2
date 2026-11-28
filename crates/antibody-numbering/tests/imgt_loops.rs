@@ -1,7 +1,7 @@
 use collagene_antibody_numbering::{
     Insertion,
     imgt_loops::{self, Kind},
-    references::human_references,
+    references::{Species, load},
 };
 #[test]
 fn published_literal_short_and_full_loop_placements_are_not_cdr3_gap_reuse() {
@@ -49,7 +49,7 @@ fn published_literal_short_and_full_loop_placements_are_not_cdr3_gap_reuse() {
 }
 #[test]
 fn every_provider_v_reference_agrees_with_the_independent_loop_allocator() {
-    let corpus = human_references().unwrap();
+    let corpus = load(&Species::Human).unwrap();
     for reference in corpus.v_entries() {
         for (kind, low, high) in [(Kind::Cdr1, 27, 38), (Kind::Cdr2, 56, 65)] {
             let observed = reference

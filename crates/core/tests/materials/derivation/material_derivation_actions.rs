@@ -255,6 +255,7 @@ fn saved_staggered() -> (Workspace, EventBinding, MaterialOrigin) {
             Operation::DeclareSourceModifications {
                 template: Source::Input("stock".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::FullyModified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::Unmodified,

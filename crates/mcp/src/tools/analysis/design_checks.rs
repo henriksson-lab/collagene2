@@ -99,7 +99,7 @@ fn source_preflight(sources: &[&Molecule]) -> Result<(), ErrorData> {
 #[tool_router(router = design_checks_router, vis = "pub(crate)")]
 impl CollageneServer {
     #[tool(
-        description = "Check declared construct structure against an exact immutable nucleotide document, annotations, genetic code and explicit source/revision-bound annotation/reference/fusion/junction assumptions. Returns paged coordinates/findings and a complete bounded JSON artifact. Pass/fail/indeterminate are individual structural checks, never expression, packaging, titre, experimental QC or annotation truth. No sequence edits or persistent writes."
+        description = "Check declared construct structure against an exact immutable nucleotide document, annotations, genetic code and explicit source/revision-bound annotation/reference/fusion/junction assumptions, declared initiation-context patterns and optional bounded ORF scans. Returns paged coordinates/findings and a complete bounded JSON artifact. Pass/fail/indeterminate are individual structural checks, never expression, packaging, titre, experimental QC or annotation truth. No sequence edits or persistent writes."
     )]
     pub(crate) async fn check_construct_qc(
         &self,
@@ -205,7 +205,7 @@ impl CollageneServer {
     }
 
     #[tool(
-        description = "Search a declared bounded oligo collection against one exact immutable source document using the embedded ungapped 3-prime-anchored annealing-suffix model. Returns paged original-coordinate footprints and score/mismatch/certainty evidence, native work/completeness limits, explicit solution conditions, separate annealing/whole-oligo thermodynamics and full JSON artifact. Declared tails stay separate; unsupported mismatch/ambiguous thermodynamics are unavailable, never silent perfect matches. Whole-oligo Tm is a hypothetical perfect duplex, not actual binding; no PCR, kinetics, calibrated probability, sequence edits or persistence."
+        description = "Search a declared bounded oligo collection against one exact immutable source document using the embedded ungapped 3-prime-anchored annealing-suffix model. Returns paged original-coordinate footprints and score/mismatch/certainty evidence, native work/completeness limits, explicit solution conditions, separate annealing/whole-oligo thermodynamics and full JSON artifact. Annealing Tm uses a perfect duplex or the admitted single internal DNA-mismatch model with pH7, sodium-only correction and two distinct equal-concentration strands. Declared tails stay separate; unsupported mismatch/ambiguous thermodynamics are unavailable, never silent perfect matches. Whole-oligo Tm is a hypothetical perfect duplex, not actual binding; no PCR, kinetics, calibrated probability, sequence edits or persistence."
     )]
     pub(crate) async fn search_oligo_collection(
         &self,
@@ -252,7 +252,7 @@ impl CollageneServer {
                 "oligo_progress_truncated":report.search.oligos.len()>100,
                 "hit_start":args.hit_start,"next_start":end,"done":end==report.search.hits.len(),
                 "hits":hits,"warnings":report.warnings,"artifact_id":artifact_id,"persistence":"session only",
-                "authority":"Sequence search and explicitly scoped hypothetical perfect-duplex thermodynamics only; no PCR extension, experimental binding, calibrated probability or cloning success"}))
+                "authority":"Sequence search and explicitly scoped perfect-duplex or isolated internal mismatch equilibrium thermodynamics; no PCR extension, experimental binding, calibrated probability or cloning success"}))
         }).await
     }
 }

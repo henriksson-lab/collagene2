@@ -13,6 +13,7 @@ use collagene_core::{
 use collagene_model::{Molecule, Topology};
 fn generation(state: M) -> GenerationAssumptions {
     GenerationAssumptions {
+        host: None,
         dam: state,
         dcm: state,
         cpg: state,

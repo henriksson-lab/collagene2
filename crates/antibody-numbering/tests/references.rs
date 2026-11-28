@@ -1,7 +1,7 @@
-use collagene_antibody_numbering::references::{Corpus, human_references};
+use collagene_antibody_numbering::references::{Corpus, Species, load};
 #[test]
 fn pinned_sources_keep_explicit_numbering_and_complete_inclusion_exclusion_ledgers() {
-    let corpus = human_references().unwrap();
+    let corpus = load(&Species::Human).unwrap();
     let sources = corpus.sources();
     assert_eq!(
         sources
@@ -55,9 +55,9 @@ fn pinned_sources_keep_explicit_numbering_and_complete_inclusion_exclusion_ledge
 }
 #[test]
 fn corpus_versions_column_ownership_and_annotation_ledgers_are_current_and_exact() {
-    let c = human_references().unwrap();
+    let c = load(&Species::Human).unwrap();
     let original = serde_json::to_value(&c).unwrap();
-    for version in [0, 1, 3] {
+    for version in [0, 1, 2, 4] {
         let mut v = original.clone();
         v["version"] = version.into();
         assert!(
@@ -103,7 +103,7 @@ fn corpus_versions_column_ownership_and_annotation_ledgers_are_current_and_exact
 
 #[test]
 fn j_reference_anchors_complete_codons_and_partial_splice_bases_are_explicit() {
-    let corpus = human_references().unwrap();
+    let corpus = load(&Species::Human).unwrap();
     assert_eq!(corpus.j_entries().len(), 23);
     let examples = [
         ("IGHJ4*02", "WGQGTLVTVSS", 128, "G"),

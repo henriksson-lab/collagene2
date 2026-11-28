@@ -1,0 +1,31 @@
+{
+  "scope": "Pinned offline curation inputs; not registered runtime reference models",
+  "source_records": [
+    {
+      "path": "source.json",
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/set/10090.C57BL.sl.6%20IGH.C57BL.sl.6/5",
+      "retrieved_at_utc": "2026-11-28T11:51:11.543501+00:00",
+      "bytes": 254707,
+      "sha256": "a557dc47e4946b015fcb5414c29c275783c464848fd13b8f4a0386c4d6e686e8",
+      "license_policy": "OGRDB-CC0"
+    },
+    {
+      "path": "gapped.fasta",
+      "url": "https://ogrdb.airr-community.org/api_v2/germline/set/10090.C57BL.sl.6%20IGH.C57BL.sl.6/5/gapped",
+      "retrieved_at_utc": "2026-11-28T11:53:54.262303+00:00",
+      "bytes": 35235,
+      "sha256": "27403baa82141e88a065ddedbc9fc6b4bc4594fc9ecf64d8c4056e98faf4d160",
+      "license_policy": "OGRDB-CC0"
+    }
+  ],
+  "license": {
+    "name": "CC0-1.0",
+    "url": "https://ogrdb.airr-community.org/render_page/licensing_statement.html",
+    "captured_at_utc": "2026-11-28T11:52:44.571528+00:00",
+    "capture_sha256": "cad769771946f9dad2feb9632278ea4fa98b72c217b762c123c052032d8e9d49",
+    "capture_bytes": 27040,
+    "capture_retained_at": "/tmp/collagene2-antibody-reference-research-2026-11-28/ogrdb-license.html",
+    "claim": "Site information is published under CC0; website source code license is separate."
+  },
+  "raw_blake3": "Computed over untouched source bytes in Prepared::new; no literal result claimed before integration batch execution."
+}

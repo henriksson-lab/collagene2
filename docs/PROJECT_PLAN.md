@@ -4967,8 +4967,9 @@ The next CRISPR batch must distinguish canonical design PAMs from a broader
 explicit screening policy. Primary SaCas9 evidence includes recognition outside
 its preferred NNGRRT design PAM; one PAM field must not imply exhaustive broader
 screening. DNA/RNA bulges require bounded global alignment evidence, original
-coordinates, explicit completeness and current-engine replay. The authored kernel
-is unregistered and its six tests are not yet executed. Additional nuclease cut
+coordinates, explicit completeness and current-engine replay. The current source
+registers the bounded kernel and integrates it through worker, web and MCP; the
+combined native/WASM and focused scientific verification batch is pending. Additional nuclease cut
 marks remain nominal planning geometry, never inferred physical end products.
 Empirical scoring needs exact data-specific license/provenance and applicable
 assay/context; paper or software licensing alone does not admit every dataset.
@@ -5348,3 +5349,86 @@ fixtures, actual in-memory MCP calls, independently decoded PDF output and
 source-bound web state/handoffs. The affected export paths and
 current-version fixtures were corrected and rechecked; unrelated passing cases
 were retained. No browser or application HTTP checks ran. [Integration evidence](audits/reaction-elements-current-integration.json).
+
+
+### Selected-record CRISPR and mouse-reference integration batch
+
+The current source uses worker132 and crispr-2. Five source-bound nuclease
+profiles, explicit design/screening PAM policies and bounded full-input mismatch,
+DNA-bulge and RNA-bulge paths share current options and reports across core, web
+and MCP. Every retained path has source-mapped columns; gapped paths do not get
+invented cut coordinates. Intended-locus tags require the exact unbulged design
+match and retain alternatives. Streamed genome search remains explicitly
+ungapped/design-PAM only. Supplied variants, calibrated licensed empirical
+scores and the deferred genome work remain open. [Contract](CRISPR.md).
+
+F34 now has explicit species/locus selection: existing human heavy/kappa/lambda
+and pinned mouse C57BL/6 heavy-only references. Mouse accepts IMGT numbering and
+IMGT regions only. Compact reference facts retain all atypical-anchor and
+provider J-frame caveats; model diagnostics expose admitted/omitted alleles.
+Protein and alignment inspectors show supported intervals together as conditional
+alternatives. This does not establish general species classification or calibrated
+residue-numbering accuracy. [Reference admission](audits/mouse-reference-integration-current.md).
+
+Source authoring is complete for this batch; native/WASM compiler and focused
+scientific/actual in-memory MCP verification are pending. No graphical, local
+application HTTP or live-provider checks are part of this batch.
+
+
+### Parallel cloning extensions and shared integration
+
+The current source batch extends the selected-record CRISPR/mouse-reference work
+with concrete cloning gaps. F21 catalogue schema3 has eight supplier-scoped host
+presets and eight formulations (64 condition observations). Source-host
+declarations retain the exact catalogue edition/content hash, preset and cited
+source records through original-source generation, current plans and HTML/PDF
+protocols. Documentary host expectations do not set chemical modification calls.
+
+F36 options3/construct-qc-3 add explicit pinned initiation-context comparisons
+and bounded canonical ORF enumeration, retaining ambiguity, partial-boundary and
+annotation-coverage evidence. The web panel uses collapsed declaration controls.
+Causal assembly-junction and sourced vector-class checking remain open.
+
+F38 adds 48 licensed single internal mismatch parameter facts in the independent
+oligo-binding owner. The existing core canonical nearest-neighbor table and
+sodium/equal-concentration solver remain the sole numerical solver; each affected
+stack is replaced exactly once. Unsupported footprints do not receive a perfect
+duplex estimate. Mismatch evidence retains source columns and exact model/data
+pins. This model is not a PCR-temperature recommendation or experimental forecast.
+
+Current worker133, candidate33, workspace plan31, editable assembly draft22,
+modified-duplex-2, material derivation4, batch record5/contract6, release3 and
+science-37 reject superseded internal forms directly. The known published CI
+failures used stale batch-schema fixtures and obsolete wording assertions; these
+callers now use the current representation. Combined native/WASM and focused
+scientific/MCP verification remain pending. No graphical/local application HTTP
+checks have run.
+
+
+The [F39 source-readiness audit](audits/verifier-next-contract-current.md) makes
+the next refactor concrete: replace prefix-only products with indexed step
+outcomes before continuing independent branches. Emit typed rule/verdict/citation
+evidence at the actual scientific guards; retain explicit blocked dependencies
+and transactional per-step material changes. Update native material, protocol,
+MCP and UI callers directly, including full ordinary-plan report artifacts. The
+current stop-at-first-failure behavior is not evidence that later independent
+branches were checked. This remains the existing verifier and sole DesignPlan,
+with no string-to-error-code adapter or parallel compatibility report.
+
+
+### Parallel cloning-extension verification checkpoint
+
+The completed batch passes the shared fifteen-package native caller/harness
+compile and web/worker WASM check, with **349 unique focused passing cases**.
+All 86 prior focused names remain present; full selected discovery has 3,023 names.
+Discovery is not execution. Initial strict failures found both assembly-standard
+profiles still pointing at the previous catalogue edition; their exact pins now
+name the current edition. Only affected checks and the renamed mismatch SDK case
+were rerun. A final MCP description/authority wording correction names the
+already-implemented mismatch model; this metadata-only postcheck edit is recorded
+explicitly. [Exact source/case evidence](audits/cloning-extensions-current-integration.json).
+
+This includes all nine distinct prior published-CI failures after direct current
+caller corrections. Exact-head CI follows publication. Graphical, live-provider
+and installed-platform acceptance remain separate, and this checkpoint does not
+complete F39 or the full application goal.

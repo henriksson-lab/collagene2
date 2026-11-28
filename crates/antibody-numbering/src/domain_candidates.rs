@@ -3,51 +3,104 @@
 use super::*;
 use crate::{imgt_loops, references, v_mapping};
 use std::collections::BTreeMap;
-pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-4";
+pub const CANDIDATE_ENGINE: &str = "antibody-vj-candidates-5";
 pub const MAX_CANDIDATES: usize = 64;
 pub const MAX_SCAN_WINDOWS: usize = 2_000_000;
-data! {pub struct Options {
-    pub v_scoring:v_mapping::Scoring,
-    pub min_cdr3_residues:usize,pub max_cdr3_residues:usize,
-    /// Substitutions outside invariant J-anchor/motif positions only. No indels.
-    pub max_fr4_mismatches:usize,
-}}
-data! {pub struct Limits {
-    pub v_mapping:v_mapping::Limits,
-    pub max_scan_windows:usize,pub max_candidates:usize,
-}}
-data! {pub struct Mismatch {pub source_index:usize,pub observed:char,pub reference:char}}
-data! {pub struct JMatch {
-    pub reference_protein:String,pub allele_refs:Vec<String>,pub mismatches:Vec<Mismatch>,
-}}
-data! {pub enum LoopIssue {
-    MissingInvariantBoundaries{positions:Vec<u16>},UnsupportedLength{residues:usize},
-}}
-data! {pub enum LoopAssignment {
-    Numbered(imgt_loops::ConditionalLoop),Unresolved{kind:imgt_loops::Kind,issue:LoopIssue},
-}}
-data! {pub struct Candidate {
-    pub id:String,pub locus:v_mapping::Locus,pub v_endpoint:usize,
-    pub representative_v_start:usize,pub source_end:usize,
-    /// Internal V positions can remain ambiguous even with a fixed C104 anchor.
-    pub v_projection_issue:Option<v_mapping::ProjectionIssue>,
-    pub cdr1:LoopAssignment,pub cdr2:LoopAssignment,pub cdr3:ConditionalCdr3,pub fr4:Vec<NumberedResidue>,pub j_matches:Vec<JMatch>,
-}}
-data! {pub struct VEndpoint {pub locus:v_mapping::Locus,pub end:usize}}
-data! {pub struct BlockedV {
-    pub endpoint:VEndpoint,pub issue:v_mapping::ProjectionIssue,
-}}
-data! {pub struct Report {
-    pub engine:String,pub source_revision:String,pub context_revision:String,
-    pub options:Options,pub limits:Limits,pub v_evidence:v_mapping::Report,
-    pub windows_examined:usize,
-    /// Exact pair count within retained, invariant-terminal-anchor V endpoints only.
-    pub qualified_pairs_in_retained_v:usize,pub matching_j_groups:usize,
-    pub v_retention_truncated:bool,pub pair_retention_truncated:bool,
-    pub blocked_v_endpoints:Vec<BlockedV>,pub v_endpoints_without_j:Vec<VEndpoint>,
-    pub candidates:Vec<Candidate>,
-}}
+data! {
+    pub struct Options {
+        pub references: v_mapping::ReferenceSelection,
+        pub v_scoring: v_mapping::Scoring,
+        pub min_cdr3_residues: usize,
+        pub max_cdr3_residues: usize,
+        /// Substitutions outside invariant J-anchor/motif positions only. No indels.
+        pub max_fr4_mismatches: usize,
+    }
+}
+data! {
+    pub struct Limits {
+        pub v_mapping: v_mapping::Limits,
+        pub max_scan_windows: usize,
+        pub max_candidates: usize,
+    }
+}
+data! {
+    pub struct Mismatch {
+        pub source_index: usize,
+        pub observed: char,
+        pub reference: char
+    }
+}
+data! {
+    pub struct JMatch {
+        pub reference_protein: String,
+        pub allele_refs: Vec<String>,
+        pub mismatches: Vec<Mismatch>,
+    }
+}
+data! {
+    pub enum LoopIssue {
+        MissingInvariantBoundaries { positions: Vec<u16> },
+        UnsupportedLength { residues: usize },
+    }
+}
+data! {
+    pub enum LoopAssignment {
+        Numbered(imgt_loops::ConditionalLoop),
+        Unresolved {
+            kind: imgt_loops::Kind,
+            issue: LoopIssue
+        },
+    }
+}
+data! {
+    pub struct Candidate {
+        pub id: String,
+        pub locus: v_mapping::Locus,
+        pub v_endpoint: usize,
+        pub representative_v_start: usize,
+        pub source_end: usize,
+        /// Internal V positions can remain ambiguous even with a fixed C104 anchor.
+        pub v_projection_issue: Option<v_mapping::ProjectionIssue>,
+        pub cdr1: LoopAssignment,
+        pub cdr2: LoopAssignment,
+        pub cdr3: ConditionalCdr3,
+        pub fr4: Vec<NumberedResidue>,
+        pub j_matches: Vec<JMatch>,
+    }
+}
+data! {
+    pub struct VEndpoint {
+        pub locus: v_mapping::Locus,
+        pub end: usize
+    }
+}
+data! {
+    pub struct BlockedV {
+        pub endpoint: VEndpoint,
+        pub issue: v_mapping::ProjectionIssue,
+    }
+}
+data! {
+    pub struct Report {
+        pub engine: String,
+        pub source_revision: String,
+        pub context_revision: String,
+        pub options: Options,
+        pub limits: Limits,
+        pub v_evidence: v_mapping::Report,
+        pub windows_examined: usize,
+        /// Exact pair count within retained, invariant-terminal-anchor V endpoints only.
+        pub qualified_pairs_in_retained_v: usize,
+        pub matching_j_groups: usize,
+        pub v_retention_truncated: bool,
+        pub pair_retention_truncated: bool,
+        pub blocked_v_endpoints: Vec<BlockedV>,
+        pub v_endpoints_without_j: Vec<VEndpoint>,
+        pub candidates: Vec<Candidate>,
+    }
+}
 pub(crate) fn validate_inputs(options: &Options, limits: &Limits) -> Result<()> {
+    options.references.validate()?;
     options.v_scoring.validate()?;
     if limits.v_mapping.max_cells == 0
         || limits.v_mapping.max_cells > profile::MAX_CELLS
@@ -153,13 +206,19 @@ pub fn find_candidates(
         return Err(Error::Cancelled);
     }
     validate_inputs(options, limits)?;
-    let v_evidence = v_mapping::map_query(source, &options.v_scoring, &limits.v_mapping, cancel)?;
-    let corpus = references::human_references()?;
+    let v_evidence = v_mapping::map_query(
+        source,
+        &options.references,
+        &options.v_scoring,
+        &limits.v_mapping,
+        cancel,
+    )?;
+    let corpus = references::load(&options.references.species)?;
     if corpus.revision()? != v_evidence.corpus_revision {
         return Err(Error::Binding);
     }
     let context_revision = hash(
-        b"antibody-vj-candidate-context-4\0",
+        b"antibody-vj-candidate-context-5\0",
         &(
             CANDIDATE_ENGINE,
             v_mapping::MAPPING_ENGINE,
@@ -329,7 +388,7 @@ pub fn find_candidates(
                     })
                     .collect();
                 let id = hash(
-                    b"antibody-vj-candidate-id-4\0",
+                    b"antibody-vj-candidate-id-5\0",
                     &(
                         &context_revision,
                         &mapping.locus,

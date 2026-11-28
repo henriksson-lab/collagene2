@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Check all tracked and unignored repository Rust sources, without building."""
+"""Check human-readable repository Rust sources, without building or expanding macros.
+
+The limits measure reader load in authored source; compiler-expanded output is
+irrelevant. Useful macros do not need expanding to satisfy this audit.
+"""
 
 from collections import Counter
 from pathlib import Path

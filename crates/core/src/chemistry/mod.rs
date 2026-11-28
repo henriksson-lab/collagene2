@@ -1173,4 +1173,5 @@ pub fn anneal_oligos(
 }
 
 pub mod methylation;
+pub mod source_host;
 pub mod tracked_duplex;

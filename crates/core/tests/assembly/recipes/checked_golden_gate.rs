@@ -14,6 +14,7 @@ use collagene_core::{
 use collagene_model::{Molecule, Topology};
 fn assumptions(dcm: MethylationState) -> GenerationAssumptions {
     GenerationAssumptions {
+        host: None,
         dam: MethylationState::Unmodified,
         dcm,
         cpg: MethylationState::Unmodified,
@@ -207,6 +208,7 @@ fn blocked_intact_circle_survives_but_missing_exact_profile_never_borrows_by_geo
     let blocked = TrackedDuplex::from_input(
         &stock,
         &GenerationAssumptions {
+            host: None,
             dam: MethylationState::Unmodified,
             dcm: MethylationState::Unmodified,
             cpg: MethylationState::FullyModified,

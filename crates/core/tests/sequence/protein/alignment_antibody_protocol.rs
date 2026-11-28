@@ -23,6 +23,14 @@ fn inputs() -> (AlignmentDocument, a::Source, d::Options, d::Limits) {
     .unwrap();
     let pin = a::source(&doc, &doc.rows[0].id).unwrap();
     let o = d::Options {
+        references: n::v_mapping::ReferenceSelection {
+            species: n::references::Species::Human,
+            loci: vec![
+                n::v_mapping::Locus::Heavy,
+                n::v_mapping::Locus::Kappa,
+                n::v_mapping::Locus::Lambda,
+            ],
+        },
         v_scoring: n::v_mapping::Scoring {
             observed_reward: 5,
             frequency_bonus: 8,
@@ -45,6 +53,48 @@ fn inputs() -> (AlignmentDocument, a::Source, d::Options, d::Limits) {
         max_candidates: 4,
     };
     (doc, pin, o, l)
+}
+
+#[test]
+fn mouse_heavy_alignment_mapping_preserves_gaps_and_reference_scope() {
+    let (_, _, mut options, limits) = inputs();
+    let prefix = "QIQLQQSGPELVKPGASVKISCKASGYTFTDYYINWVKQRPGQGLEWIGWIYPGSGNTKYNEKFKGKATLTVDTSSSTAYMQLSSLTSEDSAVYFC";
+    let aligned = format!("--{}---{}ARDY--WGTGTTVTVSS--", &prefix[..25], &prefix[25..]);
+    let document = f::import_alignment(
+        format!(">mouse\n{aligned}\n").as_bytes(),
+        AlignmentFormat::AlignedFasta,
+        Alphabet::Protein,
+        "Synthetic mouse-reference gap fixture",
+    )
+    .unwrap();
+    let source = a::source(&document, &document.rows[0].id).unwrap();
+    options.references = n::v_mapping::ReferenceSelection {
+        species: n::references::Species::MouseC57Bl6,
+        loci: vec![n::v_mapping::Locus::Heavy],
+    };
+    let report = a::analyze(
+        &document,
+        &source,
+        &options,
+        &limits,
+        &selection(),
+        &mut || false,
+    )
+    .unwrap();
+    assert!(!report.analysis.tracks.is_empty());
+    report
+        .validate_for(&document, &source, &options, &limits, &selection())
+        .unwrap();
+    assert_eq!(report.residue_columns[0], 2);
+    assert_eq!(report.residue_columns[25], 30);
+    assert!(report.at_column(0, 27).is_none());
+    let mut human = options.clone();
+    human.references = n::v_mapping::ReferenceSelection::human_all();
+    assert!(
+        report
+            .validate_source(&document, &source, &human, &limits, &selection())
+            .is_err()
+    );
 }
 #[test]
 fn literal_gap_projection_preserves_source_labels_and_equal_rows_never_retarget() {

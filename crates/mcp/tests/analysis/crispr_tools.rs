@@ -109,7 +109,7 @@ async fn guide_and_selected_reference_pages_retain_exact_intended_roles_and_all_
     )
     .await;
     assert_eq!(first["candidates"].as_array().unwrap().len(), 1);
-    assert_eq!(first["available_profiles"].as_array().unwrap().len(), 2);
+    assert_eq!(first["available_profiles"].as_array().unwrap().len(), 5);
     let guides: GuideReport =
         serde_json::from_value(artifact(&c, &first["artifact_id"]).await).unwrap();
     let molecule = collagene_core::formats::sequence::import_text(&guide_text())
@@ -355,6 +355,246 @@ async fn full_artifact_capacity_cannot_leave_an_orphan_donor_document() {
     }
     let before = call(&c, "list_documents", json!({})).await;
     reject(&c,"design_edit_template",json!({"source":doc(&imported,"source"),"target":doc(&imported,"target"),"options":edit_options()})).await;
+    assert_eq!(call(&c, "list_documents", json!({})).await, before);
+    c.cancel().await.unwrap();
+    s.await.unwrap();
+}
+
+#[tokio::test]
+async fn supplied_gap_and_screening_pam_scope_keeps_native_paths_coordinates_and_refusals() {
+    use collagene_core::sequence::crispr::alignment::{
+        AlignmentColumn, AlignmentLimitReached, MODEL_ID,
+    };
+    let (c, s) = setup().await;
+    // Independent literal A-repeat fixture: a 13-base DNA interval has thirteen
+    // distinct one-DNA-gap placements against the 12-base query, all retained.
+    let text = format!(
+        ">exact\n{}GGA\n>bulged\n{}GGA\n>alternate\n{}AGA\n",
+        "A".repeat(12),
+        "A".repeat(13),
+        "A".repeat(12)
+    );
+    let imported = call(&c, "import_document", json!({"text":text})).await;
+    let exact = doc(&imported, "exact");
+    let bulged = doc(&imported, "bulged");
+    let alternate = doc(&imported, "alternate");
+    let before = call(&c, "list_documents", json!({})).await;
+    let molecules = collagene_core::formats::sequence::import_text(&text)
+        .unwrap()
+        .molecules;
+    let references = json!([
+        {"id":"intended","document":exact,"build":null,"accession":null},
+        {"id":"bulged","document":bulged,"build":null,"accession":null},
+        {"id":"alternate","document":alternate,"build":null,"accession":null}
+    ]);
+    let inputs = ["intended", "bulged", "alternate"]
+        .into_iter()
+        .zip(&molecules)
+        .map(|(id, molecule)| ReferenceInput {
+            id: id.into(),
+            molecule: molecule.clone(),
+            build: None,
+            accession: None,
+        })
+        .collect::<Vec<_>>();
+    let query = GuideQuery {
+        id: "literal12".into(),
+        sequence: "A".repeat(12),
+    };
+    let options = OffTargetOptions {
+        profile: NucleaseProfile {
+            id: "sdk-gap-fixture".into(),
+            version: "literal-1".into(),
+            guide_length: 12,
+            pam: "GGA".into(),
+            pam_side: PamSide::ThreePrime,
+            nominal_top_offset: 9,
+            nominal_bottom_offset: 9,
+            custom: true,
+            sources: vec![],
+        },
+        bulges: BulgePolicy {
+            max_dna_bulge_bases: 1,
+            max_rna_bulge_bases: 1,
+            max_total_bulge_bases: 1,
+            ..Default::default()
+        },
+        pam_policy: PamPolicy::DeclaredScreening {
+            pam: "RGA".into(),
+            rationale: "Literal broader selected-record screening; design admission remains GGA"
+                .into(),
+            sources: vec![],
+        },
+        intended: Some(IntendedTarget {
+            reference_id: "intended".into(),
+            reference_revision: molecules[0].revision(),
+            guide_positions: (0..12).collect(),
+            pam_positions: vec![12, 13, 14],
+            reverse: false,
+        }),
+        max_mismatches: 0,
+        ..Default::default()
+    };
+    let result = call(
+        &c,
+        "search_crispr_off_targets",
+        json!({"query":query,"references":references,"options":options,"max_hits":100}),
+    )
+    .await;
+    assert_eq!(result["alignment_model"], MODEL_ID);
+    assert_eq!(result["complete"], true);
+    assert_eq!(result["exhaustive_for_selected_records"], true);
+    let report: OffTargetReport =
+        serde_json::from_value(artifact(&c, &result["artifact_id"]).await).unwrap();
+    report
+        .validate_bindings_for(&query, &inputs, &options)
+        .unwrap();
+    replay_off_targets(&query, &inputs, &options, &report).unwrap();
+    assert_eq!(report.hits.len(), 7);
+    assert_eq!(report.hits.iter().filter(|h| h.is_intended).count(), 1);
+    let intended = report.hits.iter().find(|h| h.is_intended).unwrap();
+    assert_eq!(intended.reference_index, 0);
+    assert_eq!(intended.guide_positions, (0..12).collect::<Vec<_>>());
+    assert_eq!(intended.pam_positions, vec![12, 13, 14]);
+    assert_eq!(intended.design_pam, PamEvidence::Certain);
+    assert!(
+        intended
+            .alignment
+            .alignments
+            .iter()
+            .all(|a| a.dna_bulge_bases + a.rna_bulge_bases == 0)
+    );
+    let dna = report
+        .hits
+        .iter()
+        .find(|h| h.reference_index == 1 && h.reference_guide.len() == 13)
+        .unwrap();
+    assert_eq!(dna.guide_positions, (0..13).collect::<Vec<_>>());
+    assert_eq!(dna.pam_positions, vec![13, 14, 15]);
+    assert!(!dna.reverse && !dna.is_intended && dna.alignment.complete);
+    assert_eq!((dna.nominal_top_cut, dna.nominal_bottom_cut), (None, None));
+    assert_eq!(dna.alignment.alignments.len(), 13);
+    let gap_positions = dna
+        .alignment
+        .alignments
+        .iter()
+        .map(|path| {
+            assert_eq!(
+                (
+                    path.min_mismatches,
+                    path.max_mismatches,
+                    path.dna_bulge_bases,
+                    path.rna_bulge_bases
+                ),
+                (0, 0, 1, 0)
+            );
+            assert!(path.definite);
+            assert_eq!(path.columns.len(), 13);
+            path.columns
+                .iter()
+                .find_map(|column| match column {
+                    AlignmentColumn::DnaBulge { target } => Some(*target),
+                    _ => None,
+                })
+                .unwrap()
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        gap_positions,
+        (0..13).collect::<std::collections::BTreeSet<_>>()
+    );
+    let compact = result["hits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["id"] == dna.id)
+        .unwrap();
+    assert_eq!(compact["alignment"]["alignments_retained"], 13);
+    assert_eq!(compact["alignment"]["preview_truncated"], true);
+    assert_eq!(
+        compact["alignment"]["alignments"].as_array().unwrap().len(),
+        8
+    );
+    assert!(
+        compact["alignment"]["alignments"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|path| path.get("columns").is_none())
+    );
+    assert!(
+        report
+            .hits
+            .iter()
+            .filter(|h| h.reference_index == 2)
+            .all(|h| h.design_pam == PamEvidence::Excluded && !h.is_intended && h.pam_certain)
+    );
+    let mut capped = options.clone();
+    capped.bulges.max_alignments_per_hit = 2;
+    let partial = call(
+        &c,
+        "search_crispr_off_targets",
+        json!({"query":query,"references":references,"options":capped}),
+    )
+    .await;
+    assert_eq!(partial["complete"], false);
+    assert_eq!(partial["exhaustive_for_selected_records"], false);
+    let evidence: OffTargetReport =
+        serde_json::from_value(artifact(&c, &partial["artifact_id"]).await).unwrap();
+    evidence
+        .validate_bindings_for(&query, &inputs, &capped)
+        .unwrap();
+    let hit = evidence
+        .hits
+        .iter()
+        .find(|h| h.reference_index == 1 && h.reference_guide.len() == 13)
+        .unwrap();
+    assert_eq!(hit.alignment.alignments.len(), 2);
+    assert_eq!(
+        hit.alignment.limit_reached,
+        Some(AlignmentLimitReached::Alignments)
+    );
+    let mut bounded = options.clone();
+    bounded.max_comparisons = 1;
+    let partial = call(
+        &c,
+        "search_crispr_off_targets",
+        json!({"query":query,"references":references,"options":bounded}),
+    )
+    .await;
+    assert_eq!(partial["complete"], false);
+    assert_eq!(partial["exhaustive_for_selected_records"], false);
+    assert_eq!(partial["hit_count"], 0);
+    assert!(!partial["limits"].as_array().unwrap().is_empty());
+    let partial_report: OffTargetReport =
+        serde_json::from_value(artifact(&c, &partial["artifact_id"]).await).unwrap();
+    partial_report
+        .validate_bindings_for(&query, &inputs, &bounded)
+        .unwrap();
+    let mut stale = references.clone();
+    stale[0]["document"]["revision"] = json!("0".repeat(64));
+    reject(
+        &c,
+        "search_crispr_off_targets",
+        json!({"query":query,"references":stale,"options":options}),
+    )
+    .await;
+    let mut oversized = options.clone();
+    oversized.bulges.max_total_bulge_bases = 5;
+    reject(
+        &c,
+        "search_crispr_off_targets",
+        json!({"query":query,"references":references,"options":oversized}),
+    )
+    .await;
+    let mut oversized = options.clone();
+    oversized.bulges.max_retained_alignment_columns = 1_000_001;
+    reject(
+        &c,
+        "search_crispr_off_targets",
+        json!({"query":query,"references":references,"options":oversized}),
+    )
+    .await;
     assert_eq!(call(&c, "list_documents", json!({})).await, before);
     c.cancel().await.unwrap();
     s.await.unwrap();

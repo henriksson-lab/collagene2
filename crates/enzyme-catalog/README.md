@@ -5,9 +5,10 @@ This crate has no dependency on Collagene's core, browser, native process APIs,
 or matching algorithms. It performs no network requests, digestion simulation,
 site matching, methylation propagation, or reaction validation.
 
-The independently curated `2026-11-28.1` edition contains **40 enzyme identities**
-(including the original twelve starter geometries) and **four explicitly scoped
-NEB formulations**, with 32 documentary condition observations. Additional
+The independently curated `2026-11-28.2` edition contains **40 enzyme identities**
+(including the original twelve starter geometries) and **eight explicitly scoped
+NEB formulations**, with 64 documentary condition observations and eight
+product-scoped documentary source-host presets. Additional
 geometries do not imply that vendor conditions have been curated for them.
 Product formulations are separate records referencing an enzyme identity;
 EcoRI-HF is a formulation of the EcoRI recognition/cut geometry, not another
@@ -90,6 +91,25 @@ categories are documentary evidence, including overlapping-combination
 uncertainty. There is no inference about a particular molecule, motif context,
 hemimethylation, incubation time, mixed buffers, or reaction outcome.
 
+## Documentary source hosts
+
+`Catalog::hosts()` exposes eight supplier/product-scoped E. coli presets.
+`Catalog::host(id)` resolves an exact current ID; family names and supplier
+variants are not automatic aliases. `Catalog::validate_host(record)` requires
+full current value membership after bounds checks, including scope and citations.
+The cohesive `hosts` module owns `HostPreset` and
+`MethylaseExpectation::{Active, Deficient, Unknown}`. These expectations concern
+host methylase documentation, not measured site occupancy in the submitted DNA.
+All current CpG expectations are unknown; TOP10 Dcm remains unknown in the reviewed
+source set. Host selection cannot overwrite existing positional chemistry, imply
+propagation or erase incoming modifications. An explicit molecular generation
+assumption is a separate scientific input owned by the application core.
+
+The current schema requires `Edition.hosts`, with at most 128 records and bounded
+nested qualifications/citations. Host assertions participate in catalogue/source
+integrity hashes and current JSON/Postcard encoding. No migration or fallback
+accepts superseded internal schemas.
+
 ## Provenance and independent curation
 
 Every assertion has source IDs and specific row/section locators. Each source
@@ -128,7 +148,7 @@ misrepresenting them as ordinary single-pair-cut IUPAC enzymes.
 
 `Catalog::from_json` refuses input beyond 2 MiB before deserialization. Serde's
 recursion limit and unknown-field rejection remain enabled. Schema version must
-be 1. Caps are 128 sources, 1,000 enzyme identities, 2,000 formulations, 16 aliases
+be 3. Caps are 128 sources, 1,000 enzyme identities, 2,000 formulations, 16 aliases
 per record, 64 observations per formulation, 16 citations per assertion, and
 bounded strings/recognition lengths. Cuts must be within -1,024..=1,024. Invalid
 IUPAC, duplicate identities, unresolved references, mismatched condition/value
@@ -152,8 +172,8 @@ The crate is a member of the Collagene workspace. Catalog-backed application
 selection exposes all 40 geometries with separate formulation evidence. The core
 reaction-condition owner compares exact selected formulations and assay contexts;
 it does not turn documentary activity into complete-digest success. Current schema
-2 uses externally tagged JSON enums and the same Rust variants in Postcard. The
-superseded schema 1 is rejected. Optional `json-schema` exposes current typed DTOs.
+3 uses externally tagged JSON enums and the same Rust variants in Postcard. The
+superseded schemas 1 and 2 are rejected. Optional `json-schema` exposes current typed DTOs.
 Verification:
 
 ```sh
@@ -167,3 +187,11 @@ as an oracle. Windows/macOS/Linux portability follows from Rust + serde/blake3
 and no platform APIs in the library; those native platforms still require CI
 execution. WASM compilation is checked locally, without an external scientific
 runtime.
+
+The 2026-11-28.2 admission adds BamHI, BamHI-HF, BsaI-HFv2 and BsmBI-v2
+formulation facts. The BsmBI-v2 four-buffer matrix belongs to its 55 C unit-assay
+context; a separate 37 C activity observation is not extrapolated into an
+uncurated buffer/temperature pair. Formulation qualifications retain narrowly
+specified star-assay observations without predicting star risk or declaring
+current-lot safe-dose thresholds. See [data notices](data/NOTICE.md) and
+[the current admission audit](../../docs/audits/restriction-next-data-current.md).

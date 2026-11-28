@@ -206,7 +206,7 @@ async fn standard_discovery_and_fragment_checks_preserve_profile_scope_and_origi
 }
 
 #[tokio::test]
-async fn collection_search_pages_all_bound_sites_and_keeps_mismatch_thermodynamics_unavailable() {
+async fn collection_search_pages_bound_sites_and_distinguishes_supported_mismatch_thermodynamics() {
     let molecule = Molecule::dna(
         "two literal sites",
         "TTTACGTCAGTTCGAGGGACGTCAGTTCGACCC",
@@ -297,6 +297,31 @@ async fn collection_search_pages_all_bound_sites_and_keeps_mismatch_thermodynami
                 .get("Unavailable")
                 .is_some()
     }));
+    let mut internal = arguments.clone();
+    internal["collection"]["oligos"][0]["ordered"] =
+        json!(Sequence::dna("GGGGACGTAAGTTCGA").unwrap());
+    internal["options"]["maximum_mismatches"] = json!(1);
+    internal["options"]["minimum_three_prime_pairing"] = json!(4);
+    internal["options"]["minimum_score"] = json!(19);
+    internal["max_hits"] = json!(100);
+    let internal_result = call(&client, "search_oligo_collection", internal.clone()).await;
+    assert!(
+        internal_result["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|hit| {
+                hit["thermodynamics"]["annealing"]
+                    .get("MismatchAvailable")
+                    .is_some()
+            })
+    );
+    let internal_report: collection_binding::Report =
+        serde_json::from_value(artifact(&client, &internal_result["artifact_id"]).await).unwrap();
+    let mut internal_request = request.clone();
+    internal_request.collection = serde_json::from_value(internal["collection"].clone()).unwrap();
+    internal_request.options = serde_json::from_value(internal["options"].clone()).unwrap();
+    internal_report.validate_for(&internal_request).unwrap();
     let mut limited = arguments.clone();
     limited["budget"]["work"] = json!(
         collagene_oligo_binding::Budget::admission_cost(&molecule.sequence, &request.collection)
@@ -408,7 +433,7 @@ async fn construct_element_sdk_retains_literal_counts_and_never_promotes_incompl
     })
     .collect();
     let options = declared_chain_options(&molecule);
-    assert_eq!(options.schema_version, 2);
+    assert_eq!(options.schema_version, 3);
     let (client, service, document) = setup(&molecule).await;
     let before = call(&client, "list_documents", json!({})).await;
     let original = call(
@@ -559,6 +584,84 @@ async fn construct_element_sdk_retains_literal_counts_and_never_promotes_incompl
         json!({"document":document,"options":old_format}),
     )
     .await;
+    assert_eq!(call(&client, "list_documents", json!({})).await, before);
+    client.cancel().await.unwrap();
+    service.await.unwrap();
+}
+
+#[tokio::test]
+async fn declared_context_and_orf_sdk_keep_individual_evidence_and_exact_source_scope() {
+    use collagene_core::sequence::translation::{IncompletePolicy, StartPolicy};
+    let mut molecule = Molecule::dna(
+        "literal initiation context",
+        "ACCATGGAATAA",
+        Topology::Linear,
+    )
+    .unwrap();
+    molecule.features.push(Feature {
+        kind: "CDS".into(),
+        location: Location::range(3, 12),
+        qualifiers: vec![],
+        needs_review: false,
+    });
+    let mut options = construct_qc::Options::default();
+    options
+        .annotations
+        .push(construct_qc::AnnotationAssumption {
+            feature_index: 0,
+            source_revision: molecule.revision(),
+            annotation_revision: construct_qc::annotation_revision(&molecule.features[0]).unwrap(),
+            rationale:
+                "Explicit declared CDS role and contiguous transcript context for this fixture."
+                    .into(),
+        });
+    options
+        .initiation_contexts
+        .push(construct_qc::initiation_context::ContextClaim {
+            cds_feature: 0,
+            profile: construct_qc::initiation_context::kozak_1986_pattern().unwrap(),
+            rationale: "Declared mammalian sequence comparison; not an expression forecast.".into(),
+        });
+    options.orf_scan = Some(construct_qc::unannotated_orfs::ScanOptions {
+        start_policy: StartPolicy::AtgOnly,
+        incomplete: IncompletePolicy::CompleteOnly,
+        minimum_amino_acids: 2,
+        max_candidates: 8,
+        both_strands: false,
+    });
+    let (client, service, document) = setup(&molecule).await;
+    let before = call(&client, "list_documents", json!({})).await;
+    let result = call(
+        &client,
+        "check_construct_qc",
+        json!({"document":document,"options":options,"max_findings":100}),
+    )
+    .await;
+    let full: construct_qc::Report =
+        serde_json::from_value(artifact(&client, &result["artifact_id"]).await).unwrap();
+    full.validate_for(&molecule, &options).unwrap();
+    assert_eq!(
+        full.initiation_contexts[0].observed.as_deref(),
+        Some("ACCATGG")
+    );
+    assert_eq!(
+        full.initiation_contexts[0].verdict,
+        construct_qc::Verdict::Pass
+    );
+    let scan = full.orf_scan.as_ref().unwrap();
+    assert!(scan.enumeration_complete);
+    assert_eq!(scan.candidates.len(), 1);
+    assert_eq!(
+        scan.candidates[0].annotation_relation,
+        construct_qc::unannotated_orfs::AnnotationRelation::CoveredByDeclaredCds
+    );
+    assert!(
+        full.findings
+            .iter()
+            .filter(|f| f.rule == construct_qc::Rule::UnannotatedOrf)
+            .all(|f| f.verdict != construct_qc::Verdict::Pass
+                && f.verdict != construct_qc::Verdict::Fail)
+    );
     assert_eq!(call(&client, "list_documents", json!({})).await, before);
     client.cancel().await.unwrap();
     service.await.unwrap();

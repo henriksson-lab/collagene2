@@ -104,7 +104,7 @@ fn documentary_constraints_survive_restart_and_do_not_withhold_actual_fragment_g
         );
         let record =
             d::load_record(&restarted.attachments[&installed.receipt.record_hash].bytes).unwrap();
-        assert_eq!(record.schema_version, 3);
+        assert_eq!(record.schema_version, 4);
         let d::Derivation::CatalogDigest { conditions, .. } = record.request.derivation else {
             panic!("digest")
         };
@@ -122,7 +122,7 @@ fn documentary_constraints_survive_restart_and_do_not_withhold_actual_fragment_g
             assert!(fresh.reaction_conditions().is_empty());
         }
         let capsule = d::capsule(&restarted, &installed.receipt.product).unwrap();
-        assert_eq!(capsule.schema_version, 3);
+        assert_eq!(capsule.schema_version, 4);
         let replay = d::replay(&capsule, fresh.reference()).unwrap();
         assert_eq!(replay.reaction_conditions(), fresh.reaction_conditions());
     }

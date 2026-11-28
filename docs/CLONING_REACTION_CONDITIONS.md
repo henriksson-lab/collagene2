@@ -48,3 +48,16 @@ Broader curated coverage, source-host presets and appropriately supported star f
 remain on the [current plan](PROJECT_PLAN.md). No external scientific executable is
 used. See [design checks](DESIGN_CHECKS.md) for the separate construct-QC, assembly
 format and oligo-collection tools.
+
+
+## Documentary source hosts
+
+Original-source generation controls may retain one exact catalogue host preset.
+The declaration includes the catalogue edition/content hash, full preset and
+cited source records; editing any pin or source record rejects current admission.
+Host expectations are strain/product-specific documentary evidence. Selecting a
+host does not change the independently declared Dam, Dcm or CpG chemical state.
+CpG is unknown for all eight current E. coli presets. Unknown and deficient
+activity are distinct. Other modification systems remain outside the closed
+source-generation model. Native history and HTML/PDF protocols retain the
+declaration; imported metadata does not establish actual methylation.

@@ -274,6 +274,24 @@ pub struct ContigReadRef {
 pub(crate) fn default_crispr_page() -> usize {
     20
 }
+fn crispr_hit_preview(hit: &collagene_core::sequence::crispr::OffTargetHit) -> serde_json::Value {
+    json!({
+        "id":hit.id,"reference_index":hit.reference_index,"reference_guide":hit.reference_guide,
+        "pam_sequence":hit.pam_sequence,"guide_positions":hit.guide_positions,"pam_positions":hit.pam_positions,
+        "reverse":hit.reverse,"min_mismatches":hit.min_mismatches,"max_mismatches":hit.max_mismatches,
+        "pam_certain":hit.pam_certain,"design_pam":hit.design_pam,"definite":hit.definite,
+        "is_intended":hit.is_intended,"nominal_top_cut":hit.nominal_top_cut,"nominal_bottom_cut":hit.nominal_bottom_cut,
+        "alignment":{
+            "complete":hit.alignment.complete,"limit_reached":hit.alignment.limit_reached,"work":hit.alignment.work,
+            "alignments_retained":hit.alignment.alignments.len(),"preview_truncated":hit.alignment.alignments.len()>8,
+            "alignments":hit.alignment.alignments.iter().take(8).map(|path|json!({
+                "min_mismatches":path.min_mismatches,"max_mismatches":path.max_mismatches,
+                "dna_bulge_bases":path.dna_bulge_bases,"rna_bulge_bases":path.rna_bulge_bases,"definite":path.definite,
+            })).collect::<Vec<_>>(),
+            "column_evidence":"Complete retained columns are in the immutable full report artifact."
+        }
+    })
+}
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CrisprGuidesQuery {
@@ -535,7 +553,7 @@ pub(crate) fn read_name(value: Option<&str>) -> Option<String> {
 #[tool_router(router = analysis_router, vis = "pub(crate)")]
 impl CollageneServer {
     #[tool(
-        description = "Design source-bound CRISPR guide/PAM candidates under an explicit canonical SpCas9, Cas12a or custom nuclease geometry and bounded GC/homopolymer/search filters. Default options use SpCas9; returns available builtin profiles, paged exact positions/strands, nominal cuts, ambiguity/filter evidence and complete immutable JSON. Model geometry and nominal cuts do not establish activity, editing outcome or genome-wide specificity. No sequence edits or persistent application writes."
+        description = "Design source-bound CRISPR guide/PAM candidates under an explicit canonical SpCas9, Cas12a, SaCas9, SpCas9-VRER or custom nuclease geometry and bounded GC/homopolymer/search filters. Default options use SpCas9; returns available builtin profiles, paged exact positions/strands, nominal cuts, ambiguity/filter evidence and complete immutable JSON. Model geometry and nominal cuts do not establish activity, editing outcome or genome-wide specificity. No sequence edits or persistent application writes."
     )]
     pub(crate) async fn design_crispr_guides(
         &self,
@@ -558,12 +576,12 @@ impl CollageneServer {
                 "complete":report.complete,"comparisons":report.comparisons,"limits":report.limits,"warnings":report.warnings,
                 "candidate_count":report.candidates.len(),"candidate_start":args.candidate_start,"next_candidate_start":end,"done":end==report.candidates.len(),
                 "candidates":&report.candidates[args.candidate_start..end],"artifact_id":artifact_id,
-                "available_profiles":[collagene_core::sequence::crispr::spcas9(),collagene_core::sequence::crispr::cas12a()],
+                "available_profiles":collagene_core::sequence::crispr::catalogue(),
                 "authority":"Source-bound PAM/guide geometry under the declared model; no empirical activity, editing outcome or whole-genome specificity."}))
         }).await
     }
     #[tool(
-        description = "Search an explicit immutable selected reference set for bounded CRISPR guide Hamming off-target evidence with exact PAM/strand/coordinate binding. Borrowed reference preflight precedes owned copies. Build/accession/scope labels are user declarations, not independently verified genome coverage. Every retained hit remains visible; is_intended requires exact role, revision, guide/PAM positions and orientation. Returns bounded hit pages and full JSON evidence. No bulge model, genome-wide safety claim, sequence editing or persistent writes."
+        description = "Search an explicit immutable selected reference set for bounded full-input CRISPR guide/target alignment evidence with exact PAM/strand/coordinate binding. Borrowed reference preflight precedes owned copies. Build/accession/scope labels are user declarations, not independently verified genome coverage. Every retained hit remains visible; is_intended requires exact role, revision, guide/PAM positions and orientation. Returns bounded hit pages and full JSON evidence. Explicit DNA/RNA bulge caps include terminal/mixed gaps; zero caps use the same ungapped policy. A separate declared screening PAM retains its rationale/sources and design-PAM evidence. Per-locus pages contain bounded path summaries; full retained columns remain in the artifact. No cleavage, genome-wide safety, sequence editing or persistent writes."
     )]
     pub(crate) async fn search_crispr_off_targets(
         &self,
@@ -588,12 +606,12 @@ impl CollageneServer {
             if args.hit_start>report.hits.len(){return Err(bad("off-target page start exceeds retained hit count"));}
             let end=args.hit_start.saturating_add(args.max_hits).min(report.hits.len());
             let artifact_id=server.session.text_artifact(bounded_json(&report)?,"application/json","crispr-off-targets.json")?;
-            output(json!({"reference_documents":args.references,"engine_version":report.engine_version,"batch_revision":report.batch_revision,
+            output(json!({"reference_documents":args.references,"engine_version":report.engine_version,"alignment_model":report.alignment_model,"batch_revision":report.batch_revision,
                 "options_revision":report.options_revision,"profile_revision":report.profile_revision,"query":report.query,"options":report.options,
                 "references":report.references,"complete":report.complete,"exhaustive_for_selected_records":report.exhaustive_for_selected_records,
                 "comparisons":report.comparisons,"index_entries":report.index_entries,"index_used":report.index_used,"limits":report.limits,"warnings":report.warnings,
-                "hit_count":report.hits.len(),"hit_start":args.hit_start,"next_hit_start":end,"done":end==report.hits.len(),"hits":&report.hits[args.hit_start..end],"artifact_id":artifact_id,
-                "authority":"Hamming/PAM evidence for the explicit immutable selected reference set only; declared build labels do not prove complete genome coverage, activity or empirical safety."}))
+                "hit_count":report.hits.len(),"hit_start":args.hit_start,"next_hit_start":end,"done":end==report.hits.len(),"hits":report.hits[args.hit_start..end].iter().map(crispr_hit_preview).collect::<Vec<_>>(),"artifact_id":artifact_id,
+                "authority":"Declared global alignment and screening-PAM evidence for the explicit immutable selected reference set only; declared build labels do not prove complete genome coverage, activity or empirical safety."}))
         }).await
     }
     #[tool(
@@ -1365,7 +1383,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Analyze one exact protein alignment row against the current human V/J reference model. Requires immutable alignment reference, stable row ID, explicit native options and work/retention limits. Preserves gaps via a bounded ungapped-index to alignment-column map; gaps never acquire numbering. Returns conditional track summaries with explicit numbering/region choices and full report artifact without alignment, document, history or material mutation. Not calibrated domain classification or independent numbering certification."
+        description = "Analyze one exact protein alignment row against the explicit current species/locus V/J reference model. Requires immutable alignment reference, stable row ID, explicit native options and work/retention limits. Preserves gaps via a bounded ungapped-index to alignment-column map; gaps never acquire numbering. Returns conditional track summaries with explicit numbering/region choices and full report artifact without alignment, document, history or material mutation. Not calibrated domain classification or independent numbering certification."
     )]
     pub(crate) async fn analyze_alignment_antibody(
         &self,
@@ -1378,18 +1396,42 @@ impl CollageneServer {
             let source=a::source(&doc,&args.row_id).map_err(bad)?;
             let r=a::analyze(&doc,&source,&args.options,&args.limits,&args.selection,&mut || false).map_err(bad)?;
             let artifact=server.session.analysis_artifact(&serde_json::to_value(&r).map_err(bad)?)?;
-            output(json!({"alignment":args.alignment,"source":r.source,"engine":r.engine,"context_revision":r.context_revision,"selection":r.analysis.selection,"columns":r.column_count,"ungapped_residues":r.residue_columns.len(),"qualified_pairs_in_retained_v":r.analysis.evidence.qualified_pairs_in_retained_v,"retained_candidates":r.analysis.tracks.len(),"v_retention_truncated":r.analysis.evidence.v_retention_truncated,"pair_retention_truncated":r.analysis.evidence.pair_retention_truncated,"preview_truncated":r.analysis.tracks.len()>20,"candidates":r.analysis.tracks.iter().take(20).map(|t|json!({"candidate_id":t.candidate_id,"locus":t.locus,"unassigned_residues":t.unassigned_residues,"unassigned_regions":t.unassigned_regions,"issues":t.issues,"first_supported_row_residue":t.first_supported_source_index,"row_residue_end":t.source_end})).collect::<Vec<_>>(),"artifact_id":artifact,"authority":"Conditional human-reference/rule evidence. Alignment gaps have no residue label; no calibrated domain/species classification or independent biological numbering certification."}))
+            output(json!({"alignment":args.alignment,"source":r.source,"references":args.options.references,"models":r.analysis.evidence.v_evidence.mappings.iter().map(|m|json!({"locus":m.locus,"model_revision":m.model_revision,"training_allele_count":m.training_alleles.len(),"omitted_alleles":m.omitted_alleles})).collect::<Vec<_>>(),"engine":r.engine,"context_revision":r.context_revision,"selection":r.analysis.selection,"columns":r.column_count,"ungapped_residues":r.residue_columns.len(),"qualified_pairs_in_retained_v":r.analysis.evidence.qualified_pairs_in_retained_v,"retained_candidates":r.analysis.tracks.len(),"v_retention_truncated":r.analysis.evidence.v_retention_truncated,"pair_retention_truncated":r.analysis.evidence.pair_retention_truncated,"preview_truncated":r.analysis.tracks.len()>20,"candidates":r.analysis.tracks.iter().take(20).map(|t|json!({"candidate_id":t.candidate_id,"locus":t.locus,"unassigned_residues":t.unassigned_residues,"unassigned_regions":t.unassigned_regions,"issues":t.issues,"first_supported_row_residue":t.first_supported_source_index,"row_residue_end":t.source_end})).collect::<Vec<_>>(),"artifact_id":artifact,"authority":"Conditional explicitly selected reference/rule evidence. Alignment gaps have no residue label; no calibrated domain/species classification or independent biological numbering certification."}))
         }).await
     }
     #[tool(
-        description = "Describe the current conditional human antibody V/J reference analysis, IMGT numbering/region rules, dataset provenance and explicit resource limits. Includes conditional Kabat1991/Chothia1997 published profiles and separate IMGT/Kabat/canonical-chart Chothia region definitions; unsupported mappings remain unresolved. Not calibrated species/domain classification."
+        description = "Describe the current explicit Human or Mouse C57BL/6 IGH reference scopes, IMGT numbering/region rules, dataset provenance and explicit resource limits. Human scope includes supported IMGT/Kabat/Chothia/North rules; mouse C57BL/6 is heavy-only IMGT/IMGT. Other species, mouse light chains and unsupported mouse schemes are refused. Not calibrated species/domain classification."
     )]
     pub(crate) async fn list_antibody_profiles(&self) -> Result<CallToolResult, ErrorData> {
         use collagene_core::antibody_numbering as n;
-        let corpus = n::references::human_references().map_err(bad)?;
-        output(
-            json!({"engine":n::domain_tracks::TRACK_ENGINE,"rule_revision":n::domain_tracks::catalog_revision(),"corpus_revision":corpus.revision().map_err(bad)?,"sources":corpus.sources(),"v_references":corpus.v_entries().len(),"j_references":corpus.j_entries().len(),"numbering_schemes":["Imgt","Kabat1991","Chothia1997"],"region_definitions":["Imgt","Kabat1991","ChothiaCanonical","North2011"],"max_source_residues":n::MAX_SOURCE_RESIDUES,"max_candidates":n::domain_candidates::MAX_CANDIDATES,"max_endpoints_per_locus":n::profile::MAX_ENDPOINTS,"max_cells":n::profile::MAX_CELLS,"max_trace_states":n::profile::MAX_TRACE_STATES,"max_scan_windows":n::domain_candidates::MAX_SCAN_WINDOWS,"authority":"Conditional human-reference/rule evidence only; unresolved and alternative candidates retained. No calibrated classification, biological numbering certification or cloning/material authority."}),
-        )
+        let selections = [
+            n::v_mapping::ReferenceSelection::human_all(),
+            n::v_mapping::ReferenceSelection {
+                species: n::references::Species::MouseC57Bl6,
+                loci: vec![n::v_mapping::Locus::Heavy],
+            },
+        ];
+        let mut profiles = Vec::new();
+        for references in selections {
+            let corpus = n::references::load(&references.species).map_err(bad)?;
+            let human = references.species == n::references::Species::Human;
+            profiles.push(json!({
+                "references":references,"corpus_revision":corpus.revision().map_err(bad)?,
+                "source_policy":corpus.source_policy(),"j_label_rule":corpus.j_label_rule(),"sources":corpus.sources(),
+                "v_references":corpus.v_entries().len(),"j_references":corpus.j_entries().len(),
+                "numbering_schemes":if human {vec!["Imgt","Kabat1991","Chothia1997"]}else{vec!["Imgt"]},
+                "region_definitions":if human {vec!["Imgt","Kabat1991","ChothiaCanonical","North2011"]}else{vec!["Imgt"]},
+            }));
+        }
+        output(json!({
+            "engine":n::domain_tracks::TRACK_ENGINE,"rule_revision":n::domain_tracks::catalog_revision(),
+            "profile_count":profiles.len(),"profiles":profiles,
+            "model_identity_scope":"Actual model revisions depend on declared scoring and are returned with each analysis; these are explicit reference choices, not species predictions.",
+            "max_source_residues":n::MAX_SOURCE_RESIDUES,"max_candidates":n::domain_candidates::MAX_CANDIDATES,
+            "max_endpoints_per_locus":n::profile::MAX_ENDPOINTS,"max_cells":n::profile::MAX_CELLS,
+            "max_trace_states":n::profile::MAX_TRACE_STATES,"max_scan_windows":n::domain_candidates::MAX_SCAN_WINDOWS,
+            "authority":"Conditional selected-reference/rule evidence only. Alternatives and unresolved positions remain explicit. No calibrated classification, biological numbering certification or cloning/material authority."
+        }))
     }
     #[tool(
         description = "Analyze an exact immutable protein document with explicit V scoring, CDR3/FR4 scope and work/retention limits. Returns conditional source-coordinate tracks under explicit numbering/region choices, all-optimal invariant framework evidence and explicit unresolved residues/CDRs. Per-endpoint optimal V paths only; truncation is not absence. Full source/options-bound report artifact plus at most 20 candidate summaries; no source/history/material edits. Not independent biological numbering certification or calibrated domain/species classification."
@@ -1405,7 +1447,7 @@ impl CollageneServer {
             let r=n::analyze(&molecule,&args.options,&args.limits,&args.selection,&mut || false).map_err(bad)?;
             let artifact=server.session.analysis_artifact(&serde_json::to_value(&r).map_err(bad)?)?;
             let previews=r.tracks.iter().take(20).map(|t|json!({"candidate_id":t.candidate_id,"locus":t.locus,"numbering_scheme":t.numbering_scheme,"region_definition":t.region_definition,"invariant_position_one":t.invariant_position_one,"first_supported_source_index":t.first_supported_source_index,"source_end":t.source_end,"unassigned_residues":t.unassigned_residues,"unassigned_regions":t.unassigned_regions,"issues":t.issues})).collect::<Vec<_>>();
-            output(json!({"document":args.document,"engine":r.engine,"context_revision":r.context_revision,"selection":r.selection,"source_revision":r.source_revision,"corpus_revision":r.evidence.v_evidence.corpus_revision,"qualified_pairs_in_retained_v":r.evidence.qualified_pairs_in_retained_v,"retained_candidates":r.tracks.len(),"v_retention_truncated":r.evidence.v_retention_truncated,"pair_retention_truncated":r.evidence.pair_retention_truncated,"preview_truncated":r.tracks.len()>20,"candidates":previews,"artifact_id":artifact,"authority":"Conditional human-reference/rule evidence. Unassigned residues and unsupported loops remain unresolved. Not independent biological numbering certification or calibrated domain/species classification."}))
+            output(json!({"document":args.document,"references":args.options.references,"models":r.evidence.v_evidence.mappings.iter().map(|m|json!({"locus":m.locus,"model_revision":m.model_revision,"training_allele_count":m.training_alleles.len(),"omitted_alleles":m.omitted_alleles})).collect::<Vec<_>>(),"engine":r.engine,"context_revision":r.context_revision,"selection":r.selection,"source_revision":r.source_revision,"corpus_revision":r.evidence.v_evidence.corpus_revision,"qualified_pairs_in_retained_v":r.evidence.qualified_pairs_in_retained_v,"retained_candidates":r.tracks.len(),"v_retention_truncated":r.evidence.v_retention_truncated,"pair_retention_truncated":r.evidence.pair_retention_truncated,"preview_truncated":r.tracks.len()>20,"candidates":previews,"artifact_id":artifact,"authority":"Conditional explicitly selected reference/rule evidence. Unassigned residues and unsupported loops remain unresolved. Not independent biological numbering certification or calibrated domain/species classification."}))
         }).await
     }
     #[tool(

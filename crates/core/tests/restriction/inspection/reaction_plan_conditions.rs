@@ -254,6 +254,7 @@ fn checked_digest_preserves_documentary_failure_separately_from_positional_cleav
         Operation::DeclareSourceModifications {
             template: Source::Input("source".into()),
             assumptions: GenerationAssumptions {
+                host: None,
                 dam: M::Unmodified,
                 dcm: M::Unmodified,
                 cpg: M::Unmodified,

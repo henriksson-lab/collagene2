@@ -453,6 +453,7 @@ fn saved_digest_preparation_preserves_actual_source_modifications_before_any_new
         steps: vec![Operation::DeclareSourceModifications {
             template: Source::Input("stock".into()),
             assumptions: GenerationAssumptions {
+                host: None,
                 dam: MethylationState::FullyModified,
                 dcm: MethylationState::Unknown,
                 cpg: MethylationState::Unknown,

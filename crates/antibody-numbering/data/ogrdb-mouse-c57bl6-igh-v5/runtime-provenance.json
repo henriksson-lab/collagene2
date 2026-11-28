@@ -1,0 +1,12 @@
+{
+  "emitter_sha256": "6414ccd95a29ccb7110b5d52617366c1f37473652676209ebe49a0a9cd6755a4",
+  "runtime_sha256": "ea94e910b54fdf3318470c05ef0f382ad83ab7e189646bf14c0028b8285954cf",
+  "source_sha256": "a557dc47e4946b015fcb5414c29c275783c464848fd13b8f4a0386c4d6e686e8",
+  "gapped_sha256": "27403baa82141e88a065ddedbc9fc6b4bc4594fc9ecf64d8c4056e98faf4d160",
+  "emitter": "Maintainer-only Python stdlib; Rust Prepared projection and independent translation oracle crosscheck separately",
+  "bytes": 123204,
+  "v_records": 95,
+  "j_records": 4,
+  "model_admission": "92 canonical C23/W41/C104 V references; three atypical functional alleles retained in source corpus and excluded from this mouse model",
+  "j_rule_origin": "Authored conditional IMGT 118..128 complete-codon FR4 labels; provider does not supply J numbering labels"
+}

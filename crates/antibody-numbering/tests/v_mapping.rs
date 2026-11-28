@@ -32,7 +32,7 @@ fn limits() -> Limits {
 }
 #[test]
 fn distinct_proteins_and_explicit_missing_columns_preserve_actual_reference_evidence() {
-    let models = models(&scoring(), &mut || false).unwrap();
+    let models = models(&ReferenceSelection::human_all(), &scoring(), &mut || false).unwrap();
     assert_eq!(
         models
             .iter()
@@ -126,7 +126,14 @@ fn distinct_proteins_and_explicit_missing_columns_preserve_actual_reference_evid
 fn embedded_reference_query_keeps_original_source_indices_and_all_locus_evidence() {
     let prefix = "MHHHHHH*";
     let m = source(&format!("{prefix}{HEAVY}*GGGG"));
-    let report = map_query(&m, &scoring(), &limits(), &mut || false).unwrap();
+    let report = map_query(
+        &m,
+        &ReferenceSelection::human_all(),
+        &scoring(),
+        &limits(),
+        &mut || false,
+    )
+    .unwrap();
     assert_eq!(
         report
             .mappings
@@ -170,12 +177,15 @@ fn embedded_reference_query_keeps_original_source_indices_and_all_locus_evidence
         projection.matches.len() + projection.unassigned_residues.len(),
         heavy.alignment.endpoints[0].upper.end - heavy.alignment.endpoints[0].upper.start
     );
-    report.validate_for(&m, &scoring(), &limits()).unwrap();
+    report
+        .validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits())
+        .unwrap();
 }
 #[test]
 fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit() {
     let repeated = map_query(
         &source(&format!("{HEAVY}*{HEAVY}")),
+        &ReferenceSelection::human_all(),
         &scoring(),
         &limits(),
         &mut || false,
@@ -198,6 +208,7 @@ fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit
     capped.max_endpoints_per_locus = 1;
     let limited = map_query(
         &source(&format!("{HEAVY}*{HEAVY}")),
+        &ReferenceSelection::human_all(),
         &scoring(),
         &capped,
         &mut || false,
@@ -207,12 +218,20 @@ fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit
     assert!(limited.mappings[0].alignment.truncated);
     assert_eq!(limited.mappings[0].projections.len(), 1);
     capped.max_endpoints_per_locus = 0;
-    let counted = map_query(&source(HEAVY), &scoring(), &capped, &mut || false).unwrap();
+    let counted = map_query(
+        &source(HEAVY),
+        &ReferenceSelection::human_all(),
+        &scoring(),
+        &capped,
+        &mut || false,
+    )
+    .unwrap();
     assert_eq!(counted.mappings[0].alignment.qualified_endpoints, 1);
     assert!(counted.mappings[0].projections.is_empty());
     assert!(counted.mappings[0].alignment.truncated);
     let ambiguous = map_query(
         &source(&format!("X*{HEAVY}")),
+        &ReferenceSelection::human_all(),
         &scoring(),
         &limits(),
         &mut || false,
@@ -224,7 +243,14 @@ fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit
     );
     let mut high = scoring();
     high.minimum_score = i32::MAX;
-    let filtered = map_query(&source(HEAVY), &high, &limits(), &mut || false).unwrap();
+    let filtered = map_query(
+        &source(HEAVY),
+        &ReferenceSelection::human_all(),
+        &high,
+        &limits(),
+        &mut || false,
+    )
+    .unwrap();
     assert!(
         filtered
             .mappings
@@ -232,7 +258,14 @@ fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit
             .all(|m| m.alignment.qualified_endpoints == 0 && m.projections.is_empty())
     );
     assert!(filtered.mappings[0].alignment.reachable_endpoints > 0);
-    let absent = map_query(&source("AAACAAA"), &scoring(), &limits(), &mut || false).unwrap();
+    let absent = map_query(
+        &source("AAACAAA"),
+        &ReferenceSelection::human_all(),
+        &scoring(),
+        &limits(),
+        &mut || false,
+    )
+    .unwrap();
     assert!(
         absent
             .mappings
@@ -243,24 +276,52 @@ fn tandem_endpoints_are_retained_and_ambiguity_and_score_filters_remain_explicit
 #[test]
 fn reports_reconstruct_models_source_and_limits_and_jobs_cancel_without_partial_success() {
     let m = source(HEAVY);
-    let report = map_query(&m, &scoring(), &limits(), &mut || false).unwrap();
+    let report = map_query(
+        &m,
+        &ReferenceSelection::human_all(),
+        &scoring(),
+        &limits(),
+        &mut || false,
+    )
+    .unwrap();
     let round: Report = serde_json::from_slice(&serde_json::to_vec(&report).unwrap()).unwrap();
-    round.validate_for(&m, &scoring(), &limits()).unwrap();
+    let actual_models =
+        models(&ReferenceSelection::human_all(), &scoring(), &mut || false).unwrap();
+    for (mapping, model) in report.mappings.iter().zip(&actual_models) {
+        assert_eq!(mapping.training_alleles, model.training_alleles);
+        assert_eq!(mapping.omitted_alleles, model.omitted_alleles);
+    }
+    let mut altered = round.clone();
+    altered.mappings[0].training_alleles.clear();
+    assert!(
+        altered
+            .validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits())
+            .is_err()
+    );
+    round
+        .validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits())
+        .unwrap();
     let mut forged = report.clone();
     forged.mappings[0].model_revision = "forged".into();
     assert_eq!(
-        forged.validate_for(&m, &scoring(), &limits()),
+        forged.validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits()),
         Err(Error::Binding)
     );
     let mut renamed = m.clone();
     renamed.name = "Changed source metadata".into();
     assert_eq!(
-        report.validate_for(&renamed, &scoring(), &limits()),
+        report.validate_for(
+            &renamed,
+            &ReferenceSelection::human_all(),
+            &scoring(),
+            &limits()
+        ),
         Err(Error::Binding)
     );
     assert!(
         map_query(
             &m,
+            &ReferenceSelection::human_all(),
             &scoring(),
             &Limits {
                 max_cells: report.cells - 1,
@@ -274,6 +335,7 @@ fn reports_reconstruct_models_source_and_limits_and_jobs_cancel_without_partial_
     assert!(
         map_query(
             &m,
+            &ReferenceSelection::human_all(),
             &scoring(),
             &Limits {
                 max_cells: 0,
@@ -286,19 +348,34 @@ fn reports_reconstruct_models_source_and_limits_and_jobs_cancel_without_partial_
     );
     let mut invalid = scoring();
     invalid.frequency_bonus = 501;
-    assert!(models(&invalid, &mut || false).is_err());
+    assert!(models(&ReferenceSelection::human_all(), &invalid, &mut || false).is_err());
     let mut calls = 0;
     assert_eq!(
-        map_query(&m, &scoring(), &limits(), &mut || {
-            calls += 1;
-            calls == 10
-        })
+        map_query(
+            &m,
+            &ReferenceSelection::human_all(),
+            &scoring(),
+            &limits(),
+            &mut || {
+                calls += 1;
+                calls == 10
+            }
+        )
         .unwrap_err(),
         Error::Cancelled
     );
     assert!(calls >= 10);
     let dna = Molecule::dna("DNA", "ACGT", Topology::Linear).unwrap();
-    assert!(map_query(&dna, &scoring(), &limits(), &mut || false).is_err());
+    assert!(
+        map_query(
+            &dna,
+            &ReferenceSelection::human_all(),
+            &scoring(),
+            &limits(),
+            &mut || false
+        )
+        .is_err()
+    );
 }
 
 #[test]
@@ -308,7 +385,14 @@ fn query_insertions_remain_unassigned_and_forged_correspondences_fail_reconstruc
     let split = 45;
     let extra = "O".repeat(20);
     let m = source(&format!("{}{}{}", &HEAVY[..split], extra, &HEAVY[split..]));
-    let report = map_query(&m, &scoring(), &limits(), &mut || false).unwrap();
+    let report = map_query(
+        &m,
+        &ReferenceSelection::human_all(),
+        &scoring(),
+        &limits(),
+        &mut || false,
+    )
+    .unwrap();
     let projection = report.mappings[0].projections[0]
         .projection
         .as_ref()
@@ -331,7 +415,7 @@ fn query_insertions_remain_unassigned_and_forged_correspondences_fail_reconstruc
         .matches[0]
         .source_index += 1;
     assert_eq!(
-        forged.validate_for(&m, &scoring(), &limits()),
+        forged.validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits()),
         Err(Error::Binding)
     );
     let mut forged = report.clone();
@@ -342,7 +426,7 @@ fn query_insertions_remain_unassigned_and_forged_correspondences_fail_reconstruc
         .unassigned_residues
         .clear();
     assert_eq!(
-        forged.validate_for(&m, &scoring(), &limits()),
+        forged.validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits()),
         Err(Error::Binding)
     );
 }
@@ -358,7 +442,14 @@ fn fixed_terminal_anchor_survives_tied_internal_correspondences_without_projecti
         .find(|c| c["id"] == "1HZH:1")
         .unwrap();
     let m = source(row["sequence"].as_str().unwrap());
-    let r = map_query(&m, &scoring(), &limits(), &mut || false).unwrap();
+    let r = map_query(
+        &m,
+        &ReferenceSelection::human_all(),
+        &scoring(),
+        &limits(),
+        &mut || false,
+    )
+    .unwrap();
     let heavy = &r.mappings[0];
     let end = heavy.projections.iter().find(|p| p.end == 96).unwrap();
     assert_eq!(
@@ -376,7 +467,9 @@ fn fixed_terminal_anchor_survives_tied_internal_correspondences_without_projecti
     assert_eq!(anchor.source_index, 95);
     assert_eq!(anchor.residue, 'C');
     assert_eq!(anchor.reference_position.number, 104);
-    let model = models(&scoring(), &mut || false).unwrap().remove(0);
+    let model = models(&ReferenceSelection::human_all(), &scoring(), &mut || false)
+        .unwrap()
+        .remove(0);
     let last = model.profile.states.last().unwrap();
     assert!(last.required && !last.allow_insert_after);
     assert_eq!(model.positions.last().unwrap().number, 104);
@@ -394,7 +487,7 @@ fn fixed_terminal_anchor_survives_tied_internal_correspondences_without_projecti
         .unwrap()
         .source_index += 1;
     assert_eq!(
-        forged.validate_for(&m, &scoring(), &limits()),
+        forged.validate_for(&m, &ReferenceSelection::human_all(), &scoring(), &limits()),
         Err(Error::Binding)
     );
 }

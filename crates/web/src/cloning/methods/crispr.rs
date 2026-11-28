@@ -1,4 +1,5 @@
 //! Revision-bound guide design, selected-record search and literal donor review.
+mod search_view;
 use crate::io::download::ExportArtifact;
 use crate::platform::worker::CachedWorker;
 use crate::reads::contigs::ReadBinding;
@@ -10,8 +11,9 @@ use collagene_core::{
     },
     sequence::{
         crispr::{
-            self, GuideCandidate, GuideOptions, GuideQuery, GuideReport, IntendedTarget,
-            NucleaseProfile, OffTargetOptions, OffTargetReport, PamSide, ReferenceInput,
+            self, BulgePolicy, GuideCandidate, GuideOptions, GuideQuery, GuideReport,
+            IntendedTarget, NucleaseProfile, OffTargetOptions, OffTargetReport, PamPolicy, PamSide,
+            ReferenceInput,
         },
         template::{
             self as edit_template, EditTemplateCheck, EditTemplateOptions, EditTemplateReport,
@@ -269,7 +271,6 @@ pub fn CrisprPanel(
     let guide_budget = RwSignal::new("20000000".to_string());
     let options = Memo::new(move |_| -> Result<GuideOptions, String> {
         let profile = match preset.get().as_str() {
-            "cas12a" => crispr::cas12a(),
             "custom" => NucleaseProfile {
                 id: custom_id.get(),
                 version: custom_version.get(),
@@ -285,7 +286,10 @@ pub fn CrisprPanel(
                 custom: true,
                 sources: vec![],
             },
-            _ => crispr::spcas9(),
+            id => crispr::catalogue()
+                .into_iter()
+                .find(|profile| profile.id == id)
+                .ok_or("Choose an installed nuclease profile or declare a custom rule.")?,
         };
         Ok(GuideOptions {
             profile,
@@ -345,6 +349,15 @@ pub fn CrisprPanel(
         RwSignal::new("Explicitly selected records; no whole-genome coverage claim".to_string());
     let intended = RwSignal::new(false);
     let mismatches = RwSignal::new("3".to_string());
+    let dna_bulges = RwSignal::new("0".to_string());
+    let rna_bulges = RwSignal::new("0".to_string());
+    let total_bulges = RwSignal::new("0".to_string());
+    let alignment_limit = RwSignal::new("128".to_string());
+    let column_limit = RwSignal::new("262144".to_string());
+    let separate_pam = RwSignal::new(false);
+    let screening_pam = RwSignal::new(String::new());
+    let screening_rationale = RwSignal::new(String::new());
+    let screening_sources = RwSignal::new(String::new());
     let search_budget = RwSignal::new("100000000".to_string());
     let index_limit = RwSignal::new("1000000".to_string());
     let hit_limit = RwSignal::new("4096".to_string());
@@ -405,6 +418,31 @@ pub fn CrisprPanel(
         };
         Ok(OffTargetOptions {
             profile,
+            bulges: BulgePolicy {
+                max_dna_bulge_bases: whole(&dna_bulges.get(), "DNA bulge bases")?,
+                max_rna_bulge_bases: whole(&rna_bulges.get(), "RNA bulge bases")?,
+                max_total_bulge_bases: whole(&total_bulges.get(), "total bulge bases")?,
+                max_alignments_per_hit: whole(&alignment_limit.get(), "alignments per hit")?,
+                max_retained_alignment_columns: whole(
+                    &column_limit.get(),
+                    "retained alignment columns",
+                )?,
+            },
+            pam_policy: if separate_pam.get() {
+                PamPolicy::DeclaredScreening {
+                    pam: screening_pam.get().trim().to_uppercase(),
+                    rationale: screening_rationale.get(),
+                    sources: screening_sources
+                        .get()
+                        .lines()
+                        .map(str::trim)
+                        .filter(|line| !line.is_empty())
+                        .map(str::to_string)
+                        .collect(),
+                }
+            } else {
+                PamPolicy::DesignProfile
+            },
             max_mismatches: whole(&mismatches.get(), "maximum mismatches")?,
             intended: locus,
             reference_scope: scope.get(),
@@ -626,16 +664,30 @@ pub fn CrisprPanel(
                     );
                 }
                 let refs = references.get_untracked()?;
-                if refs.is_empty() {
-                    return Err("Explicitly select at least one reference record.".into());
+                if refs.is_empty() || refs.len() > 64 {
+                    return Err("Explicitly select 1–64 reference records.".into());
                 }
+                refs.iter().try_fold(0usize, |total, reference| {
+                    total
+                        .checked_add(reference.document.length)
+                        .filter(|total| *total <= 20_000_000)
+                        .ok_or("Selected reference sequences exceed 20 million bases.")
+                })?;
+                let opts = search_options.get_untracked()?;
+                opts.validate().map_err(|error| error.to_string())?;
                 let inputs = refs
                     .iter()
                     .enumerate()
                     .map(|(i, r)| {
+                        let molecule = document(get_document, &r.document)?;
+                        if molecule.revision() != r.document.binding.revision {
+                            return Err(
+                                "A reference no longer matches its exact bound event.".into()
+                            );
+                        }
                         Ok(ReferenceInput {
                             id: format!("reference_{}", i + 1),
-                            molecule: document(get_document, &r.document)?,
+                            molecule,
                             build: r.build.clone(),
                             accession: r.accession.clone(),
                         })
@@ -645,16 +697,8 @@ pub fn CrisprPanel(
                     id: guide.id.clone(),
                     sequence: guide.guide_sequence.clone(),
                 };
-                let opts = search_options.get_untracked()?;
                 let revision = crispr::off_target_revision(&query, &inputs, &opts)
                     .map_err(|e| e.to_string())?;
-                if inputs
-                    .iter()
-                    .zip(&refs)
-                    .any(|(input, r)| input.molecule.revision() != r.document.binding.revision)
-                {
-                    return Err("A reference no longer matches its exact bound event.".into());
-                }
                 let (w, token) = search_job.start()?;
                 Ok((
                     source.get_untracked(),
@@ -1006,7 +1050,7 @@ pub fn CrisprPanel(
             });
         }
     };
-    let export_search = move |_| {
+    let export_search = Callback::new(move |(): ()| {
         if let Some(data) = search.get_untracked() {
             let valid = data.source == source.get_untracked()
                 && data.epoch == epoch.get_untracked()
@@ -1043,7 +1087,7 @@ pub fn CrisprPanel(
                 }
             });
         }
-    };
+    });
     let export_donor = move |_| {
         if let Some(data) = donor.get_untracked() {
             let result = donor_guard
@@ -1101,7 +1145,16 @@ pub fn CrisprPanel(
         !donor_job.busy.get() && donor.with(|d| d.as_ref().is_some_and(|d| d.checked.consistent))
     });
     view! {<section class="crispr-panel" class:crispr-expanded=move||expanded.get()><div class="crispr-heading"><h2>"CRISPR design"</h2><button class="button secondary" on:click=move|_|expanded.update(|v|*v=!*v)>{move||if expanded.get(){"Close expanded CRISPR"}else{"Expand CRISPR"}}</button></div><p class="helper">"Design guide/PAM geometry, search explicitly selected reference records and review literal donor templates. Nominal cut coordinates are advisory; no cellular editing, repair pathway or empirical efficacy is predicted."</p><p class="crispr-source">{move||source.with(|s|format!("Source: {} · {} nt · {}",s.name,s.length,if s.topology==Topology::Circular{"circular"}else{"linear"}))}</p>
-        <label>"Nuclease rule"<select aria-label="CRISPR nuclease" prop:value=move||preset.get() on:change=move|e|preset.set(event_target_value(&e))><option value="spcas9">"SpCas9 · nominal NGG / 20 nt"</option><option value="cas12a">"Cas12a · nominal TTTV / 23 nt"</option><option value="custom">"Explicit custom PAM and geometry"</option></select></label>
+        <label>"Nuclease rule"
+            <select aria-label="CRISPR nuclease" prop:value=move || preset.get()
+                on:change=move |e| preset.set(event_target_value(&e))>
+                {crispr::catalogue().into_iter().map(|profile| {
+                    let label = format!("{} · nominal {} / {} nt", profile.id, profile.pam, profile.guide_length);
+                    view! {<option value=profile.id>{label}</option>}
+                }).collect_view()}
+                <option value="custom">"Explicit custom PAM and geometry"</option>
+            </select>
+        </label>
         <Show when=move||preset.get()=="custom"><fieldset><legend>"Custom rule (user declared)"</legend><label>"Identity"<input aria-label="CRISPR custom identity" prop:value=move||custom_id.get() on:input=move|e|custom_id.set(event_target_value(&e))/></label><label>"Version"<input aria-label="CRISPR custom version" prop:value=move||custom_version.get() on:input=move|e|custom_version.set(event_target_value(&e))/></label><label>"PAM (IUPAC)"<input aria-label="CRISPR custom PAM" prop:value=move||custom_pam.get() on:input=move|e|custom_pam.set(event_target_value(&e))/></label><label>"PAM side"<select aria-label="CRISPR custom PAM side" prop:value=move||custom_side.get() on:change=move|e|custom_side.set(event_target_value(&e))><option value="three">"3′ of guide"</option><option value="five">"5′ of guide"</option></select></label><label>"Guide length"<input aria-label="CRISPR custom length" prop:value=move||custom_length.get() on:input=move|e|custom_length.set(event_target_value(&e))/></label><label>"Nominal top boundary offset"<input aria-label="CRISPR custom top offset" prop:value=move||custom_top.get() on:input=move|e|custom_top.set(event_target_value(&e))/></label><label>"Nominal bottom boundary offset"<input aria-label="CRISPR custom bottom offset" prop:value=move||custom_bottom.get() on:input=move|e|custom_bottom.set(event_target_value(&e))/></label><p class="helper">"Offsets count bases from the oriented DNA spacer’s 5′ boundary; reverse orientation maps and swaps the source-strand labels. Custom spacers are 12–64 nt and PAMs are 1–16 nt. These nominal rules have no implied experimental calibration."</p></fieldset></Show>
         <details><summary>"Guide filters and scan limits"</summary><div class="crispr-options"><label>"Minimum GC%"<input aria-label="CRISPR minimum GC" prop:value=move||min_gc.get() on:input=move|e|min_gc.set(event_target_value(&e))/></label><label>"Maximum GC%"<input aria-label="CRISPR maximum GC" prop:value=move||max_gc.get() on:input=move|e|max_gc.set(event_target_value(&e))/></label><label>"Longest homopolymer"<input aria-label="CRISPR homopolymer limit" prop:value=move||homopolymer.get() on:input=move|e|homopolymer.set(event_target_value(&e))/></label><label>"Candidate limit"<input aria-label="CRISPR candidate limit" prop:value=move||guide_limit.get() on:input=move|e|guide_limit.set(event_target_value(&e))/></label><label>"Comparison budget"<input aria-label="CRISPR guide budget" prop:value=move||guide_budget.get() on:input=move|e|guide_budget.set(event_target_value(&e))/></label></div></details>
         <div class="crispr-actions"><button class="button primary" disabled=move||guide_job.busy.get()||source.with(|s|s.alphabet!=Alphabet::Dna) on:click=design>"Design CRISPR guides"</button><button class="button secondary" disabled=move||!guide_job.busy.get() on:click=move|_|{guide_job.stop();guide_status.set("Guide design cancelled.".into());}>"Cancel guide design"</button></div><p class="crispr-guide-status" role="status">{move||guide_status.get()}</p>
@@ -1109,11 +1162,57 @@ pub fn CrisprPanel(
             {move||guides.get().map(|b|passing_indices.get().into_iter().skip(guide_page.get()*25).take(25).filter_map(|i|b.report.candidates.get(i).map(|g|{let id=g.id.clone();let attr_id=id.clone();let selected_id=id.clone();view!{<button class="button secondary crispr-guide-entry" data-guide-id=attr_id class:active=move||selected.get()==Some(selected_id.clone()) on:click=move|_|selected.set(Some(id.clone()))>{format!("{} · PAM {} · {} · {} · GC {}",g.guide_sequence,g.pam_sequence,if g.reverse{"reverse"}else{"forward"},if g.passes_filters{"passes declared filters"}else{"diagnostic only"},g.gc_bp.map(|v|format!("{:.2}%",v as f64/100.)).unwrap_or_else(||"uncertain".into()))}</button>}})).collect_view())}
             <div class="crispr-actions"><button class="button secondary" disabled=move||guide_page.get()==0 on:click=move|_|guide_page.update(|p|*p=p.saturating_sub(1))>"Previous guides"</button><button class="button secondary" disabled=move||{(guide_page.get()+1)*25>=passing_indices.with(Vec::len)} on:click=move|_|guide_page.update(|p|*p+=1)>"Next guides"</button></div>{data.report.limits.iter().map(|v|view!{<p class="crispr-limit">{v.clone()}</p>}).collect_view()}{data.report.warnings.iter().map(|v|view!{<p class="helper">{v.clone()}</p>}).collect_view()}</div>})}
         {move||selected_guide.get().map(|g|{let start=g.guide_positions.first().copied();view!{<article class="crispr-guide-detail"><h3>"Selected guide"</h3><p><strong>{g.guide_sequence.clone()}</strong>" · DNA spacer (5′→3′), not a complete guide RNA/scaffold"</p><p>{format!("PAM {} · {} · {} · homopolymer {}",g.pam_sequence,if g.reverse{"reverse strand"}else{"forward strand"},if g.pam_certain{"certain PAM"}else{"possible PAM"},g.longest_homopolymer.map(|n|n.to_string()).unwrap_or_else(||"uncertain".into()))}</p><p>{format!("Guide source bases {} · PAM source bases {} (1-based, ordered)",positions(&g.guide_positions),positions(&g.pam_positions))}</p><p>{format!("Nominal top boundary: {}; nominal bottom boundary: {}. These advisory coordinates do not establish physical cut products.",boundary(g.nominal_top_cut),boundary(g.nominal_bottom_cut))}</p>{g.rejections.into_iter().map(|r|view!{<p class="helper">{r}</p>}).collect_view()}<button class="button secondary" disabled=start.is_none() on:click=move|_|if let Some(at)=start{navigate_guide.run(at)}>"Open guide 5′ position"</button></article>}})}
-        <h3>"Search selected reference records"</h3><p class="helper">"Choose named DNA records and optional build/accession labels. Limits are 64 records, 20 million aggregate bases and 16 MiB of serialized reference data. Hamming mismatch search does not model bulges, chromatin, expression, whole-genome completeness or cellular specificity. PAMs outside the selected rule are not searched. Intended-site tagging marks one exact locus and keeps every reported match."</p><details class="crispr-reference-picker"><summary>"Reference records and labels"</summary><button class="button secondary" on:click=move|_|selected_refs.set(vec![source.get_untracked().binding.document_id])>"Use source as sole reference"</button><button class="button secondary" on:click=move|_|selected_refs.set(vec![])>"Clear CRISPR references"</button>{move||documents.with(|docs|docs.iter().skip(reference_page.get()*25).take(25).map(|d|{let id=d.binding.document_id.clone();let check_id=id.clone();let changed=id.clone();view!{<label class="crispr-reference-choice"><input type="checkbox" aria-label=format!("CRISPR reference {id}") disabled=d.alphabet!=Alphabet::Dna prop:checked=move||selected_refs.with(|v|v.contains(&check_id)) on:change=move|e|{let yes=event_target_checked(&e);selected_refs.update(|v|if yes{if !v.contains(&changed){v.push(changed.clone());}}else{v.retain(|id|id!=&changed);});}/><span><strong>{d.name.clone()}</strong><small>{format!("{} nt · {}",d.length,d.binding.document_id)}</small></span></label>}}).collect_view())}<button class="button secondary" disabled=move||reference_page.get()==0 on:click=move|_|reference_page.update(|p|*p=p.saturating_sub(1))>"Previous references"</button><button class="button secondary" disabled=move||{(reference_page.get()+1)*25>=documents.with(Vec::len)} on:click=move|_|reference_page.update(|p|*p+=1)>"Next references"</button>
+        <h3>"Search selected reference records"</h3><p class="helper">"Choose named DNA records and optional build/accession labels. Limits are 64 records, 20 million aggregate bases and 16 MiB of serialized reference data. The declared global alignment and screening-PAM policy define the searched sites, including bounded DNA/RNA gaps when enabled. Chromatin, expression, whole-genome completeness and cellular activity are not assessed. Intended-site tagging keeps all retained paths and additional loci."</p><details class="crispr-reference-picker"><summary>"Reference records and labels"</summary><button class="button secondary" on:click=move|_|selected_refs.set(vec![source.get_untracked().binding.document_id])>"Use source as sole reference"</button><button class="button secondary" on:click=move|_|selected_refs.set(vec![])>"Clear CRISPR references"</button>{move||documents.with(|docs|docs.iter().skip(reference_page.get()*25).take(25).map(|d|{let id=d.binding.document_id.clone();let check_id=id.clone();let changed=id.clone();view!{<label class="crispr-reference-choice"><input type="checkbox" aria-label=format!("CRISPR reference {id}") disabled=d.alphabet!=Alphabet::Dna prop:checked=move||selected_refs.with(|v|v.contains(&check_id)) on:change=move|e|{let yes=event_target_checked(&e);selected_refs.update(|v|if yes{if !v.contains(&changed){v.push(changed.clone());}}else{v.retain(|id|id!=&changed);});}/><span><strong>{d.name.clone()}</strong><small>{format!("{} nt · {}",d.length,d.binding.document_id)}</small></span></label>}}).collect_view())}<button class="button secondary" disabled=move||reference_page.get()==0 on:click=move|_|reference_page.update(|p|*p=p.saturating_sub(1))>"Previous references"</button><button class="button secondary" disabled=move||{(reference_page.get()+1)*25>=documents.with(Vec::len)} on:click=move|_|reference_page.update(|p|*p+=1)>"Next references"</button>
         {move||reference_documents.get().ok().map(|refs|refs.into_iter().enumerate().map(|(i,r)|{let build_id=r.binding.document_id.clone();let set_build=build_id.clone();let accession_id=build_id.clone();let set_accession=build_id.clone();let build_label=format!("CRISPR build {build_id}");let accession_label=format!("CRISPR accession {accession_id}");view!{<article class="crispr-reference-label"><strong>{format!("reference_{} · {}",i+1,r.name)}</strong><p>{format!("Document {} · event {} · revision {}",r.binding.document_id,r.binding.event_id,r.binding.revision)}</p><label>"Build label (optional)"<input aria-label=build_label prop:value=move||builds.with(|v|v.get(&build_id).cloned().unwrap_or_default()) on:input=move|e|builds.update(|v|{v.insert(set_build.clone(),event_target_value(&e));})/></label><label>"Accession (optional)"<input aria-label=accession_label prop:value=move||accessions.with(|v|v.get(&accession_id).cloned().unwrap_or_default()) on:input=move|e|accessions.update(|v|{v.insert(set_accession.clone(),event_target_value(&e));})/></label></article>}}).collect_view())}</details>
         <label>"Declared reference scope"<input aria-label="CRISPR reference scope" prop:value=move||scope.get() on:input=move|e|scope.set(event_target_value(&e))/></label><label class="checkbox-label"><input type="checkbox" aria-label="CRISPR mark intended locus" prop:checked=move||intended.get() on:change=move|e|intended.set(event_target_checked(&e))/>"Tag only this selected guide locus in the exact source reference role as intended"</label>
-        <details><summary>"Mismatch search and resource limits"</summary><div class="crispr-options"><label>"Maximum Hamming mismatches (0–6)"<input aria-label="CRISPR maximum mismatches" prop:value=move||mismatches.get() on:input=move|e|mismatches.set(event_target_value(&e))/></label><label>"Comparison budget"<input aria-label="CRISPR search budget" prop:value=move||search_budget.get() on:input=move|e|search_budget.set(event_target_value(&e))/></label><label>"Index entries"<input aria-label="CRISPR index limit" prop:value=move||index_limit.get() on:input=move|e|index_limit.set(event_target_value(&e))/></label><label>"Retained hits"<input aria-label="CRISPR hit limit" prop:value=move||hit_limit.get() on:input=move|e|hit_limit.set(event_target_value(&e))/></label></div></details><div class="crispr-actions"><button class="button primary" disabled=move||search_job.busy.get()||selected_guide.get().is_none_or(|g|!g.concrete||!g.pam_certain) on:click=search_run>"Search CRISPR references"</button><button class="button secondary" disabled=move||!search_job.busy.get() on:click=move|_|{search_job.stop();search_status.set("Reference search cancelled.".into());}>"Cancel reference search"</button></div><p class="crispr-search-status" role="status">{move||search_status.get()}</p>
-        {move||search.get().map(|data|view!{<div class="crispr-search-result"><p>{format!("{} selected reference records · {} retained matches · {} tagged intended · {} definite · index {} ({} entries) · {} comparisons",data.report.references.len(),data.report.hits.len(),data.report.hits.iter().filter(|h|h.is_intended).count(),data.report.hits.iter().filter(|h|h.definite).count(),if data.report.index_used{"used"}else{"not used"},data.report.index_entries,data.report.comparisons)}</p><p class="helper">{if data.report.exhaustive_for_selected_records{"Enumeration complete for these selected records under this exact mismatch/PAM model. No absence claim applies to unselected records or an unrepresented genome."}else{"Enumeration is incomplete. Retained hits cannot establish absence of additional matches."}}</p><button class="button secondary" on:click=export_search>"Download off-target report"</button>{data.report.hits.iter().skip(hit_page.get()*25).take(25).map(|h|{let id=h.id.clone();let attr_id=id.clone();view!{<button class="button secondary crispr-hit-entry" data-hit-id=attr_id on:click=move|_|selected_hit.set(Some(id.clone()))>{format!("{} · {} · mismatches {}–{} · {} · PAM {}",data.report.references.get(h.reference_index).map(|r|r.id.as_str()).unwrap_or("missing reference"),if h.is_intended{"exact intended locus"}else{"additional match"},h.min_mismatches,h.max_mismatches,if h.reverse{"reverse"}else{"forward"},h.pam_sequence)}</button>}}).collect_view()}<div class="crispr-actions"><button class="button secondary" disabled=move||hit_page.get()==0 on:click=move|_|hit_page.update(|p|*p=p.saturating_sub(1))>"Previous off-target hits"</button><button class="button secondary" disabled=move||{(hit_page.get()+1)*25>=search.with(|v|v.as_ref().map_or(0,|s|s.report.hits.len()))} on:click=move|_|hit_page.update(|p|*p+=1)>"Next off-target hits"</button></div>{move||search.get().and_then(|b|selected_hit.get().and_then(|id|b.report.hits.iter().find(|h|h.id==id).map(|h|(b.clone(),h.clone())))).map(|(b,h)|{let id=h.id.clone();view!{<article class="crispr-hit-detail"><h4>{b.report.references.get(h.reference_index).map(|r|format!("{} · {}",r.id,r.name)).unwrap_or_default()}</h4><p>{format!("Reference spacer {} · PAM {} · {} · mismatches {}–{} · {}",h.reference_guide,h.pam_sequence,if h.definite{"definite match within the mismatch bound"}else{"possible match from ambiguous bases/PAM"},h.min_mismatches,h.max_mismatches,if h.is_intended{"tagged intended locus (retained)"}else{"not the tagged intended locus"})}</p><p>{format!("Guide bases {} · PAM bases {} (1-based, ordered)",positions(&h.guide_positions),positions(&h.pam_positions))}</p><button class="button secondary" on:click=move|_|navigate_hit.run(id.clone())>"Open reference guide position"</button></article>}})}{data.report.limits.iter().map(|v|view!{<p class="crispr-limit">{v.clone()}</p>}).collect_view()}{data.report.warnings.iter().map(|v|view!{<p class="helper">{v.clone()}</p>}).collect_view()}</div>})}
+        <details>
+            <summary>"Mismatch, bulge and search limits"</summary>
+            <p class="helper">"Zero bulge limits restrict the model to ungapped alignments. Each kind and the total cap apply together. Bulged searches include terminal and mixed gaps under a full-input global alignment model, not a physical heteroduplex or cleavage prediction."</p>
+            <div class="crispr-options">
+                <search_view::WholeField label="Maximum mismatches (0–6)" value=mismatches/>
+                <search_view::WholeField label="Extra target DNA bases (0–4)" value=dna_bulges/>
+                <search_view::WholeField label="Extra guide RNA bases (0–4)" value=rna_bulges/>
+                <search_view::WholeField label="Total bulge bases (0–4)" value=total_bulges/>
+                <search_view::WholeField label="Retained alignments per hit" value=alignment_limit/>
+                <search_view::WholeField label="Retained alignment columns" value=column_limit/>
+                <search_view::WholeField label="Comparison budget" value=search_budget/>
+                <search_view::WholeField label="Index entries (ungapped search only)" value=index_limit/>
+                <search_view::WholeField label="Retained hits" value=hit_limit/>
+            </div>
+        </details>
+        <details>
+            <summary>"Screening PAM policy"</summary>
+            <label class="checkbox-label">
+                <input type="checkbox" prop:checked=move || separate_pam.get()
+                    on:change=move |e| separate_pam.set(event_target_checked(&e))/>
+                "Declare a separate screening PAM"
+            </label>
+            <p class="helper">"The design profile keeps its own PAM. A screening mask may deliberately include additional PAM sequences; its length must match the design PAM. These declarations do not establish activity for the extra sites."</p>
+            <Show when=move || separate_pam.get()>
+                <label>"Screening PAM (IUPAC)"<input maxlength="16"
+                    prop:value=move || screening_pam.get()
+                    on:input=move |e| screening_pam.set(event_target_value(&e))/></label>
+                <label>"Reason for this screening policy"<input maxlength="1024"
+                    prop:value=move || screening_rationale.get()
+                    on:input=move |e| screening_rationale.set(event_target_value(&e))/></label>
+                <label>"Source URLs (one per line)"<textarea maxlength="8192"
+                    prop:value=move || screening_sources.get()
+                    on:input=move |e| screening_sources.set(event_target_value(&e))/></label>
+            </Show>
+        </details>
+        <div class="crispr-actions">
+            <button class="button primary" disabled=move || search_job.busy.get()
+                || selected_guide.get().is_none_or(|g| !g.concrete || !g.pam_certain)
+                on:click=search_run>"Search CRISPR references"</button>
+            <button class="button secondary" disabled=move || !search_job.busy.get()
+                on:click=move |_| { search_job.stop(); search_status.set("Reference search cancelled.".into()); }>
+                "Cancel reference search"
+            </button>
+        </div>
+        <p class="crispr-search-status" role="status">{move || search_status.get()}</p>
+        <search_view::SearchResults
+            search page=hit_page selected=selected_hit navigate=navigate_hit export=export_search
+        />
         <h3>"Literal homology donor template"</h3><p class="helper">"Provide an intended edited DNA target as a separate document. The donor uses original-source arms and your literal replacement; the target is a noncausal comparison only. Donors are bounded to 100,000 nt, source to 1 million nt and target to 1.1 million nt, with 8 MiB rich-input bounds. This does not model cellular HDR, editing efficiency, repair mechanisms or physical synthesis."</p><label>"Independent intended edited target"<select aria-label="CRISPR independent target" prop:value=move||target_id.get() on:change=move|e|target_id.set(event_target_value(&e))><option value="">"Choose a separate target document"</option>{move||documents.with(|docs|docs.iter().filter(|d|d.alphabet==Alphabet::Dna&&d.binding.document_id!=source.get().binding.document_id).map(|d|view!{<option value=d.binding.document_id.clone()>{format!("{} · {}",d.name,d.binding.document_id)}</option>}).collect_view())}</select></label><div class="crispr-options"><label>"Edit starts before source base (1-based; linear length+1 appends)"<input aria-label="CRISPR edit start" prop:value=move||edit_start.get() on:input=move|e|edit_start.set(event_target_value(&e))/></label><label>"Deleted source bases"<input aria-label="CRISPR delete length" prop:value=move||delete_length.get() on:input=move|e|delete_length.set(event_target_value(&e))/></label><label>"Left arm length"<input aria-label="CRISPR left arm" prop:value=move||left_arm.get() on:input=move|e|left_arm.set(event_target_value(&e))/></label><label>"Right arm length"<input aria-label="CRISPR right arm" prop:value=move||right_arm.get() on:input=move|e|right_arm.set(event_target_value(&e))/></label><label>"Maximum nominal cut-to-edit distance"<input aria-label="CRISPR cut distance" prop:value=move||cut_distance.get() on:input=move|e|cut_distance.set(event_target_value(&e))/></label></div><label>"Literal replacement (empty permits deletion)"<textarea aria-label="CRISPR replacement" prop:value=move||replacement.get() on:input=move|e|replacement.set(event_target_value(&e))></textarea></label><label class="checkbox-label"><input type="checkbox" aria-label="CRISPR reverse donor" prop:checked=move||reverse_donor.get() on:change=move|e|reverse_donor.set(event_target_checked(&e))/>"Write donor as reverse complement"</label><div class="crispr-actions"><button class="button primary" disabled=move||donor_job.busy.get()||selected_guide.get().is_none_or(|g|!g.passes_filters)||target.get().is_none() on:click=donor_design>"Design and check donor"</button><button class="button secondary" disabled=move||!donor_job.busy.get() on:click=move|_|{donor_job.stop();donor_status.set("Donor computation cancelled.".into());}>"Cancel donor computation"</button></div><p class="crispr-donor-status" role="status">{move||donor_status.get()}</p>
         {move||donor.get().map(|data|view!{<article class="crispr-donor-result"><h4>{if data.checked.consistent{"Independent sequence check passed"}else{"Independent sequence check failed"}}</h4><p>{format!("Left arm: {} · replacement: {} · right arm: {} · target: {} · sequence changed: {}",if data.checked.left_matches{"matches"}else{"does not match"},if data.checked.replacement_matches{"matches"}else{"does not match"},if data.checked.right_matches{"matches"}else{"does not match"},if data.checked.target_matches{"matches"}else{"does not match"},if data.checked.changes_sequence{"yes"}else{"no"})}</p><p>{format!("{} donor bases · nominal cut distance {} · {}",data.checked.donor_length,data.checked.guide_cut_distance.map(|v|v.to_string()).unwrap_or_else(||"unavailable".into()),match data.checked.guide_within_distance{Some(true)=>"within declared distance",Some(false)=>"outside declared distance",None=>"no guide-distance assertion"})}</p><p>{format!("Left original source bases {} · right original source bases {} · deleted source bases {}",positions(&data.report.left.source_positions),positions(&data.report.right.source_positions),positions(&data.report.deleted_positions))}</p><pre>{preview(data.report.donor.sequence.as_str())}</pre><details><summary>"Source, guide and noncausal target bindings"</summary><p>{format!("Source document {} · event {} · revision {}",data.source.binding.document_id,data.source.binding.event_id,data.source.binding.revision)}</p><p>{format!("Target requirement document {} · event {} · revision {}",data.target.binding.document_id,data.target.binding.event_id,data.target.binding.revision)}</p><p>{format!("Source-only product ancestry. Engine {} · options {} · batch {}",data.report.engine_version,data.report.options_revision,data.report.batch_revision)}</p></details><p class="helper">"FASTA and GenBank omit full source-event and per-call design evidence. Keep the JSON review/native workspace. Restoring producer provenance never restores current verification."</p><button class="button secondary" on:click=export_donor>"Download donor review JSON"</button><div class="crispr-actions"><button class="button primary" disabled=move||!can_release.get() on:click=move|_|release.run("open-donor")>"Open checked donor template"</button><button class="button secondary" disabled=move||!can_release.get() on:click=move|_|release.run("open-edited")>"Open checked edited reference"</button><button class="button secondary" disabled=move||!can_release.get() on:click=move|_|release.run("fasta")>"Export checked donor FASTA"</button><button class="button secondary" disabled=move||!can_release.get() on:click=move|_|release.run("genbank")>"Export checked donor GenBank"</button></div>{data.report.warnings.iter().chain(data.checked.warnings.iter()).map(|v|view!{<p class="helper">{v.clone()}</p>}).collect_view()}</article>})}
     </section>}

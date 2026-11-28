@@ -29,15 +29,15 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     io::Write,
 };
-pub const ENGINE_VERSION: &str = "material-derivation-3";
-pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v3";
+pub const ENGINE_VERSION: &str = "material-derivation-4";
+pub const WORKSPACE_ATTACHMENT_KIND: &str = "material-derivation-v4";
 pub const MEDIA_TYPE: &str = "application/vnd.collagene.material-derivation";
-pub const EVENT_OPERATION: &str = "Target-free native material derivation v3";
+pub const EVENT_OPERATION: &str = "Target-free native material derivation v4";
 pub const MAX_RECORD_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_CAPSULE_BYTES: usize = 32 * 1024 * 1024;
 pub const MAX_RECORDS: usize = 128;
 pub const MAX_SOURCES: usize = 2;
-const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x03";
+const MAGIC: &[u8; 8] = b"MDRV\0\0\0\x04";
 const HEADER: usize = 44;
 const CONTEXT_KEY: &str = "source:material_derivation:context";
 macro_rules! dto{($($t:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($t)*};}
@@ -481,7 +481,7 @@ impl Record {
         crate::material::capsule::derived_record_preflight(self)
     }
     pub(crate) fn validate_shallow(&self) -> Result<(), Error> {
-        if self.schema_version != 3
+        if self.schema_version != 4
             || self.engine_version != ENGINE_VERSION
             || self.scientific_engine.is_empty()
             || self.scientific_engine.len() > 128
@@ -1100,7 +1100,7 @@ pub fn prepare_install(w: &Workspace, request: &Request) -> Result<PreparedInsta
     };
     let modifications = fresh.tracked.summary()?;
     let record = Record {
-        schema_version: 3,
+        schema_version: 4,
         engine_version: ENGINE_VERSION.into(),
         scientific_engine: verification::ENGINE_VERSION.into(),
         source_workspace_fingerprint: fingerprint,

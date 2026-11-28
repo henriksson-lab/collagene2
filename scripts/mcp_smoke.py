@@ -285,7 +285,7 @@ def main():
         assert crispr_guides["source_revision"]==crispr_ref["revision"] and crispr_guides["candidate_count"]>=2,crispr_guides
         crispr_guide=crispr_guides["candidates"][0]
         crispr_refs=[{"id":"intended","document":crispr_ref,"build":"declared-stdio-build","accession":"test.1"},{"id":"duplicate-record","document":crispr_ref,"build":None,"accession":None}]
-        crispr_options={"profile":crispr_guides["options"]["profile"],"max_mismatches":0,"intended":{"reference_id":"intended","reference_revision":crispr_ref["revision"],"guide_positions":crispr_guide["guide_positions"],"pam_positions":crispr_guide["pam_positions"],"reverse":crispr_guide["reverse"]},"reference_scope":"Explicit stdio selected fixtures","max_comparisons":100000000,"max_index_entries":1000000,"max_hits":4096}
+        crispr_options={"bulges":{"max_dna_bulge_bases":0,"max_rna_bulge_bases":0,"max_total_bulge_bases":0,"max_alignments_per_hit":128,"max_retained_alignment_columns":262144},"pam_policy":"DesignProfile","profile":crispr_guides["options"]["profile"],"max_mismatches":0,"intended":{"reference_id":"intended","reference_revision":crispr_ref["revision"],"guide_positions":crispr_guide["guide_positions"],"pam_positions":crispr_guide["pam_positions"],"reverse":crispr_guide["reverse"]},"reference_scope":"Explicit stdio selected fixtures","max_comparisons":100000000,"max_index_entries":1000000,"max_hits":4096}
         crispr_query={"id":crispr_guide["id"],"sequence":crispr_guide["guide_sequence"]}
         crispr_off=tool("search_crispr_off_targets",{"query":crispr_query,"references":crispr_refs,"options":crispr_options,"max_hits":1})
         crispr_full=full_json_artifact(crispr_off["artifact_id"])
@@ -357,7 +357,7 @@ def main():
         tracked_refs={d["name"]:{"id":d["id"],"revision":d["revision"]} for d in tracked_docs}
         tracked_pin=tool("inspect_restriction",{"document":tracked_refs["tracked_source"],"source_role":"tracked-source-catalog","enzymes":["EcoRI"]})["catalog_pin"]
         tracked_limits={"max_comparisons":100000,"max_sites":32,"max_fragments":32,"max_report_bytes":1048576}
-        tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":tracked_pin,"conditions":None,"options":tracked_limits,"fragment_index":0}}]
+        tracked_steps=[{"DeclareSourceModifications":{"template":{"Input":"s"},"assumptions":{"host":None,"dam":"Unmodified","dcm":"Unmodified","cpg":"Unmodified"}}},{"CheckedDigest":{"template":{"Step":0},"selection":tracked_pin,"conditions":None,"options":tracked_limits,"fragment_index":0}}]
         tracked=tool("propose_plan",{"name":"Stdio checked digest","target":tracked_refs["tracked_target"],"inputs":[{"id":"s","document":tracked_refs["tracked_source"]}],"steps":tracked_steps})
         tracked_report=tool("verify_plan",{"plan_revision":tracked["plan_revision"]})
         assert tracked_report["status"]=="ConsistentUnderAssumptions" and tracked_report["engine_version"].endswith(current_engine_suffix),tracked_report

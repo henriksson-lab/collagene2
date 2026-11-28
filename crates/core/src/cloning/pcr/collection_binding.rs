@@ -1,11 +1,13 @@
 //! Source/event adapter and existing perfect-duplex thermodynamics for collection hits.
-use super::primers::{ThermoConditions, TmReport};
+use super::primers::{ThermoConditions, TmReport, canonical_dna_stack};
 use crate::encoding::bounded_json;
 use collagene_model::{Alphabet, Error, Molecule};
-use collagene_oligo_binding::{Budget, BudgetLimits, Collection, Options, Report as SearchReport};
+use collagene_oligo_binding::{
+    Budget, BudgetLimits, Collection, Options, Report as SearchReport, thermodynamics as mismatch,
+};
 use serde::{Deserialize, Serialize};
 
-pub const ENGINE_VERSION: &str = "oligo-collection-review-1";
+pub const ENGINE_VERSION: &str = "oligo-collection-review-2";
 pub const MAX_REPORT_BYTES: usize = 24 * 1024 * 1024;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -20,7 +22,77 @@ pub struct Request {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TmValue {
     Available(TmReport),
+    MismatchAvailable(MismatchTm),
     Unavailable(String),
+}
+pub const MISMATCH_TM_MODEL: &str =
+    "single internal DNA mismatch; Allawi/SantaLucia/Peyret; pH7; sodium entropy correction";
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MismatchTm {
+    pub parameters: mismatch::Assessment,
+    pub estimate: TmReport,
+}
+impl MismatchTm {
+    fn from_parameters(
+        parameters: mismatch::Assessment,
+        conditions: &ThermoConditions,
+    ) -> Result<Self, Error> {
+        parameters.validate()?;
+        let mismatch::Outcome::Replacements(plan) = &parameters.outcome else {
+            return Err(bad("mismatch parameter replacements required"));
+        };
+        let baseline = conditions.perfect_duplex_tm(&parameters.top_5_to_3)?;
+        let mut h = baseline.delta_h_kcal_per_mol;
+        let mut s = baseline.delta_s_cal_per_mol_kelvin_at_1m;
+        // A palindromic top does not make this admitted, distinct-partner
+        // mismatched duplex self-complementary. Undo that baseline term.
+        if baseline.self_complementary {
+            s += 1.4;
+        }
+        for replacement in &plan.replacements {
+            let pair = replacement.canonical.top.map(|base| base as u8);
+            let (canonical_h, canonical_s) = canonical_dna_stack(&pair)?;
+            h += f64::from(replacement.delta_h_tenths_kcal) / 10.0 - canonical_h;
+            s += f64::from(replacement.delta_s_tenths_cal_per_kelvin) / 10.0 - canonical_s;
+        }
+        let estimate = TmReport::from_totals(
+            MISMATCH_TM_MODEL,
+            conditions,
+            parameters.top_5_to_3.len(),
+            h,
+            s,
+            false,
+        )?;
+        Ok(Self {
+            parameters,
+            estimate,
+        })
+    }
+    fn validate(&self, conditions: &ThermoConditions) -> Result<(), Error> {
+        self.parameters.validate()?;
+        if self.parameters.engine != mismatch::ENGINE
+            || self.parameters.profile_revision != mismatch::profile_revision()
+            || self.parameters.assumptions != mismatch_assumptions(conditions)
+            || !matches!(self.parameters.outcome, mismatch::Outcome::Replacements(_))
+        {
+            return Err(bad("mismatch thermodynamics profile/assumptions differ"));
+        }
+        let expected = Self::from_parameters(self.parameters.clone(), conditions)?;
+        if bounded_json::hash(&expected.estimate)? != bounded_json::hash(&self.estimate)? {
+            return Err(bad("mismatch thermodynamic totals differ"));
+        }
+        Ok(())
+    }
+}
+fn mismatch_assumptions(conditions: &ThermoConditions) -> mismatch::Assumptions {
+    mismatch::Assumptions {
+        sodium_molar: conditions.sodium_molar,
+        total_strand_molar: conditions.total_strand_molar,
+        concentration: mismatch::ConcentrationConvention::EqualConcentrationTotalStrands,
+        salt: mismatch::SaltConvention::SodiumEntropy1998,
+        ph: mismatch::PhConvention::Ph7,
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -92,6 +164,8 @@ pub fn assess(request: &Request) -> Result<Report, Error> {
         &request.options,
         &mut Budget::new(request.budget)?,
     )?;
+    let mismatch_context =
+        mismatch::DuplexContext::new(&request.source.sequence, request.source.topology)?;
     let mut whole = vec![None::<TmValue>; request.collection.oligos.len()];
     let mut thermodynamics = Vec::with_capacity(search.hits.len());
     for (index, hit) in search.hits.iter().enumerate() {
@@ -106,13 +180,23 @@ pub fn assess(request: &Request) -> Result<Report, Error> {
             oligo,
             &request.options,
         )?;
-        let annealing = if hit.maximum_mismatches != 0 || !hit.certainly_admissible {
-            TmValue::Unavailable("No mismatch- or mixture-duplex thermodynamic model is admitted; a perfect-duplex estimate is not assigned to this binding footprint.".into())
-        } else {
-            tm(
-                &oligo.ordered.as_str()[hit.annealing_start..],
-                &request.conditions,
-            )
+        let parameters = mismatch_context.assess(
+            oligo,
+            &request.options,
+            hit,
+            mismatch_assumptions(&request.conditions),
+        )?;
+        let annealing = match parameters.outcome {
+            mismatch::Outcome::PerfectDuplex => tm(&parameters.top_5_to_3, &request.conditions),
+            mismatch::Outcome::Replacements(_) => {
+                match MismatchTm::from_parameters(parameters, &request.conditions) {
+                    Ok(value) => TmValue::MismatchAvailable(value),
+                    Err(error) => TmValue::Unavailable(error.to_string()),
+                }
+            }
+            mismatch::Outcome::Unsupported(reason) => TmValue::Unavailable(format!(
+                "Mismatch thermodynamics unsupported for this footprint: {reason:?}."
+            )),
         };
         thermodynamics.push(HitThermodynamics {
             hit_index: index,
@@ -132,7 +216,7 @@ pub fn assess(request: &Request) -> Result<Report, Error> {
         report_revision: String::new(),
         warnings: vec![
             "Binding evidence uses a declared ungapped suffix alignment model, not PCR extension, amplification, experimental annealing or absence beyond the actually completed search.".into(),
-            "Annealing Tm applies only to an unambiguous perfectly paired footprint under the declared equal-concentration sodium-only DNA-duplex model. Whole-oligo Tm is a hypothetical perfect complement of the entire ordered oligo, including its tail, not the current template-binding Tm or a recommended PCR temperature. Magnesium, additives, modifications and mismatched duplexes are not modeled.".into(),
+            "Annealing Tm uses either the concrete perfect-duplex model or the admitted single internal DNA-mismatch parameter profile (pH7, two distinct equal-concentration strands and sodium-only entropy correction). Unsupported footprints remain unavailable. Whole-oligo Tm is a hypothetical perfect complement of the entire ordered oligo, including its tail, not the current template-binding Tm or a recommended PCR temperature. Magnesium, additives, modifications, multiple or near-end mismatches and competing self-association are not modeled.".into(),
         ],
     };
     report.report_revision = report.content_revision()?;
@@ -179,9 +263,50 @@ impl Report {
                     "mismatch/uncertain footprint cannot claim perfect-duplex binding Tm",
                 ));
             }
+            if matches!(values.whole_oligo, TmValue::MismatchAvailable(_)) {
+                return Err(bad(
+                    "hypothetical whole-oligo Tm must use a perfect complement",
+                ));
+            }
+            if matches!(values.annealing, TmValue::MismatchAvailable(_))
+                && (hit.minimum_mismatches != 1
+                    || hit.maximum_mismatches != 1
+                    || !hit.certainly_admissible)
+            {
+                return Err(bad(
+                    "mismatch thermodynamics requires one concrete admitted mismatch",
+                ));
+            }
+            if let TmValue::MismatchAvailable(value) = &values.annealing {
+                let facts = &value.parameters;
+                if facts.top_5_to_3.len() != hit.columns.len()
+                    || facts.source_positions.len() != hit.columns.len()
+                    || facts.oligo_start != hit.annealing_start
+                    || !facts
+                        .top_5_to_3
+                        .chars()
+                        .zip(&hit.columns)
+                        .all(|(base, c)| base == c.oligo_base)
+                    || !facts
+                        .bottom_3_to_5
+                        .chars()
+                        .zip(&hit.columns)
+                        .all(|(base, c)| base == c.template_base)
+                    || !facts
+                        .source_positions
+                        .iter()
+                        .zip(&hit.columns)
+                        .all(|(position, c)| *position == c.source_position)
+                {
+                    return Err(bad(
+                        "mismatch thermodynamic footprint differs from retained hit columns",
+                    ));
+                }
+            }
             for value in [&values.annealing, &values.whole_oligo] {
                 match value {
                     TmValue::Available(value) => value.validate_for_conditions(&self.conditions)?,
+                    TmValue::MismatchAvailable(value) => value.validate(&self.conditions)?,
                     TmValue::Unavailable(reason) if reason.is_empty() || reason.len() > 2048 => {
                         return Err(bad("invalid Tm unavailability reason"));
                     }

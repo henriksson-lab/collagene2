@@ -18,6 +18,10 @@ The progress fields separate three facts:
 - `exhaustive_for_manifest`: every manifest owner was searched under the declared Hamming/PAM model without limits or cancellation, and source integrity passed.
 - `complete`: exhaustive manifest search plus all declared expected components being present. An unenumerated expected build does not establish whole-build completeness.
 
+The current `genome-crispr-2` engine explicitly uses zero bulges and the selected
+design PAM. The separate selected-record bulge and screening-PAM controls do not
+apply to this API; genome requests have no such options.
+
 None of these fields predicts biological specificity, cleavage activity or repair. The current model excludes bulges, population variation, chromatin and alternative PAMs outside the selected profile. Intended-site tagging requires the exact reference role, manifest and canonical content revisions, contig, guide/PAM vectors and orientation. It never removes the hit or suppresses identical DNA elsewhere.
 
 Report `validate` and `validate_bindings_for` methods check shape and request binding only; they do not replay analysis or grant positive scientific authority. Native/browser job registries must keep their private sessions and bind every result to the current reference role and request.

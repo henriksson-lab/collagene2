@@ -325,7 +325,7 @@ async fn fresh_selected_batches_save_historical_records_and_replay_exact_rows_wi
     assert_eq!(saved["receipt"]["verified"], false);
     assert_eq!(saved["receipt"]["recorded_row_count"], 4);
     let full = text_artifact(&c, &saved["artifact_id"]).await;
-    assert_eq!(full["schema_version"], 3);
+    assert_eq!(full["schema_version"], 5);
     assert_eq!(full["rows"].as_array().unwrap().len(), 4);
     assert_eq!(full["request"], matrix);
     assert_eq!(full["rows"][0]["state"], "Evaluated");

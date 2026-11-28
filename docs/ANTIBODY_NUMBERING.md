@@ -2,10 +2,13 @@
 
 `collagene-antibody-numbering` is an independently implemented MIT Rust/WASM
 module for explicit position labels, bounded profile alignment and source-bound
-conditional antibody numbering. Current human V/J reference analysis produces
+conditional antibody numbering. Explicit human IGH/IGK/IGL reference analysis produces
 conditional IMGT, Kabat1991 and Chothia1997 tracks in workers, the Biology
 inspector, protein/alignment viewers and native MCP, with separately selected
-IMGT, Kabat1991, canonical-chart Chothia or North2011 regions. Unresolved paths/positions remain explicit. This is not a
+IMGT, Kabat1991, canonical-chart Chothia or North2011 regions. A separately pinned
+mouse C57BL/6 IGH reference scope supports IMGT numbering and IMGT regions only;
+mouse light chains, other strains/species and alternate mouse scheme/region
+combinations are refused. Unresolved paths/positions remain explicit. This is not a
 calibrated universal antibody/domain classifier or independently certified
 biological numbering system.
 
@@ -16,6 +19,40 @@ full-domain tracks. North2011 structural regions are implemented in the current
 source; broader reference/species coverage and independent natural residue-level
 validation remain part of F34. The sections
 below describe the component contracts and the validation evidence for each stage.
+
+## Explicit species, loci and model identity
+
+`domain_candidates::Options.references` contains one current
+`v_mapping::ReferenceSelection`: a declared species and a nonempty distinct locus
+list. Human selection may include heavy, kappa and/or lambda. Mouse selection is
+exactly `MouseC57Bl6` with `Heavy`; it is not a generic mouse reference model.
+Successful matching does not predict a query's species, strain or chain type.
+Unsupported combinations fail rather than borrowing a human model or converting
+the chosen numbering/region definition.
+
+`references::load(&Species)` returns the corresponding immutable compact corpus.
+Its identity includes captured source pins and the source-policy declaration.
+Mouse V-column evidence and the explicitly authored J/FR4 rule remain distinct
+from provider-supplied residue labels; raw provider J metadata is retained rather
+than silently reinterpreted. Model identities bind the selected species, locus,
+corpus, admitted reference facts and integer scoring configuration. Full analysis
+artifacts retain these identities, and the inspectors expose them in mapping
+diagnostics. Existing source/event, row, epoch and option guards also invalidate
+reports when reference scope changes.
+
+The Biology inspectors keep reference/numbering controls in a collapsed section,
+with human locus choices and an explicit C57BL/6 heavy-only choice. Retained
+supported intervals can be viewed together; overlapping candidates remain labeled
+alternative hypotheses, not certified separate domains. The selected candidate
+still controls the detailed sequence/alignment overlay. No permanent toolbar row,
+calibrated confidence score or new numbering conversion is introduced.
+
+Current references use corpus engine `antibody-reference-corpus-3`, V mapping
+`antibody-v-reference-mapping-5`, V/J candidates `antibody-vj-candidates-5`, domain
+tracks `antibody-domain-tracks-6`, and the core alignment wrapper
+`alignment-antibody-5`. Older internal encodings are rejected directly. The mouse
+routing fixture joins a captured canonical V prefix, an authored CDR3 and a captured
+FR4; it tests source/scope/projection plumbing, not independent biological accuracy.
 
 ## Labels and conditional CDR3 allocation
 
@@ -166,8 +203,8 @@ worker/MCP/protein/alignment tracks. The corpus does not complete those gates.
 
 ## Query-to-reference V-prefix mapping
 
-`v_mapping::models` constructs three explicit human reference models (heavy,
-kappa, lambda) from the current corpus. The six atypical Cys23/Cys104 alleles are
+`v_mapping::models` constructs the explicitly selected species/locus models.
+The full human selection has heavy, kappa and lambda models from its pinned corpus. The six atypical Cys23/Cys104 alleles are
 excluded from this canonical-anchor modeling policy, with their identities
 retained. The other 348 alleles yield 140, 60 and 72 distinct aligned protein
 sequences, respectively. Identical protein sequences count once, irrespective of
@@ -184,8 +221,8 @@ populated states permit deletions and insertions according to the affine kernel.
 These are authored heuristic scores, not trained likelihoods or calibrated
 antibody evidence. Callers supply all weights and their score threshold explicitly.
 
-`v_mapping::map_query` searches all three loci independently at every full-profile
-source endpoint. It does not select a chain or species by comparing scores from
+`v_mapping::map_query` searches each selected locus independently at every
+full-profile source endpoint. It does not select a chain or species by comparing scores from
 differently sized profiles. Above the declared score filter, a unique path at an
 endpoint through a fully resolved query can
 produce candidate reference correspondences, deleted model positions and query
@@ -232,7 +269,7 @@ not assigned an FR4 amino acid or combined with invented constant-region bases.
 · [Coding/splice boundary](https://imgt.org/IMGTScientificChart/Numbering/IMGTnumberingCR.html).
 
 The single current corpus representation is version 2 / engine
-`antibody-reference-corpus-2`. Old internal versions are rejected. V-reference
+`antibody-reference-corpus-3`. Old internal versions are rejected. V-reference
 models and tests consume the updated corpus directly; there is no V-only adapter
 or fallback. Counts and source-exclusion ledgers cover V and J separately. Native
 fixtures check every J translation with the existing Rust engine, including the
@@ -263,7 +300,7 @@ they are not exhaustively enumerated. This mode also does not enumerate suboptim
 starts at a shared endpoint. Its counts describe score-qualified endpoints, not
 biologically confirmed domains or all possible numbering assignments.
 
-V mapping now uses engine `antibody-v-reference-mapping-4`. Its former single-best
+V mapping now uses engine `antibody-v-reference-mapping-5`. Its former single-best
 representation is replaced directly: one endpoint report per locus and explicitly
 end-bound projections. The caller supplies an aggregate grid-cell budget and a
 per-locus retention cap. Counts, truncation, thresholds and exact model/source
@@ -312,7 +349,7 @@ The algorithm does not enumerate suboptimal V paths or infer omitted endpoints.
 At most 64 candidate payloads and two million complete-FR4 scan windows are
 allowed; callers can choose smaller limits. Exceeding work bounds or cancellation
 returns an error, never a partial successful report. Native engine
-`antibody-vj-candidates-4` binds the exact source, current V/reference/endpoint and
+`antibody-vj-candidates-5` binds the exact source, current V/reference/endpoint and
 CDR3-rule engines, options and limits. Report reconstruction checks all candidates,
 coordinates, loop labels, FR4 residues, J alternatives, counts and truncation flags.
 
@@ -636,7 +673,7 @@ Native MCP offers `list_antibody_profiles` and `analyze_antibody` against immuta
 protein documents, explicit options, limits and selection. At most 20 candidate summaries are
 returned inline; a full report artifact preserves all retained evidence. These
 read-only tools do not install documents or materials. The inspector and MCP expose
-the conditional human-reference scope directly. Independent biological validation
+the conditional selected-species/locus reference scope directly. Independent biological validation
 and whole-product acceptance remain open.
 
 
@@ -687,7 +724,7 @@ reconstructs the native scientific analysis. UI replies use actual-source map
 validation, and independently supplied scientific evidence needs full reconstruction.
 
 Worker 124 carries job 196/result 186 with required selection under unchanged
-ordinary message limits. The alignment report engine is `alignment-antibody-4`. The
+ordinary message limits. The alignment report engine is `alignment-antibody-5`. The
 protein alignment inspector supplies explicit settings, cancellable row analysis,
 retained-candidate selection, CDR colors, unresolved underlines, exact focused-cell
 numbering/evidence readouts and full report download. Changing rows, alignment,

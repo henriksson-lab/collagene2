@@ -964,6 +964,7 @@ name = "collagene-enzyme-catalog"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "postcard",
  "schemars 1.2.3",
  "serde",
  "serde_json",

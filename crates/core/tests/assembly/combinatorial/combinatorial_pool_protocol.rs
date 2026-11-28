@@ -32,6 +32,7 @@ fn fixture() -> (Workspace, Design, SelectedConstruct) {
         anneal_bottom: None,
         generation: Some(
             collagene_core::chemistry::tracked_duplex::GenerationAssumptions {
+                host: None,
                 dam: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                 dcm: collagene_core::chemistry::methylation::MethylationState::Unmodified,
                 cpg: collagene_core::chemistry::methylation::MethylationState::Unmodified,

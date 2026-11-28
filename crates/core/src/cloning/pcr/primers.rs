@@ -289,19 +289,7 @@ impl ThermoConditions {
             s += es;
         }
         for pair in text.as_bytes().windows(2) {
-            let (ph, ps) = match pair {
-                b"AA" | b"TT" => (-7.9, -22.2),
-                b"AT" => (-7.2, -20.4),
-                b"TA" => (-7.2, -21.3),
-                b"CA" | b"TG" => (-8.5, -22.7),
-                b"GT" | b"AC" => (-8.4, -22.4),
-                b"CT" | b"AG" => (-7.8, -21.0),
-                b"GA" | b"TC" => (-8.2, -22.2),
-                b"CG" => (-10.6, -27.2),
-                b"GC" => (-9.8, -24.4),
-                b"GG" | b"CC" => (-8.0, -19.9),
-                _ => unreachable!("validated concrete DNA"),
-            };
+            let (ph, ps) = canonical_dna_stack(pair)?;
             h += ph;
             s += ps;
         }
@@ -309,7 +297,49 @@ impl ThermoConditions {
         if self_complementary {
             s -= 1.4;
         }
-        let salt_s = s + 0.368 * (text.len() - 1) as f64 * conditions.sodium_molar.ln();
+        TmReport::from_totals(TM_MODEL, conditions, text.len(), h, s, self_complementary)
+    }
+}
+
+/// SantaLucia1998 Table 2 canonical DNA dinucleotide fact.
+pub(crate) fn canonical_dna_stack(pair: &[u8]) -> Result<(f64, f64), Error> {
+    Ok(match pair {
+        b"AA" | b"TT" => (-7.9, -22.2),
+        b"AT" => (-7.2, -20.4),
+        b"TA" => (-7.2, -21.3),
+        b"CA" | b"TG" => (-8.5, -22.7),
+        b"GT" | b"AC" => (-8.4, -22.4),
+        b"CT" | b"AG" => (-7.8, -21.0),
+        b"GA" | b"TC" => (-8.2, -22.2),
+        b"CG" => (-10.6, -27.2),
+        b"GC" => (-9.8, -24.4),
+        b"GG" | b"CC" => (-8.0, -19.9),
+        _ => {
+            return Err(Error::Unsupported(
+                "canonical DNA stack requires two concrete bases".into(),
+            ));
+        }
+    })
+}
+
+impl TmReport {
+    /// Shared sodium/equal-concentration solver. The caller owns the admitted
+    /// parameter model, end corrections and any self-complementary symmetry term.
+    pub(crate) fn from_totals(
+        model: &str,
+        conditions: &ThermoConditions,
+        length: usize,
+        h: f64,
+        s: f64,
+        self_complementary: bool,
+    ) -> Result<Self, Error> {
+        conditions.validate()?;
+        if !(2..=MAX_OLIGO).contains(&length) || !h.is_finite() || !s.is_finite() {
+            return Err(Error::Unsupported(
+                "bounded finite duplex thermodynamic totals required".into(),
+            ));
+        }
+        let salt_s = s + 0.368 * (length - 1) as f64 * conditions.sodium_molar.ln();
         let concentration =
             conditions.total_strand_molar / if self_complementary { 1. } else { 4. };
         let tm = h * 1000. / (salt_s + 1.987 * concentration.ln()) - 273.15;
@@ -319,7 +349,7 @@ impl ThermoConditions {
             ));
         }
         Ok(TmReport {
-            model: TM_MODEL.into(),
+            model: model.into(),
             conditions: conditions.clone(),
             tm_c: tm,
             delta_h_kcal_per_mol: h,

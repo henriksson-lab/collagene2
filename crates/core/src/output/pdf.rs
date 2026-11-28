@@ -1614,11 +1614,13 @@ fn export_protocol_pdf_checked_inner(
                 template,
                 assumptions,
             } => format!(
-                "Declare source-generation modification assumptions for {}: Dam {:?}, Dcm {:?}, CpG {:?}. This is an explicit three-mechanism generation model; it is not measured methylation or an imported physical-state claim.",
+                "Declare source-generation modification assumptions for {}: Dam {:?}, Dcm {:?}, CpG {:?}. Documentary host: {}. This is an explicit three-mechanism generation model; it is not measured methylation or an imported physical-state claim.",
                 source_name(template),
                 assumptions.dam,
                 assumptions.dcm,
-                assumptions.cpg
+                assumptions.cpg,
+                serde_json::to_string(&assumptions.host)
+                    .map_err(|error| Error::Format(error.to_string()))?
             ),
             Operation::CheckedDigest {
                 template,

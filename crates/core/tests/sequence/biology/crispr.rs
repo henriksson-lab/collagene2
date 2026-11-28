@@ -340,7 +340,7 @@ fn source_options_profile_and_plausible_imported_evidence_need_fresh_replay() {
     assert!(validate_candidate(&source, &o, &forged.candidates[0]).is_err());
     let mut old = r.clone();
     old.engine_version = "historical-crispr".into();
-    old.validate().unwrap();
+    assert!(old.validate().is_err());
     assert!(old.validate_bindings_for(&source, &o).is_err());
     let mut fake = o.clone();
     fake.profile.pam = "NAG".into();

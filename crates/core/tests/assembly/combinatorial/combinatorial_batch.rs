@@ -244,7 +244,7 @@ fn unselected_paired_operands_remain_part_of_the_indivisible_record_source_closu
         .event_id = format!("event-{}", "0".repeat(64));
     record.context_revision = blake3::hash(
         &serde_json::to_vec(&(
-            "combinatorial-batch-record-3",
+            "combinatorial-batch-record-5",
             &record.engine_version,
             &record.request,
             &record.rows,
@@ -377,7 +377,7 @@ fn native_records_deduplicate_and_archived_assertions_need_fresh_replay() {
     record.rows[1].status = Some(Status::ConsistentUnderAssumptions);
     record.context_revision = blake3::hash(
         &serde_json::to_vec(&(
-            "combinatorial-batch-record-3",
+            "combinatorial-batch-record-5",
             &record.engine_version,
             &record.request,
             &record.rows,

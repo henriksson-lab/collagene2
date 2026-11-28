@@ -93,6 +93,7 @@ fn all_origins_and_orientations_preserve_actual_strand_chemical_positions_throug
             let tracked = TrackedDuplex::from_input(
                 &m,
                 &GenerationAssumptions {
+                    host: None,
                     dam: M::FullyModified,
                     dcm: M::FullyModified,
                     cpg: M::FullyModified,
@@ -144,6 +145,7 @@ fn reversal_swaps_actual_five_prime_ledgers_without_complementing_their_chemistr
     let t = TrackedDuplex::from_input(
         &m,
         &GenerationAssumptions {
+            host: None,
             dam: M::FullyModified,
             dcm: M::FullyModified,
             cpg: M::FullyModified,
@@ -178,6 +180,7 @@ fn fill_in_keeps_original_dam_calls_and_marks_each_added_adenine_unmodified() {
     let t = TrackedDuplex::from_input(
         &m,
         &GenerationAssumptions {
+            host: None,
             dam: M::FullyModified,
             dcm: M::Unmodified,
             cpg: M::Unmodified,

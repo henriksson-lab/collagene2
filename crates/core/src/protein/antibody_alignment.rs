@@ -6,7 +6,7 @@ use crate::{
 };
 use collagene_model::{Alphabet, Error, Molecule};
 use serde::{Deserialize, Serialize};
-pub const ENGINE: &str = "alignment-antibody-4";
+pub const ENGINE: &str = "alignment-antibody-5";
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
@@ -190,6 +190,8 @@ impl Report {
             || self.analysis.source_revision != n::source_revision(&m).map_err(bad)?
             || self.analysis.evidence.options != *options
             || self.analysis.evidence.limits != *limits
+            || self.analysis.selection != *selection
+            || self.analysis.evidence.v_evidence.selection != options.references
         {
             return Err(bad("Alignment antibody source/projection changed"));
         }

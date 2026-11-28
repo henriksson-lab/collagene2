@@ -151,6 +151,7 @@ mod tests {
             vec![Operation::DeclareSourceModifications {
                 template: Source::Input("source0".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unmodified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::Unmodified,

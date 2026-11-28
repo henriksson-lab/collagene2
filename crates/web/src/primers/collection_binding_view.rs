@@ -312,7 +312,7 @@ pub fn OligoCollectionPanel(
                         .collect_view()}
                 </div>
                 <p class="helper">
-                    "Basic sodium-only perfect-duplex model. Whole-oligo Tm assumes a hypothetical perfectly complementary partner, including tails. Annealed-stretch Tm is unavailable for mismatched or ambiguous duplexes unsupported by the model."
+                    "Sodium-only perfect-duplex or admitted single internal mismatch model (pH7). Whole-oligo Tm assumes a hypothetical perfectly complementary partner, including tails. Annealed-stretch Tm is unavailable for ambiguous, multiple-mismatch, near-end or other unsupported duplexes."
                 </p>
             </details>
             <div class="digest-actions">
@@ -364,6 +364,10 @@ fn NumericInput(draft: RwSignal<Draft>, field: Field) -> impl IntoView {
 fn tm(value: &TmValue) -> String {
     match value {
         TmValue::Available(report) => format!("{:.1} °C ({})", report.tm_c, report.model),
+        TmValue::MismatchAvailable(report) => format!(
+            "{:.1} °C ({}; profile {})",
+            report.estimate.tm_c, report.estimate.model, report.parameters.profile_revision
+        ),
         TmValue::Unavailable(reason) => format!("Unavailable: {reason}"),
     }
 }

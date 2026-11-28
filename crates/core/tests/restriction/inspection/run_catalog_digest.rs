@@ -238,6 +238,7 @@ fn inherited_cpg_positions_survive_conditional_not_i_cleavage_without_claiming_p
             Operation::DeclareSourceModifications {
                 template: Source::Input("input-0".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unmodified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::FullyModified,

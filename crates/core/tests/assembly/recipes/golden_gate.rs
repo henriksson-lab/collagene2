@@ -20,6 +20,7 @@ fn generated_unmodified(
         tracked_duplex::{CleavageBudget, GenerationAssumptions, TrackedDuplex},
     };
     let assumptions = GenerationAssumptions {
+        host: None,
         dam: MethylationState::Unmodified,
         dcm: MethylationState::Unmodified,
         cpg: MethylationState::Unmodified,

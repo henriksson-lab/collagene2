@@ -11,3 +11,7 @@ pub(crate) mod antibody_overlay;
 pub(crate) mod antibody_overlay_draw;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod antibody_view;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod candidate_tracks;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod reference_controls;

@@ -4,36 +4,123 @@ use super::*;
 use crate::{domain_candidates as d, v_mapping};
 use std::collections::BTreeSet;
 
-pub const TRACK_ENGINE: &str = "antibody-domain-tracks-5";
+pub const TRACK_ENGINE: &str = "antibody-domain-tracks-6";
 const CHART: &str = "https://www.imgt.org/IMGTScientificChart/Numbering/IMGTIGVLsuperfamily.html";
-data! {pub enum NumberingScheme {Imgt,Kabat1991,Chothia1997}}
-data! {pub enum RegionDefinition {Imgt,Kabat1991,ChothiaCanonical,North2011}}
-data! {pub struct Selection {pub numbering_scheme:NumberingScheme,pub region_definition:RegionDefinition}}
-data! {pub enum Region {Fr1,Cdr1,Fr2,Cdr2,Fr3,Cdr3,Fr4}}
-data! {pub enum AssignmentEvidence {InvariantVReference,ConditionalLoopRule,JFr4Reference,PublishedFrameworkCorrespondence,PublishedWindowRule}}
-data! {pub struct Assignment {
-    pub position:Position,pub evidence:AssignmentEvidence,
-}}
-data! {pub struct Residue {
-    pub source_index:usize,pub residue:char,pub assignment:Option<Assignment>,pub region:Option<Region>,
-}}
-data! {pub enum CdrStatus {Mapped{start:usize,end:usize},Unresolved}}
-data! {pub struct CdrRegion {pub kind:Region,pub status:CdrStatus}}
-data! {pub struct Track {
-    pub candidate_id:String,pub locus:v_mapping::Locus,
-    pub numbering_scheme:NumberingScheme,pub region_definition:RegionDefinition,
-    /// Only present when reference position 1 has an invariant source match.
-    /// Absence does not imply that the preceding source is outside the domain.
-    pub invariant_position_one:Option<usize>,
-    pub first_supported_source_index:usize,pub source_end:usize,
-    pub unassigned_residues:usize,pub unassigned_regions:usize,pub issues:Vec<crate::alternate_tracks::Issue>,pub cdrs:Vec<CdrRegion>,pub residues:Vec<Residue>,
-}}
-data! {pub struct Report {
-    pub engine:String,pub source_revision:String,pub rule_revision:String,pub context_revision:String,
-    pub evidence:d::Report,pub selection:Selection,pub tracks:Vec<Track>,
-}}
+data! {
+    pub enum NumberingScheme {
+        Imgt,
+        Kabat1991,
+        Chothia1997
+    }
+}
+data! {
+    pub enum RegionDefinition {
+        Imgt,
+        Kabat1991,
+        ChothiaCanonical,
+        North2011
+    }
+}
+data! {
+    pub struct Selection {
+        pub numbering_scheme: NumberingScheme,
+        pub region_definition: RegionDefinition
+    }
+}
+impl Selection {
+    pub fn validate_for_references(
+        &self,
+        references: &v_mapping::ReferenceSelection,
+    ) -> Result<()> {
+        references.validate()?;
+        if references.species == crate::references::Species::MouseC57Bl6
+            && (self.numbering_scheme != NumberingScheme::Imgt
+                || self.region_definition != RegionDefinition::Imgt)
+        {
+            return Err(Error::Invalid(
+                "mouse C57BL/6 admission supports IMGT numbering and IMGT regions only",
+            ));
+        }
+        Ok(())
+    }
+}
+data! {
+    pub enum Region {
+        Fr1,
+        Cdr1,
+        Fr2,
+        Cdr2,
+        Fr3,
+        Cdr3,
+        Fr4
+    }
+}
+data! {
+    pub enum AssignmentEvidence {
+        InvariantVReference,
+        ConditionalLoopRule,
+        JFr4Reference,
+        PublishedFrameworkCorrespondence,
+        PublishedWindowRule
+    }
+}
+data! {
+    pub struct Assignment {
+        pub position: Position,
+        pub evidence: AssignmentEvidence,
+    }
+}
+data! {
+    pub struct Residue {
+        pub source_index: usize,
+        pub residue: char,
+        pub assignment: Option<Assignment>,
+        pub region: Option<Region>,
+    }
+}
+data! {
+    pub enum CdrStatus {
+        Mapped { start: usize, end: usize },
+        Unresolved
+    }
+}
+data! {
+    pub struct CdrRegion {
+        pub kind: Region,
+        pub status: CdrStatus
+    }
+}
+data! {
+    pub struct Track {
+        pub candidate_id: String,
+        pub locus: v_mapping::Locus,
+        pub numbering_scheme: NumberingScheme,
+        pub region_definition: RegionDefinition,
+        /// Only present when reference position 1 has an invariant source match.
+        /// Absence does not imply that the preceding source is outside the domain.
+        pub invariant_position_one: Option<usize>,
+        pub first_supported_source_index: usize,
+        pub source_end: usize,
+        pub unassigned_residues: usize,
+        pub unassigned_regions: usize,
+        pub issues: Vec<crate::alternate_tracks::Issue>,
+        pub cdrs: Vec<CdrRegion>,
+        pub residues: Vec<Residue>,
+    }
+}
+data! {
+    pub struct Report {
+        pub engine: String,
+        pub source_revision: String,
+        pub rule_revision: String,
+        pub context_revision: String,
+        pub evidence: d::Report,
+        pub selection: Selection,
+        pub tracks: Vec<Track>,
+    }
+}
 pub fn catalog_revision() -> String {
-    hash(b"antibody-domain-track-rules-5\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
+    hash(b"antibody-domain-track-rules-6\0", &(TRACK_ENGINE, CHART,crate::alternate_tracks::catalog_revision(),
         "IMGT regions FR1 1..26 CDR1 27..38 FR2 39..55 CDR2 56..65 FR3 66..104 CDR3 105..117 FR4 118..128; decimal insertions at111/112 only; invariant reference framework assignments; conditional loop rules; complete J FR4; unresolved rows retained; no representative start or inferred insertion labels"),65536).expect("fixed track rules")
 }
 /// Current IMGT region boundaries, applied to established IMGT labels only.
@@ -278,7 +365,7 @@ fn context_revision(
     selection: &Selection,
 ) -> Result<String> {
     hash(
-        b"antibody-domain-track-context-4\0",
+        b"antibody-domain-track-context-5\0",
         &(
             TRACK_ENGINE,
             catalog_revision(),
@@ -304,9 +391,10 @@ pub fn request_revision(
     selection: &Selection,
 ) -> Result<String> {
     d::validate_inputs(options, limits)?;
+    selection.validate_for_references(&options.references)?;
     context_revision(
         &source_revision(source)?,
-        &references::human_references()?.revision()?,
+        &references::load(&options.references.species)?.revision()?,
         options,
         limits,
         selection,
@@ -322,6 +410,7 @@ pub fn analyze(
     selection: &Selection,
     cancel: &mut impl FnMut() -> bool,
 ) -> Result<Report> {
+    selection.validate_for_references(&options.references)?;
     let evidence = d::find_candidates(source, options, limits, cancel)?;
     let rule_revision = catalog_revision();
     let context_revision = context_revision(
@@ -364,7 +453,12 @@ impl Report {
     pub fn validate_binding(&self, expected: &str) -> Result<()> {
         let e = &self.evidence;
         d::validate_inputs(&e.options, &e.limits)?;
-        let corpus = references::human_references()?.revision()?;
+        for mapping in &e.v_evidence.mappings {
+            mapping.validate_admission(&e.options.references.species)?;
+        }
+        self.selection
+            .validate_for_references(&e.options.references)?;
+        let corpus = references::load(&e.options.references.species)?.revision()?;
         if self.engine != TRACK_ENGINE
             || self.source_revision != e.source_revision
             || e.source_revision.len() != 64
@@ -382,6 +476,7 @@ impl Report {
             || e.v_evidence.engine != v_mapping::MAPPING_ENGINE
             || e.v_evidence.source_revision != e.source_revision
             || e.v_evidence.corpus_revision != corpus
+            || e.v_evidence.selection != e.options.references
             || e.v_evidence.scoring != e.options.v_scoring
             || e.v_evidence.limits != e.limits.v_mapping
             || e.candidates.len() > e.limits.max_candidates
@@ -391,7 +486,12 @@ impl Report {
             || e.windows_examined > e.limits.max_scan_windows
             || e.v_retention_truncated
                 != e.v_evidence.mappings.iter().any(|m| m.alignment.truncated)
-            || e.v_evidence.mappings.len() != 3
+            || e.v_evidence.mappings.len() != e.options.references.loci.len()
+            || e.v_evidence
+                .mappings
+                .iter()
+                .zip(&e.options.references.loci)
+                .any(|(mapping, locus)| &mapping.locus != locus)
             || e.v_evidence.mappings.iter().any(|m| {
                 m.projections.len() > profile::MAX_ENDPOINTS
                     || m.projections.len() != m.alignment.endpoints.len()
@@ -410,7 +510,8 @@ impl Report {
         }
         let mut observed = std::collections::BTreeMap::new();
         for (candidate, track) in e.candidates.iter().zip(&self.tracks) {
-            if track.cdrs.len() != 3
+            if !e.options.references.loci.contains(&candidate.locus)
+                || track.cdrs.len() != 3
                 || track.issues.len() > 6
                 || track.first_supported_source_index >= track.source_end
                 || track.source_end > MAX_SOURCE_RESIDUES

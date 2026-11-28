@@ -184,6 +184,7 @@ fn fixture() -> (DesignPlan, Molecule, Vec<topo::Input>) {
             Operation::DeclareSourceModifications {
                 template: Source::Input("template".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unknown,
                     dcm: MethylationState::Unknown,
                     cpg: MethylationState::FullyModified,

@@ -91,6 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut presets = vec![];
     for max_fr4_mismatches in [0, 1, 3] {
         let options = d::Options {
+            references: collagene_antibody_numbering::v_mapping::ReferenceSelection::human_all(),
             v_scoring: v::Scoring {
                 observed_reward: 5,
                 frequency_bonus: 8,

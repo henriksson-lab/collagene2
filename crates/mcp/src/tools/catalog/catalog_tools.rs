@@ -18,6 +18,7 @@ pub enum LookupMode {
     Search,
     Enzyme,
     Formulation,
+    Host,
 }
 fn default_page() -> usize {
     20
@@ -25,7 +26,7 @@ fn default_page() -> usize {
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LookupQuery {
-    /// Search names/aliases or look up an exact enzyme/formulation identity. At most 128 bytes.
+    /// Search names/aliases or look up an exact enzyme/formulation/host identity. At most 128 bytes.
     pub query: String,
     #[serde(default)]
     pub mode: LookupMode,
@@ -136,6 +137,21 @@ fn lookup_for(c: &Catalog, args: LookupQuery) -> Result<Value, ErrorData> {
                 json!({"mode":"Enzyme","query":args.query,"status":"Ambiguous","count":es.len(),"offset":args.offset,"next_offset":end,"done":end==es.len(),"enzymes":&es[args.offset..end]})
             }
         },
+        LookupMode::Host => {
+            let records = c
+                .hosts()
+                .iter()
+                .filter(|host| args.query.is_empty() || host.id == args.query)
+                .collect::<Vec<_>>();
+            if args.offset > records.len() {
+                return Err(bad("host lookup offset exceeds count"));
+            }
+            let end = args.offset.saturating_add(args.limit).min(records.len());
+            json!({"mode":"Host","query":args.query,"count":records.len(),
+                "offset":args.offset,"next_offset":end,"done":end==records.len(),
+                "hosts":&records[args.offset..end],
+                "authority":"Pinned strain/product-specific expectations only. They do not set Dam/Dcm/CpG chemical calls or establish measured modifications."})
+        }
         LookupMode::Formulation => match c.lookup_formulation(&args.query) {
             Lookup::Missing => {
                 json!({"mode":"Formulation","query":args.query,"status":"Missing","count":0,"formulations":[]})

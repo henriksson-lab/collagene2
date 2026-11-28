@@ -323,6 +323,7 @@ fn declared_original_modifications_survive_actual_full_circle_cleavage_and_capsu
         steps: vec![Operation::DeclareSourceModifications {
             template: Source::Input("stock".into()),
             assumptions: GenerationAssumptions {
+                host: None,
                 dam: MethylationState::FullyModified,
                 dcm: MethylationState::Unknown,
                 cpg: MethylationState::Unknown,

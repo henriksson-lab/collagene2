@@ -313,8 +313,8 @@ fn current_worker_operations_reconstruct_literal_material_and_bind_outputs() {
 }
 #[test]
 fn current_material_origin_encoding_preserves_operation_and_exact_evidence() {
-    assert_eq!(protocol::schema::CANDIDATE_SCHEMA_VERSION, 32);
-    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 30);
+    assert_eq!(protocol::schema::CANDIDATE_SCHEMA_VERSION, 33);
+    assert_eq!(workspace::PLAN_SCHEMA_VERSION, 31);
     let (mut w, cap, pin) = digest_fixture();
     let (plan, target) = prepared_plan(&mut w, &cap, &pin);
     assert_eq!(tag(&plan.steps[0]), 26);

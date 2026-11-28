@@ -55,11 +55,19 @@ decoder. Callers must still impose an outer transport-frame byte
 limit, validate inputs and validate current report bindings. General serde formats
 can allocate strings before their bounded string visitor receives ownership.
 
-Thermodynamics remain in the existing core owner. Its integrated wrapper reports
+The numerical Tm solver remains in the existing core owner. Its integrated wrapper reports
 whole-oligo and actual-annealed-stretch calculations as distinct, context-bound
 results. Mismatched/ambiguous duplexes unsupported by the current thermodynamic
 model must report unavailable; do not apply a perfect-duplex Tm as mismatch Tm.
 No external software, third-party alignment runtime or experimental claims.
+
+`thermodynamics::DuplexContext` adds bounded parameter evidence for exactly one
+isolated internal concrete DNA mismatch, using 48 permissively licensed numerical
+step facts. It returns canonical-stack replacements and explicit unsupported
+outcomes, retaining pH7/sodium-only/equal-strand assumptions and original source
+coordinates. It does not duplicate the canonical table or Tm solver. See
+[parameter attribution](data/mismatch-nn/NOTICE.md) and the repository research
+audit for the exact scope; incorporation into final Tm results is owned by core.
 
 Authored tests compare the production recurrence to an independent exhaustive tiny
 concrete footprint oracle and ambiguity-realization envelope oracle. They also

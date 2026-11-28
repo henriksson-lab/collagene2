@@ -16,6 +16,7 @@ fn source(sequence: &str) -> Molecule {
 }
 fn options() -> d::Options {
     d::Options {
+        references: collagene_antibody_numbering::v_mapping::ReferenceSelection::human_all(),
         v_scoring: v::Scoring {
             observed_reward: 5,
             frequency_bonus: 8,

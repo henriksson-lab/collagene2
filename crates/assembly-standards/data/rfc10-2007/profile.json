@@ -12,7 +12,7 @@
     "Recommended internal sites and in-frame TAATAA termination are advisory; mandatory NotI absence follows this exact 2007 draft, not a newer four-site summary."
   ],
   "curation_license": "MIT (independently authored factual selection; upstream standard prose is not copied)",
-  "expected_catalog_edition": "2026-11-28.1",
+  "expected_catalog_edition": "2026-11-28.2",
   "sources": [
     {
       "id": "knight-rfc10-2007",

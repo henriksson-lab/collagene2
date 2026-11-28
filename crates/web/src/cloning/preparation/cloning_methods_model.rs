@@ -199,6 +199,8 @@ impl OverlapExtensionPcrInput {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourceGenerationInput {
+    #[serde(deserialize_with = "required_option")]
+    pub host: Option<collagene_core::chemistry::source_host::SourceHost>,
     pub dam: String,
     pub dcm: String,
     pub cpg: String,
@@ -206,6 +208,7 @@ pub struct SourceGenerationInput {
 impl Default for SourceGenerationInput {
     fn default() -> Self {
         Self {
+            host: None,
             dam: "unknown".into(),
             dcm: "unknown".into(),
             cpg: "unknown".into(),
@@ -214,6 +217,9 @@ impl Default for SourceGenerationInput {
 }
 impl SourceGenerationInput {
     pub(crate) fn validate_raw(&self) -> Result<(), String> {
+        if let Some(host) = &self.host {
+            host.validate().map_err(|error| error.to_string())?;
+        }
         if [&self.dam, &self.dcm, &self.cpg]
             .iter()
             .any(|s| s.len() > 32)
@@ -233,6 +239,7 @@ impl SourceGenerationInput {
             match v {"unknown"=>Ok(S::Unknown),"unmodified"=>Ok(S::Unmodified),"fully"=>Ok(S::FullyModified),"mixed"=>Ok(S::HemiOrMixed),_=>Err("Complete the explicit Dam/Dcm/CpG source-generation choices before preparing material.".to_string())}
         };
         Ok(GenerationAssumptions {
+            host: self.host.clone(),
             dam: parse(&self.dam)?,
             dcm: parse(&self.dcm)?,
             cpg: parse(&self.cpg)?,
@@ -1519,6 +1526,7 @@ mod source_generation_tests {
         ));
         let before = state.preparation_context();
         state.rows[0].source_generation = Some(SourceGenerationInput {
+            host: None,
             dam: "fully".into(),
             dcm: "unmodified".into(),
             cpg: "unknown".into(),

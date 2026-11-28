@@ -14,7 +14,52 @@ pub struct Capture {
     pub selection: domain_tracks::Selection,
     pub context_revision: String,
 }
+pub fn reference_label(references: &n::v_mapping::ReferenceSelection) -> String {
+    let species = match references.species {
+        n::references::Species::Human => "Human",
+        n::references::Species::MouseC57Bl6 => "Mouse C57BL/6",
+    };
+    let loci = references
+        .loci
+        .iter()
+        .map(|l| match l {
+            n::v_mapping::Locus::Heavy => "IGH",
+            n::v_mapping::Locus::Kappa => "IGK",
+            n::v_mapping::Locus::Lambda => "IGL",
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(
+        "{species} reference scope: {loci}. This is an explicit reference choice, not a species or chain prediction."
+    )
+}
+pub fn validate_display_scope(
+    references: &n::v_mapping::ReferenceSelection,
+    selection: &domain_tracks::Selection,
+) -> Result<(), String> {
+    selection.validate_for_references(references).map_err(|e| {
+        format!("{e}. Choose a supported explicit reference, numbering and region combination; existing choices are not converted.")
+    })
+}
+pub fn numbering_scheme(value: &str) -> Result<domain_tracks::NumberingScheme, String> {
+    match value {
+        "Imgt" => Ok(domain_tracks::NumberingScheme::Imgt),
+        "Kabat1991" => Ok(domain_tracks::NumberingScheme::Kabat1991),
+        "Chothia1997" => Ok(domain_tracks::NumberingScheme::Chothia1997),
+        _ => Err("Unsupported antibody numbering scheme.".into()),
+    }
+}
+pub fn region_definition(value: &str) -> Result<domain_tracks::RegionDefinition, String> {
+    match value {
+        "Imgt" => Ok(domain_tracks::RegionDefinition::Imgt),
+        "Kabat1991" => Ok(domain_tracks::RegionDefinition::Kabat1991),
+        "ChothiaCanonical" => Ok(domain_tracks::RegionDefinition::ChothiaCanonical),
+        "North2011" => Ok(domain_tracks::RegionDefinition::North2011),
+        _ => Err("Unsupported antibody region definition.".into()),
+    }
+}
 pub fn preset(
+    references: n::v_mapping::ReferenceSelection,
     minimum_score: i32,
     max_fr4_mismatches: usize,
     max_cdr3_residues: usize,
@@ -22,6 +67,7 @@ pub fn preset(
 ) -> (d::Options, d::Limits) {
     (
         d::Options {
+            references,
             v_scoring: n::v_mapping::Scoring {
                 observed_reward: 5,
                 frequency_bonus: 8,
@@ -125,7 +171,13 @@ mod tests {
                 revision: d.head.clone(),
             }
         };
-        let (o, l) = preset(300, 1, 60, 32);
+        let (o, l) = preset(
+            n::v_mapping::ReferenceSelection::human_all(),
+            300,
+            1,
+            60,
+            32,
+        );
         let a = binding(0);
         let b = binding(1);
         assert_eq!(a.revision, b.revision);
@@ -139,6 +191,21 @@ mod tests {
         definition.region_definition = domain_tracks::RegionDefinition::ChothiaCanonical;
         assert!(c.guard(3, &a, &o, &l, &definition).is_err());
         c.guard(3, &a, &o, &l, &test_selection()).unwrap();
+        let mut reference_change = o.clone();
+        reference_change.references = n::v_mapping::ReferenceSelection {
+            species: n::references::Species::MouseC57Bl6,
+            loci: vec![n::v_mapping::Locus::Heavy],
+        };
+        assert!(
+            c.guard(3, &a, &reference_change, &l, &test_selection())
+                .is_err()
+        );
+        let mut locus_change = o.clone();
+        locus_change.references.loci = vec![n::v_mapping::Locus::Heavy];
+        assert!(
+            c.guard(3, &a, &locus_change, &l, &test_selection())
+                .is_err()
+        );
         assert!(c.guard(3, &b, &o, &l, &test_selection()).is_err());
         assert!(c.guard(4, &a, &o, &l, &test_selection()).is_err());
         let mut changed = l;
@@ -150,6 +217,22 @@ mod tests {
             c.guard(3, &a, &changed, &c.limits, &test_selection())
                 .is_err()
         );
+    }
+    #[test]
+    fn mouse_display_does_not_silently_convert_unsupported_human_rules() {
+        let mouse = n::v_mapping::ReferenceSelection {
+            species: n::references::Species::MouseC57Bl6,
+            loci: vec![n::v_mapping::Locus::Heavy],
+        };
+        validate_display_scope(&mouse, &test_selection()).unwrap();
+        let mut alternate = test_selection();
+        alternate.numbering_scheme = domain_tracks::NumberingScheme::Kabat1991;
+        assert!(validate_display_scope(&mouse, &alternate).is_err());
+        alternate = test_selection();
+        alternate.region_definition = domain_tracks::RegionDefinition::North2011;
+        assert!(validate_display_scope(&mouse, &alternate).is_err());
+        assert!(numbering_scheme("unknown").is_err());
+        assert!(region_definition("unknown").is_err());
     }
 }
 

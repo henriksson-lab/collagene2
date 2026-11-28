@@ -32,6 +32,14 @@ pub fn AntibodyPanel(
     on_select: Callback<(Capture, usize, usize), Result<(), String>>,
     on_overlay: Callback<Option<Arc<Overlay>>, Result<(), String>>,
 ) -> impl IntoView {
+    let references = RwSignal::new(
+        collagene_core::antibody_numbering::v_mapping::ReferenceSelection::human_all(),
+    );
+    let mouse = Memo::new(move |_| {
+        references.with(|r| {
+            r.species == collagene_core::antibody_numbering::references::Species::MouseC57Bl6
+        })
+    });
     let scheme = RwSignal::new(n::NumberingScheme::Imgt);
     let definition = RwSignal::new(n::RegionDefinition::Imgt);
     let choice = Memo::new(move |_| n::Selection {
@@ -43,7 +51,10 @@ pub fn AntibodyPanel(
     let loop_max = RwSignal::new("60".to_string());
     let retained = RwSignal::new("32".to_string());
     let settings = Memo::new(move |_| -> Result<_, String> {
+        let reference_scope = references.get();
+        antibody_model::validate_display_scope(&reference_scope, &choice.get())?;
         Ok(antibody_model::preset(
+            reference_scope,
             minimum
                 .get()
                 .parse()
@@ -68,6 +79,10 @@ pub fn AntibodyPanel(
     let report = RwSignal::new(None::<(Capture, Arc<n::Report>)>);
     let candidate = RwSignal::new(0usize);
     let page = RwSignal::new(0usize);
+    Effect::new(move |_| {
+        candidate.get();
+        page.set(0);
+    });
     let show_overlay = RwSignal::new(true);
     Effect::new(move |_| {
         let value = report.get();
@@ -172,7 +187,7 @@ pub fn AntibodyPanel(
             generation.set(token);
             report.set(None);
             busy.set(true);
-            status.set("Analyzing human V/J reference candidates…".into());
+            status.set("Analyzing selected V/J reference candidates…".into());
             let alive = alive.clone();
             wasm_bindgen_futures::spawn_local(async move {
                 let result = w
@@ -221,36 +236,274 @@ pub fn AntibodyPanel(
             });
         }
     };
-    view! {<section class="inspector-content" aria-label="Antibody reference analysis" style="overflow-wrap:anywhere"><details><summary>"Antibody numbering and CDRs"</summary>
-        <p class="helper">"Human V/J references · up to 2,000 residues · conditional numbering and independently chosen regions. Unresolved residues remain unassigned. Published profile assignments remain conditional; this is not a calibrated classifier or independently certified numbering."</p>
-        <label>"Numbering scheme"<select prop:value=move||format!("{:?}",scheme.get()) on:change=move|e|scheme.set(match event_target_value(&e).as_str(){"Kabat1991"=>n::NumberingScheme::Kabat1991,"Chothia1997"=>n::NumberingScheme::Chothia1997,_=>n::NumberingScheme::Imgt})><option value="Imgt">"IMGT"</option><option value="Kabat1991">"Kabat (1991 profiles)"</option><option value="Chothia1997">"Chothia (1997 profiles)"</option></select></label>
-        <label>"Region definition"<select prop:value=move||format!("{:?}",definition.get()) on:change=move|e|definition.set(match event_target_value(&e).as_str(){"Kabat1991"=>n::RegionDefinition::Kabat1991,"ChothiaCanonical"=>n::RegionDefinition::ChothiaCanonical,"North2011"=>n::RegionDefinition::North2011,_=>n::RegionDefinition::Imgt})><option value="Imgt">"IMGT"</option><option value="Kabat1991">"Kabat (1991)"</option><option value="ChothiaCanonical">"Chothia (canonical charts)"</option><option value="North2011">"North (2011)"</option></select></label>
-        <p class="helper">"Number labels and CDR definitions are independent. Unsupported windows remain unresolved; the full report retains diagnostics."</p>
-        <details><summary>"Analysis settings"</summary><p class="helper">"V weights: observed 5, frequency 8, unseen −6; affine gaps −12/−2. Minimum CDR3 length 2. Score thresholds are heuristic."</p>
-            <label>"Minimum V score"<input type="number" prop:value=move||minimum.get() on:input=move|e|minimum.set(event_target_value(&e))/></label>
-            <label>"Allowed FR4 substitutions (0–3)"<input type="number" min="0" max="3" prop:value=move||substitutions.get() on:input=move|e|substitutions.set(event_target_value(&e))/></label>
-            <label>"Maximum CDR3 residues"<input type="number" min="2" max="2000" prop:value=move||loop_max.get() on:input=move|e|loop_max.set(event_target_value(&e))/></label>
-            <label>"Retained candidates (0–64)"<input type="number" min="0" max="64" prop:value=move||retained.get() on:input=move|e|retained.set(event_target_value(&e))/></label>
-            <p class="helper">"Zero retained candidates requests counts only. At most 128 optimal V endpoints per locus are retained; omitted endpoints and suboptimal paths are not searched for products."</p>
-        </details>
-        <button class="button secondary full" disabled=move||busy.get()||workspace_busy.get() on:click=run>"Analyze antibody candidates"</button>
-        <Show when=move||busy.get()><button class="text-tool" on:click=move|_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);busy.set(false);status.set("Analysis cancelled.".into());}>"Cancel"</button></Show>
-        <p class="helper" role="status">{move||status.get()}</p>
-        <Show when=move||report.with(|r|r.is_some())>
-            <p class="helper">{move||report.with(|r|r.as_ref().map(|(_,r)|format!("{} qualifying pairs within retained V ends. V endpoints truncated: {} · pairs truncated: {}.",r.evidence.qualified_pairs_in_retained_v,r.evidence.v_retention_truncated,r.evidence.pair_retention_truncated)).unwrap_or_default())}</p>
-            <label><input type="checkbox" prop:checked=move||show_overlay.get() on:change=move|e|show_overlay.set(event_target_checked(&e))/><span>"Show selected candidate in sequence"</span></label>
-            <label>"Candidate"<select prop:value=move||candidate.get().to_string() on:change=move|e|{candidate.set(event_target_value(&e).parse().unwrap_or(0));page.set(0);}>
-                {move||report.with(|r|r.as_ref().map(|(_,r)|r.tracks.iter().enumerate().map(|(i,t)|view!{<option value=i.to_string()>{format!("{} · {:?} · supported {}–{}",i+1,t.locus,t.first_supported_source_index+1,t.source_end)}</option>}).collect_view()))}
-            </select></label>
-            {move||report.with(|r|r.as_ref().map(|(_,r)|crate::biology::antibody::antibody_overlay::cdr_summaries(r,candidate.get()).into_iter().map(|s|view!{<p class="helper">{s}</p>}).collect_view()))}
-            <details><summary>"Mapping diagnostics"</summary>{move||report.with(|r|r.as_ref().map(|(_,r)|crate::biology::antibody::antibody_overlay::diagnostics(r,candidate.get()).into_iter().map(|s|view!{<p class="helper">{s}</p>}).collect_view()))}</details>
-            <p class="helper">{move||report.with(|r|r.as_ref().and_then(|(_,r)|r.tracks.get(candidate.get())).map(|t|format!("{} unnumbered residues · {} unresolved regions · position 1: {}. Coordinates below are one-based source residues.",t.unassigned_residues,t.unassigned_regions,t.invariant_position_one.map(|i|(i+1).to_string()).unwrap_or_else(||"unresolved N terminus".into()))).unwrap_or_default())}</p>
-            <table class="data-table"><thead><tr><th>"Source"</th><th>"AA"</th><th>{move||crate::biology::antibody::antibody_overlay::scheme_label(&scheme.get())}</th><th>"Region"</th></tr></thead><tbody>
-                {move||report.with(|r|r.as_ref().and_then(|(c,r)|r.tracks.get(candidate.get()).map(|t|t.residues.iter().skip(page.get()*60).take(60).map(|row|{let index=row.source_index;let capture=c.clone();let assignment=row.assignment.as_ref();view!{<tr><td><button class="text-tool" disabled=move||workspace_busy.get() on:click=move|_|{let result=(||{let(o,l)=settings.get_untracked()?;capture.guard(epoch.get_untracked(),&source.get_untracked().binding,&o,&l, &choice.get_untracked())?;on_select.run((capture.clone(),index,index+1))})();if let Err(e)=result{status.set(e);}}>{index+1}</button></td><td>{row.residue.to_string()}</td><td title=assignment.map(|a|origin(&a.evidence)).unwrap_or("No supported assignment")>{assignment.map(|a|a.position.to_string()).unwrap_or_else(||"—".into())}</td><td>{row.region.as_ref().map(region).unwrap_or("unresolved")}</td></tr>}}).collect_view())))}
-            </tbody></table>
-            <button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous residues"</button>
-            <button class="text-tool" disabled=move||report.with(|r|r.as_ref().and_then(|(_,r)|r.tracks.get(candidate.get())).is_none_or(|t|(page.get()+1)*60>=t.residues.len())) on:click=move|_|page.update(|p|*p+=1)>"Next residues"</button>
-            <button class="button secondary full" disabled=move||workspace_busy.get() on:click=move|_|{let result=(||{let(c,r)=report.get_untracked().ok_or("Analyze the source first.")?;let(o,l)=settings.get_untracked()?;c.guard(epoch.get_untracked(),&source.get_untracked().binding,&o,&l, &choice.get_untracked())?;serde_json::to_vec_pretty(r.as_ref()).map_err(|e|e.to_string())})();match result {Ok(bytes)=>crate::io::download::download_with_completion("antibody-analysis.json","application/json",&bytes,move|r|if status.try_get_untracked().is_some(){if let Err(e)=r{status.set(e);}}),Err(e)=>status.set(e)}}>"Download full analysis"</button>
-        </Show>
-    </details></section>}
+    view! {
+        <section class="inspector-content" aria-label="Antibody reference analysis" style="overflow-wrap:anywhere">
+            <details>
+                <summary>
+                    "Antibody numbering and CDRs"
+                </summary>
+                <p class="helper">
+                    "Explicit V/J reference scope · up to 2,000 residues · conditional numbering and independently chosen regions. Unresolved residues remain unassigned. Published profile assignments remain conditional; this is not a calibrated classifier or independently certified numbering."
+                </p>
+                <details>
+                    <summary>
+                        "Reference scope and numbering"
+                    </summary>
+                    <super::reference_controls::ReferenceControls references status/>
+                    <label>
+                        "Numbering scheme"
+                        <select
+                            prop:value=move || format!("{:?}", scheme.get())
+                            on:change=move |e| match antibody_model::numbering_scheme(&event_target_value(&e)) {
+                        Ok(value) => scheme.set(value),
+                        Err(error) => status.set(error),
+                    }>
+                            <option value="Imgt">
+                                "IMGT"
+                            </option>
+                            <option value="Kabat1991" disabled=move || mouse.get()>
+                                "Kabat (1991 profiles)"
+                            </option>
+                            <option value="Chothia1997" disabled=move || mouse.get()>
+                                "Chothia (1997 profiles)"
+                            </option>
+                        </select>
+                    </label>
+                    <label>
+                        "Region definition"
+                        <select
+                            prop:value=move || format!("{:?}", definition.get())
+                            on:change=move |e| match antibody_model::region_definition(&event_target_value(&e)) {
+                        Ok(value) => definition.set(value),
+                        Err(error) => status.set(error),
+                    }>
+                            <option value="Imgt">
+                                "IMGT"
+                            </option>
+                            <option value="Kabat1991" disabled=move || mouse.get()>
+                                "Kabat (1991)"
+                            </option>
+                            <option value="ChothiaCanonical" disabled=move || mouse.get()>
+                                "Chothia (canonical charts)"
+                            </option>
+                            <option value="North2011" disabled=move || mouse.get()>
+                                "North (2011)"
+                            </option>
+                        </select>
+                    </label>
+                    <p class="helper">
+                        "Number labels and CDR definitions are independent. Unsupported species/scheme combinations refuse analysis; unresolved windows are not guessed."
+                    </p>
+                    <p class="helper" role="alert">
+                        {move || settings.with(|r|r.as_ref().err().cloned().unwrap_or_default())}
+                    </p>
+                </details>
+                <details>
+                    <summary>
+                        "Analysis settings"
+                    </summary>
+                    <p class="helper">
+                        "V weights: observed 5, frequency 8, unseen −6; affine gaps −12/−2. Minimum CDR3 length 2. Score thresholds are heuristic."
+                    </p>
+                    <label>
+                        "Minimum V score"
+                        <input
+                            type="number"
+                            prop:value=move ||minimum.get()
+                            on:input=move |e|minimum.set(event_target_value(&e))/>
+                    </label>
+                    <label>
+                        "Allowed FR4 substitutions (0–3)"
+                        <input
+                            type="number"
+                            min="0"
+                            max="3"
+                            prop:value=move ||substitutions.get()
+                            on:input=move |e|substitutions.set(event_target_value(&e))/>
+                    </label>
+                    <label>
+                        "Maximum CDR3 residues"
+                        <input
+                            type="number"
+                            min="2"
+                            max="2000"
+                            prop:value=move ||loop_max.get()
+                            on:input=move |e|loop_max.set(event_target_value(&e))/>
+                    </label>
+                    <label>
+                        "Retained candidates (0–64)"
+                        <input
+                            type="number"
+                            min="0"
+                            max="64"
+                            prop:value=move ||retained.get()
+                            on:input=move |e|retained.set(event_target_value(&e))/>
+                    </label>
+                    <p class="helper">
+                        "Zero retained candidates requests counts only. At most 128 optimal V endpoints per locus are retained; omitted endpoints and suboptimal paths are not searched for products."
+                    </p>
+                </details>
+                <button class="button secondary full" disabled=move ||busy.get()||workspace_busy.get() on:click=run>
+                    "Analyze antibody candidates"
+                </button>
+                <Show when=move ||busy.get()>
+                    <button
+                        class="text-tool"
+                        on:click=move |_|{generation.update(|g|*g=g.wrapping_add(1));if let Some(w)=worker.get_value(){w.close();}worker.set_value(None);busy.set(false);status.set("Analysis cancelled.".into());}>
+                        "Cancel"
+                    </button>
+                </Show>
+                <p class="helper" role="status">
+                    {move || status.get()}
+                </p>
+                <Show when=move ||report.with(|r|r.is_some())>
+                    {
+                        move || report.with(|r|r.as_ref().map(|(capture, report)|view! {
+                            <p class="helper">
+                                {antibody_model::reference_label(&capture.options.references)}
+                            </p>
+                            <super::candidate_tracks::CandidateTracks report = report.clone()selected = candidate source_length = capture
+                            .source_length/>
+                        }))
+                    }
+                    <p class="helper">
+                        {
+                            move || report.with(|r|r.as_ref().map(|(_, r)|format!("{} qualifying pairs within retained V ends. V endpoints truncated: {} · pairs truncated: {}.",
+                            r.evidence.qualified_pairs_in_retained_v, r.evidence.v_retention_truncated,
+                            r.evidence.pair_retention_truncated)).unwrap_or_default())
+                        }
+                    </p>
+                    <label>
+                        <input
+                            type="checkbox"
+                            prop:checked=move ||show_overlay.get()
+                            on:change=move |e|show_overlay.set(event_target_checked(&e))/>
+                        <span>
+                            "Show selected candidate in sequence"
+                        </span>
+                    </label>
+                    <label>
+                        "Candidate"
+                        <select
+                            prop:value=move ||candidate.get().to_string()
+                            on:change=move |e|{candidate.set(event_target_value(&e).parse().unwrap_or(0));page.set(0);}>
+                            {
+                                move || report.with(|r|r.as_ref().map(|(_, r)|r.tracks.iter().enumerate()
+                                .map(|(i, t)|view! {
+                                    <option value=i.to_string()>
+                                        {
+                                            format!("{} · {:?} · supported {}–{}", i + 1, t.locus, t.first_supported_source_index + 1,
+                                            t.source_end)
+                                        }
+                                    </option>
+                                }).collect_view()))
+                            }
+                        </select>
+                    </label>
+                    {
+                        move || report.with(|r|r.as_ref().map(|(_, r)|crate::biology::antibody::antibody_overlay::cdr_summaries(r,
+                        candidate.get()).into_iter().map(|s|view! {
+                            <p class="helper">
+                                {s}
+                            </p>
+                        }).collect_view()))
+                    }
+                    <details>
+                        <summary>
+                            "Mapping diagnostics"
+                        </summary>
+                        {
+                            move || report.with(|r|r.as_ref().map(|(_, r)|crate::biology::antibody::antibody_overlay::diagnostics(r,
+                            candidate.get()).into_iter().map(|s|view! {
+                                <p class="helper">
+                                    {s}
+                                </p>
+                            }).collect_view()))
+                        }
+                    </details>
+                    <p class="helper">
+                        {
+                            move || report.with(|r|r.as_ref().and_then(|(_, r)|r.tracks.get(candidate
+                            .get())).map(|t|format!("{} unnumbered residues · {} unresolved regions · position 1: {}. Coordinates below are one-based source residues.", t.unassigned_residues, t.unassigned_regions,
+                            t.invariant_position_one.map(|i|(i + 1).to_string()).unwrap_or_else(|| "unresolved N terminus"
+                            .into()))).unwrap_or_default())
+                        }
+                    </p>
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>
+                                    "Source"
+                                </th>
+                                <th>
+                                    "AA"
+                                </th>
+                                <th>
+                                    {
+                                        move || crate::biology::antibody::antibody_overlay::scheme_label(&scheme
+                                        .get())
+                                    }
+                                </th>
+                                <th>
+                                    "Region"
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {
+                                move || report.with(|r|r.as_ref().and_then(|(c, r)|r.tracks.get(candidate
+                                .get()).map(|t|t.residues.iter().skip(page.get() * 60).take(60).map(|row| {
+                                    let index = row.source_index;
+                                    let capture = c.clone();
+                                    let assignment = row.assignment.as_ref();
+                                    view! {
+                                        <tr>
+                                            <td>
+                                                <button
+                                                    class="text-tool"
+                                                    disabled=move ||workspace_busy.get()
+                                                    on:click=move |_|{let result=(||{let (o,l)=settings.get_untracked()?;capture.guard(epoch.get_untracked(),&source.get_untracked().binding,&o,&l, &choice.get_untracked())?;on_select.run((capture.clone(),index,index+1))})();if let Err(e)=result{status.set(e);}}>
+                                                    {index + 1}
+                                                </button>
+                                            </td>
+                                            <td>
+                                                {row.residue.to_string()}
+                                            </td>
+                                            <td title=assignment.map(|a|origin(&a.evidence)).unwrap_or("No supported assignment")>
+                                                {
+                                                    assignment.map(|a|a.position.to_string()).unwrap_or_else(|| "—"
+                                                    .into())
+                                                }
+                                            </td>
+                                            <td>
+                                                {row.region.as_ref().map(region).unwrap_or("unresolved")}
+                                            </td>
+                                        </tr>
+                                    }
+                                }).collect_view())))
+                            }
+                        </tbody>
+                    </table>
+                    <button
+                        class="text-tool"
+                        disabled=move ||page.get()==0
+                        on:click=move |_|page.update(|p|*p=p.saturating_sub(1))>
+                        "Previous residues"
+                    </button>
+                    <button
+                        class="text-tool"
+                        disabled=move ||report.with(|r|r.as_ref().and_then(|(_,r)|r.tracks.get(candidate.get())).is_none_or(|t|(page.get()+1)*60>=t.residues.len()))
+                        on:click=move |_|page.update(|p|*p+=1)>
+                        "Next residues"
+                    </button>
+                    <button
+                        class="button secondary full"
+                        disabled=move ||workspace_busy.get()
+                        on:click=move |_|{let result=(||{let (c,r)=report.get_untracked().ok_or("Analyze the source first.")?;let (o,l)=settings.get_untracked()?;c.guard(epoch.get_untracked(),&source.get_untracked().binding,&o,&l, &choice.get_untracked())?;serde_json::to_vec_pretty(r.as_ref()).map_err(|e|e.to_string())})();match result {Ok(bytes)=>crate::io::download::download_with_completion("antibody-analysis.json","application/json",&bytes,move |r|if status.try_get_untracked().is_some(){if let Err(e)=r{status.set(e);}}),Err(e)=>status.set(e)}}>
+                        "Download full analysis"
+                    </button>
+                </Show>
+            </details>
+        </section>
+    }
 }

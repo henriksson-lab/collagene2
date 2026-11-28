@@ -15,6 +15,8 @@ pub(crate) mod construct_qc_elements;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod construct_qc_model;
 #[cfg(target_arch = "wasm32")]
+pub(crate) mod construct_qc_scans;
+#[cfg(target_arch = "wasm32")]
 pub(crate) mod construct_qc_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod controller;

@@ -325,6 +325,7 @@ fn gate_plan(
             Operation::DeclareSourceModifications {
                 template: Source::Input("a".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unmodified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::Unmodified,
@@ -333,6 +334,7 @@ fn gate_plan(
             Operation::DeclareSourceModifications {
                 template: Source::Input("b".into()),
                 assumptions: GenerationAssumptions {
+                    host: None,
                     dam: MethylationState::Unmodified,
                     dcm: MethylationState::Unmodified,
                     cpg: MethylationState::Unmodified,

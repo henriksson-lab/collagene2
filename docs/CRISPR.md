@@ -1,8 +1,8 @@
 # Guide geometry and selected-reference off-target search
 
 `core::crispr` is an independently implemented embedded Rust engine
-(`crispr-1`). It provides bounded guide/PAM enumeration and ungapped Hamming
-search against explicit immutable reference records. It does not call an
+(`crispr-2`). It provides bounded guide/PAM enumeration and full-input
+mismatch/DNA-bulge/RNA-bulge alignment against explicit immutable reference records. It does not call an
 external aligner, borrow another cloning application's implementation, compute
 an empirical efficiency score, or create physical nuclease-cleavage products.
 Editing-template construction and independent donor checks are documented in
@@ -23,7 +23,7 @@ characterize T-rich upstream PAMs and differences among Cpf1/Cas12a enzymes.
 show cleavage distributions, trimming and strand gaps. The two nominal
 boundaries neither encode that heterogeneity nor establish a particular
 physical overhang or repair outcome. Other PAMs outside the selected profile
-are not searched.
+are not searched unless an explicit screening PAM policy admits them.
 
 A custom profile declares its own identity, version, PAM, PAM side, guide
 length, nominal offsets and optional HTTPS sources. Lengths are bounded to
@@ -31,6 +31,11 @@ length, nominal offsets and optional HTTPS sources. Lengths are bounded to
 identity and an explicit custom flag. An altered built-in cannot silently keep
 its built-in identity. All reports retain the complete profile and its hash.
 Custom parameters are caller declarations, not curated empirical activity data.
+
+Additional built-in profiles declare SaCas9 NNGRRT/21 nt and NNGRRT/22 nt,
+and SpCas9-VRER NGCG/20 nt, retaining their primary-source identities. Their
+cut marks remain nominal geometry. `catalogue()` supplies the same five presets
+to web controls and MCP discovery; altered built-ins refuse their old identity.
 
 ## Guide enumeration and original coordinates
 
@@ -73,26 +78,44 @@ and optional build/accession labels. All are included in request/report
 bindings. Two roles containing identical DNA remain two records. Labels and a
 free-text collection scope never establish chromosome completeness, assembly
 coverage or genome-wide absence. The engine reports completeness **only for
-the exact selected records under the declared Hamming/PAM model**.
+the exact selected records under the declared alignment/PAM model**.
 
 The query is a named concrete DNA guide of the declared profile length. The
 model examines both orientations and circular windows, with at most six
-mismatches. It excludes indels, bulges, chromatin, unrepresented haplotypes,
-structural variation and PAM alternatives outside the profile. A zero-hit
+mismatches. Default gap limits are zero. Explicit options admit at most four extra
+DNA bases and four extra RNA bases, within a separately declared total bound
+of at most four gap bases.
+Full-input alignments consume the entire guide and oriented target span, including
+terminal gaps and paths containing both gap kinds. Per-locus retained paths and
+one shared alignment-column/work budget bound enumeration. Truncation is explicit.
+It excludes chromatin, unrepresented haplotypes and structural variation.
+
+`PamPolicy::DesignProfile` screens the design PAM. `DeclaredScreening` instead
+requires an explicit same-length IUPAC PAM, rationale and source URLs; the design
+PAM remains unchanged. Every hit separates screening certainty from design-PAM
+evidence. Neither policy supplies a biological specificity prediction. A zero-hit
 complete selected-record result does not establish biological specificity.
 
 Intended-target tagging requires an exact tuple: reference role and revision,
-guide position vector, PAM position vector and orientation. It removes no
+guide position vector, PAM position vector and orientation, with an exact
+unbulged zero-mismatch design-PAM path. It removes no
 hits. Equal DNA at another position or in another selected role remains an
 ordinary additional hit. Stale intended revisions and malformed geometry are
 errors rather than sequence-wide exemptions.
 
 For ambiguous reference calls, each hit retains minimum and maximum possible
-Hamming mismatch counts. A query-compatible ambiguous call contributes zero
+mismatch counts for each retained alignment. A query-compatible ambiguous call contributes zero
 to the minimum and one to the maximum unless it is the exact concrete query
 base. A hit is possible when its minimum is within the threshold and its PAM
 is possible. It is definite only when its maximum is within the threshold and
 its PAM is certain. No guessed base or probability replaces the ambiguity.
+
+Each retained path has explicit paired, extra-DNA and extra-RNA columns. Target
+indices refer to the oriented target span and map through `guide_positions` to
+original source bases. Extra RNA has no source base. A locus can have several
+paths; an intended-locus tag never discards alternative alignments. Nominal cut
+fields are unassigned when any retained path is gapped: no cleavage-shift model
+is admitted. These columns assert sequence alignment, not heteroduplex structure.
 
 ## Embedded index and completeness
 
@@ -106,10 +129,12 @@ Hamming/PAM checking. This is an algorithmic pigeonhole index, not a biological
 PAM-proximal seed score. Query seed lengths are part of the declared search
 algorithm, not empirical mismatch weights.
 
-A reference containing IUPAC ambiguity uses a full window scan instead. This
+Bulged searches scan bounded variable-length target spans on both orientations.
+An ungapped reference containing IUPAC ambiguity uses a full window scan instead. This
 preserves possible matches that a concrete-only seed index could miss. A fully
 completed index plus verification/fallback is exhaustive for the supported
-ungapped model on the selected snapshots. Index, comparison or hit limits
+ungapped model on the selected snapshots. It does not accelerate a bulged
+request by silently changing its model. Index, comparison or hit limits
 produce explicit incomplete reports. Missing candidates after a limit never
 establish absence or uniqueness.
 
@@ -125,7 +150,9 @@ sequence also retains the molecule model's ten-million-base limit.
 
 Guide search has at most 4,096 retained candidates and a hard 200-million
 comparison budget. Off-target search has at most 4,096 hits, two million seed
-entries and 500 million comparisons; options normally choose smaller limits.
+entries and 500 million work units; options normally choose smaller limits. Each hit
+retains at most 256 alignments and the request at most one million alignment
+columns (default 128 paths / 262,144 columns).
 Seed-entry accounting bounds considered seed-occurrence/offset entries before
 window deduplication, so allocated candidate count cannot exceed it. Reference
 classification, rolling index scans, PAM checks and Hamming verification share

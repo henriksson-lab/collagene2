@@ -308,7 +308,7 @@ fn immutable_checksums_canonical_order_and_tampering() {
 }
 #[test]
 fn bounded_strict_json_and_future_schema() {
-    for version in [1, 3] {
+    for version in [1, 2, 4] {
         let mut e = proposal();
         e.schema_version = version;
         assert!(seal(e).is_err());

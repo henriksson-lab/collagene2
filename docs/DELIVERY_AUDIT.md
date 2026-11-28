@@ -7,12 +7,12 @@ until in-scope implementation is complete.
 
 | Area | Current source evidence | Remaining delivery work |
 | --- | --- | --- |
-| Saved-material digest continuation | Implemented: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Current worker schema 124; closure engine 5. | Native/WASM compilation and 823 affected regression cases pass; cross-platform scientific CI and desktop packaging passed at `83eb6c4`. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
-| Paired-oligo source libraries | Both ordered source events survive choice projection, immutable batch capture, release, native run records, protocol output and complete plate publication. Current draft 20, batch 3, release 2, worker 124 and sharing closure 5. | The base passed focused checks/529 cases and scientific/desktop CI at `ded0067`; current-source CI and deferred graphical/platform acceptance remain. |
+| Saved-material digest continuation | Implemented: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Current worker schema 125; closure engine 5. | Native/WASM compilation and 823 affected regression cases pass; cross-platform scientific CI and desktop packaging passed at `83eb6c4`. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
+| Paired-oligo source libraries | Both ordered source events survive choice projection, immutable batch capture, release, native run records, protocol output and complete plate publication. Current draft 20, batch 3, release 2, worker 125 and sharing closure 5. | The base passed focused checks/529 cases and scientific/desktop CI at `ded0067`; current-source CI and deferred graphical/platform acceptance remain. |
 | Protected codon ranges | `codon_design::ConstrainedPolicy` includes protected ranges and allowed codons; its independent checker reports violations | Current platform/workflow acceptance; the older blanket “protected ranges missing” entry is obsolete |
 | Plate layouts | `protocol_layout` plus web/MCP capture and CSV/HTML/PDF export | Broader workflow acceptance; this is documentary cloning layout, not inventory or instruments |
 | Lab comments/review | Native collaboration store, individual member registry, discussion SDK and shared browser/Tauri remote controls | Exact-source CI, graphical acceptance and deliberate deployment cutover; no automatic offline comment queue |
-| F33 collection similarity | `sequence_similarity` plus current binary worker schema 124, event-bound Compare controls and immutable-reference MCP discovery rank explicitly selected DNA/RNA sources | Current-source graphical/platform acceptance; server-wide/indexed similarity is outside this implemented profile |
+| F33 collection similarity | `sequence_similarity` plus current binary worker schema 125, event-bound Compare controls and immutable-reference MCP discovery rank explicitly selected DNA/RNA sources | Current-source graphical/platform acceptance; server-wide/indexed similarity is outside this implemented profile |
 | F34 specialized biology | Protein properties model an unmodified free chain; structure import/viewing has worker, workspace and MCP paths; `collagene-rna-chemistry` adds source-bound base/sugar/backbone/end declarations, stoichiometry, explicit imported-annotation review, event-bound saved declarations and Biology controls | RNA graphical/platform acceptance, broader independently validated antibody numbering/region coverage, graphical/performance acceptance remain. [Structures](STRUCTURE_IMPORT.md) · [RNA chemistry](RNA_MODIFICATIONS.md) |
 | M4 source interoperability | URL adapters, retained-source parsers and native MCP binary sequence/trace import plus XDNA/SCF export exist | Real provider/interoperability evidence remains separate from mocked fixtures |
 | M6 installed desktop | Native CI packaging exists for Windows/macOS/Linux | Actual installation, offline graphical use and chosen-remote workflow acceptance on the supported platforms |
@@ -21,6 +21,36 @@ until in-scope implementation is complete.
 This audit found no reason to reopen deferred BAM/BAI work or external Primer3 /
 multiple-alignment engine ports. OpenGel, inventory/ELN, instruments, scheduling,
 organizational reporting and mobile expansion retain their exclusions/deferrals.
+
+## Verified connected delivery batch
+
+Canonical mutation-intent annotation admission and domestication feature handling,
+desktop folder-clone recovery (sync schema 5), and worker trace preparation with
+document-bound SCF export (worker 125) pass native/WASM compilation and 111
+focused scientific/transport/UI-model cases. Test discovery preserves all 2,540
+prior cases, with 39 intended trace-test namespace changes; expanded discovery
+contains 2,617 cases in 52 harnesses. Discovery includes a deliberately ignored
+live provider test; that test was not executed. The captured-record offline case
+passes. Exact-source cross-platform CI and deferred product acceptance remain.
+[Detailed integration evidence](audits/refactor-current-integration.json).
+
+## Current implementation queue
+
+| Priority | Concrete source gap or connected batch | Required outcome |
+| --- | --- | --- |
+| 4 | Hosted ordinary MCP | Stdio and thin WebMCP exist; authenticated Streamable HTTP with member/project/session isolation remains required by the plan. |
+| 5 | PNG map/gel export | SVG exists; the promised PNG export surface remains absent. TIFF/JPEG evidence-attachment import also needs its defined surface/evidence. |
+| 6 | F18 genetic-code coverage | Translation currently supplies codes 1/2/11. Extend the finite primary-NCBI catalogue; context-dependent stop tables require explicit uncertainty semantics rather than static guessed stops. |
+| 7 | F25 bounded CRISPR extensions | Current selected-record search uses ungapped Hamming distance. DNA/RNA bulge/variant models, further nuclease profiles and licensed calibrated scoring remain; deferred large-reference/BAM work does not gain priority. |
+| 8 | F26 host data and F34 calibration | Curated licensed host-frequency/expression profiles and broader independent antibody reference/species/residue validation remain. Protected codon ranges and North regions are implemented and should not be reopened. |
+
+The captured NCBI/DDBJ J02482.1 records provide real public-format input for the
+new offline import/provenance/native-save/GenBank-export and independent HaeIII
+reference-length fixture. ENA retrieval timed out; no ENA payload is claimed.
+This is not live application SourceClient, CORS or authenticated Addgene evidence.
+The explicitly ignored live provider test remains deferred with application HTTP
+acceptance. Unsigned installer-package generation is a separate build-artifact
+gate; executable CI is not proof of installer creation or installation.
 
 ## Ownership follow-up
 
@@ -57,12 +87,12 @@ This adds no scientific representation,
 schema, hash or engine version. The [current refactor queue](audits/REFACTOR_PLAN.md)
 retains only connected remaining work. Graphical/platform acceptance stays open.
 
-## Next connected cloning batch
+## Completed connected cloning batches
 
 Saved-material digest export, named setups and gel handoff are implemented in
 one current recipe representation. `MaterialOrigin` retains exact Run/Derived
 ancestry; fresh reconstruction supplies products and gel lengths. Current named
-setup schema 2 and worker schema 124 reject superseded internal encodings.
+setup schema 2 and worker schema 125 reject superseded internal encodings.
 GenBank exports state lost physical/history evidence in both comments and export
 warnings. Exact source, origin, options, workspace epoch and generation guards
 remain in place. A reference fork cannot inherit a saved physical origin.

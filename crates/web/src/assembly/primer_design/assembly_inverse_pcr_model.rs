@@ -632,6 +632,65 @@ mod tests {
         )
     }
     #[test]
+    fn qualifier_aware_source_edit_can_prepare_inverse_pcr_without_reusing_stale_annotation_events()
+    {
+        use collagene_model::{Feature, Location};
+        let (mut draft, old_intent, _, options) = fixture("4", "6", "GGA");
+        let mut capture = draft.slots[0].captured.as_ref().unwrap().as_ref().clone();
+        capture.molecule.features.push(Feature {
+            kind: "tRNA".into(),
+            location: Location::range(12, 15),
+            qualifiers: vec![(
+                "anticodon".into(),
+                Some("(pos:13..15,aa:Arg,seq:acg)".into()),
+            )],
+            needs_review: false,
+        });
+        let original = capture.molecule.clone();
+        let frame = Workspace::from_documents("Source annotation event", vec![original.clone()], 0)
+            .unwrap();
+        let document = &frame.documents[0];
+        let event = EventBinding {
+            document_id: document.id.clone(),
+            event_id: document.head_event.clone().unwrap(),
+            revision: document.head.clone(),
+        };
+        capture.source.binding = event.clone();
+        draft.slots[0].captured = Some(Arc::new(capture));
+        assert!(
+            request(
+                &draft,
+                &old_intent,
+                &event,
+                &old_intent.target,
+                &options,
+                None
+            )
+            .is_err()
+        );
+        let (inputs, base, _) = draft.inputs_request(None).unwrap();
+        let intent = assembly_edit_intent::build(&inputs, &draft.edit_request(base), None).unwrap();
+        assert_eq!(
+            intent.target.sequence.as_str(),
+            "AGTGGAGATGCTACGTAGGACTTCAGACCTGTA"
+        );
+        assert_eq!(intent.target.features[0].location, Location::range(13, 16));
+        assert_eq!(
+            intent.target.features[0].qualifiers,
+            vec![(
+                "anticodon".into(),
+                Some("(pos:14..16,aa:Arg,seq:acg)".into())
+            )]
+        );
+        let proposal = propose(&draft, &intent, &event, &intent.target, &options, None).unwrap();
+        assert_eq!(
+            proposal.verification.status,
+            Status::ConsistentUnderAssumptions
+        );
+        assert_eq!(proposal.candidate.plan.inputs[0].molecule, original);
+        assert_eq!(draft.slots[0].captured.as_ref().unwrap().molecule, original);
+    }
+    #[test]
     fn original_source_inverse_pcr_reconstructs_independent_insertion_deletion_and_replacement() {
         for (start, end, inserted) in [("11", "11", "AACG"), ("10", "14", ""), ("4", "6", "GGA")] {
             let (draft, intent, event, mut options) = fixture(start, end, inserted);

@@ -4,6 +4,16 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
+The connected delivery batch adds canonical annotation handling for mutation
+intent/domestication, explicit desktop folder-clone recovery (sync schema 5), and
+worker-prepared trace display/document-bound SCF export (worker 125). Native compilation and 111 focused cases pass. Discovery preserves all 2,540
+prior cases, with 39 intentional trace-test namespace changes; the expanded
+selection exposes 2,617 cases across 52 harnesses (including one deliberately
+ignored live provider case, which was not executed). The current native/WASM checks pass after safe removal of obsolete test
+executables. Exact-source scientific/desktop CI remains required.
+The refreshed parallel organization audit and bounded remaining queue are in
+[the current refactor plan](audits/REFACTOR_PLAN.md).
+
 North2011 CDR regions are implemented in the current source, independently of
 IMGT/Kabat1991/Chothia1997 displayed numbering. Proven framework boundaries retain
 known region coverage even when interior number labels are unresolved; light CDR2
@@ -24,8 +34,8 @@ Native/WASM checks and 107 focused cases pass; all 2,509 baseline case names
 in 33 harnesses are preserved. Its `7f6951b` checkpoint passed scientific and desktop
 CI; current source changes retain their own gate. The
 [current refactor queue](audits/REFACTOR_PLAN.md) retains connected remaining work.
-The [layout inventory](audits/refactor-layout-current.json) covers 1,249 Rust files /
-215 directories, at most 17 direct files per directory, with no size violations or
+The [layout inventory](audits/refactor-layout-current.json) covers 1,254 Rust files /
+217 directories, at most 17 direct files per directory, with no size violations or
 3,000-line warnings.
 
 The connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) passes
@@ -47,7 +57,7 @@ maximum of 17 direct files per directory and no file reaching 3,000 lines at
 cases; its scientific CI and desktop packaging passed on Windows/macOS/Linux. See the
 [refactor status](audits/CODE_ORGANIZATION.md) for scope and evidence.
 
-Current source uses worker schema 124, candidate schema 31, draft schema 20,
+Current source uses worker schema 125, candidate schema 31, draft schema 20,
 scientific engine science-35 and 209 native MCP tools. Native sequence edits,
 paste and annotation-only strand flips now share annotation proofs and bounded
 source-evidence handling; MCP receipts expose annotation review counts. The

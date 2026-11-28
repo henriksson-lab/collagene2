@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 124;
+pub const WORKER_SCHEMA_VERSION: u16 = 125;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -840,7 +840,7 @@ pub enum AnalysisJob {
         allow_omissions: bool,
     },
     ExportScfTrace {
-        trace: crate::review::reads::traces::Trace,
+        molecule: Molecule,
         options: crate::formats::scf::Options,
     },
     InstallMaterialDerivation {
@@ -969,6 +969,9 @@ pub enum AnalysisJob {
     MaterializeMaterialDigestFragment {
         source: Molecule,
         request: crate::material::derivation::digest_export::Request,
+    },
+    PrepareTraceDisplay {
+        molecule: Molecule,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1138,7 +1141,7 @@ pub enum AnalysisResult {
     MaterialPcrOutputsPrepared(crate::cloning::pcr::outputs::Prepared),
     SequenceExportAssessment(crate::formats::sequence::export::Assessment),
     SequenceExportPrepared(crate::formats::sequence::export::Prepared),
-    ScfTraceExported(crate::formats::scf::Exported),
+    ScfTraceExported(crate::formats::scf::DocumentExport),
     MaterialDerivationInstalled(crate::material::derivation::Installed),
     MaterialDigestInspection(crate::material::derivation::digest::DigestPreview),
     SavedRunReviewPrepared(crate::material::review::PreparedReview),
@@ -1170,6 +1173,7 @@ pub enum AnalysisResult {
     Antibody(crate::antibody_numbering::domain_tracks::Report),
     AlignmentAntibody(crate::protein::antibody_alignment::Report),
     MaterialDigestProduct(crate::material::derivation::digest_export::Product),
+    TraceDisplayPrepared(crate::review::reads::traces::display::PlotData),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

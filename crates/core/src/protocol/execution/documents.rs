@@ -219,24 +219,17 @@ pub(super) fn prepare_sequence_export(
 
 pub(super) fn export_scf_trace(
     context: &RequestContext,
-    trace: crate::review::reads::traces::Trace,
+    molecule: Molecule,
     options: crate::formats::scf::Options,
 ) -> Result<AnalysisResult, Error> {
-    {
-        let trace = &trace;
-        let options = &options;
-
-        let molecule: Option<&Molecule> = {
-            if crate::formats::scf::revision(trace, options)? != (*context.revision) {
-                return Err(Error::Format(
-                    "Trace export source/view/options changed".into(),
-                ));
-            }
-            None
-        };
-        context.admit(molecule)?;
+    if crate::formats::scf::document_revision(&molecule, &options)? != *context.revision {
+        return Err(Error::Format(
+            "Trace export document/options changed".into(),
+        ));
     }
-    let outcome: Result<AnalysisResult, Error> =
-        { crate::formats::scf::export(&trace, &options).map(AnalysisResult::ScfTraceExported) };
-    Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+    Ok(
+        crate::formats::scf::DocumentExport::prepare(&molecule, &options)
+            .map(AnalysisResult::ScfTraceExported)
+            .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())),
+    )
 }

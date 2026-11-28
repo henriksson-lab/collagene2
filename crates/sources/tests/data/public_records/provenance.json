@@ -1,0 +1,45 @@
+{
+  "scope": "Unmodified public INSDC nucleotide record captures for offline format/provenance/annotation tests; these are not application HTTP or live SourceClient checks.",
+  "accession_version": "J02482.1",
+  "records": [
+    {
+      "provider": "ncbi",
+      "url": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=J02482.1&rettype=gb&retmode=text",
+      "retrieved_at": "2026-11-28T08:06:13.770073+00:00",
+      "status": 200,
+      "content_type": "text/plain",
+      "bytes": 22903,
+      "sha256": "a1b31e1d1fa9503d601cdd7b482a5cf3b523f73ea47dec6b52c80e426724f95a",
+      "file": "J02482.1.ncbi.gb"
+    },
+    {
+      "provider": "ddbj",
+      "url": "https://getentry.ddbj.nig.ac.jp/getentry/na/J02482.1?format=flatfile&filetype=text",
+      "retrieved_at": "2026-11-28T08:06:35.967388+00:00",
+      "status": 200,
+      "content_type": "text/plain;charset=UTF-8",
+      "bytes": 22973,
+      "sha256": "59f32204b888c1690e2535f5878898b97c7a1ddfea201479c0e61c2a42e9e36f",
+      "file": "J02482.1.ddbj.gb"
+    }
+  ],
+  "not_established": [
+    "ENA payload: public retrieval timed out",
+    "live application SourceClient interoperability",
+    "physical material or laboratory digestion"
+  ],
+  "digest_reference": "https://www.neb.com/en-us/products/n3026-x174-dna-haeiii-digest",
+  "digest_reference_lengths_bp": [
+    72,
+    118,
+    194,
+    234,
+    271,
+    281,
+    310,
+    603,
+    872,
+    1078,
+    1353
+  ]
+}

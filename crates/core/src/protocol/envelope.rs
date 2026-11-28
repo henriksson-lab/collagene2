@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 pub(super) const WORKSPACE_REQUEST_SELECTORS: &[u32] = &[
     19, 20, 42, 43, 69, 72, 82, 83, 84, 85, 96, 100, 103, 104, 105, 106, 107, 122, 126, 128, 129,
     132, 133, 140, 145, 146, 150, 153, 154, 156, 157, 158, 159, 160, 161, 163, 164, 165, 166, 167,
-    168, 169, 170, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187,
-    188, 189, 190, 191, 197,
+    168, 169, 171, 172, 173, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188,
+    189, 190, 191, 197,
 ];
 
 fn current_version(magic: &[u8; 4]) -> u16 {
@@ -76,7 +76,12 @@ pub(super) fn encode_with_limit<T: Serialize>(
     bytes.extend_from_slice(&payload);
     Ok(bytes)
 }
-fn envelope_info(magic: &[u8; 4], bytes: &[u8], maximum: usize) -> Result<(u16, usize), Error> {
+fn envelope_info(
+    magic: &[u8; 4],
+    bytes: &[u8],
+    frame_length: usize,
+    maximum: usize,
+) -> Result<(u16, usize), Error> {
     if bytes.len() < HEADER || &bytes[..4] != magic {
         return Err(Error::Format(
             "not a supported Collagene binary file/message".into(),
@@ -92,7 +97,7 @@ fn envelope_info(magic: &[u8; 4], bytes: &[u8], maximum: usize) -> Result<(u16, 
     if len > maximum {
         return Err(Error::TooLarge);
     }
-    if HEADER.checked_add(len) != Some(bytes.len()) {
+    if bytes.len() > frame_length || HEADER.checked_add(len) != Some(frame_length) {
         return Err(Error::Format("binary length mismatch".into()));
     }
     Ok((version, len))
@@ -108,7 +113,7 @@ pub(super) fn decode_with_limit<T: for<'de> Deserialize<'de>>(
     bytes: &[u8],
     maximum: usize,
 ) -> Result<T, Error> {
-    envelope_info(magic, bytes, maximum)?;
+    envelope_info(magic, bytes, bytes.len(), maximum)?;
     if blake3::hash(&bytes[HEADER..]).as_bytes() != &bytes[10..42] {
         return Err(Error::Format("binary checksum mismatch".into()));
     }
@@ -124,16 +129,20 @@ pub(super) fn decode_with_limit<T: for<'de> Deserialize<'de>>(
 pub(super) fn worker_limit(
     magic: &[u8; 4],
     bytes: &[u8],
+    frame_length: usize,
     allowed_large_variants: &[u32],
 ) -> Result<usize, Error> {
-    let (_, len) = envelope_info(magic, bytes, MAX_WORKSPACE_MESSAGE_BYTES)?;
-    if len <= MAX_IMPORT_BYTES {
-        return Ok(MAX_IMPORT_BYTES);
-    }
+    let (_, len) = envelope_info(magic, bytes, frame_length, MAX_WORKSPACE_MESSAGE_BYTES)?;
     let ((_, revision, variant), _) =
         postcard::take_from_bytes::<(u32, &str, u32)>(&bytes[HEADER..])
             .map_err(|e| Error::Format(e.to_string()))?;
-    if revision.len() > 128 || !allowed_large_variants.iter().any(|&tag| tag == variant) {
+    if revision.len() > 128 {
+        return Err(Error::TooLarge);
+    }
+    if len <= MAX_IMPORT_BYTES {
+        return Ok(MAX_IMPORT_BYTES);
+    }
+    if !allowed_large_variants.iter().any(|&tag| tag == variant) {
         return Err(Error::TooLarge);
     }
     Ok(MAX_WORKSPACE_MESSAGE_BYTES)

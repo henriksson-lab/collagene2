@@ -318,6 +318,44 @@ impl<A: SyncAdapter> SyncHost<A> {
         let job = self.repository.tree_clone_job(id).map_err(folder_error)?;
         projection::tree(&job)
     }
+    fn tree_scope(&mut self, id: &str) -> Result<wire::TreeStatus> {
+        let job = self.repository.tree_clone_job(id).map_err(folder_error)?;
+        let remote = projection::remote(&job.remote)?;
+        if self.remote(&remote.id)? != job.remote {
+            return Err(Fault::error(
+                wire::ErrorCode::ReviewChanged,
+                "The clone's configured remote changed.",
+            ));
+        }
+        projection::tree(&job)
+    }
+    fn tree_parent_review(&mut self, id: &str) -> Result<wire::TreeParentReview> {
+        let tree = self.tree_scope(id)?;
+        let local_folder = match &tree.issue {
+            Some(wire::TreeIssue::LocalParentChanged { folder })
+                if tree.phase == wire::TreePhase::Blocked =>
+            {
+                folder
+            }
+            _ => {
+                return Err(Fault::invalid(
+                    "This clone has no blocked local parent change to review.",
+                ));
+            }
+        };
+        let current = self
+            .repository
+            .folder(&folder(local_folder)?)
+            .map_err(repository_error)?;
+        let review = wire::TreeParentReview {
+            tree,
+            folder: convert(&current)?,
+        };
+        review
+            .validate()
+            .map_err(|_| Fault::invalid("Invalid local parent review."))?;
+        Ok(review)
+    }
     fn execute(
         &mut self,
         request: &wire::RequestEnvelope,
@@ -763,6 +801,35 @@ impl<A: SyncAdapter> SyncHost<A> {
                     .retry_tree_clone(job.as_str())
                     .map_err(folder_error)?;
                 S::TreeUpdated(self.tree_status(job.as_str())?)
+            }
+            C::RestartTreeClone { job } => {
+                self.tree_scope(job.as_str())?;
+                accepted(gate)?;
+                self.repository
+                    .restart_tree_scan(job.as_str())
+                    .map_err(folder_error)?;
+                S::TreeUpdated(self.tree_status(job.as_str())?)
+            }
+            C::InspectTreeParentChange { job } => {
+                S::TreeParentReview(self.tree_parent_review(job.as_str())?)
+            }
+            C::AcceptTreeParentChange { review } => {
+                let current = self.tree_parent_review(review.tree.job.as_str())?;
+                if &current != review {
+                    return Err(Fault::error(
+                        wire::ErrorCode::ReviewChanged,
+                        "The clone or local parent changed. Inspect it again before acknowledging.",
+                    ));
+                }
+                accepted(gate)?;
+                self.repository
+                    .accept_tree_parent_change(
+                        review.tree.job.as_str(),
+                        &folder(&review.folder.id)?,
+                        review.folder.generation,
+                    )
+                    .map_err(folder_error)?;
+                S::TreeParentAccepted(self.tree_status(review.tree.job.as_str())?)
             }
             C::TreeJobs { page } => {
                 let jobs = self.repository.tree_clone_jobs().map_err(folder_error)?;

@@ -1,7 +1,7 @@
 {
-  "scope": "Current tracked and unignored Rust source, including North2011 region implementation and fixtures. Layout does not establish scientific correctness.",
-  "files": 1249,
-  "directories": 215,
+  "scope": "Current tracked and unignored working-tree Rust sources, including pending delivery changes; layout evidence only, not scientific or compiler verification.",
+  "files": 1254,
+  "directories": 217,
   "largest_files": [
     {
       "path": "crates/web/src/app/mod.rs",
@@ -68,6 +68,10 @@
       "lines": 1733
     },
     {
+      "path": "crates/desktop-sync-host/tests/service.rs",
+      "lines": 1732
+    },
+    {
       "path": "crates/core/src/chemistry/tracked_duplex.rs",
       "lines": 1655
     },
@@ -98,20 +102,12 @@
     {
       "path": "crates/recombination/src/lib.rs",
       "lines": 1550
-    },
-    {
-      "path": "crates/web/src/cloning/preparation/cloning_methods_model.rs",
-      "lines": 1533
     }
   ],
   "largest_directories": [
     {
       "path": "crates/core/tests/formats/sequences",
       "files": 17
-    },
-    {
-      "path": "crates/core/tests/analysis/reads",
-      "files": 16
     },
     {
       "path": "crates/core/tests/materials/derivation",
@@ -190,6 +186,14 @@
       "files": 14
     },
     {
+      "path": "crates/web/src/reads",
+      "files": 14
+    },
+    {
+      "path": "crates/core/tests/analysis/reads",
+      "files": 13
+    },
+    {
       "path": "crates/core/tests/analysis/search",
       "files": 13
     },
@@ -200,17 +204,13 @@
     {
       "path": "crates/mcp/tests/assembly",
       "files": 13
-    },
-    {
-      "path": "crates/web/src/assembly/library",
-      "files": 13
     }
   ],
   "violations": 0,
   "size_warnings": 0,
   "rust_refactor": {
     "command": "module-size-check --include-generated --format json",
-    "production_files": 665,
+    "production_files": 667,
     "status": "compliant",
     "semantic_scatter_run": false
   }

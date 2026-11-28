@@ -64,3 +64,67 @@ fn an_edit_or_source_change_cannot_reuse_the_previous_context() {
             .is_err()
     );
 }
+
+#[test]
+fn supported_qualifiers_survive_actual_stateless_and_session_mutation_requests() {
+    use collagene_model::{Feature, Location};
+    let mut molecule = Molecule::dna(
+        "source with local evidence",
+        "AAAACCCCGGGGTTTT",
+        Topology::Linear,
+    )
+    .unwrap();
+    molecule.features.push(Feature {
+        kind: "tRNA".into(),
+        location: Location::range(8, 11),
+        qualifiers: vec![(
+            "anticodon".into(),
+            Some("(pos:9..11,aa:Gly,seq:ccc)".into()),
+        )],
+        needs_review: false,
+    });
+    let original = molecule.clone();
+    let edit = mutation_intent::Request {
+        name: "independent insertion".into(),
+        edit_start: 0,
+        edit_end: 0,
+        inserted: "TTT".into(),
+    };
+    let revision = mutation_intent::intent_revision(&molecule, &edit).unwrap();
+    let q = Request {
+        id: 411,
+        revision: revision.clone(),
+        job: AnalysisJob::BuildMutationIntent {
+            molecule: molecule.clone(),
+            request: edit,
+        },
+    };
+    let wire = q.encode().unwrap();
+    let mut session = protocol::session::AnalysisSession::default();
+    for bytes in [
+        protocol::execution::process_request(&wire).unwrap(),
+        session.process_request(&wire).unwrap(),
+    ] {
+        let response = protocol::response::Response::decode(&bytes).unwrap();
+        assert_eq!(response.revision, revision);
+        let AnalysisResult::MutationIntent(report) = response.result else {
+            panic!("mutation response")
+        };
+        report.validate_binding(&revision).unwrap();
+        assert_eq!(report.target.sequence.as_str(), "TTTAAAACCCCGGGGTTTT");
+        assert_eq!(report.target.features[0].location, Location::range(11, 14));
+        assert_eq!(
+            report.target.features[0].qualifiers,
+            vec![(
+                "anticodon".into(),
+                Some("(pos:12..14,aa:Gly,seq:ccc)".into())
+            )]
+        );
+        assert!(!report.target.features[0].needs_review);
+        assert_eq!(
+            report.target.metadata["mutation:intent:reference_only"],
+            "true"
+        );
+    }
+    assert_eq!(molecule, original);
+}

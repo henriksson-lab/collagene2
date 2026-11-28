@@ -267,7 +267,7 @@ fn north_regions_survive_worker_transport_without_requiring_the_display_numberin
     }
     // The immediately superseded development format is not a second reader.
     let mut previous = wire.clone();
-    previous[4..6].copy_from_slice(&123_u16.to_le_bytes());
+    previous[4..6].copy_from_slice(&(protocol::schema::WORKER_SCHEMA_VERSION - 1).to_le_bytes());
     assert!(protocol::execution::process_request(&previous).is_err());
     assert!(session.process_request(&previous).is_err());
     let mut changed = q;

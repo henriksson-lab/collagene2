@@ -33,6 +33,16 @@ fn worker_url() -> Result<String, String> {
     Ok(url)
 }
 
+/// Admit only the borrowed envelope prefix before allocating the full Rust
+/// response buffer. Both worker clients use the core's current selector policy.
+fn decode_reply(value: &wasm_bindgen::JsValue) -> Result<Response, String> {
+    let array = js_sys::Uint8Array::new(value);
+    let length = array.length() as usize;
+    let prefix = array.subarray(0, length.min(256) as u32).to_vec();
+    Response::admitted_frame_limit(&prefix, length).map_err(|e| e.to_string())?;
+    Response::decode(&array.to_vec()).map_err(|e| e.to_string())
+}
+
 /// One isolated worker per explicit job. Termination enforces the job timeout.
 /// A retained worker pool and chunked document cache can replace this transport later.
 pub async fn analyze(request: Request) -> Result<Response, String> {
@@ -75,14 +85,7 @@ async fn analyze_inner(
                     let _ = sender.send(Err(control));
                 }
             } else if let Some(sender) = sender.borrow_mut().take() {
-                let array = js_sys::Uint8Array::new(&event.data());
-                let result = if array.length() as usize
-                    > collagene_core::protocol::envelope::MAX_WORKSPACE_MESSAGE_BYTES + 42
-                {
-                    Err("Analysis result is too large".into())
-                } else {
-                    protocol::response::Response::decode(&array.to_vec()).map_err(|e| e.to_string())
-                };
+                let result = decode_reply(&event.data());
                 let _ = sender.send(result);
             }
         })
@@ -203,15 +206,10 @@ impl CachedWorker {
                         let _ = tx.send(Err(control));
                     }
                 } else {
-                    let array = js_sys::Uint8Array::new(&event.data());
-                    let result = if array.length() as usize
-                        > collagene_core::formats::sequence::MAX_IMPORT_BYTES + 42
-                    {
-                        Err("Track report is too large".into())
-                    } else {
-                        protocol::response::Response::decode(&array.to_vec())
-                            .map_err(|e| e.to_string())
-                    };
+                    if state.borrow().pending.is_none() {
+                        return;
+                    }
+                    let result = decode_reply(&event.data());
                     if let Some(tx) = state.borrow_mut().pending.take() {
                         let _ = tx.send(result);
                     }

@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **124**,
+same deterministic scientific engines. Current schemas are worker **125**,
 candidate **31** and native workspace plan **29**; the verifier is **science-35**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -27,6 +27,30 @@ dependencies and receipt correspondence. Nested material origins share ancestry,
 byte, base and step budgets and are charged before decoding. A checksum establishes
 byte integrity; it grants neither permission nor physical-material authority.
 Current external biological import formats are separate from internal schemas.
+
+## Trace preparation and reply admission
+
+Worker 125 adds request 198 `PrepareTraceDisplay { molecule }` and result 188
+`TraceDisplayPrepared(PlotData)`. Requests retain the ordinary 32 MiB bound;
+only the explicit reply selector admits 128 MiB because signed signal samples
+can expand under Postcard. Display preparation parses original evidence and
+builds signal min/max pyramids in the worker. Derived display data contains
+signals, calls and quality evidence without original attachment bytes or metadata.
+The document remains the source authority. UI publication checks source/event,
+generation and component lifetime before accepting a reply.
+
+Request 170 `ExportScfTrace` now accepts the source molecule and options.
+Result 160 carries `scf::DocumentExport`, binding the document revision, options
+and actual export report. Regenerated SCF reparses the original attachment;
+display arrays cannot become export authority. Exact original downloads remain
+source-preserving external-format exports.
+
+One authoritative reply-selector list controls both native encoding and browser
+admission. A bounded 256-byte prefix determines 32/128 MiB admission before the
+browser copies the complete buffer. All current worker request/reply revisions
+are bounded to 128 bytes, including ordinary frames. Full checksum, typed payload
+and complete-consumption checks still follow prefix admission. Old worker
+versions are rejected; no fallback decoder or old payload adapter exists.
 
 ## Scientific boundary
 
@@ -239,6 +263,14 @@ when an internal enum layout changes.
 | 188 | `InspectMaterialOverlapExtension` |
 | 189 | `InspectMaterialTerminalProcessing` |
 | 190 | `InspectMaterialAnnealedOligos` |
+| 191 | `FindSimilarSequences` |
+| 192 | `PrepareStructure` |
+| 193 | `AnalyzeRnaChemistry` |
+| 194 | `ScreenProteinLiabilities` |
+| 195 | `AnalyzeAntibody` |
+| 196 | `AnalyzeAlignmentAntibody` |
+| 197 | `MaterializeMaterialDigestFragment` |
+| 198 | `PrepareTraceDisplay` |
 
 ## Current result tags
 
@@ -428,6 +460,14 @@ when an internal enum layout changes.
 | 178 | `MaterialOverlapExtensionPreview` |
 | 179 | `MaterialTerminalProcessingPreview` |
 | 180 | `MaterialAnnealedOligosPreview` |
+| 181 | `SequenceSimilarity` |
+| 182 | `StructurePrepared` |
+| 183 | `RnaChemistry` |
+| 184 | `ProteinLiabilities` |
+| 185 | `Antibody` |
+| 186 | `AlignmentAntibody` |
+| 187 | `MaterialDigestProduct` |
+| 188 | `TraceDisplayPrepared` |
 
 ## Current source and evidence contracts
 

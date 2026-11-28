@@ -6,7 +6,7 @@ use library::{Digest, DocumentId, FolderId, LabId, Rows, Text};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub const SCHEMA_VERSION: u16 = 4;
+pub const SCHEMA_VERSION: u16 = 5;
 mod publication;
 mod removal;
 pub use publication::*;
@@ -159,6 +159,9 @@ dto! {pub enum Command {
     BeginTreeClone{remote:RemoteId,root:TreeRoot,destination:Option<FolderId>,limits:TreeLimits},
     ResumeTreeClone{job:TreeJobId,max_steps:u16},
     RetryTreeClone{job:TreeJobId},
+    RestartTreeClone{job:TreeJobId},
+    InspectTreeParentChange{job:TreeJobId},
+    AcceptTreeParentChange{review:TreeParentReview},
     TreeJobs{page:LocalPageRequest},
     QueueTreeFolderMetadata{job:TreeJobId,local_folder:FolderId},
     QueueTreeDocumentMetadata{job:TreeJobId,local_document:DocumentId},
@@ -206,6 +209,9 @@ dto! {pub struct TreeStatus {
     pub folders_created:u16,pub documents_created:u16,pub issue:Option<TreeIssue>,
 }}
 dto! {pub struct TreePage {pub items:Rows<TreeStatus,MAX_PAGE_ROWS>,pub next_offset:Option<u16>}}
+// Current local metadata reviewed before acknowledging a blocked clone parent.
+// The host rereads both values; this is not a reusable authorization token.
+dto! {pub struct TreeParentReview {pub tree:TreeStatus,pub folder:library::Folder}}
 dto! {pub enum PushOutcome {Applied,Rejected(Rejection)}}
 dto! {pub struct PushReceipt {pub job:PushJobId,pub intent:Digest,pub catalog_generation:u64,pub outcome:PushOutcome}}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -223,6 +229,7 @@ dto! {pub enum Success {
     Queued(PendingPush),Resumed(PushReceipt),Pending(PendingPage),
     CancelledUnattempted{job:PushJobId},DiscardedRejected{job:PushJobId},
     Pulled{local:library::Document},TreeStarted(TreeStatus),TreeUpdated(TreeStatus),TreeJobs(TreePage),
+    TreeParentReview(TreeParentReview),TreeParentAccepted(TreeStatus),
     Bookmarks(BookmarkPage),
     MetadataPrepared(MetadataReview),PushChoices(PushChoices),PushPrepared(PushPublicationReview),PushReviewDiscarded{review:ReviewId},DeletedFolderPublications(DeletedFolderPage),
     Discussion(library::discussion::ResponseEnvelope),
@@ -421,6 +428,7 @@ impl RequestEnvelope {
             Command::ResumeTreeClone { max_steps, .. } if *max_steps == 0 || *max_steps > 1000 => {
                 return Err(Error::Invalid("tree steps"));
             }
+            Command::AcceptTreeParentChange { review } => review.validate()?,
             _ => {}
         }
         Ok(())
@@ -475,6 +483,18 @@ impl TreeStatus {
                 || self.folders_created + self.documents_created != self.scanned_nodes)
         {
             return Err(Error::Invalid("complete tree progress"));
+        }
+        Ok(())
+    }
+}
+impl TreeParentReview {
+    pub fn validate(&self) -> Result<(), Error> {
+        self.tree.validate()?;
+        self.folder.validate()?;
+        if self.tree.phase != TreePhase::Blocked
+            || !matches!(&self.tree.issue,Some(TreeIssue::LocalParentChanged{folder}) if folder==&self.folder.id)
+        {
+            return Err(Error::Invalid("tree parent review"));
         }
         Ok(())
     }
@@ -568,6 +588,13 @@ impl ResponseEnvelope {
                     }
                 }
                 Success::TreeStarted(t) | Success::TreeUpdated(t) => t.validate()?,
+                Success::TreeParentReview(r) => r.validate()?,
+                Success::TreeParentAccepted(t) => {
+                    t.validate()?;
+                    if t.phase != TreePhase::Blocked || t.issue.is_some() {
+                        return Err(Error::Invalid("tree parent acknowledgment"));
+                    }
+                }
                 Success::TreeJobs(p) => {
                     let mut ids = std::collections::BTreeSet::new();
                     for item in p.items.iter() {
@@ -877,6 +904,33 @@ impl ResponseEnvelope {
                 Command::ResumeTreeClone { job, .. } | Command::RetryTreeClone { job },
                 Outcome::Success(Success::TreeUpdated(t)),
             ) => job == &t.job,
+            (Command::RestartTreeClone { job }, Outcome::Success(Success::TreeUpdated(t))) => {
+                self.context.is_none()
+                    && job == &t.job
+                    && t.folders_created == 0
+                    && t.documents_created == 0
+                    && t.scanned_nodes == 0
+                    && t.catalog_generation.is_none()
+                    && t.issue.is_none()
+                    && t.phase
+                        == if matches!(t.root, TreeRoot::LabRoot) {
+                            TreePhase::Scanning
+                        } else {
+                            TreePhase::Discovering
+                        }
+            }
+            (
+                Command::InspectTreeParentChange { job },
+                Outcome::Success(Success::TreeParentReview(review)),
+            ) => self.context.is_none() && job == &review.tree.job,
+            (
+                Command::AcceptTreeParentChange { review },
+                Outcome::Success(Success::TreeParentAccepted(t)),
+            ) => {
+                let mut expected = review.tree.clone();
+                expected.issue = None;
+                self.context.is_none() && t == &expected
+            }
             (Command::TreeJobs { page }, Outcome::Success(Success::TreeJobs(p))) => {
                 local_page(page, p.items.len(), p.next_offset)
             }

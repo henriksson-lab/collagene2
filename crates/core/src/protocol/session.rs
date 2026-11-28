@@ -1,15 +1,11 @@
 //! Persistent worker session and the state it exclusively owns.
 use super::{
-    envelope::{
-        HEADER, MAX_WORKSPACE_MESSAGE_BYTES, WORKSPACE_REQUEST_SELECTORS, decode_with_limit,
-        encode_with_limit, worker_limit,
-    },
+    envelope::{HEADER, WORKSPACE_REQUEST_SELECTORS, decode_with_limit, worker_limit},
     execution::process_request,
     request::Request,
     response::Response,
     schema::{AnalysisJob, AnalysisResult},
 };
-use crate::formats::sequence::MAX_IMPORT_BYTES;
 use collagene_model::Error;
 /// A persistent worker retains a validated immutable track source/index. Replacing
 /// it is atomic; viewport jobs carry only options/window and the expected revision.
@@ -24,7 +20,7 @@ pub struct AnalysisSession {
 }
 impl AnalysisSession {
     pub fn process_request(&mut self, bytes: &[u8]) -> Result<Vec<u8>, Error> {
-        let maximum = worker_limit(b"CGQ\0", bytes, WORKSPACE_REQUEST_SELECTORS)?;
+        let maximum = worker_limit(b"CGQ\0", bytes, bytes.len(), WORKSPACE_REQUEST_SELECTORS)?;
         // Route by a borrowed prefix so ordinary jobs are not fully decoded twice.
         // Stable append-only track, genome and read-alignment variants retain
         // private worker state; all other jobs use ordinary stateless dispatch.
@@ -204,23 +200,11 @@ impl AnalysisSession {
             }
             _ => return process_request(bytes),
         };
-        let maximum = if matches!(
+        Response {
+            id: r.id,
+            revision: r.revision,
             result,
-            AnalysisResult::CombinatorialBatchCaptured(_)
-                | AnalysisResult::CombinatorialReleaseFinished(_)
-        ) {
-            MAX_WORKSPACE_MESSAGE_BYTES
-        } else {
-            MAX_IMPORT_BYTES
-        };
-        encode_with_limit(
-            b"CGR\0",
-            &Response {
-                id: r.id,
-                revision: r.revision,
-                result,
-            },
-            maximum,
-        )
+        }
+        .encode()
     }
 }

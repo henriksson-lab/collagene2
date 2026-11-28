@@ -3,7 +3,7 @@ use crate::sequence::annotations;
 use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
-pub const ENGINE_VERSION: &str = "mutation-intent-3";
+pub const ENGINE_VERSION: &str = "mutation-intent-4";
 const MAX_SOURCE: usize = 8 << 20;
 const MAX_INSERTED: usize = 100_000;
 const REFERENCE_MODEL: &str =
@@ -79,18 +79,9 @@ pub fn source_preflight(source: &Molecule, request: &Request) -> Result<(), Erro
             "an intended reference must retain or introduce at least one base",
         ));
     }
-    if source.features.iter().any(|f| {
-        f.qualifiers.iter().any(|(k, _)| {
-            matches!(
-                k.as_str(),
-                "transl_except" | "anticodon" | "rpt_unit_range" | "coded_by"
-            )
-        })
-    }) {
-        return Err(bad(
-            "coordinate-bearing qualifiers cannot yet be safely edited; original source remains intact",
-        ));
-    }
+    // Qualifier semantics belong to the canonical rotation/edit owners below.
+    // An unrelated supported assertion must not prevent declaring an edit;
+    // retained unsupported mappings still fail when the actual transform runs.
     crate::encoding::bounded_json::hash(&(source, request))?;
     Ok(())
 }

@@ -1,7 +1,8 @@
 # Desktop remote-library protocol
 
 `collagene-desktop-sync-protocol` defines a portable Rust/WASM metadata protocol,
-separate from DTQ/DTR v1. It provides DSQ/DSR schema 1–3 frames for the native
+separate from the DTQ/DTR native storage protocol. It provides current DSQ/DSR
+schema **5** frames for the native
 `collagene_rpc` dispatcher. This crate contains no networking, filesystem access,
 repository execution, native credentials or scientific algorithms. A native
 service must implement those operations over the trusted window's repository.
@@ -33,8 +34,7 @@ local lab, window, repository, credential account and all transport permissions.
   These references convey documentary history, not physical material authority.
   The reply has no remote context and includes the exact repository checkpoint.
   Continuation requests require that checkpoint; concurrent changes return
-  `BookmarkChanged` so a client refreshes instead of mixing pages. The append-only
-  command/result variants preserve existing schema1 discriminants. Reopening
+  `BookmarkChanged` so a client refreshes instead of mixing pages. Reopening
   retained archives uses the existing local immutable revision-history workflow.
 
 * `Remotes` / `AddRemote` list or create nonsecret configurations: generated
@@ -127,7 +127,7 @@ publication commands retain minimum version 2; original commands retain version
 No credential, arbitrary path, biological archive or remotely supplied authority
 is added to these DTOs. Reviews contain full configured remote scope, trusted
 local lab, checkpoint and exact binding/completed-job counts. Receipt schema 1 is
-a distinct local record format, carried inside the schema-3 transport.
+a distinct local record format, carried inside the current schema-5 transport.
 
 The native host retains at most four opaque unpredictable removal IDs, expiring
 the oldest. A review is re-derived before approval acceptance and key-forget;
@@ -143,7 +143,7 @@ full old remote configuration to its native local-context receipt.
 
 ## Remote human discussion
 
-Current desktop sync IPC schema **4** adds
+Current desktop sync IPC schema **5** carries
 `Discussion { remote, request: library::discussion::Request }` and a checked
 `Success::Discussion` response. Earlier IPC schemas are rejected without a
 migration or fallback decoder. Discussion uses its own current schema 2 on the
@@ -170,3 +170,31 @@ outbox entry, replay, clone/pull side effect or scientific history attachment.
 After a lost reply, refresh the exact discussion; the unchanged expected generation
 refuses a duplicate compare-and-append. A changed actor similarly refuses rather
 than impersonating the previously reviewed author.
+
+## Explicit folder-clone recovery
+
+`RestartTreeClone { job }` restarts an invalidated or blocked scan against the
+current remote catalog only while no folder or document has been imported.
+An active scan, completed job or partially imported snapshot cannot be reset.
+The reply is `TreeUpdated` with empty scan state; no remote context or native
+biological mutation is claimed.
+
+`InspectTreeParentChange { job }` returns `TreeParentReview`: the exact blocked
+`TreeStatus` and the current native `Folder`, including name, parent and generation.
+The folder must be the clone's reported `LocalParentChanged` identity. This is
+local metadata review, not a remote server assertion or a reusable authority token.
+The UI presents those values and requires explicit acknowledgment.
+
+`AcceptTreeParentChange { review }` rereads and compares the full job status and
+folder metadata before accepting the native operation. Repository authority also
+checks blocked/completed-scan state, exact folder membership and current generation
+when committing the checkpoint. A stale review is refused. Acceptance updates the
+acknowledged generation and clears the resolved issue while leaving the clone
+blocked. It does not import or overwrite any node, resume the job, or publish a
+folder move remotely. `RetryTreeClone` remains a separate explicit action.
+
+Recovery survives host restart because the job checkpoint owns its acknowledged
+local generations. Cancellation before acceptance does not change it; interrupted
+response delivery can be resolved by refreshing the persisted clone state. Normal
+native operation IDs and receipt handling remain unchanged. All preceding desktop
+sync encodings are rejected without readers or migrations.

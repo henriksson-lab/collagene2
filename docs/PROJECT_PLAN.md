@@ -53,8 +53,8 @@ not remove outstanding features or weaken the final completion requirements.
 web/worker, scientific core/model, and native/MCP/repository ownership against the
 current working tree. The [current refactor plan](audits/REFACTOR_PLAN.md) is the
 single remaining-work queue. The [full source inventory](audits/refactor-layout-current.json)
-covers **1,249 Rust files / 215 directories**, at most **17 direct Rust files per
-directory**, and a largest file of **2,869 lines**. There are no size violations
+covers **1,254 Rust files / 217 directories**, at most **17 direct Rust files per
+directory**, and a largest file of **2,413 lines**. There are no size violations
 or 3,000-line warnings. The existing `rust_refactor` binary independently passed
 its production-file size check; no tool build, rewrite or compiler run was needed.
 
@@ -66,7 +66,10 @@ and invalidate complete evidence; older/disposed completions cannot publish over
 newer work. Native/WASM compilation and 107 focused cases pass, preserving all 2,509 baseline
 case names / 33 harnesses. Exact-source CI remains required. Keep
 completed proposal/pool, Draft, combinatorial, TreeJob, native dispatch and
-annotation/citation owner work closed. Contig identity methods and domain grouping
+annotation/citation owner work closed. The refreshed parallel audit identified a
+duplicate trace-channel accessor, now consolidated in the pending trace batch.
+A cohesive remote clone-review owner and contig evidence methods remain queued.
+Contig identity methods, download construction, TreeJob encoding and domain grouping
 remain tied to their next relevant feature changes rather than isolated cosmetic
 build cycles. The preceding citation/native-dispatch checkpoint passed local
 checks and scientific/desktop CI at `82937c1`.
@@ -94,7 +97,17 @@ selected cases pass, including both-strand circular/compound continuity and
 cases: legal non-positional references remain source-only, and numeric
 coverage follows surviving original bases. See the
 [current audit](DELIVERY_AUDIT.md#connected-citation-and-edit-log-batch). Retain exact-source CI gates. See
-the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
+the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#completed-connected-cloning-batches).
+
+**Current connected delivery batch:** mutation intent and domestication now use
+one canonical annotation policy; folder-clone recovery is exposed through explicit
+reviewed desktop actions; and trace display parsing/min-max preparation moves off
+the UI thread with strict source/event/generation ownership. Worker125 and desktop
+sync schema5 reject superseded encodings. Native/WASM and focused checks are
+pending. The [current implementation queue](DELIVERY_AUDIT.md#current-implementation-queue)
+records actual remaining code gaps, including hosted MCP, PNG exports, genetic
+codes and bounded CRISPR/host-data work. Historical completed-work notes below
+are evidence rather than another unfinished plan.
 
 **Current feature batch:** North2011 structural CDR regions are implemented in
 source with independent numbering selection, source-bound framework proof,

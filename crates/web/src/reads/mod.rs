@@ -23,3 +23,6 @@ pub(crate) mod scf_export_view;
 pub(crate) mod trace_validation;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod trace_view;
+
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod trace_display_model;

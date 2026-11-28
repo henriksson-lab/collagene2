@@ -1,7 +1,7 @@
 //! Response ownership and validation after bounded decoding.
 use super::{
     bindings::profile_binding,
-    envelope::{decode_with_limit, worker_limit},
+    envelope::{decode_with_limit, encode_with_limit, worker_limit},
     schema::AnalysisResult,
     validation::validate_verification_report,
 };
@@ -14,21 +14,67 @@ pub struct Response {
     pub result: AnalysisResult,
 }
 
+const LARGE_REPLY_SELECTORS: &[u32] = &[
+    20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163, 164, 165,
+    166, 168, 169, 171, 174, 176, 178, 179, 180, 182, 187, 188,
+];
+/// Bounded serialization of only the id/revision/selector prefix. Bulk fields
+/// are never serialized into a temporary full-size buffer to choose a budget.
+struct ReplyPrefix<'a>(&'a mut Vec<u8>);
+impl postcard::ser_flavors::Flavor for ReplyPrefix<'_> {
+    type Output = ();
+    fn try_push(&mut self, byte: u8) -> Result<(), postcard::Error> {
+        if self.0.len() == 256 {
+            return Err(postcard::Error::SerializeBufferFull);
+        }
+        self.0.push(byte);
+        Ok(())
+    }
+    fn try_extend(&mut self, bytes: &[u8]) -> Result<(), postcard::Error> {
+        let count = bytes.len().min(256 - self.0.len());
+        self.0.extend_from_slice(&bytes[..count]);
+        if count < bytes.len() {
+            Err(postcard::Error::SerializeBufferFull)
+        } else {
+            Ok(())
+        }
+    }
+    fn finalize(self) -> Result<(), postcard::Error> {
+        Ok(())
+    }
+}
 impl Response {
+    /// Resource-only admission from at most 256 borrowed prefix bytes and the
+    /// separately observed whole frame length. Full checksum/typed validation
+    /// still runs in decode after a client admits the complete buffer.
+    pub fn admitted_frame_limit(prefix: &[u8], frame_length: usize) -> Result<usize, Error> {
+        worker_limit(b"CGR\0", prefix, frame_length, LARGE_REPLY_SELECTORS)
+    }
+    pub fn encode(&self) -> Result<Vec<u8>, Error> {
+        if self.revision.len() > 128 {
+            return Err(Error::TooLarge);
+        }
+        let mut prefix = Vec::with_capacity(256);
+        match postcard::serialize_with_flavor(self, ReplyPrefix(&mut prefix)) {
+            Ok(()) | Err(postcard::Error::SerializeBufferFull) => {}
+            Err(e) => return Err(Error::Format(e.to_string())),
+        }
+        let ((_, _, selector), _) = postcard::take_from_bytes::<(u32, &str, u32)>(&prefix)
+            .map_err(|e| Error::Format(e.to_string()))?;
+        let maximum = if LARGE_REPLY_SELECTORS.contains(&selector) {
+            super::envelope::MAX_WORKSPACE_MESSAGE_BYTES
+        } else {
+            crate::formats::sequence::MAX_IMPORT_BYTES
+        };
+        encode_with_limit(b"CGR\0", self, maximum)
+    }
     pub fn decode(bytes: &[u8]) -> Result<Response, Error> {
-        // Read the selector only after checking its bounds; decode still validates
-        // magic/version/length/checksum and the complete selected payload layout.
-        let maximum = worker_limit(
-            b"CGR\0",
-            bytes,
-            &[
-                20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162,
-                163, 164, 165, 166, 168, 169, 171, 174, 176, 178, 179, 180, 182, 187,
-            ],
-        )?;
-
+        let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::TraceDisplayPrepared(data) => {
+                data.validate_binding(&response.revision)?
+            }
             AnalysisResult::TopoGraphsListed(r) => r.validate_binding(&response.revision)?,
             AnalysisResult::TopoGraphCaptured(r) => r.validate_binding(&response.revision)?,
             AnalysisResult::TopoGraphInspected(r) => r.validate_binding(&response.revision)?,
@@ -774,5 +820,98 @@ impl Response {
             _ => {}
         }
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod prefix_tests {
+    use super::*;
+    use crate::formats::sequence::MAX_IMPORT_BYTES;
+    use crate::protocol::{envelope::MAX_WORKSPACE_MESSAGE_BYTES, schema::WORKER_SCHEMA_VERSION};
+    fn prefix(selector: u32, revision: &str, payload_len: usize) -> (Vec<u8>, usize) {
+        let body = postcard::to_allocvec(&(u32::MAX, revision, selector)).unwrap();
+        let length = payload_len.max(body.len());
+        let mut prefix = b"CGR\0".to_vec();
+        prefix.extend_from_slice(&WORKER_SCHEMA_VERSION.to_le_bytes());
+        prefix.extend_from_slice(&(length as u32).to_le_bytes());
+        prefix.extend_from_slice(&[0; 32]);
+        prefix.extend(body);
+        (prefix, 42 + length)
+    }
+    #[test]
+    fn resource_prefix_admission_retains_ordinary_and_explicit_existing_large_selectors() {
+        let (ordinary, length) = prefix(0, &"a".repeat(64), 100);
+        assert_eq!(
+            Response::admitted_frame_limit(&ordinary, length).unwrap(),
+            MAX_IMPORT_BYTES
+        );
+        // Workspace, combinatorial and trace display replies already declare
+        // their larger profiles. An arbitrary selector cannot acquire that cap.
+        for selector in [20, 124, 188] {
+            let (prefix, length) = prefix(selector, &"a".repeat(64), MAX_IMPORT_BYTES + 1);
+            assert_eq!(
+                Response::admitted_frame_limit(&prefix, length).unwrap(),
+                MAX_WORKSPACE_MESSAGE_BYTES
+            );
+        }
+        for selector in [0, 999] {
+            let (prefix, length) = prefix(selector, &"a".repeat(64), MAX_IMPORT_BYTES + 1);
+            assert!(matches!(
+                Response::admitted_frame_limit(&prefix, length),
+                Err(Error::TooLarge)
+            ));
+        }
+    }
+    #[test]
+    fn prefix_rejects_wrong_namespace_version_length_and_oversized_claims_before_bulk_copy() {
+        let (good, length) = prefix(188, &"a".repeat(64), MAX_IMPORT_BYTES + 1);
+        let mut wrong = good.clone();
+        wrong[0] = b'X';
+        assert!(Response::admitted_frame_limit(&wrong, length).is_err());
+        let mut wrong = good.clone();
+        wrong[4..6].copy_from_slice(&(WORKER_SCHEMA_VERSION - 1).to_le_bytes());
+        assert!(Response::admitted_frame_limit(&wrong, length).is_err());
+        assert!(Response::admitted_frame_limit(&good, length + 1).is_err());
+        assert!(Response::admitted_frame_limit(&good[..42], length).is_err());
+        let (too_large, length) = prefix(188, "a", MAX_WORKSPACE_MESSAGE_BYTES + 1);
+        assert!(matches!(
+            Response::admitted_frame_limit(&too_large, length),
+            Err(Error::TooLarge)
+        ));
+    }
+    #[test]
+    fn current_revision_boundary_is_explicit_and_prefix_admission_never_skips_body_validation() {
+        let response = Response {
+            id: u32::MAX,
+            revision: "a".repeat(128),
+            result: AnalysisResult::Error("bounded diagnostic".into()),
+        };
+        let bytes = response.encode().unwrap();
+        assert_eq!(
+            Response::admitted_frame_limit(&bytes[..bytes.len().min(256)], bytes.len()).unwrap(),
+            MAX_IMPORT_BYTES
+        );
+        assert_eq!(
+            Response::decode(&bytes).unwrap().revision,
+            response.revision
+        );
+        let mut corrupt = bytes;
+        let end = corrupt.len() - 1;
+        corrupt[end] ^= 1;
+        assert!(
+            Response::admitted_frame_limit(&corrupt[..corrupt.len().min(256)], corrupt.len())
+                .is_ok()
+        );
+        assert!(Response::decode(&corrupt).is_err());
+        let oversized = Response {
+            revision: "a".repeat(129),
+            ..response
+        };
+        assert!(matches!(oversized.encode(), Err(Error::TooLarge)));
+        let (prefix, length) = prefix(0, &"a".repeat(129), 1000);
+        assert!(matches!(
+            Response::admitted_frame_limit(&prefix, length),
+            Err(Error::TooLarge)
+        ));
     }
 }

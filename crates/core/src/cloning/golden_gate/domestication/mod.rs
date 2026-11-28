@@ -11,7 +11,7 @@ use crate::{
 use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
-pub const ENGINE_VERSION: &str = "source-cds-domestication-3";
+pub const ENGINE_VERSION: &str = "source-cds-domestication-4";
 pub const MAX_SITES: usize = 4096;
 pub const MAX_FEATURES: usize = 256;
 pub const MAX_PATCHES: usize = 256;
@@ -409,7 +409,7 @@ fn feature_assessments(maps: &[Mapping]) -> Vec<CdsAssessment> {
         .collect()
 }
 fn warnings() -> Vec<String> {
-    vec!["Reference substitution intent only. Site removal and preserved modeled translation do not establish chemical preparation, mutation efficiency, gene function or experimental success.".into(),"All retained CDS annotations constrain affected edits. Unsupported/overlapping coding positions remain locked during proposals; explicit patches must independently preserve every affected supported CDS. Original qualifiers and coordinate locations are never discarded.".into()]
+    vec!["Reference substitution intent only. Site removal and preserved modeled translation do not establish chemical preparation, mutation efficiency, gene function or experimental success.".into(),"All retained CDS annotations constrain affected edits. Unsupported/overlapping coding positions remain locked during proposals; explicit patches must independently preserve every affected supported CDS. Canonical annotation editing preserves supported unaffected claims; affected coordinate/translation/phase declarations remain bounded source evidence requiring review.".into()]
 }
 pub fn inspect(source: &Molecule, r: &Request) -> Result<Inspection, Error> {
     let context_revision = inspect_revision(source, r)?;
@@ -461,18 +461,6 @@ fn patched(source: &Molecule, patches: &[Patch]) -> Result<Molecule, Error> {
     target.sequence = Sequence::dna(std::str::from_utf8(&bases).map_err(|_| Error::TooLarge)?)?;
     Ok(target)
 }
-fn feature_touched(location: &Location, patches: &[Patch]) -> bool {
-    match location {
-        Location::Range { start, end, .. } => patches
-            .iter()
-            .any(|p| p.position >= *start && p.position < *end),
-        Location::Complement(inner) => feature_touched(inner, patches),
-        Location::Join(parts) | Location::Order(parts) => {
-            parts.iter().any(|p| feature_touched(p, patches))
-        }
-        Location::Unresolved(_) => true,
-    }
-}
 fn freeze_target(
     source: &Molecule,
     r: &Request,
@@ -493,12 +481,8 @@ fn freeze_target(
     for p in s.patches.iter().skip(1) {
         target = target.replace(p.position, p.position + 1, &p.replacement)?;
     }
-    target.features = source.features.clone();
-    for f in &mut target.features {
-        if feature_touched(&f.location, &s.patches) {
-            f.needs_review = true;
-        }
-    }
+    // Keep the canonical edit result. Replacing it with source annotations can
+    // reactivate a codon/anticodon claim whose biological calls were changed.
     target
         .metadata
         .retain(|k, _| !k.starts_with("mutation_intent:"));

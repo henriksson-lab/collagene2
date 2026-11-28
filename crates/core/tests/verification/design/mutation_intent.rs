@@ -135,7 +135,14 @@ fn affected_annotations_are_reviewed_and_original_feature_evidence_is_retained()
     s.features[0]
         .qualifiers
         .push(("transl_except".into(), Some("(pos:1..3,aa:Sec)".into())));
-    assert!(build(&s, &request(4, 8, "AT")).is_err());
+    let affected = build(&s, &request(4, 8, "AT")).unwrap();
+    assert!(affected.target.features[0].needs_review);
+    assert!(values(&affected.target.features[0], "transl_except").is_empty());
+    assert!(
+        values(&affected.target.features[0], "note")
+            .iter()
+            .any(|note| note.contains("(pos:1..3,aa:Sec)"))
+    );
 }
 #[test]
 fn readable_physical_reference_can_supply_intent_but_never_material_authority() {
@@ -201,4 +208,159 @@ fn explicit_bounds_and_unsupported_alphabets_fail_before_building_an_intent() {
     protein.sequence =
         collagene_model::Sequence::new(collagene_model::Alphabet::Protein, "AAAA").unwrap();
     assert!(build(&protein, &request(0, 1, "A")).is_err());
+}
+
+fn values<'a>(feature: &'a Feature, key: &str) -> Vec<&'a str> {
+    feature
+        .qualifiers
+        .iter()
+        .filter(|(k, _)| k == key)
+        .filter_map(|(_, v)| v.as_deref())
+        .collect()
+}
+fn coordinate_source(topology: Topology) -> Molecule {
+    let mut s = source(topology);
+    s.features = vec![
+        Feature {
+            kind: "CDS".into(),
+            location: Location::range(0, 6),
+            qualifiers: vec![
+                ("transl_except".into(), Some("(pos:1..3,aa:Sec)".into())),
+                ("translation".into(), Some("UT".into())),
+                ("codon_start".into(), Some("1".into())),
+            ],
+            needs_review: false,
+        },
+        Feature {
+            kind: "tRNA".into(),
+            location: Location::range(8, 11),
+            qualifiers: vec![(
+                "anticodon".into(),
+                Some("(pos:9..11,aa:Gly,seq:ccc)".into()),
+            )],
+            needs_review: false,
+        },
+    ];
+    s
+}
+fn archived_features(report: &Report, source: &Molecule) -> Vec<Feature> {
+    serde_json::from_str(
+        &report.target.metadata[&format!("mutation_intent:source_features:{}", source.revision())],
+    )
+    .unwrap()
+}
+#[test]
+fn supported_untouched_claims_survive_literal_edits_and_prefix_coordinate_shifts() {
+    let s = coordinate_source(Topology::Linear);
+    let original = s.clone();
+    let outside = build(&s, &request(12, 14, "AC")).unwrap();
+    assert_eq!(outside.target.sequence.as_str(), "AAAACCCCGGGGACTT");
+    assert_eq!(outside.target.features, s.features);
+    let shifted = build(&s, &request(0, 0, "TTT")).unwrap();
+    assert_eq!(shifted.target.sequence.as_str(), "TTTAAAACCCCGGGGTTTT");
+    assert_eq!(shifted.target.features[0].location, Location::range(3, 9));
+    assert_eq!(shifted.target.features[1].location, Location::range(11, 14));
+    assert_eq!(
+        values(&shifted.target.features[0], "transl_except"),
+        ["(pos:4..6,aa:Sec)"]
+    );
+    assert_eq!(
+        values(&shifted.target.features[1], "anticodon"),
+        ["(pos:12..14,aa:Gly,seq:ccc)"]
+    );
+    assert!(
+        shifted
+            .target
+            .features
+            .iter()
+            .all(|feature| !feature.needs_review)
+    );
+    assert_eq!(archived_features(&shifted, &s), s.features);
+    assert!(collagene_core::chemistry::Duplex::from_molecule(&shifted.target).is_err());
+    assert_eq!(s, original);
+}
+#[test]
+fn touched_codon_and_anticodon_claims_are_source_evidence_not_active_destination_assertions() {
+    let s = coordinate_source(Topology::Linear);
+    let original = s.clone();
+    let codon = build(&s, &request(1, 2, "T")).unwrap();
+    assert_eq!(codon.target.sequence.as_str(), "ATAACCCCGGGGTTTT");
+    assert!(codon.target.features[0].needs_review);
+    for key in ["transl_except", "translation", "codon_start"] {
+        assert!(values(&codon.target.features[0], key).is_empty());
+    }
+    assert!(
+        values(&codon.target.features[0], "note")
+            .iter()
+            .any(|value| value.contains("(pos:1..3,aa:Sec)"))
+    );
+    assert_eq!(codon.target.features[1], s.features[1]);
+    let anticodon = build(&s, &request(9, 10, "A")).unwrap();
+    assert_eq!(anticodon.target.sequence.as_str(), "AAAACCCCGAGGTTTT");
+    assert_eq!(anticodon.target.features[0], s.features[0]);
+    assert!(anticodon.target.features[1].needs_review);
+    assert!(values(&anticodon.target.features[1], "anticodon").is_empty());
+    assert!(
+        values(&anticodon.target.features[1], "note")
+            .iter()
+            .any(|value| value.contains("(pos:9..11,aa:Gly,seq:ccc)"))
+    );
+    assert_eq!(archived_features(&codon, &s), s.features);
+    assert_eq!(archived_features(&anticodon, &s), s.features);
+    assert_eq!(s, original);
+}
+#[test]
+fn unsupported_retained_claims_still_refuse_but_wholly_deleted_features_need_no_mapping() {
+    for (key, value) in [
+        ("rpt_unit_range", "9..11"),
+        ("coded_by", "AB123456.1:9..11"),
+        ("transl_except", "not a coordinate wrapper"),
+    ] {
+        let mut s = coordinate_source(Topology::Linear);
+        s.features[1].qualifiers = vec![(key.into(), Some(value.into()))];
+        let original = s.clone();
+        assert!(build(&s, &request(12, 14, "AC")).is_err(), "retained {key}");
+        let deleted = build(&s, &request(8, 11, "")).unwrap();
+        assert_eq!(deleted.target.sequence.as_str(), "AAAACCCCGTTTT");
+        assert_eq!(deleted.target.features, vec![s.features[0].clone()]);
+        assert_eq!(archived_features(&deleted, &s), s.features);
+        assert_eq!(s, original);
+    }
+}
+#[test]
+fn circular_origin_wrap_projects_supported_claims_through_the_canonical_rotation_and_edit() {
+    let mut s = coordinate_source(Topology::Circular);
+    s.features[0].location = Location::range(4, 10);
+    s.features[0].qualifiers[0].1 = Some("(pos:5..7,aa:Sec)".into());
+    s.features[0].qualifiers[1].1 = Some("UR".into());
+    let original = s.clone();
+    let r = build(&s, &request(14, 18, "G")).unwrap();
+    assert_eq!(r.target.sequence.as_str(), "GAACCCCGGGGTT");
+    assert_eq!(r.deleted, "TTAA");
+    assert_eq!(r.origin_shift, 14);
+    assert_eq!(r.target.features[0].location, Location::range(3, 9));
+    assert_eq!(r.target.features[1].location, Location::range(7, 10));
+    assert_eq!(
+        values(&r.target.features[0], "transl_except"),
+        ["(pos:4..6,aa:Sec)"]
+    );
+    assert_eq!(
+        values(&r.target.features[1], "anticodon"),
+        ["(pos:8..10,aa:Gly,seq:ccc)"]
+    );
+    assert!(
+        r.target
+            .features
+            .iter()
+            .all(|feature| !feature.needs_review)
+    );
+    assert_eq!(archived_features(&r, &s), s.features);
+    let mut stale = r.clone();
+    stale
+        .target
+        .metadata
+        .insert("mutation_intent:engine".into(), "mutation-intent-3".into());
+    assert!(stale.validate_binding(&r.context_revision).is_err());
+    assert!(collagene_core::chemistry::Duplex::from_molecule(&r.target).is_err());
+    assert_eq!(s, original);
 }

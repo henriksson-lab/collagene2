@@ -1394,3 +1394,339 @@ fn cancelled_remote_discussion_never_reaches_the_transport() {
     ));
     assert_eq!(service.adapter_mut().calls, before);
 }
+
+#[test]
+fn invalidated_tree_scan_can_restart_explicitly_without_resetting_an_active_scan() {
+    let (_disk, mut service, _) = setup();
+    let remote = add(&mut service);
+    token(&mut service, &remote);
+    let server = &mut service.adapter_mut().server;
+    server
+        .db
+        .create_folder(&server.access, None, "First remote folder")
+        .unwrap();
+    let start = match success(call(
+        &mut service,
+        3,
+        wire::Command::BeginTreeClone {
+            remote: remote.id.clone(),
+            root: wire::TreeRoot::LabRoot,
+            destination: None,
+            limits: Default::default(),
+        },
+    )) {
+        wire::Success::TreeStarted(t) => t,
+        x => panic!("{x:?}"),
+    };
+    let scanned = match success(call(
+        &mut service,
+        4,
+        wire::Command::ResumeTreeClone {
+            job: start.job.clone(),
+            max_steps: 1,
+        },
+    )) {
+        wire::Success::TreeUpdated(t) => t,
+        x => panic!("{x:?}"),
+    };
+    assert!(scanned.catalog_generation.is_some());
+    let server = &mut service.adapter_mut().server;
+    server
+        .db
+        .create_folder(&server.access, None, "Concurrent remote folder")
+        .unwrap();
+    let invalidated = match success(call(
+        &mut service,
+        5,
+        wire::Command::ResumeTreeClone {
+            job: start.job.clone(),
+            max_steps: 1,
+        },
+    )) {
+        wire::Success::TreeUpdated(t) => t,
+        x => panic!("{x:?}"),
+    };
+    assert_eq!(invalidated.phase, wire::TreePhase::Invalidated);
+    assert_eq!(invalidated.folders_created, 0);
+    let restart = match success(call(
+        &mut service,
+        6,
+        wire::Command::RestartTreeClone {
+            job: start.job.clone(),
+        },
+    )) {
+        wire::Success::TreeUpdated(t) => t,
+        x => panic!("{x:?}"),
+    };
+    assert_eq!(restart.phase, wire::TreePhase::Scanning);
+    assert_eq!(restart.scanned_nodes, 0);
+    assert_eq!(restart.catalog_generation, None);
+    let checkpoint = service.repository().checkpoint_version();
+    assert!(matches!(
+        call(
+            &mut service,
+            7,
+            wire::Command::RestartTreeClone {
+                job: start.job.clone()
+            }
+        )
+        .outcome,
+        wire::Outcome::Failure(_)
+    ));
+    assert_eq!(service.repository().checkpoint_version(), checkpoint);
+    let mut complete = restart;
+    for n in 8..25 {
+        complete = match success(call(
+            &mut service,
+            n,
+            wire::Command::ResumeTreeClone {
+                job: start.job.clone(),
+                max_steps: 1,
+            },
+        )) {
+            wire::Success::TreeUpdated(t) => t,
+            x => panic!("{x:?}"),
+        };
+        if complete.phase == wire::TreePhase::Complete {
+            break;
+        }
+    }
+    assert_eq!(complete.phase, wire::TreePhase::Complete);
+    assert_eq!(complete.folders_created, 2);
+}
+
+#[test]
+fn blocked_clone_parent_requires_current_review_and_acknowledgment_before_explicit_retry() {
+    let (disk, mut service, local) = setup();
+    let remote = add(&mut service);
+    token(&mut service, &remote);
+    let initial_head = local.head.clone();
+    let server = &mut service.adapter_mut().server;
+    let root = server
+        .db
+        .create_folder(&server.access, None, "Remote parent")
+        .unwrap();
+    server
+        .db
+        .create_folder(&server.access, Some(&root.id), "Remote child")
+        .unwrap();
+    let start = match success(call(
+        &mut service,
+        3,
+        wire::Command::BeginTreeClone {
+            remote: remote.id.clone(),
+            root: wire::TreeRoot::Folder {
+                id: library::FolderId::new(root.id.as_str()).unwrap(),
+                parent: None,
+            },
+            destination: None,
+            limits: Default::default(),
+        },
+    )) {
+        wire::Success::TreeStarted(t) => t,
+        x => panic!("{x:?}"),
+    };
+    let mut progress = start.clone();
+    for n in 4..25 {
+        progress = match success(call(
+            &mut service,
+            n,
+            wire::Command::ResumeTreeClone {
+                job: start.job.clone(),
+                max_steps: 1,
+            },
+        )) {
+            wire::Success::TreeUpdated(t) => t,
+            x => panic!("{x:?}"),
+        };
+        if progress.folders_created == 1 {
+            break;
+        }
+    }
+    assert_eq!(progress.folders_created, 1);
+    assert_eq!(progress.phase, wire::TreePhase::Importing);
+    let mut other = Repository::open(&disk.0).unwrap();
+    let job = other.tree_clone_job(start.job.as_str()).unwrap();
+    let parent = job.folders[root.id.as_str()].clone();
+    let current = other.folder(&parent).unwrap();
+    other
+        .mutate_local(durable::MutationOperation::RenameFolder {
+            id: parent.clone(),
+            expected_generation: current.generation,
+            name: "Private renamed parent".into(),
+        })
+        .unwrap();
+    let blocked = match success(call(
+        &mut service,
+        25,
+        wire::Command::ResumeTreeClone {
+            job: start.job.clone(),
+            max_steps: 1,
+        },
+    )) {
+        wire::Success::TreeUpdated(t) => t,
+        x => panic!("{x:?}"),
+    };
+    assert_eq!(blocked.phase, wire::TreePhase::Blocked);
+    assert!(
+        matches!(&blocked.issue,Some(wire::TreeIssue::LocalParentChanged{folder}) if folder.as_str()==parent.as_str())
+    );
+    assert!(
+        matches!(
+            call(
+                &mut service,
+                26,
+                wire::Command::RestartTreeClone {
+                    job: start.job.clone()
+                }
+            )
+            .outcome,
+            wire::Outcome::Failure(_)
+        ),
+        "partially imported snapshots cannot restart"
+    );
+    let old_review = match success(call(
+        &mut service,
+        27,
+        wire::Command::InspectTreeParentChange {
+            job: start.job.clone(),
+        },
+    )) {
+        wire::Success::TreeParentReview(r) => r,
+        x => panic!("{x:?}"),
+    };
+    assert_eq!(old_review.folder.name.as_str(), "Private renamed parent");
+    let cancelled = command(
+        28,
+        wire::Command::AcceptTreeParentChange {
+            review: old_review.clone(),
+        },
+    );
+    let reply = service
+        .dispatch_raw(&wire::encode_request(&cancelled).unwrap(), &mut || false)
+        .unwrap();
+    assert!(matches!(
+        wire::decode_response_for(&reply, &cancelled)
+            .unwrap()
+            .outcome,
+        wire::Outcome::Failure(wire::Failure::Error {
+            code: wire::ErrorCode::Cancelled,
+            ..
+        })
+    ));
+    let current = other.folder(&parent).unwrap();
+    other
+        .mutate_local(durable::MutationOperation::RenameFolder {
+            id: parent.clone(),
+            expected_generation: current.generation,
+            name: "Latest reviewed parent".into(),
+        })
+        .unwrap();
+    assert!(matches!(
+        call(
+            &mut service,
+            29,
+            wire::Command::AcceptTreeParentChange { review: old_review }
+        )
+        .outcome,
+        wire::Outcome::Failure(wire::Failure::Error {
+            code: wire::ErrorCode::ReviewChanged,
+            ..
+        })
+    ));
+    let review = match success(call(
+        &mut service,
+        30,
+        wire::Command::InspectTreeParentChange {
+            job: start.job.clone(),
+        },
+    )) {
+        wire::Success::TreeParentReview(r) => r,
+        x => panic!("{x:?}"),
+    };
+    let raced = command(900, wire::Command::AcceptTreeParentChange { review });
+    let response = service
+        .dispatch_raw(&wire::encode_request(&raced).unwrap(), &mut || {
+            let current = other.folder(&parent).unwrap();
+            other
+                .mutate_local(durable::MutationOperation::RenameFolder {
+                    id: parent.clone(),
+                    expected_generation: current.generation,
+                    name: "Parent changed at acceptance".into(),
+                })
+                .unwrap();
+            true
+        })
+        .unwrap();
+    assert!(
+        matches!(
+            wire::decode_response_for(&response, &raced)
+                .unwrap()
+                .outcome,
+            wire::Outcome::Failure(_)
+        ),
+        "repository generation CAS must recheck after acceptance"
+    );
+    let review = match success(call(
+        &mut service,
+        901,
+        wire::Command::InspectTreeParentChange {
+            job: start.job.clone(),
+        },
+    )) {
+        wire::Success::TreeParentReview(r) => r,
+        x => panic!("{x:?}"),
+    };
+    assert_eq!(review.folder.name.as_str(), "Parent changed at acceptance");
+    assert_eq!(review.tree.folders_created, 1);
+    let accepted = match success(call(
+        &mut service,
+        31,
+        wire::Command::AcceptTreeParentChange { review },
+    )) {
+        wire::Success::TreeParentAccepted(t) => t,
+        x => panic!("{x:?}"),
+    };
+    assert_eq!(accepted.phase, wire::TreePhase::Blocked);
+    assert_eq!(accepted.folders_created, 1);
+    assert_eq!(accepted.issue, None);
+    // The acknowledged generation survives a native host restart; acknowledgment
+    // itself neither resumes imports nor overwrites private parent metadata.
+    let (repo, adapter) = service.into_parts();
+    drop(repo);
+    let mut service = SyncHost::new(Repository::open(&disk.0).unwrap(), adapter).unwrap();
+    success(call(
+        &mut service,
+        32,
+        wire::Command::RetryTreeClone {
+            job: start.job.clone(),
+        },
+    ));
+    let mut complete = accepted;
+    for n in 33..45 {
+        complete = match success(call(
+            &mut service,
+            n,
+            wire::Command::ResumeTreeClone {
+                job: start.job.clone(),
+                max_steps: 1,
+            },
+        )) {
+            wire::Success::TreeUpdated(t) => t,
+            x => panic!("{x:?}"),
+        };
+        if complete.phase == wire::TreePhase::Complete {
+            break;
+        }
+    }
+    assert_eq!(complete.phase, wire::TreePhase::Complete);
+    assert_eq!(complete.folders_created, 2);
+    assert_eq!(
+        service.repository().folder(&parent).unwrap().name,
+        "Parent changed at acceptance"
+    );
+    assert_eq!(
+        service.repository().document(&local.id).unwrap().head,
+        initial_head
+    );
+}

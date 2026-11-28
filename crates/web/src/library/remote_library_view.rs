@@ -113,6 +113,8 @@ fn note(success: &wire::Success) -> String {
         wire::Success::DiscardedRejected{..}=>"Rejected push discarded. Local data is retained.".into(),
         wire::Success::TreeStarted(_)=>"Folder clone saved. Resume in Folder clones; each step is bounded.".into(),
         wire::Success::TreeUpdated(t)=>format!("Folder clone {:?}: {} folders, {} plasmids saved locally.{}",t.phase,t.folders_created,t.documents_created,if t.issue.is_some(){" Review its issue before continuing."}else{""}),
+        wire::Success::TreeParentReview(_)=>"Review the current local folder metadata before acknowledging this clone parent.".into(),
+        wire::Success::TreeParentAccepted(_)=>"Local parent changes acknowledged. The clone is still paused; choose Retry blocked clone explicitly.".into(),
         _=>String::new(),
     }
 }
@@ -150,6 +152,8 @@ pub fn RemoteLibraryPane(
     let trees = RwSignal::new(Vec::<wire::TreeStatus>::new());
     let tree_offset = RwSignal::new(0u16);
     let tree_next = RwSignal::new(None::<u16>);
+    let parent_review = RwSignal::new(None::<wire::TreeParentReview>);
+    let parent_acknowledged = RwSignal::new(false);
     let checkout = RwSignal::new(false);
     let review = RwSignal::new(None::<PullReview>);
     let bookmarks = RwSignal::new(None::<wire::BookmarkPage>);
@@ -164,6 +168,11 @@ pub fn RemoteLibraryPane(
     Effect::new(move |_| {
         let _ = selected.get();
         history.set(None);
+    });
+    Effect::new(move |_| {
+        let _ = (selected.get(), destination.get(), locked.get());
+        parent_review.set(None);
+        parent_acknowledged.set(false);
     });
     on_cleanup(move || {
         life.with_value(|v| v.set(v.get().wrapping_add(1)));
@@ -202,6 +211,8 @@ pub fn RemoteLibraryPane(
                 }),
                 wire::Command::ResumeTreeClone { job, .. }
                 | wire::Command::RetryTreeClone { job }
+                | wire::Command::RestartTreeClone { job }
+                | wire::Command::InspectTreeParentChange { job }
                 | wire::Command::QueueTreeFolderMetadata { job, .. }
                 | wire::Command::QueueTreeDocumentMetadata { job, .. } => trees.with(|rows| {
                     rows.iter()
@@ -235,6 +246,9 @@ pub fn RemoteLibraryPane(
         if let Some(nav) = &action.navigation {
             navigation.set(nav.clone());
         }
+        let parent_context = (selected.get_untracked(), destination.get_untracked());
+        parent_review.set(None);
+        parent_acknowledged.set(false);
         // Credentials are handed directly to native execution, never retained in a
         // signal, status, debug formatter, retry closure or local storage.
         busy.set(true);
@@ -346,6 +360,18 @@ pub fn RemoteLibraryPane(
                                 rows.push(tree);
                             })
                         }
+                        wire::Success::TreeParentReview(value) => {
+                            if parent_context
+                                == (selected.get_untracked(), destination.get_untracked())
+                                && !locked.get_untracked()
+                            {
+                                parent_review.set(Some(value));
+                            }
+                        }
+                        wire::Success::TreeParentAccepted(tree) => trees.update(|rows| {
+                            rows.retain(|p| p.job != tree.job);
+                            rows.push(tree);
+                        }),
                         wire::Success::TreeJobs(page) => {
                             trees.set(page.items.into_vec());
                             tree_next.set(page.next_offset);
@@ -640,18 +666,38 @@ pub fn RemoteLibraryPane(
             <details><summary>"Folder clones"</summary>
                 <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{tree_offset.set(0);send.run(Action::command(wire::Command::TreeJobs{page:wire::LocalPageRequest::default()}));}>"Refresh folder clones"</button>
                 <ul class="lab-library-entries">{move||trees.get().into_iter().map(|t|{
-                    let resume=t.job.clone();let retry=t.job.clone();let doc_metadata=t.job.clone();let folder_metadata=t.job.clone();
+                    let resume=t.job.clone();let retry=t.job.clone();let restart=t.job.clone();let inspect=t.job.clone();let doc_metadata=t.job.clone();let folder_metadata=t.job.clone();
                     let stopped=matches!(t.phase,wire::TreePhase::Complete|wire::TreePhase::Blocked|wire::TreePhase::Invalidated);
                     let blocked=t.phase==wire::TreePhase::Blocked;
+                    let restartable=matches!(t.phase,wire::TreePhase::Invalidated|wire::TreePhase::Blocked)&&t.folders_created==0&&t.documents_created==0;
+                    let parent_changed=blocked&&matches!(&t.issue,Some(wire::TreeIssue::LocalParentChanged{..}));
                     let label=format!("{} · {:?}: {} / {} nodes saved",t.job.as_str(),t.phase,u32::from(t.folders_created)+u32::from(t.documents_created),t.scanned_nodes);
                     let issue=t.issue.map(|i|format!("{i:?}")).unwrap_or_default();
                     view!{<li><span>{label}</span><p class="helper">{issue}</p><details><summary>"Clone actions"</summary>
                         <button class="text-tool" disabled=move||busy.get()||locked.get()||stopped on:click=move|_|send.run(Action::command(wire::Command::ResumeTreeClone{job:resume.clone(),max_steps:1}))>"Resume one step"</button>
                         <button class="text-tool" disabled=move||busy.get()||locked.get()||!blocked on:click=move|_|send.run(Action::command(wire::Command::RetryTreeClone{job:retry.clone()}))>"Retry blocked clone"</button>
+                        <button class="text-tool" hidden=move||!restartable disabled=move||busy.get()||locked.get()||!restartable on:click=move|_|send.run(Action::command(wire::Command::RestartTreeClone{job:restart.clone()}))>"Restart unapplied scan from current remote catalog"</button>
+                        <button class="text-tool" hidden=move||!parent_changed disabled=move||busy.get()||locked.get()||!parent_changed on:click=move|_|send.run(Action::command(wire::Command::InspectTreeParentChange{job:inspect.clone()}))>"Review changed local parent"</button>
                         <button class="text-tool" disabled=move||busy.get()||locked.get()||saved.with(|s|s.as_ref().is_none_or(|s|s.dirty)) on:click=move|_|if let Some(s)=saved.get_untracked(){if !s.dirty{send.run(Action::command(wire::Command::QueueTreeDocumentMetadata{job:doc_metadata.clone(),local_document:s.id}));}}>"Queue saved local plasmid metadata"</button>
                         <button class="text-tool" disabled=move||busy.get()||locked.get()||destination.get().is_none() on:click=move|_|if let Some(local_folder)=destination.get_untracked(){send.run(Action::command(wire::Command::QueueTreeFolderMetadata{job:folder_metadata.clone(),local_folder}));}>"Queue selected local folder metadata"</button>
                     </details></li>}
                 }).collect_view()}</ul>
+                {move||parent_review.get().map(|value|{
+                    let summary=format!("Clone {} · database {} · local parent {} ({}) · generation {} · parent {}",value.tree.job.as_str(),value.tree.remote.as_str(),value.folder.name.as_str(),value.folder.id.as_str(),value.folder.generation,value.folder.parent.as_ref().map(|id|id.as_str()).unwrap_or("local catalog root"));
+                    view!{<div class="library-review"><p>{summary}</p>
+                        <p class="helper">"This accepts the displayed local folder rename or placement for future descendant imports. Existing plasmids stay unchanged; acknowledgment does not resume the clone."</p>
+                        <label><input type="checkbox" prop:checked=move||parent_acknowledged.get() on:change=move|event|parent_acknowledged.set(event_target_checked(&event))/>"I reviewed this exact local parent and want the clone to retain it."</label>
+                        <button class="text-tool" disabled=move||busy.get()||locked.get()||!parent_acknowledged.get() on:click=move|_|{
+                            if !parent_acknowledged.get_untracked(){return;}
+                            if let Some(review)=parent_review.get_untracked(){
+                                if trees.with_untracked(|rows|rows.iter().any(|t|t==&review.tree)){
+                                    send.run(Action::command(wire::Command::AcceptTreeParentChange{review}));
+                                }else{parent_review.set(None);parent_acknowledged.set(false);status.set("The clone changed. Inspect its current parent again.".into());}
+                            }
+                        }>"Acknowledge reviewed parent"</button>
+                        <button class="text-tool" disabled=move||busy.get() on:click=move|_|{parent_review.set(None);parent_acknowledged.set(false);}>"Dismiss parent review"</button>
+                    </div>}
+                })}
                 <p class="helper">"Clones preserve their scanned revisions and completed local edits. Metadata actions require membership in this clone and never turn its local mount into a remote move."</p>
                 <button class="text-tool" disabled=move||busy.get()||locked.get()||tree_offset.get()==0 on:click=move|_|{let offset=tree_offset.get_untracked().saturating_sub(100);tree_offset.set(offset);send.run(Action::command(wire::Command::TreeJobs{page:wire::LocalPageRequest{offset,limit:100}}));}>"Previous"</button>
                 <button class="text-tool" disabled=move||busy.get()||locked.get()||tree_next.get().is_none() on:click=move|_|if let Some(offset)=tree_next.get_untracked(){tree_offset.set(offset);send.run(Action::command(wire::Command::TreeJobs{page:wire::LocalPageRequest{offset,limit:100}}));}>"Next"</button>

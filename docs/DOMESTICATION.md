@@ -29,10 +29,12 @@ join/complement order, genetic code, initiation and terminal-stop semantics rema
 those of the original features. Partial codon bases stay protected. New selected-
 enzyme sites and changes to retained/unscoped recognition sites are rejected.
 
-Feature locations and qualifiers retain their exact original coordinates; touched
-features are marked for review. A spanning replacement is not used to remap
-annotations between distant substitutions. Unsupported translation exceptions
-remain explicit. Fuzzy or partly unresolved CDS coverage cannot be assumed absent
+Each substitution uses canonical native annotation editing at its own source
+coordinate; a spanning replacement is not used between distant patches. Supported
+unaffected qualifiers remain active. Changed coordinate, translation and phase
+claims become bounded source evidence requiring review, and the final target keeps
+those edited features instead of restoring original active claims. Unsupported
+translation exceptions remain explicit. Fuzzy or partly unresolved CDS coverage cannot be assumed absent
 at another edited position; uncertain coverage blocks unsupported claims.
 
 The checked reference is frozen before molecular reconstruction. It can be opened

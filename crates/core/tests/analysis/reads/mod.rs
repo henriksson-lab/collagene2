@@ -11,6 +11,4 @@ mod read_check_protocol;
 mod read_checks;
 mod read_review;
 mod read_review_protocol;
-mod scf_export;
-mod trace_validation;
 mod traces;

@@ -15,6 +15,9 @@ pub struct Request {
 
 impl Request {
     pub fn encode(&self) -> Result<Vec<u8>, Error> {
+        if self.revision.len() > 128 {
+            return Err(Error::TooLarge);
+        }
         if let AnalysisJob::ExportPairwiseComparison {
             record,
             reference_name,
@@ -132,8 +135,8 @@ impl Request {
             } => {
                 crate::formats::sequence::export::revision(molecule, format)?;
             }
-            AnalysisJob::ExportScfTrace { trace, options } => {
-                crate::formats::scf::revision(trace, options)?;
+            AnalysisJob::ExportScfTrace { molecule, options } => {
+                crate::formats::scf::document_revision(molecule, options)?;
             }
             AnalysisJob::InspectMaterialMismatchPcr {
                 source,
@@ -647,7 +650,6 @@ impl Request {
                 | AnalysisJob::PrepareMaterialPcrOutputs { .. }
                 | AnalysisJob::ReviewSequenceExport { .. }
                 | AnalysisJob::PrepareSequenceExport { .. }
-                | AnalysisJob::ExportScfTrace { .. }
                 | AnalysisJob::InspectMaterialMismatchPcr { .. }
                 | AnalysisJob::InspectMaterialRepair { .. }
                 | AnalysisJob::InstallMaterialDerivation { .. }
@@ -672,6 +674,20 @@ impl Request {
         } else {
             MAX_IMPORT_BYTES
         };
-        encode_with_limit(b"CGQ\0", self, maximum)
+        let encoded = encode_with_limit(b"CGQ\0", self, maximum);
+        match encoded {
+            Err(Error::TooLarge)
+                if matches!(
+                    self.job,
+                    AnalysisJob::PrepareTraceDisplay { .. } | AnalysisJob::ExportScfTrace { .. }
+                ) =>
+            {
+                Err(Error::Unsupported(
+                    "trace document and worker framing exceed the ordinary 32 MiB request limit"
+                        .into(),
+                ))
+            }
+            other => other,
+        }
     }
 }

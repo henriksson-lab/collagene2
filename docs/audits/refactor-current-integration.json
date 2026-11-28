@@ -1,0 +1,726 @@
+{
+  "scope": "Parallel organization audit and pending connected delivery batch; current source is not declared product-complete.",
+  "layout": {
+    "files": 1254,
+    "directories": 217,
+    "maximum_direct_rs_files": 17,
+    "largest_file_lines": 2413,
+    "violations": 0,
+    "size_warnings": 0
+  },
+  "audit_reports": [
+    "refactor-core-current.md",
+    "refactor-web-current.md",
+    "refactor-native-current.md"
+  ],
+  "plan": "REFACTOR_PLAN.md",
+  "implemented_ownership_change": "TraceChannels::all is the sole borrowed A/C/G/T accessor; duplicate display helper removed and callers updated.",
+  "validation": {
+    "whitespace": "passed outside the two verbatim public GenBank captures; their ORIGIN trailing spaces and NCBI final blank line are preserved and manifest hashes verified",
+    "layout": "passed",
+    "executed_cases": 111,
+    "failed_cases": 0,
+    "execution_evidence": "/tmp/collagene2-audit-integration-execution.json",
+    "native_build": "passed",
+    "wasm_check": "passed: collagene-web and analysis-worker on wasm32-unknown-unknown",
+    "test_inventory_comparison": {
+      "baseline_cases": 2540,
+      "cases": 2617,
+      "harnesses": 52,
+      "renamed_cases": 39,
+      "missing": []
+    },
+    "live_sourceclient_test": "deliberately not executed",
+    "browser_checks": "deferred until in-scope source complete",
+    "executed_tests": [
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "protocol::response::prefix_tests::current_revision_boundary_is_explicit_and_prefix_admission_never_skips_body_validation",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "protocol::response::prefix_tests::prefix_rejects_wrong_namespace_version_length_and_oversized_claims_before_bulk_copy",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "protocol::response::prefix_tests::resource_prefix_admission_retains_ordinary_and_explicit_existing_large_selectors",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "review::reads::traces::display::tests::every_overview_bin_matches_independent_literal_source_slices",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "review::reads::traces::display::tests::literal_extrema_keep_signed_values_partial_bins_and_hierarchy",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "review::reads::traces::display::tests::maximum_display_shape_uses_only_its_explicit_large_reply_selector",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "browse_replies_bind_lab_locator_parent_page_and_operation",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "checked_frames_reject_damage_trailing_data_wrong_namespace_and_bounds",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "local_bookmarks_bind_checkpoint_and_page_without_remote_authority",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "queue_receipt_pins_saved_local_revision_and_does_not_claim_attempted_work",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "retained_conflict_receipt_summary_validates_without_fabricating_live_lab_context",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "secret_is_bounded_on_decode_and_redacted_in_enclosing_debug",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "tree_controls_preserve_mount_scope_and_never_claim_partial_clone_complete",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-protocol",
+        "target": "wire",
+        "test": "tree_parent_review_and_restart_bind_exact_scope_without_remote_authority",
+        "passed": true
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "mutation_intent_tools::frozen_literal_intent_then_independent_inverse_pcr_and_wrong_target_check",
+        "passed": true
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "mutation_intent_tools::literal_replace_insert_delete_targets_are_source_bound_and_not_preparation_answers",
+        "passed": true
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "mutation_intent_tools::qualifier_aware_mutation_intents_keep_source_immutable_and_reference_authority_explicit",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::existing_binary_worker_uses_native_context_and_returns_bound_preparation",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::original_source_inverse_pcr_reconstructs_independent_insertion_deletion_and_replacement",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::point_substitution_keeps_its_original_intent_through_binary_worker_and_rebound_review",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::qualifier_aware_source_edit_can_prepare_inverse_pcr_without_reusing_stale_annotation_events",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::saved_run_and_derived_circle_proposals_retain_exact_origin_after_restart",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::source_event_wrong_target_and_forged_receipt_are_rejected",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::unsupported_declarations_never_become_guessed_preparations",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "assembly::primer_design::assembly_inverse_pcr_model::tests::worker_response_preserves_original_receipts_and_rejects_wrong_native_fields_or_products",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "reads::scf_export_model::tests::document_change_invalidates_even_when_attachment_is_identical",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "reads::scf_export_model::tests::identical_trace_in_another_document_or_event_does_not_reuse_review",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "reads::scf_export_model::tests::loss_review_needs_separate_explicit_acknowledgment",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "reads::scf_export_model::tests::orientation_and_precision_change_require_new_preparation",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "reads::scf_export_model::tests::portable_trace_filename_retains_extension_without_rewriting_sample_name",
+        "passed": true
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "reads::trace_display_model::tests::equal_sequence_documents_foreign_events_and_late_generations_do_not_retarget",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-host",
+        "target": "service",
+        "test": "blocked_clone_parent_requires_current_review_and_acknowledgment_before_explicit_retry",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-host",
+        "target": "service",
+        "test": "clone_and_explicit_pull_preserve_private_branches_and_durable_native_bookmarks",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-host",
+        "target": "service",
+        "test": "invalidated_tree_scan_can_restart_explicitly_without_resetting_an_active_scan",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-host",
+        "target": "service",
+        "test": "saved_product_native_history_crosses_dsq_queue_and_clone_without_becoming_metadata_authority",
+        "passed": true
+      },
+      {
+        "crate": "desktop-sync-host",
+        "target": "service",
+        "test": "tree_jobs_keep_mount_placement_and_queue_only_selected_metadata_updates",
+        "passed": true
+      },
+      {
+        "crate": "repository",
+        "target": "folders",
+        "test": "catalog_changes_invalidate_scan_before_import_and_explicit_restart_uses_one_new_snapshot",
+        "passed": true
+      },
+      {
+        "crate": "repository",
+        "target": "folders",
+        "test": "duplicate_cycle_reply_is_blocked_before_any_local_nodes_are_created",
+        "passed": true
+      },
+      {
+        "crate": "repository",
+        "target": "folders",
+        "test": "interrupted_subtree_clone_resumes_exact_snapshot_preserves_local_edits_and_real_pcr_ancestry",
+        "passed": true
+      },
+      {
+        "crate": "repository",
+        "target": "folders",
+        "test": "mount_placement_is_not_remote_move_and_offline_rename_uses_snapshot_generation_conflict",
+        "passed": true
+      },
+      {
+        "crate": "repository",
+        "target": "folders",
+        "test": "mounted_root_document_rename_replays_without_moving_and_explicit_moves_use_bindings",
+        "passed": true
+      },
+      {
+        "crate": "repository",
+        "target": "folders",
+        "test": "virtual_root_maps_to_explicit_local_destination_and_changed_parent_needs_review",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::display::regenerated_export_reparses_document_instead_of_accepting_display_arrays",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::display::stale_sequence_wrong_source_and_malformed_display_do_not_reuse_old_calls",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::display::stateless_and_session_display_preserve_original_evidence_and_oriented_samples",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::display::trace_document_requests_do_not_gain_the_large_reply_budget",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::abif_call_editions_are_never_mixed_with_other_peak_or_quality_editions",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::abif_inline_values_use_high_order_bytes_without_offset_interpretation",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::abif_preserves_signed_signals_and_uses_explicit_channel_order",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::abif_rejects_unsupported_orientation_missing_order_and_duplicate_tags",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::abif_root_reader_uses_bounded_count_and_offset_not_ignored_writer_hints",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::abif_validates_entry_dimensions_offsets_and_peak_coordinates",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::attached_evidence_never_silently_overrides_edits_or_forged_view_data",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::attachment_size_includes_base64_and_native_document_overhead",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::native_attachment_round_trip_reconstructs_original_trace_and_orientation",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::reverse_complement_transforms_calls_positions_channels_and_qualities_together",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::scf_no_calls_and_accuracy_evidence_are_not_silently_recalibrated",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::scf_rejects_bad_versions_overlapping_sections_counts_and_peak_positions",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::scf_v2_interleaved_and_v3_modular_delta_signals_match_independent_values",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::formats::trace_validation_rejects_inconsistent_projection_and_original_evidence",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::scf_export::coincident_peaks_and_code_four_are_retained_and_v3_reexport_is_deterministic",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::scf_export::documentary_omissions_require_explicit_policy_and_leave_original_source_unchanged",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::scf_export::fabricated_signal_missing_quality_changed_calls_and_invalid_dimensions_are_not_exportable",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::scf_export::reverse_complement_swaps_signal_and_all_four_accuracy_vectors_and_retains_no_calls",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::scf_export::unsigned_sixteen_bit_wraps_are_lossless_and_explicit_eight_bit_refuses_rescaling",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::scf_export::v3_eight_bit_second_differences_and_channel_quality_layout_match_literal_bytes",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::abif_raw_scores_and_absent_scores_never_acquire_an_invented_phred_scale",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::circular_origin_maps_each_base_once_and_retains_unknown_gaps",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::circular_unique_claims_are_sound_against_all_one_turn_substring_paths",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::conflicting_eligible_calls_remain_iupac_disagreement_not_reference_or_majority_vote",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::duplicate_original_attachment_is_not_independent_support_after_rename",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::explicit_fastq_encodings_support_calls_without_inventing_chromatogram_coordinates",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::explicit_strand_and_minimum_support_policies_are_respected",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::high_native_score_unique_mismatch_is_reconstructed_at_source_coordinates",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::optimal_alignment_and_uniqueness_match_independent_all_substring_path_enumeration",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::overlapping_unique_reads_can_cover_reference_without_filling_it_from_target",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::partial_exact_read_does_not_fill_uncovered_reference_or_claim_whole_plasmid_validation",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::quality_window_trimming_retains_internal_weak_calls_as_evidence_without_phred",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::raw_low_quality_substitution_is_visible_but_not_a_supported_discrepancy",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::repeated_and_palindromic_placements_do_not_become_arbitrary_consensus_coverage",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::reverse_alignment_and_reverse_display_keep_original_call_and_sample_coordinates",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::stale_calls_budget_limits_and_invalid_options_remain_unknown_not_negative_evidence",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::support_and_strand_requirements_apply_to_indels_as_well_as_base_calls",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::trimmed_fastq_coordinates_remain_in_original_forward_record_after_reversal",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "analysis",
+        "test": "reads::traces::validation::unique_indel_events_keep_read_and_reference_boundaries",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::sequence_export_review_and_preparation_are_source_bound_profiles",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::affected_annotations_are_reviewed_and_original_feature_evidence_is_retained",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::circular_origin_wrap_projects_supported_claims_through_the_canonical_rotation_and_edit",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::circular_wrap_has_explicit_new_origin_and_retained_source_path",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::explicit_bounds_and_unsupported_alphabets_fail_before_building_an_intent",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::linear_substitution_insertion_and_deletion_are_literal_independent_references",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::readable_physical_reference_can_supply_intent_but_never_material_authority",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::stale_request_and_tampered_result_fail_readonly_binding_checks",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::supported_untouched_claims_survive_literal_edits_and_prefix_coordinate_shifts",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::touched_codon_and_anticodon_claims_are_source_evidence_not_active_destination_assertions",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent::unsupported_retained_claims_still_refuse_but_wholly_deleted_features_need_no_mapping",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent_protocol::an_edit_or_source_change_cannot_reuse_the_previous_context",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent_protocol::source_edit_roundtrip_has_literal_target_and_rejects_pre_41_envelopes",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "design::mutation_intent_protocol::supported_qualifiers_survive_actual_stateless_and_session_mutation_requests",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::complete_codon_permission_can_require_an_extra_change_outside_the_unwanted_motif",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::distant_substitutions_preserve_intervening_annotations_and_never_create_a_fake_spanning_edit",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::domestication_never_reactivates_a_changed_anticodon_claim_from_original_features",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::full_source_rescan_preserves_wanted_sites_and_blocks_new_reverse_or_origin_sites",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::literal_synonymous_site_removal_preserves_complete_source_annotation_and_private_target",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::overlapping_or_unsupported_cds_are_never_silently_dropped",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::phase_prefixes_alternative_initiators_and_terminal_stops_are_independently_preserved",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::reverse_compound_and_origin_spanning_cds_keep_their_true_source_coordinates",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::stale_source_feature_catalog_candidate_and_limits_fail_before_any_target_is_accepted",
+        "passed": true
+      },
+      {
+        "crate": "core",
+        "target": "verification",
+        "test": "preparation::domestication::successful_pass_refunds_its_unused_ceiling_so_two_cds_sites_share_one_real_budget",
+        "passed": true
+      },
+      {
+        "crate": "sources",
+        "target": "provider_interoperability",
+        "test": "captured_public_records_preserve_annotations_and_independent_reference_digest",
+        "passed": true
+      }
+    ],
+    "formatting": "passed",
+    "expanded_harnesses": {
+      "desktop-sync-host/collagene_desktop_sync_host": 0,
+      "desktop-sync-host/publication_controls": 5,
+      "desktop-sync-host/removal_controls": 4,
+      "desktop-sync-host/service": 10,
+      "desktop-sync-protocol/collagene_desktop_sync_protocol": 0,
+      "desktop-sync-protocol/discussion_frames": 1,
+      "desktop-sync-protocol/publication_frames": 1,
+      "desktop-sync-protocol/removal_frames": 2,
+      "desktop-sync-protocol/wire": 8,
+      "sources/addgene": 7,
+      "sources/collagene_sources": 7,
+      "sources/insdc": 5,
+      "sources/provider_interoperability": 2,
+      "sources/sources": 6
+    }
+  },
+  "temporary_cleanup": {
+    "removed_obsolete_test_executables": 16,
+    "removed_bytes": 2096203480,
+    "retained": "newest per Cargo target, all completed current-pass executables, shared dependency cache and public preview assets"
+  }
+}

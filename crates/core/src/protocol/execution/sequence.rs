@@ -525,3 +525,15 @@ pub(super) fn analyze_alignment_antibody(
     .map(AnalysisResult::AlignmentAntibody);
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
+
+pub(super) fn prepare_trace_display(
+    context: &RequestContext,
+    molecule: Molecule,
+) -> Result<AnalysisResult, Error> {
+    context.admit(Some(&molecule))?;
+    Ok(
+        crate::review::reads::traces::display::PlotData::prepare(&molecule, &mut || false)
+            .map(AnalysisResult::TraceDisplayPrepared)
+            .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())),
+    )
+}

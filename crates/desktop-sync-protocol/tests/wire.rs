@@ -376,3 +376,94 @@ fn retained_conflict_receipt_summary_validates_without_fabricating_live_lab_cont
     current.generation = 0;
     assert!(reply.validate_for(&request).is_err());
 }
+
+#[test]
+fn tree_parent_review_and_restart_bind_exact_scope_without_remote_authority() {
+    let folder = library::Folder {
+        id: library::FolderId::new(format!("fld-{}", "a".repeat(32))).unwrap(),
+        parent: None,
+        name: library::Name::new("Reviewed local parent").unwrap(),
+        generation: 7,
+    };
+    let tree = TreeStatus {
+        job: TreeJobId::new(format!("tree-{}", "b".repeat(32))).unwrap(),
+        remote: remote().id,
+        root: TreeRoot::LabRoot,
+        destination: Some(folder.id.clone()),
+        phase: TreePhase::Blocked,
+        catalog_generation: Some(3),
+        scanned_nodes: 2,
+        folders_created: 1,
+        documents_created: 0,
+        issue: Some(TreeIssue::LocalParentChanged {
+            folder: folder.id.clone(),
+        }),
+    };
+    let review = TreeParentReview {
+        tree: tree.clone(),
+        folder,
+    };
+    review.validate().unwrap();
+    let inspect = request(Command::InspectTreeParentChange {
+        job: tree.job.clone(),
+    });
+    let mut reply = answer(&inspect, Success::TreeParentReview(review.clone()));
+    assert!(
+        reply.validate_for(&inspect).is_err(),
+        "local parent metadata cannot claim remote authority"
+    );
+    reply.context = None;
+    assert_eq!(
+        decode_response_for(&encode_response(&reply).unwrap(), &inspect).unwrap(),
+        reply
+    );
+    let accept = request(Command::AcceptTreeParentChange {
+        review: review.clone(),
+    });
+    let mut acknowledged = tree.clone();
+    acknowledged.issue = None;
+    let mut reply = answer(&accept, Success::TreeParentAccepted(acknowledged.clone()));
+    reply.context = None;
+    assert_eq!(
+        decode_response_for(&encode_response(&reply).unwrap(), &accept).unwrap(),
+        reply
+    );
+    acknowledged.folders_created = 2;
+    reply.outcome = Outcome::Success(Success::TreeParentAccepted(acknowledged));
+    assert!(
+        reply.validate_for(&accept).is_err(),
+        "acknowledgment cannot import extra nodes"
+    );
+    let mut forged = review;
+    forged.folder.id = library::FolderId::new(format!("fld-{}", "c".repeat(32))).unwrap();
+    assert!(
+        request(Command::AcceptTreeParentChange { review: forged })
+            .validate()
+            .is_err()
+    );
+    let restart = request(Command::RestartTreeClone {
+        job: tree.job.clone(),
+    });
+    let mut restarted = tree;
+    restarted.phase = TreePhase::Scanning;
+    restarted.issue = None;
+    restarted.catalog_generation = None;
+    restarted.scanned_nodes = 0;
+    restarted.folders_created = 0;
+    let mut reply = answer(&restart, Success::TreeUpdated(restarted.clone()));
+    reply.context = None;
+    reply.validate_for(&restart).unwrap();
+    restarted.folders_created = 1;
+    restarted.scanned_nodes = 1;
+    reply.outcome = Outcome::Success(Success::TreeUpdated(restarted));
+    assert!(
+        reply.validate_for(&restart).is_err(),
+        "a restart receipt cannot hide applied nodes"
+    );
+    let mut previous = encode_request(&restart).unwrap();
+    previous[4..6].copy_from_slice(&(SCHEMA_VERSION - 1).to_le_bytes());
+    assert_eq!(
+        decode_request(&previous),
+        Err(Error::Version(SCHEMA_VERSION - 1))
+    );
+}

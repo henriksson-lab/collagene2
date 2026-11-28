@@ -9,8 +9,12 @@ use collagene_core::{
         request::Request,
         schema::{AnalysisJob, AnalysisResult},
     },
-    review::reads::traces::{QualityEvidence, Trace},
+    review::reads::{
+        traces::QualityEvidence,
+        traces::display::{DisplayTrace, PlotData},
+    },
 };
+use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::{
     rc::Rc,
@@ -22,11 +26,11 @@ use std::{
 use wasm_bindgen_futures::spawn_local;
 struct Prepared {
     review: Review,
-    report: scf_export::Exported,
+    report: scf_export::DocumentExport,
     name: String,
     fallback_name: bool,
 }
-fn scope(revision: &str, trace: &Trace, precision: SamplePrecision) -> Scope {
+fn scope(revision: &str, trace: &DisplayTrace, precision: SamplePrecision) -> Scope {
     Scope {
         document_revision: revision.into(),
         source_hash: trace.source_hash.clone(),
@@ -37,7 +41,8 @@ fn scope(revision: &str, trace: &Trace, precision: SamplePrecision) -> Scope {
 #[component]
 pub fn ScfExportControls(
     document_revision: Memo<String>,
-    trace: Memo<Option<Arc<Trace>>>,
+    molecule: Memo<Molecule>,
+    display: Memo<Option<Arc<PlotData>>>,
 ) -> impl IntoView {
     let precision = RwSignal::new(SamplePrecision::Smallest);
     let busy = RwSignal::new(false);
@@ -55,9 +60,9 @@ pub fn ScfExportControls(
         }
     });
     let current = Memo::new(move |_| {
-        trace
+        display
             .get()
-            .map(|t| scope(&document_revision.get(), &t, precision.get()))
+            .map(|t| scope(&document_revision.get(), &t.trace, precision.get()))
     });
     Effect::new(move |_| {
         let _ = current.get();
@@ -77,17 +82,23 @@ pub fn ScfExportControls(
             if busy.get_untracked() {
                 return;
             }
-            let Some(trace) = trace.get_untracked() else {
+            let Some(trace) = display.get_untracked() else {
                 return;
             };
             let Some(capture) = current.get_untracked() else {
                 return;
             };
+            let source = molecule.get_untracked();
+            if source.revision() != trace.source_revision {
+                status.set("The displayed trace no longer matches the document.".into());
+                return;
+            }
+            let source_revision = source.revision();
             let options = Options {
                 precision: precision.get_untracked(),
                 loss_policy: LossPolicy::AllowDocumentaryOmissions,
             };
-            let context = match scf_export::revision(&trace, &options) {
+            let context = match scf_export::document_revision(&source, &options) {
                 Ok(c) => c,
                 Err(e) => {
                     status.set(e.to_string());
@@ -115,7 +126,7 @@ pub fn ScfExportControls(
                         id,
                         revision: context.clone(),
                         job: AnalysisJob::ExportScfTrace {
-                            trace: trace.as_ref().clone(),
+                            molecule: source,
                             options,
                         },
                     })
@@ -142,22 +153,27 @@ pub fn ScfExportControls(
                     report
                         .validate_binding(&context)
                         .map_err(|e| e.to_string())?;
-                    if report.source_hash != capture.source_hash
-                        || report.orientation != capture.orientation
+                    if report.source_revision != source_revision
+                        || report.report.source_hash != capture.source_hash
+                        || report.report.orientation != capture.orientation
                     {
                         return Err("SCF response names another trace/orientation.".into());
                     }
                     if !matches!(
-                        (capture.precision, report.sample_size),
+                        (capture.precision, report.report.sample_size),
                         (SamplePrecision::Smallest, 1 | 2)
                             | (SamplePrecision::EightBit, 1)
                             | (SamplePrecision::SixteenBit, 2)
                     ) {
                         return Err("SCF response sample precision changed.".into());
                     }
-                    let review = Review::new(capture, context, !report.losses.is_empty());
-                    let name = safe_filename(&trace.name, &trace.source_hash, trace.orientation);
-                    let fallback_name = name != format!("{}.scf", trace.name);
+                    let review = Review::new(capture, context, !report.report.losses.is_empty());
+                    let name = safe_filename(
+                        &trace.trace.name,
+                        &trace.trace.source_hash,
+                        trace.trace.orientation,
+                    );
+                    let fallback_name = name != format!("{}.scf", trace.trace.name);
                     Ok::<_, String>(Prepared {
                         review,
                         report,
@@ -167,7 +183,7 @@ pub fn ScfExportControls(
                 })();
                 match result {
                     Ok(value) => {
-                        status.set(if value.report.losses.is_empty(){"SCF prepared. Review the summary, then save."}else{"Review the documentary omissions and acknowledge them before saving."}.into());
+                        status.set(if value.report.report.losses.is_empty(){"SCF prepared. Review the summary, then save."}else{"Review the documentary omissions and acknowledge them before saving."}.into());
                         prepared.set(Some(Arc::new(value)));
                     }
                     Err(e) => status.set(e),
@@ -198,7 +214,7 @@ pub fn ScfExportControls(
             let artifact = match crate::io::download::prepare_download(
                 &value.name,
                 "application/octet-stream",
-                &value.report.bytes,
+                &value.report.report.bytes,
             ) {
                 Ok(v) => v,
                 Err(e) => {
@@ -266,9 +282,9 @@ pub fn ScfExportControls(
     view! {<details class="trace-export"><summary>"Export trace…"</summary>
         <div class="trace-export-content"><p>"Regenerate SCF 3.00 from the displayed actual signal, calls, peaks and four stored accuracy vectors. Original attachment export remains separate. No synthetic trace or quality conversion."</p>
         <label>"Sample precision "<select disabled=move||busy.get() on:change=move|e|precision.set(match event_target_value(&e).as_str(){"8"=>SamplePrecision::EightBit,"16"=>SamplePrecision::SixteenBit,_=>SamplePrecision::Smallest})><option value="auto">"Smallest lossless (8 or 16 bits)"</option><option value="8">"8 bits (refuse larger signal)"</option><option value="16">"16 bits"</option></select></label>
-        <Show when=move||trace.get().is_some_and(|t|!matches!(&t.qualities,Some(QualityEvidence::ScfAccuracy(_))))><p>"This trace has no four-channel SCF accuracy evidence. ABIF scores or missing qualities cannot be converted by this strict profile."</p></Show>
-        <div class="trace-export-actions"><button disabled=move||busy.get()||trace.get().is_none() on:click=prepare>"Prepare export review"</button><Show when=move||busy.get()&&prepared.get().is_none()><button on:click=cancel>"Cancel"</button></Show></div>
-        {move||prepared.get().map(|value|{let report=&value.report;let filename = format!("Filename: {}{}",value.name,if value.fallback_name{". A portable basename was selected; the SCF sample NAME and original attachment are unchanged."}else{""});let summary=format!("{} bytes · {}-bit samples · {:?} orientation · source {}",report.bytes.len(),report.sample_size*8,report.orientation,report.source_hash);let losses=report.losses.iter().map(|l|format!("{} ({} bytes): {}",l.field,l.bytes,l.detail)).collect::<Vec<_>>();let has_losses=!losses.is_empty();let warnings=report.warnings.clone();view!{<div class="trace-export-review"><p>{filename}</p><p>{summary}</p><ul>{warnings.into_iter().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><Show when=move||has_losses><ul>{losses.iter().cloned().map(|l|view!{<li>{l}</li>}).collect_view()}</ul><label><input type="checkbox" prop:checked=move||acknowledged.get() disabled=move||busy.get() on:change=move|e|acknowledged.set(event_target_checked(&e))/>"I accept these documentary omissions; retain the original attachment separately."</label></Show><button disabled=move||busy.get()||(has_losses&&!acknowledged.get()) on:click=save.clone()>"Save reviewed SCF…"</button></div>}})}
+        <Show when=move||display.get().is_some_and(|t|!matches!(&t.trace.qualities,Some(QualityEvidence::ScfAccuracy(_))))><p>"This trace has no four-channel SCF accuracy evidence. ABIF scores or missing qualities cannot be converted by this strict profile."</p></Show>
+        <div class="trace-export-actions"><button disabled=move||busy.get()||display.get().is_none() on:click=prepare>"Prepare export review"</button><Show when=move||busy.get()&&prepared.get().is_none()><button on:click=cancel>"Cancel"</button></Show></div>
+        {move||prepared.get().map(|value|{let report=&value.report.report;let filename = format!("Filename: {}{}",value.name,if value.fallback_name{". A portable basename was selected; the SCF sample NAME and original attachment are unchanged."}else{""});let summary=format!("{} bytes · {}-bit samples · {:?} orientation · source {}",report.bytes.len(),report.sample_size*8,report.orientation,report.source_hash);let losses=report.losses.iter().map(|l|format!("{} ({} bytes): {}",l.field,l.bytes,l.detail)).collect::<Vec<_>>();let has_losses=!losses.is_empty();let warnings=report.warnings.clone();view!{<div class="trace-export-review"><p>{filename}</p><p>{summary}</p><ul>{warnings.into_iter().map(|w|view!{<li>{w}</li>}).collect_view()}</ul><Show when=move||has_losses><ul>{losses.iter().cloned().map(|l|view!{<li>{l}</li>}).collect_view()}</ul><label><input type="checkbox" prop:checked=move||acknowledged.get() disabled=move||busy.get() on:change=move|e|acknowledged.set(event_target_checked(&e))/>"I accept these documentary omissions; retain the original attachment separately."</label></Show><button disabled=move||busy.get()||(has_losses&&!acknowledged.get()) on:click=save.clone()>"Save reviewed SCF…"</button></div>}})}
         <p role="status" aria-live="polite">{move||status.get()}</p></div>
     </details>}
 }

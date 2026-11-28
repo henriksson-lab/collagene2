@@ -51,6 +51,71 @@ pub struct Exported {
     pub losses: Vec<Loss>,
     pub warnings: Vec<String>,
 }
+/// A document-bound export made by reparsing its immutable trace attachment.
+/// Display data is never an input to this operation.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DocumentExport {
+    pub context_revision: String,
+    pub source_revision: String,
+    pub options: Options,
+    pub report: Exported,
+}
+fn document_context(source_revision: &str, options: &Options) -> Result<String, Error> {
+    if source_revision.len() != 64
+        || !source_revision
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(bad("invalid document revision"));
+    }
+    let bytes = serde_json::to_vec(&(
+        "scf-document-export-1",
+        ENGINE_VERSION,
+        source_revision,
+        options,
+    ))
+    .map_err(|e| Error::Format(e.to_string()))?;
+    Ok(blake3::hash(&bytes).to_hex().to_string())
+}
+pub fn document_revision(
+    molecule: &collagene_model::Molecule,
+    options: &Options,
+) -> Result<String, Error> {
+    molecule.validate()?;
+    document_context(&molecule.revision(), options)
+}
+impl DocumentExport {
+    pub fn prepare(molecule: &collagene_model::Molecule, options: &Options) -> Result<Self, Error> {
+        let context_revision = document_revision(molecule, options)?;
+        let trace = traces::trace_from_molecule(molecule)?;
+        let result = Self {
+            context_revision,
+            source_revision: molecule.revision(),
+            options: options.clone(),
+            report: export(&trace, options)?,
+        };
+        result.validate_binding(&result.context_revision)?;
+        Ok(result)
+    }
+    pub fn validate_binding(&self, expected: &str) -> Result<(), Error> {
+        if self.context_revision != expected
+            || document_context(&self.source_revision, &self.options)? != expected
+        {
+            return Err(bad("document export context changed"));
+        }
+        if !matches!(
+            (self.options.precision, self.report.sample_size),
+            (SamplePrecision::Smallest, 1 | 2)
+                | (SamplePrecision::EightBit, 1)
+                | (SamplePrecision::SixteenBit, 2)
+        ) || (self.options.loss_policy == LossPolicy::Reject && !self.report.losses.is_empty())
+        {
+            return Err(bad("document export options and result disagree"));
+        }
+        self.report.validate_binding(&self.report.context_revision)
+    }
+}
 fn preflight(trace: &Trace) -> Result<(), Error> {
     trace.validate()?;
     if trace.metadata.len() > 256 {

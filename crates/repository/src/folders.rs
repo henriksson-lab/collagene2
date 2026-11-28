@@ -597,6 +597,11 @@ impl Repository {
     }
     pub fn restart_tree_scan(&mut self, id: &str) -> TreeResult<TreeProgress> {
         let (mut job, digest) = self.load_tree_job(id)?;
+        if !matches!(job.phase, TreePhase::Invalidated | TreePhase::Blocked) {
+            return Err(FolderError::Invalid(
+                "restart requires an inactive failed scan",
+            ));
+        }
         if !job.folders.is_empty() || !job.documents.is_empty() {
             return Err(FolderError::Invalid(
                 "cannot discard a partially imported snapshot",
@@ -653,7 +658,11 @@ impl Repository {
         expected_current_generation: u64,
     ) -> TreeResult<()> {
         let (mut job, digest) = self.load_tree_job(id)?;
-        if !job.local_folder_generations.contains_key(folder.as_str()) {
+        if job.phase != TreePhase::Blocked
+            || !job.scan_complete
+            || !matches!(&job.issue,Some(TreeIssue::LocalParentChanged{folder: actual}) if actual==folder)
+            || !job.local_folder_generations.contains_key(folder.as_str())
+        {
             return Err(FolderError::Invalid("folder not in clone job"));
         }
         if self.db.folder(&self.access, folder)?.generation != expected_current_generation {
@@ -661,6 +670,7 @@ impl Repository {
         }
         job.local_folder_generations
             .insert(folder.as_str().into(), expected_current_generation);
+        job.issue = None;
         self.save_tree_job(&job, digest)
     }
     fn tree_parent(&self, job: &TreeJob, node: &TreeNode) -> TreeResult<Option<store::FolderId>> {

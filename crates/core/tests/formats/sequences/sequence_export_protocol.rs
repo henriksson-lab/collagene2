@@ -146,10 +146,12 @@ fn trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication() 
         precision: scf_export::SamplePrecision::SixteenBit,
         loss_policy: scf_export::LossPolicy::AllowDocumentaryOmissions,
     };
-    let context = scf_export::revision(&trace, &options).unwrap();
+    let molecule = trace.attached_molecule().unwrap();
+    let trace_context = scf_export::revision(&trace, &options).unwrap();
+    let context = scf_export::document_revision(&molecule, &options).unwrap();
     let response = run(
         AnalysisJob::ExportScfTrace {
-            trace: trace.clone(),
+            molecule: molecule.clone(),
             options: options.clone(),
         },
         context.clone(),
@@ -160,6 +162,9 @@ fn trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication() 
         unreachable!()
     };
     report.validate_binding(&context).unwrap();
+    assert_eq!(report.source_revision, molecule.revision());
+    assert_eq!(report.report.context_revision, trace_context);
+    let report = report.report;
     assert_eq!(report.source_hash, trace.source_hash);
     assert_eq!(report.sample_size, 2);
     assert_eq!(&report.bytes[36..40], b"3.00");
@@ -170,12 +175,15 @@ fn trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication() 
     assert!(report.validate_binding(&"0".repeat(64)).is_err());
     let mut changed = trace.clone();
     changed.name.push_str(" changed");
-    assert_ne!(scf_export::revision(&changed, &options).unwrap(), context);
+    assert_ne!(
+        scf_export::revision(&changed, &options).unwrap(),
+        trace_context
+    );
     changed = trace.clone();
     changed.channels.a[0] = 99;
     assert!(scf_export::export(&changed, &options).is_err());
     let mut other = options.clone();
     other.precision = scf_export::SamplePrecision::EightBit;
-    assert_ne!(scf_export::revision(&trace, &other).unwrap(), context);
+    assert_ne!(scf_export::revision(&trace, &other).unwrap(), trace_context);
     assert_eq!(trace, before);
 }

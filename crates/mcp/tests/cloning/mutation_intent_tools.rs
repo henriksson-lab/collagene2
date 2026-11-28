@@ -244,3 +244,92 @@ async fn frozen_literal_intent_then_independent_inverse_pcr_and_wrong_target_che
     c.cancel().await.unwrap();
     s.await.unwrap();
 }
+
+#[tokio::test]
+async fn qualifier_aware_mutation_intents_keep_source_immutable_and_reference_authority_explicit() {
+    use collagene_model::{Feature, Location, Molecule};
+    let (c, s) = setup().await;
+    let gb = "LOCUS       qualifier_source          16 bp    DNA     circular\nDEFINITION  Literal source qualifier fixture.\nFEATURES             Location/Qualifiers\n     tRNA            9..11\n                     /anticodon=\"(pos:9..11,aa:Gly,seq:ccc)\"\nORIGIN\n        1 aaaaccccggggtttt\n//\n";
+    let imported = call(&c, "import_document", json!({"text":gb})).await;
+    let first = &imported["documents"][0];
+    let original = json!({"id":first["id"],"revision":first["revision"]});
+    let original_export = call(&c, "export_document", original.clone()).await;
+    let original_feature = Feature {
+        kind: "tRNA".into(),
+        location: Location::range(8, 11),
+        qualifiers: vec![(
+            "anticodon".into(),
+            Some("(pos:9..11,aa:Gly,seq:ccc)".into()),
+        )],
+        needs_review: false,
+    };
+    for (start, end, inserted, literal, location, active) in [
+        (
+            0,
+            0,
+            "TTT",
+            "TTTAAAACCCCGGGGTTTT",
+            Location::range(11, 14),
+            Some("(pos:12..14,aa:Gly,seq:ccc)"),
+        ),
+        (9, 10, "A", "AAAACCCCGAGGTTTT", Location::range(8, 11), None),
+        (
+            14,
+            18,
+            "G",
+            "GAACCCCGGGGTT",
+            Location::range(7, 10),
+            Some("(pos:8..10,aa:Gly,seq:ccc)"),
+        ),
+    ] {
+        let built=call(&c,"build_mutation_intent",json!({"document":original,"request":{"name":"Qualifier-aware reference","edit_start":start,"edit_end":end,"inserted":inserted}})).await;
+        assert_eq!(built["state"], "intended-reference");
+        assert_eq!(built["verified"], false);
+        assert_eq!(built["preparation_simulated"], false);
+        assert_eq!(built["document"], original);
+        assert!(built.get("plan_revision").is_none());
+        assert_eq!(sequence(&c, &built["target"], literal.len()).await, literal);
+        let stored = artifact(&c, &built["artifact_id"]).await;
+        let target: Molecule = serde_json::from_value(stored["report"]["target"].clone()).unwrap();
+        assert_eq!(
+            target.revision(),
+            built["target"]["revision"].as_str().unwrap()
+        );
+        assert_eq!(
+            target.metadata["mutation_intent:engine"],
+            "mutation-intent-4"
+        );
+        assert_eq!(target.metadata["mutation:intent:reference_only"], "true");
+        assert_eq!(target.features.len(), 1);
+        assert_eq!(target.features[0].location, location);
+        assert_eq!(target.features[0].needs_review, active.is_none());
+        let claims = target.features[0]
+            .qualifiers
+            .iter()
+            .filter(|(key, _)| key == "anticodon")
+            .filter_map(|(_, value)| value.as_deref())
+            .collect::<Vec<_>>();
+        assert_eq!(claims, active.into_iter().collect::<Vec<_>>());
+        if active.is_none() {
+            assert!(target.features[0].qualifiers.iter().any(|(key, value)| {
+                key == "note"
+                    && value
+                        .as_deref()
+                        .is_some_and(|value| value.contains("(pos:9..11,aa:Gly,seq:ccc)"))
+            }));
+        }
+        let evidence: Vec<Feature> = serde_json::from_str(
+            &target.metadata[&format!(
+                "mutation_intent:source_features:{}",
+                original["revision"].as_str().unwrap()
+            )],
+        )
+        .unwrap();
+        assert_eq!(evidence, vec![original_feature.clone()]);
+        assert!(collagene_core::chemistry::Duplex::from_molecule(&target).is_err());
+    }
+    assert_eq!(sequence(&c, &original, 16).await, "AAAACCCCGGGGTTTT");
+    assert_eq!(call(&c, "export_document", original).await, original_export);
+    c.cancel().await.unwrap();
+    s.await.unwrap();
+}

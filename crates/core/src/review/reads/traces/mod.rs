@@ -1,5 +1,6 @@
 //! Independently implemented ABIF/SCF readers from the vendor and Staden specifications.
 //! No basecalling, quality recalibration, implicit clipping or external programs.
+pub mod display;
 use crate::formats::sequence::MAX_IMPORT_BYTES;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use collagene_model::{Alphabet, Error, Molecule, Sequence, Topology};
@@ -35,7 +36,8 @@ impl TraceChannels {
     pub fn is_empty(&self) -> bool {
         self.a.is_empty()
     }
-    fn all(&self) -> [&[i32]; 4] {
+    /// Borrow channels in nucleotide order: A, C, G, T.
+    pub fn all(&self) -> [&[i32]; 4] {
         [&self.a, &self.c, &self.g, &self.t]
     }
 }
@@ -109,7 +111,7 @@ fn source_limit(bytes: &[u8]) -> Result<(), Error> {
         Ok(())
     }
 }
-fn calls(raw: &[u8], dash_is_no_call: bool) -> Result<Sequence, Error> {
+pub(super) fn calls(raw: &[u8], dash_is_no_call: bool) -> Result<Sequence, Error> {
     if raw.is_empty() {
         return Err(format_error("trace has no base calls"));
     }

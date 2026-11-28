@@ -11,6 +11,9 @@ pub(super) fn dispatch(
     context: &RequestContext,
 ) -> Result<AnalysisResult, Error> {
     match job {
+        AnalysisJob::PrepareTraceDisplay { molecule } => {
+            sequence::prepare_trace_display(context, molecule)
+        }
         AnalysisJob::Search { molecule, query } => sequence::search(context, molecule, query),
         AnalysisJob::Restriction { molecule, enzyme } => {
             preparation::restriction(context, molecule, enzyme)
@@ -796,8 +799,8 @@ pub(super) fn dispatch(
             expected_context_revision,
             allow_omissions,
         ),
-        AnalysisJob::ExportScfTrace { trace, options } => {
-            documents::export_scf_trace(context, trace, options)
+        AnalysisJob::ExportScfTrace { molecule, options } => {
+            documents::export_scf_trace(context, molecule, options)
         }
         AnalysisJob::InstallMaterialDerivation { workspace, request } => {
             material::install_material_derivation(context, workspace, request)

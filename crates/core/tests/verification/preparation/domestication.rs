@@ -137,6 +137,34 @@ fn literal_synonymous_site_removal_preserves_complete_source_annotation_and_priv
             .is_empty()
     );
 }
+
+#[test]
+fn domestication_never_reactivates_a_changed_anticodon_claim_from_original_features() {
+    let mut s = source("GGTCTCAAAAAA", Topology::Linear, None);
+    s.features.push(Feature {
+        kind: "tRNA".into(),
+        location: range(0, 3),
+        qualifiers: vec![("anticodon".into(), Some("(pos:1..3,aa:Gly,seq:acc)".into()))],
+        needs_review: false,
+    });
+    let original = s.clone();
+    let r = request(&s, "bsai", &[]);
+    let picked = selection(&s, &r, &[(0, "G", "A")]);
+    let proof = d::check(&s, &r, &picked).unwrap();
+    assert_eq!(proof.target().sequence.as_str(), "AGTCTCAAAAAA");
+    assert!(proof.report().sites_after.is_empty());
+    assert_eq!(proof.target().features.len(), 1);
+    let feature = &proof.target().features[0];
+    assert_eq!(feature.location, range(0, 3));
+    assert!(feature.needs_review);
+    assert!(!feature.qualifiers.iter().any(|(key, _)| key == "anticodon"));
+    assert!(feature.qualifiers.iter().any(|(key, value)| key == "note"
+        && value.as_deref().is_some_and(
+            |value| value.contains("anticodon") && value.contains("(pos:1..3,aa:Gly,seq:acc)")
+        )));
+    assert!(collagene_core::chemistry::Duplex::from_molecule(proof.target()).is_err());
+    assert_eq!(s, original);
+}
 #[test]
 fn reverse_compound_and_origin_spanning_cds_keep_their_true_source_coordinates() {
     let reverse = Sequence::dna(CODING).unwrap().reverse_complement().unwrap();

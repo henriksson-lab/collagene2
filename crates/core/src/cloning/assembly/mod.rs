@@ -10,3 +10,5 @@ pub mod library_history;
 pub mod recipe;
 pub mod selective_edit;
 pub mod substitution_intent;
+
+pub mod standards;

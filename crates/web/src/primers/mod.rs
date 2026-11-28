@@ -20,3 +20,8 @@ pub(crate) mod primer_picker;
 pub(crate) mod primer_reference_capture_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod primers;
+
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod collection_binding_model;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod collection_binding_view;

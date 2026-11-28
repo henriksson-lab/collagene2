@@ -1984,6 +1984,31 @@ pub fn App() -> impl IntoView {
     }
     .navigate_read_call(candidate, stored_candidates);
 
+    let design_check_source =
+        Memo::new(move |_| documents.with(|docs| recombination_source_info(&docs[active.get()])));
+    let select_design_check = Callback::new(move |spans: Vec<(usize, usize)>| {
+        if workspace_restoring.get_untracked() {
+            return;
+        }
+        let length = molecule.with_untracked(|m| m.sequence.len());
+        if spans.is_empty()
+            || spans
+                .iter()
+                .any(|(start, end)| start >= end || *end > length)
+        {
+            return;
+        }
+        batch(|| {
+            selected_feature.set(None);
+            biology_directed.set(None);
+            selection.set(if spans.len() == 1 {
+                spans.first().copied()
+            } else {
+                None
+            });
+            search_regions.set(Some((molecule_revision.get_untracked(), spans)));
+        });
+    });
     view! {
                         <Show when=move||workspace_restoring.get()&&!matches!(modal.get(),"assembly_finalize"|"read_check_capture"|"read_review_commit")><div role="status" aria-live="polite" style="position:fixed;inset:0;z-index:10000;background:#f5f8f4ed;display:grid;place-items:center;pointer-events:all"><p>"Updating workspace…"</p></div></Show>
                         <div class="application workspace-shell" on:click=dismiss_viewer_menus><div class="workspace-contents" inert=move||workspace_restoring.get()>
@@ -2020,7 +2045,28 @@ pub fn App() -> impl IntoView {
                                     <crate::restriction::digest::DigestProvenance molecule=molecule/>
                                     <Show when=move||molecule.with(|m|m.metadata.contains_key("crispr:producer_json"))><div class="crispr-historical"><strong>"CRISPR producer provenance · unverified on opening"</strong><p>"This saved sequence design does not restore a current source/guide/target check or prove cellular editing. Recompute against the exact original source and independent target before reuse."</p><button class="button secondary" on:click=move|_|molecule.with_untracked(|m|{if let Some(json)=m.metadata.get("crispr:producer_json"){crate::io::download::download_with_completion("crispr-retained-provenance.json","application/json",json.as_bytes(),move|result|{if message.try_get_untracked().is_none(){return;}if let Err(e)=result {message.set(e);}})}})>"Download retained CRISPR provenance"</button></div></Show>
                                     <div class="editor-toolbar"><div class="tool-group"><button class="icon-button" title="Show documents" disabled=move||!layout.ready.get() on:click=move|_|show_library.update(|v|*v=!*v)>"☷"</button><button class="icon-button" title="Undo" disabled=move||documents.with(|docs|!docs[active.get()].can_undo()) on:click=move|_|documents.update(|docs|{let d=&mut docs[active.get_untracked()];if let Err(error)=d.undo(){message.set(error.to_string());}})>"↶"</button><button class="icon-button" title="Redo" disabled=move||documents.with(|docs|!docs[active.get()].can_redo()) on:click=move|_|documents.update(|docs|{let d=&mut docs[active.get_untracked()];if let Err(error)=d.redo(){message.set(error.to_string());}})>"↷"</button><span class="tool-separator"></span><button class="text-tool" disabled=move||selection.get().is_none()||inspected_feature.get().is_some_and(|f|f.location.spans().len()>1) on:click=move|_|{edit_text.set(selection.get_untracked().and_then(|(a,b)|molecule.get_untracked().sequence.as_str().get(a..b).map(str::to_owned)).unwrap_or_default());modal_error.set(String::new());modal.set("edit");}>"Edit selection"</button></div>
-                                        <div class="viewer-command-menus"><details class="toolbar-action-menu" data-transient-menu=""><summary>"Create ▾"</summary><div class="toolbar-action-menu-content"><button class="text-tool" on:click=move |_|{feature_for_editor.set(None);modal.set("feature");}>"Annotation…"</button><button class="text-tool" on:click=move |_|panel.set("pcr")>"PCR product…"</button><button class="text-tool" on:click=move |_|assembly_visible.set(true)>"Assembly…"</button></div></details><details class="toolbar-action-menu" data-transient-menu=""><summary>"Analyze ▾"</summary><div class="toolbar-action-menu-content"><button class="button secondary" disabled=move||workspace_restoring.get()||molecule.with(|doc|doc.sequence.alphabet()!=Alphabet::Dna) on:click=move|_|{read_reference.set(Some(primer_context.get_untracked()));panel.set("reads");}>"Check sequencing reads"</button><button class="text-tool" on:click=move |_|panel.set("biology")>"Translation and sequence analysis…"</button><button class="text-tool" on:click=move |_|panel.set("compare")>"Compare sequences…"</button><button class="text-tool" on:click=move |_|panel.set("enzymes")>"Virtual digest…"</button></div></details></div>
+                                        <div class="viewer-command-menus">
+                                        <details class="toolbar-action-menu" data-transient-menu="">
+                                        <summary>"Create ▾"</summary>
+                                        <div class="toolbar-action-menu-content">
+                                        <button class="text-tool" on:click=move |_|{feature_for_editor.set(None);modal.set("feature");}>"Annotation…"</button>
+                                        <button class="text-tool" on:click=move |_|panel.set("pcr")>"PCR product…"</button>
+                                        <button class="text-tool" on:click=move |_|assembly_visible.set(true)>"Assembly…"</button>
+                                        </div>
+                                        </details>
+                                        <details class="toolbar-action-menu" data-transient-menu="">
+                                        <summary>"Analyze ▾"</summary>
+                                        <div class="toolbar-action-menu-content">
+                                        <button class="button secondary" disabled=move||workspace_restoring.get()||molecule.with(|doc|doc.sequence.alphabet()!=Alphabet::Dna) on:click=move|_|{read_reference.set(Some(primer_context.get_untracked()));panel.set("reads");}>"Check sequencing reads"</button>
+                                        <button class="text-tool" on:click=move |_|panel.set("biology")>"Translation and sequence analysis…"</button>
+                                        <button class="text-tool" on:click=move |_|panel.set("compare")>"Compare sequences…"</button>
+                                        <button class="text-tool" on:click=move |_|panel.set("enzymes")>"Virtual digest…"</button>
+                                        <button class="text-tool" disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:click=move |_|panel.set("construct_qc")>"Construct QC…"</button>
+                                        <button class="text-tool" disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:click=move |_|panel.set("assembly_standards")>"Assembly standards…"</button>
+                                        <button class="text-tool" disabled=move||molecule.with(|m|m.sequence.alphabet()!=Alphabet::Dna) on:click=move |_|panel.set("oligo_collection")>"Oligo collection…"</button>
+                                        </div>
+                                        </details>
+                                        </div>
                                         <crate::workspace::clipboard::ClipboardTools source=Memo::new(move|_|documents.with(|docs|recombination_source_info(&docs[active.get()]))) internal_clipboard source_selection=reference_copy_selection on_preview=preview_reference_paste molecule=molecule selection=selection selected_feature=selected_feature highlighted_spans locked=workspace_restoring epoch=workspace_epoch identity=Memo::new(move|_|documents.with(|docs|docs.get(active.get()).map(|doc|doc.id.clone()).unwrap_or_default())) on_commit=commit_annotations message=message/>
                                         <crate::viewer::sequence::search_view::SearchTools molecule=molecule identity=Memo::new(move|_|documents.with(|docs|docs[active.get()].id.clone())) epoch=workspace_epoch selection=selection selected_feature=selected_feature regions=search_regions message=message/>
                                     </div>
@@ -2203,6 +2249,30 @@ pub fn App() -> impl IntoView {
                                                     let preferred=(value.plan_revision.clone(),workspace_epoch.get_untracked(),target,bindings);
                                                     candidate_events.set(None);candidate.set(Some(value));candidate_events.set(Some(preferred));plan_report.set(None);last_plan.set(None);last_plan_target.set(None);last_plan_events.set(None);plan_generation.update(|g|*g=g.wrapping_add(1));panel.set("plan");message.set("Reference-only candidate opened for review. Verify against the independent target before recording source-event ancestry.".into());
                                                 })/></Show>
+                                            <Show when=move || panel.get() == "construct_qc">
+                                                <crate::biology::construct_qc_view::ConstructQcPanel
+                                                    source=design_check_source
+                                                    get_molecule=Callback::new(move |()| molecule.get_untracked())
+                                                    epoch=workspace_epoch
+                                                    on_select=select_design_check
+                                                />
+                                            </Show>
+                                            <Show when=move || panel.get() == "assembly_standards">
+                                                <crate::assembly::standards_view::AssemblyStandardsPanel
+                                                    source=design_check_source
+                                                    get_molecule=Callback::new(move |()| molecule.get_untracked())
+                                                    epoch=workspace_epoch
+                                                    on_select=select_design_check
+                                                />
+                                            </Show>
+                                            <Show when=move || panel.get() == "oligo_collection">
+                                                <crate::primers::collection_binding_view::OligoCollectionPanel
+                                                    source=design_check_source
+                                                    get_molecule=Callback::new(move |()| molecule.get_untracked())
+                                                    epoch=workspace_epoch
+                                                    on_select=select_design_check
+                                                />
+                                            </Show>
                                             <Show when=move||panel.get()=="methylation"><crate::biology::methylation::MethylationPanel source=Memo::new(move|_|documents.with(|docs|{let d=&docs[active.get()];crate::biology::methylation::SourceInfo{binding:crate::reads::contigs::ReadBinding{document_id:d.id.clone(),event_id:d.head_event().to_string(),revision:d.molecule.revision()},name:d.molecule.name.clone(),length:d.molecule.sequence.len(),alphabet:d.molecule.sequence.alphabet()}})) get_molecule=Callback::new(move|()|molecule.get_untracked()) epoch=workspace_epoch on_navigate=navigate_read_call on_digest=Callback::new(move|()|panel.set("enzymes"))/></Show>
                                             <Show when=move||panel.get()=="genomes"><crate::genomes::genomes::GenomePanel links=genome_links epoch=workspace_epoch on_link=Callback::new(move|link:collagene_core::tracks::genome::ReferenceLink|->Result<(),String>{
                                                 if workspace_restoring.get_untracked(){return Err("Wait for workspace restoration.".into());}

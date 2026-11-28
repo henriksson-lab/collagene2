@@ -5,6 +5,7 @@ mod antibody_tools;
 mod codon_tools;
 mod contig_tools;
 mod crispr_tools;
+mod design_checks;
 mod dotplot_tools;
 mod genome_tools;
 mod methylation_tools;

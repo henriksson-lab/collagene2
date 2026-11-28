@@ -773,16 +773,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "collagene-assembly-standards"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-enzyme-catalog",
+ "collagene-model",
+ "postcard",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "collagene-core"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
  "collagene-antibody-numbering",
+ "collagene-assembly-standards",
  "collagene-enzyme-catalog",
  "collagene-genomic-index",
  "collagene-image-evidence",
  "collagene-model",
+ "collagene-oligo-binding",
  "collagene-protein-liabilities",
  "collagene-protocol-units",
  "collagene-read-alignments",
@@ -1051,12 +1066,14 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "blake3",
+ "collagene-assembly-standards",
  "collagene-core",
  "collagene-design-exchange",
  "collagene-enzyme-catalog",
  "collagene-library-sharing",
  "collagene-local-storage",
  "collagene-model",
+ "collagene-oligo-binding",
  "collagene-protocol-units",
  "collagene-sources",
  "rmcp",
@@ -1077,6 +1094,16 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "collagene-oligo-binding"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "collagene-model",
+ "schemars 1.2.3",
+ "serde",
 ]
 
 [[package]]
@@ -1264,6 +1291,7 @@ name = "collagene-web"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "collagene-assembly-standards",
  "collagene-core",
  "collagene-design-exchange",
  "collagene-desktop-protocol",
@@ -1272,6 +1300,7 @@ dependencies = [
  "collagene-library-sharing",
  "collagene-map-label-layout",
  "collagene-model",
+ "collagene-oligo-binding",
  "collagene-source-gateway",
  "collagene-sources",
  "collagene-view-layout",

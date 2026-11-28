@@ -4,6 +4,11 @@ The implementation goal is active. This repository contains an initial working f
 
 The interface targets desktop use first. Mobile scope and controls will be decided after the finished desktop product has been reviewed and edited; mobile acceptance testing is deferred.
 
+**Analyze → Construct QC…**, **Assembly standards…** and **Oligo collection…**
+inspect source-bound structural declarations, the supported RFC10 part
+format and collection-wide binding footprints. See [design checks](DESIGN_CHECKS.md)
+for controls, coordinate conventions and interpretation limits.
+
 Server mode now has a shared plasmid database and folder library, with native
 revision storage, binary requests and authenticated access. The Leptos source
 includes browsing, search, history, and guarded share/push/import controls.

@@ -1,53 +1,58 @@
 {
   "date": "2026-11-28",
-  "source_commit": "9d3c76ea9e8956cf478cd9bec6d30d5f6bd574ec",
-  "workflow_run": 46139788288,
-  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46139788288",
+  "source_commit": "095fe39c0cfc3751a7a59e2b0c09c97d34eb2a9d",
+  "workflow_run": 46144865396,
+  "url": "https://github.com/henriksson-lab/collagene2/actions/runs/46144865396",
   "conclusion": "success",
   "profile": "development",
   "developer_signed": false,
   "jobs": [
     {
-      "id": 140964767534,
+      "id": 140980685866,
       "platform": "windows-latest",
       "payloads": [
         "portable executable"
       ],
-      "artifact": "desktop-packages-unsigned-windows-latest-development-9d3c76ea9e8956cf478cd9bec6d30d5f6bd574ec",
-      "artifact_bytes": 50379298,
-      "artifact_id": 15260893563
+      "artifact": "desktop-packages-unsigned-windows-latest-development-095fe39c0cfc3751a7a59e2b0c09c97d34eb2a9d",
+      "artifact_bytes": 50837485,
+      "artifact_id": 15263134605
     },
     {
-      "id": 140964767544,
+      "id": 140980685885,
       "platform": "macos-latest",
       "payloads": [
         "DMG installer",
         "permission-preserving app tar.gz"
       ],
-      "artifact": "desktop-packages-unsigned-macos-latest-development-9d3c76ea9e8956cf478cd9bec6d30d5f6bd574ec",
-      "artifact_bytes": 122642388,
-      "artifact_id": 15261284245
+      "artifact": "desktop-packages-unsigned-macos-latest-development-095fe39c0cfc3751a7a59e2b0c09c97d34eb2a9d",
+      "artifact_bytes": 123852998,
+      "artifact_id": 15263691842
     },
     {
-      "id": 140964767524,
+      "id": 140980685918,
       "platform": "ubuntu-22.04",
       "payloads": [
         "Debian package"
       ],
-      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-9d3c76ea9e8956cf478cd9bec6d30d5f6bd574ec",
-      "artifact_bytes": 60316301,
-      "artifact_id": 15261558133
+      "artifact": "desktop-packages-unsigned-ubuntu-22.04-development-095fe39c0cfc3751a7a59e2b0c09c97d34eb2a9d",
+      "artifact_bytes": 60849780,
+      "artifact_id": 15263283341
     }
   ],
   "evidence": "Exact-head GitHub job conclusions and live artifact inventory; source staging requires exact platform payload kinds, bounded counts/sizes/checksums and actual packaged executable stdio MCP smoke. Windows also inspects imported system DLLs. One same-run fresh frontend artifact is reused.",
   "limitations": [
     "No installer GUI, installation, offline GUI or chosen-remote acceptance is claimed.",
     "Windows requires the OS WebView2 runtime; macOS output is the hosted runner architecture.",
-    "Later host-preference and reaction-condition source changes are outside this package evidence."
+    "The uncommitted F36\u2013F38 integration batch is outside this package evidence."
   ],
   "frontend": {
-    "job_id": 140962947334,
-    "artifact_id": 15261786127,
-    "bytes": 29793019
+    "job_id": 140978562572,
+    "artifact_id": 15263447306,
+    "bytes": 30042958
+  },
+  "check_workflow": {
+    "run_id": 46144865393,
+    "conclusion": "success",
+    "source_commit": "095fe39c0cfc3751a7a59e2b0c09c97d34eb2a9d"
   }
 }

@@ -126,7 +126,9 @@ fn resource<E: de::Error>(message: &str) -> E {
     mark_resource();
     E::custom(message)
 }
-pub(crate) fn admission<E: de::Error>(error: crate::Error) -> E {
+/// Preserve typed resource rejection in a current native decode frame.
+/// Independent model-dependent crates use this instead of matching error text.
+pub fn admission<E: de::Error>(error: crate::Error) -> E {
     if matches!(error, crate::Error::TooLarge) {
         mark_resource();
     }

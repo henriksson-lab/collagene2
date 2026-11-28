@@ -1,0 +1,86 @@
+# Document design checks
+
+Open a DNA document and choose a check from **Analyze**. These checks inspect the
+current source and explicit declarations. Editing the document or changing the
+declarations discards the result; run again before using its findings. Coordinate
+buttons select the corresponding sequence interval, including split intervals at
+a circular origin. None of these tools changes the sequence.
+
+## Construct QC
+
+Choose **Construct QC** and a default genetic code. A CDS `/transl_table` qualifier
+takes precedence. Under **Declared annotation roles**, select features whose roles
+and coordinates you explicitly assume for the check. Imported labels alone do not
+establish their biological identity; features requiring review remain indeterminate.
+
+Run **Run structural checks** to inspect CDS frame, start and termination, internal
+stops and disagreement with a stored translation. Optional declarations add:
+
+- Literal feature-to-reference comparison, retaining reference sequence, source URL,
+  retrieval date and licence. Matching sequence establishes identity to the supplied
+  reference, not the authenticity of its provenance or biological function.
+- Fusion boundary register against an explicitly selected CDS and component.
+- Current junction register at a declared boundary. This does not prove that an
+  earlier assembly or edit caused a frame change.
+
+Read each finding's verdict and explanation independently. Missing or unsupported
+evidence yields indeterminate findings. There is no combined biological pass or
+expression prediction. Element-chain, initiation-context, required-parts,
+unannotated-ORF, causal assembly-junction and vector-class profiles remain planned.
+
+## Assembly standard format
+
+Choose **Assembly standards…**, an installed profile and a declared slot.
+The current profile covers **BioBrick RFC10 part-sequence format (2007)**, including
+its distinct coding/noncoding flanks, mandatory forbidden sites and advisory rules.
+It does not certify complete RFC10 vector, strain or registry compliance.
+
+Enter a one-based source start and part length. Circular intervals may cross the
+origin once. Reverse orientation applies to the extracted part. Enter body start
+and inclusive body end relative to that oriented part, or explicitly use the
+flank-based body helper. The displayed required flanks are checked rather than
+silently added to the sequence. Choose **Inspect declared part** and review each
+finding, its mandatory/advisory status and any search limits.
+
+This panel inspects one formatted source part. Multi-part slot/order assessment is
+available through MCP; grammar hints are not chemical compatibility or successful
+assembly predictions. Other toolkit profiles and assembly-wizard integration
+remain planned.
+
+## Oligo collection binding
+
+Choose **Oligo collection…** and paste FASTA or tab-separated rows. FASTA
+headers may end in `tail=N`; tab-separated rows contain name, ordered DNA and an
+optional declared 5′ tail length. For example:
+
+```text
+>forward tail=4
+GGGGACGTCAGTTCGA
+>reverse
+TCGAACTGACGT
+```
+
+Set the minimum annealing length, allowed extra unpaired prefix, mismatch policy
+and required 3′ pairing. Advanced controls expose alignment scoring, collection-wide
+work/output limits and sodium/strand-concentration conditions. Choose **Search
+collection**. Declared tails are excluded from the footprint; additional unpaired
+5′ bases are reported separately. Both strands and circular origins are searched.
+
+Review each oligo's completion state before interpreting zero hits. A limited or
+unsearched oligo does not establish absence. Budgets below the minimum needed to
+bind inputs are refused with the required admission allowance. After admission,
+an exhausted search reports the limit explicitly. Scores rank ungapped suffix
+alignments; they do not predict PCR extension or amplification.
+
+Each retained hit shows source coordinates, strand, aligned columns, mismatch and
+3′ pairing bounds, and two distinct thermodynamic contexts. Annealed-stretch Tm is
+available only for a concrete perfect duplex supported by the sodium-only model.
+Mismatch and ambiguous-duplex Tm are unavailable. Whole-oligo Tm assumes a hypothetical
+perfect complementary partner for the entire ordered oligo, including its tail;
+it is not its Tm against this template or a recommended PCR temperature. Magnesium,
+additives and modified bases are not modelled. Downloaded JSON retains the complete
+bounded evidence; the screen paginates hits.
+
+The corresponding [MCP tools](MCP.md) use immutable document references and the
+same scientific owners. Saved report hashes bind content and declared context;
+fresh recomputation establishes agreement with the current inputs.

@@ -1,0 +1,443 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "095fe39c0cfc3751a7a59e2b0c09c97d34eb2a9d",
+  "source_scope": "F36 source-bound CDS/reference/declared-register QC; F37 scoped RFC10 part profile and data-driven grammar; F38 bounded ungapped collection footprints and supported thermodynamics; core/worker/web/MCP integration. Excludes unregistered mouse reference and CRISPR alignment source.",
+  "versions": {
+    "worker": 130,
+    "native_mcp_tools": 219,
+    "construct_qc": "construct-qc-1",
+    "assembly_standards": "assembly-standard-assessment-1",
+    "oligo_collection": "oligo-collection-review-1"
+  },
+  "compilation": {
+    "native": "passed",
+    "wasm": "passed"
+  },
+  "execution": {
+    "unique_cases": 50,
+    "passed": 50,
+    "failed": 0,
+    "ignored_executed": 0,
+    "cases": [
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "built_in_identity_requires_current_exact_facts_and_catalog_pin",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "coding_start_is_required_but_preferred_stop_is_advisory_not_a_functional_certificate",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "forbidden_sites_are_scanned_on_both_orientations_and_possible_is_not_certain",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "interrupted_or_truncated_checks_never_establish_conformance",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "replay_and_binary_roundtrip_bind_scope_source_order_body_and_options",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "rfc10_has_no_invented_functional_order_but_custom_grammars_enforce_declared_cardinality",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-assembly-standards",
+        "target": "rfc10",
+        "test": "source_profile_distinguishes_coding_prefix_and_mandatory_noti_from_advisory_sites",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "analysis",
+        "test": "design_checks::collection_worker_keeps_distinct_footprint_and_hypothetical_whole_oligo_tm",
+        "result": "ok",
+        "phase": "focused correction recheck"
+      },
+      {
+        "package": "collagene-core",
+        "target": "analysis",
+        "test": "design_checks::public_perfect_duplex_model_rejects_non_dna_before_dinucleotide_lookup",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "analysis",
+        "test": "design_checks::qc_worker_retains_declared_annotation_scope_and_independent_rule_results",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "analysis",
+        "test": "design_checks::standard_worker_pins_profile_source_crop_and_full_part_format_without_assembly_claim",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::bindings_tampering_and_repeated_location_amplification_are_bounded",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::complete_literal_cds_has_independent_structural_facts_not_an_expression_verdict",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::fusion_and_junction_checks_report_declared_register_without_edit_causality",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::literal_frame_start_terminal_and_internal_stop_failures_are_distinct",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::missing_stale_unreviewed_partial_or_exception_annotations_never_become_passes",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::origin_spanning_cds_reuses_existing_biological_join_order",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::pinned_reference_identity_is_separate_from_role_and_provenance_truth",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::selected_and_annotated_genetic_codes_and_context_dependent_stops_are_pinned",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "collagene_core",
+        "test": "construct_qc::tests::stored_translation_disagreement_is_a_documentary_finding",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::both_reaction_selectors_retain_the_ordinary_32_mib_frame_limit",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::raw_worker_rejects_stale_context_old_schema_and_invalid_native_options",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::reaction_worker_uses_current_selectors_literal_context_and_retains_uncertainty",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::result_decoder_refuses_forged_binding_or_mutated_documentary_evidence",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "verification",
+        "test": "primers::primers::additional_manual_stacks_cover_ta_ct_gc_and_gg_parameters",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "verification",
+        "test": "primers::primers::manual_nonself_nearest_neighbor_fixture_and_sodium_entropy_shift",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-core",
+        "target": "verification",
+        "test": "primers::primers::self_complementary_symmetry_and_concentration_factor_are_distinct",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::collection_search_pages_all_bound_sites_and_keeps_mismatch_thermodynamics_unavailable",
+        "result": "ok",
+        "phase": "focused correction recheck"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::construct_qc_routes_declared_roles_without_claiming_annotation_truth_or_global_success",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-mcp",
+        "target": "analysis",
+        "test": "design_checks::standard_discovery_and_fragment_checks_preserve_profile_scope_and_original_coordinates",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "decode::tests::aggregate_column_allowance_precedes_hit_allocation_and_scope_restores",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "decode::tests::announced_counts_reject_before_elements_are_decoded",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "decode::tests::failed_report_decode_does_not_leak_allowance_into_next_report",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "decode::tests::identifiers_reject_oversize_before_borrowed_text_copy",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::all_best_score_ties_retained_or_endpoint_rejected_atomically",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::ambiguity_envelope_contains_every_concrete_realization_optimum",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::declared_tail_extra_prefix_and_circular_reverse_columns_remain_distinct",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::exhausted_collection_does_not_claim_unsearched_oligos_are_nonbinding",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::exhaustive_concrete_footprints_equal_independent_suffix_oracle",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::extension_recovers_longer_score_after_unfavorable_intermediate_prefix",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::identities_and_aligned_facts_detect_context_edits",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::impossible_geometry_is_complete_zero_sites_but_work_shortage_is_explicit",
+        "result": "ok",
+        "phase": "focused correction recheck"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::report_binding_rejects_wrong_model_context_and_completion_claim",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-oligo-binding",
+        "target": "collagene_oligo_binding",
+        "test": "tests::terminal_mismatch_is_reported_without_inventing_extension_success",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "primers::collection_binding_model::lifecycle_tests::exact_event_epoch_form_generation_and_source_revision_all_bind",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "primers::collection_binding_model::lifecycle_tests::original_coordinates_sort_reverse_origin_crossing_into_two_spans",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "primers::collection_binding_model::tests::incomplete_zero_hits_never_claim_absence",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "primers::collection_binding_model::tests::input_formats_preserve_declared_tail_separately",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "primers::collection_binding_model::tests::malformed_or_unbounded_input_rejected",
+        "result": "ok",
+        "phase": "initial focused execution"
+      },
+      {
+        "package": "collagene-web",
+        "target": "collagene-web",
+        "test": "primers::collection_binding_model::tests::terminal_mismatch_admission_is_explicit_and_zero_budget_is_valid",
+        "result": "ok",
+        "phase": "initial focused execution"
+      }
+    ]
+  },
+  "resolved_failures": [
+    "Missing MCP StandardPart Serialize derive; direct derive correction.",
+    "Two caller fixtures expected a report with insufficient input-binding budget. Budget::admission_cost now exposes the existing charge; core refuses insufficient admission explicitly, admitted no-endpoint searches report a work limit. Added literal boundary/nonmutation assertions and actual SDK refusal coverage."
+  ],
+  "layout": {
+    "rust_files": 1316,
+    "directories": 233,
+    "violations": 0,
+    "size_warnings": 0,
+    "targeted_rustfmt_check": "passed",
+    "git_diff_check": "passed",
+    "macro_expansion_counted": false,
+    "scope": "Whole working tree, including pending unregistered mouse-reference and CRISPR source; published file counts may therefore differ."
+  },
+  "source_sha256": {
+    "crates/assembly-standards/src/assessment.rs": "f2e6e430b4b3b011c01a2cee3c345ec320c8e86bfde977472211d52f119d9d4b",
+    "crates/assembly-standards/src/grammar.rs": "49bb9b5a25a685a7048e052ecf729fdb3a7eddb9298678aea8c3274b4184f473",
+    "crates/assembly-standards/src/lib.rs": "689a3d9c73cd6d7414a52153d1387368133492111ec596c8ece1d9eee6fe47c5",
+    "crates/assembly-standards/src/profile.rs": "9c8c2af3b03daad15c612e687b620f89d8b540c069e95b494face63345416468",
+    "crates/assembly-standards/tests/rfc10.rs": "b0f09c2b0177d806914d4bad07f2272f0fd6f7d3cedfc11af250f27e312b55ce",
+    "crates/core/src/cloning/assembly/mod.rs": "2cfcf77ba636b81348b7633e88d691d4fbcb42756884f4447aa4e4f63c9ce34c",
+    "crates/core/src/cloning/assembly/standards.rs": "475d063a730c539135b5097cbbd80bfe0dca9d811a80b9018f9dca4129ff7f3d",
+    "crates/core/src/cloning/pcr/collection_binding.rs": "8f15c184a89c01171bb8a59488b9fdde534b63a49bc13f92166fde7afbcd3696",
+    "crates/core/src/cloning/pcr/mod.rs": "4e4cf0ffd43260b25fb220b5db4b90e5e55d3c938e47df52536a7faebbd69c65",
+    "crates/core/src/cloning/pcr/primers.rs": "98e462df1adc9a39ea34018ea523d9a2a289be78b5fb72177527c38dd182b680",
+    "crates/core/src/construct_qc/cds.rs": "7cb42fa9170d51ff237ada39c7753a90c32d88e00ee5618cf8d6d97abbe00f5c",
+    "crates/core/src/construct_qc/geometry.rs": "506040f1add2ac2cb6aeb65a19af04953802c4dff345c0acc02ea1e850e06316",
+    "crates/core/src/construct_qc/mod.rs": "0b1711b09607d42941cec17a24a4f5647efe9df8c21b0e89dad93bebda23a187",
+    "crates/core/src/construct_qc/tests.rs": "66747d783011af0f1a342c9be12b49423e7e66c31b9f2b7bfbd2eb99260e0253",
+    "crates/core/src/encoding/bounded_json.rs": "6541b26640f416e16eeefc31b7bf1171fa78dd8bd700c4df4e8ae1cd9c0ccf0a",
+    "crates/core/src/lib.rs": "d5dbcfcd98989e832faee7a6b9eb024d557d0142d24c7d25845ab9a9164cae04",
+    "crates/core/src/protocol/execution/design_checks.rs": "236cab026e8c6e0e490d44a379fccca3a219de24773aaefc2cb0b0cd4ce2aee6",
+    "crates/core/src/protocol/execution/mod.rs": "76a3a5cb1bc3d488619b203a51f34eda71ac8e7b2250b19b67cf4ea43838c45f",
+    "crates/core/src/protocol/execution/router.rs": "8a6d0173fd35fa1f4ce14c64e6729974bd104a8a4103e93dcc424663fb1b0afd",
+    "crates/core/src/protocol/request.rs": "3690d163ecda45835edf7eba9ebb2a97be29ad492e7f4469758e3906a70a62bd",
+    "crates/core/src/protocol/response.rs": "54618bc43e55e4b07af59371cb8d165866e6ca144cfc431a18bdf4f6b2289095",
+    "crates/core/src/protocol/schema.rs": "689f54b1bce27f33a4c34ef70095add234fb2825e2dbcad1abd66d6d59f0cece",
+    "crates/core/tests/analysis/design_checks.rs": "afa101b13d41f8b47c920ce7c72958c2d1b7d35b858df830a8ba1bf563873a22",
+    "crates/core/tests/analysis/main.rs": "288793f57d96413545cdb2f29e39e3a79c34a1905aded951ad69f38b1fefe3d4",
+    "crates/core/tests/restriction/catalog/reaction_conditions_protocol.rs": "2518732557331fab2b9cf45e01ea76db0c045f1278f719ddd800e1bf4b851cb7",
+    "crates/mcp/src/lib.rs": "24234a9c9558006ca871e156c7d506fbed493242f6932d27e366b07f0ea6415a",
+    "crates/mcp/src/server/mod.rs": "334094a10213133ccef9aa5ec09f34e1dd08e9932b34a07543e60c1a3921953a",
+    "crates/mcp/src/tools/analysis/design_checks.rs": "be4ac9e81cb181845b061696af77544e845370728ac4f4b2b247b906c7cb3cae",
+    "crates/mcp/src/tools/analysis/mod.rs": "87b38bd88a5a28c4049297761d4d9a889a99debb106c6d35417051fa388b24c3",
+    "crates/mcp/tests/analysis/design_checks.rs": "bccca9911a22a5056912d318c3f34c49ae01ab40419ccaa053ca0c711162eb22",
+    "crates/mcp/tests/analysis/main.rs": "ca5ba09dd67e14e907fe96e9d2453af5e8b6458eab26aba2ea076ea26dfe757f",
+    "crates/model/src/decode.rs": "8bda7bf9bbbbb8b5d9e5a3af7677d76c40e22fbe7ec6a794d8d30950ffe2192b",
+    "crates/oligo-binding/src/decode.rs": "17cb22d6053d7e0877948415fa6702da02cd067159ccd4b053d459a2878dd466",
+    "crates/oligo-binding/src/identity.rs": "7c7b19eb01f3d7f9c2c2ec88bc388b5fc92dc6f5e0a60290aacd5b50b8f3be5c",
+    "crates/oligo-binding/src/lib.rs": "20279bf08ca5d07aaab20dd2fde589e878b392c206278ab4b2d7b3d3c0531665",
+    "crates/oligo-binding/src/scan.rs": "4acff926d60f0354104af2cfc9ad78d613842bade9ed05b268a075f1ab4855e2",
+    "crates/oligo-binding/src/tests.rs": "a135799f0113c5483684a216045507f6cab28a6a83e39df95ad99e2a2a4b9f71",
+    "crates/web/src/app/mod.rs": "1ef3702e7f89cf13e3f85997791856965209314a89de2b248f966862355fc82c",
+    "crates/web/src/assembly/mod.rs": "947f7e63f53ef375753d79beeedea95702358e26bb35b4237162b81b86c06c78",
+    "crates/web/src/assembly/standards_view.rs": "5ec073e20a72b1dc7853ac2900431734f63c032871245d57638e30e02a452850",
+    "crates/web/src/biology/construct_qc_model.rs": "b72f86722e4ee549c68f620550f6ee046dc74b6b4a1470bbf6bf8b0330ed7b91",
+    "crates/web/src/biology/construct_qc_view.rs": "8ac5f03ef80cba6a5b9d54d318ea4680f69dc9b97dd625d9b8ff6ca93b07058b",
+    "crates/web/src/biology/mod.rs": "2c1e8e66309cd78edc4854ef3d242514e9b4c62385a59e814569800a3fb5daf8",
+    "crates/web/src/platform/desktop_shell.rs": "1b05203b4519f23a025e8e6a957f754a68483ff845c216ea22d98e39b0d65852",
+    "crates/web/src/primers/collection_binding_model.rs": "4b3953390f3b41aa2106c87148060a9fca69d8b9231deef0a728033a624a314c",
+    "crates/web/src/primers/collection_binding_view.rs": "e97e826890a9a1df9608faaee308ccf00ef16dce6c788e60ab11c39df607f2b5",
+    "crates/web/src/primers/mod.rs": "eb494443ca4d8eb7896e1f40f9751e17440869296b06066dedb65887201dc2f6"
+  },
+  "limitations": [
+    "No browser, CDP, screenshot, application HTTP, live-provider, installation or graphical acceptance checks.",
+    "This is partial F36\u2013F38 delivery. Additional QC predicates, toolkit profiles, assembly-wizard and protocol integration remain on the current plan.",
+    "No overall biological pass, expression/assembly/PCR success prediction, gap-aware oligo alignment or unsupported mismatch Tm.",
+    "Initial passing cases with unchanged scientific behavior were retained; only the two failures and changed budget fixture were rerun. Counts from other integration batches overlap and must not be added."
+  ]
+}

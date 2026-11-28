@@ -11,6 +11,8 @@
 
 - Every directory may contain at most 20 direct `.rs` files, including tests, examples, benches, and build scripts. Aim below that ceiling; group shared concepts into cohesive subdirectories before adding more siblings.
 - Every Rust file must contain at most 5,000 lines. Reaching 3,000 lines is a warning requiring an ownership/responsibility review and a concrete refactoring decision before further growth.
+- Apply file-size limits to rustfmt-formatted code. Never stack statements or compress code to evade the limits. At the end of a coherent edit batch, format only the relevant changed Rust files, then run the size/count audit. Avoid repeated formatting during individual edits and workspace-wide formatting passes.
+- These limits reduce the load on human readers of the source. Compiler-expanded macro output is not counted; retain useful macros and do not expand them merely for a size metric. Keep source declarations and logic readable regardless of whether a macro is used.
 - Keep a struct and its meaningful implementations together. Splitting an owner across many files requires a clear domain or lifecycle reason; do not distribute methods merely to satisfy line counts.
 - Prefer inherent methods when a function naturally belongs to one type's state or invariants. Keep stateless or symmetric algorithms as free functions when that expresses ownership better.
 - Organize by domain and ownership, not numbered chunks, generic utility collections, or `include!` fragments. Update imports and callers directly; no old-path forwarding facades or compatibility reexports.

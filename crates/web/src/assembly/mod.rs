@@ -6,3 +6,5 @@ pub(crate) mod edit;
 pub(crate) mod library;
 pub(crate) mod primer_design;
 pub(crate) mod review;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod standards_view;

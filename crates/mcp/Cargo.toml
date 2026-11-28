@@ -7,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+collagene-assembly-standards = { path = "../assembly-standards" }
+collagene-oligo-binding = { path = "../oligo-binding" }
 collagene-model = { path = "../model" }
 collagene-design-exchange = { path = "../design-exchange", features = ["json-schema"] }
 collagene-library-sharing = { path = "../library-sharing" }

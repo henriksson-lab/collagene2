@@ -10,3 +10,5 @@ pub mod outputs;
 pub mod primers;
 pub mod reuse;
 pub(crate) mod source;
+
+pub mod collection_binding;

@@ -5,6 +5,24 @@ use std::io::Write;
 
 const MAX_BYTES: usize = 32 << 20;
 
+/// Measure a domain's declared byte ceiling before hashing or cloning its DTO.
+pub(crate) fn preflight(value: &impl Serialize, maximum: usize) -> Result<(), Error> {
+    struct Count(usize);
+    impl Write for Count {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0 = self
+                .0
+                .checked_sub(bytes.len())
+                .ok_or_else(|| std::io::Error::other("bounded JSON admission"))?;
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    serde_json::to_writer(Count(maximum.min(MAX_BYTES)), value).map_err(|_| Error::TooLarge)
+}
+
 struct Hash {
     hash: blake3::Hasher,
     bytes: usize,

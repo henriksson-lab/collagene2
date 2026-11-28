@@ -1,0 +1,17 @@
+[package]
+name = "collagene-oligo-binding"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "1.88"
+description = "Bounded ungapped oligo collection binding with explicit ambiguity and footprint evidence"
+
+[dependencies]
+collagene-model = { path = "../model" }
+serde = { version = "1", features = ["derive"] }
+blake3 = { version = "1", default-features = false, features = ["pure", "std"] }
+
+schemars = { version = "1.2", optional = true }
+
+[features]
+json-schema = ["dep:schemars", "collagene-model/json-schema"]

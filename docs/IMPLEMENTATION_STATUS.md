@@ -13,13 +13,13 @@ scientific operations use Rust libraries, without external scientific programs.
 
 | Item | Current version |
 | --- | --- |
-| Worker protocol | 129 |
+| Worker protocol | 130 |
 | Candidate / workspace plan | 31 / 29 |
 | Assembly draft / batch / release | 20 / 3 / 2 |
 | Scientific / search engine | science-35 / sequence-search-2 |
 | Documentary image engine | documentary-image-1 |
 | Desktop sync | 5 |
-| Native MCP tools | 215 |
+| Native MCP tools | 219 |
 
 Cloning methods, supported external format profiles and platforms are summarized
 in the [README](../README.md). Current workflows include target verification,
@@ -53,6 +53,15 @@ pass**. This does not establish cleavage, kinetics, star risk or experimental
 success. Broader condition coverage and full cloning-step protocol integration
 remain. [Integration evidence](audits/restriction-conditions-current-integration.json).
 
+The F36–F38 batch adds source-bound structural QC, the scoped RFC10 part-format
+profile and collection-wide scored oligo footprints through the worker, Analyze
+panels and immutable-document MCP tools. Final native/WASM checks and all 50
+focused cases pass, including the budget-admission correction. [Integration
+evidence](audits/design-checks-current-integration.json).
+These are partial implementations: broader QC predicates, other assembly profiles,
+wizard/protocol integration and an applicable mismatch thermodynamic model remain.
+[Controls and supported scope](DESIGN_CHECKS.md).
+
 ## Verification and CI
 
 Native and web/worker WASM checks pass. The connected batch executes **302 unique
@@ -70,7 +79,7 @@ stop uncertainty. Exact search/PCR has bounded work; model/plan/archive admissio
 precedes amplified construction; hosted MCP pins member/lab/workspace lifecycles.
 [Security findings](DELIVERY_AUDIT.md#security-findings).
 
-At `5f72160`, desktop CI produced the **Windows portable executable, macOS
+At `095fe39`, desktop CI produced the **Windows portable executable, macOS
 installer/app and Linux Debian package**, including packaged-executable stdio MCP
 smoke checks. These are unsigned development artifacts, not installation or GUI
 acceptance. [Package evidence](audits/desktop-packages-current.json) ·
@@ -81,7 +90,9 @@ platforms plus web at `9d3c76e`; desktop packages also succeed there. At the hos
 checkpoint `476127e`, scientific cases and web/package jobs pass, while the final
 MCP smoke step still used the removed codon field. Its caller now uses current
 Explicit preferences, and its catalogue assertion uses schema-2 evidence. Full
-local application/HTTP smoke remains deferred; exact-source CI follows publication.
+local application/HTTP smoke remains deferred. The corrected caller and catalogue
+assertion pass CI at `095fe39`, including all native platforms and web; the current
+uncommitted F36–F38 source is outside that CI evidence.
 [Cross-platform evidence](audits/cross-platform-fixture-fix-current.json).
 
 No browser, CDP, screenshot, application HTTP or live-provider acceptance was run
@@ -101,9 +112,9 @@ filesystem API. Do not infer current product acceptance from this older preview.
   including independently supported scheme/species/chain coverage and calibration.
 - Complete restriction condition data/presets and cloning protocol-step retention;
   current documentary digest controls and setup retention are implemented.
-- Implement the reviewed F36–F41 additions and queue extensions. Parallel source
-  work has begun on assembly-standard and oligo-binding crates and core construct
-  QC; these are not included in the current integration proof. Barcode scope is
+- Complete the reviewed F36–F41 additions and queue extensions. The first
+  assembly-standard, oligo-binding and construct-QC paths are integrated; broader
+  predicates/profiles and wizard/protocol coverage remain. Barcode scope is
   awaiting clarification. [Current partition](PROJECT_PLAN.md#implementation-partition-of-the-expanded-feature-queue).
 - Retain the documented advanced contig-layout and real corpus gaps alongside
   current implemented read assembly; do not reopen deferred BAM/BAI work.

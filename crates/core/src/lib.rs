@@ -4,6 +4,7 @@
 pub mod alignment;
 pub mod chemistry;
 pub mod cloning;
+pub mod construct_qc;
 pub mod documents;
 pub(crate) mod encoding;
 pub mod formats;

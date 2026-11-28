@@ -32,6 +32,21 @@ struct Tool {
 }
 const TOOLS: &[Tool] = &[
     Tool {
+        label: "Construct QC",
+        group: "Sequence analysis",
+        target: Target::Panel("construct_qc"),
+    },
+    Tool {
+        label: "Assembly standards",
+        group: "Cloning",
+        target: Target::Panel("assembly_standards"),
+    },
+    Tool {
+        label: "Oligo collection",
+        group: "Cloning",
+        target: Target::Panel("oligo_collection"),
+    },
+    Tool {
         label: "PCR",
         group: "Cloning",
         target: Target::Panel("pcr"),

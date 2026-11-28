@@ -72,6 +72,13 @@ impl Response {
         let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::ConstructQc(report) => report.validate_binding(&response.revision)?,
+            AnalysisResult::AssemblyStandard(report) => {
+                report.validate_binding(&response.revision)?
+            }
+            AnalysisResult::OligoCollectionBinding(report) => {
+                report.validate_binding(&response.revision)?
+            }
             AnalysisResult::RestrictionConditions(report) => {
                 report.validate_binding(&response.revision)?;
             }

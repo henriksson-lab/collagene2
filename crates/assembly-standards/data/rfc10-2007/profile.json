@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "id": "biobrick-rfc10-part-sequence-2007",
+  "revision": "knight-2007-05-03-oww-297083-curation-1",
+  "name": "BioBrick RFC10 part-sequence format (2007)",
+  "scope": "Required and advisory part-body/prefix/suffix sequence constraints of Knight RFC10 (3 May 2007), sections 1–3. Ordered part roles are declarations; no biological functional order is imposed.",
+  "limitations": [
+    "This is not full RFC10 vector, sequencing-primer, host or registry-submission compliance.",
+    "No cleavage, ligation, experimental success, protein expression or functional compatibility is established.",
+    "Inputs are oriented formatted linear parts with explicit body boundaries. Whole-vector coordinates and circular origins are not inferred.",
+    "The standard permits both declared part types in any order; overhang equality is a documentary grammar fact, not validated physical termini.",
+    "Recommended internal sites and in-frame TAATAA termination are advisory; mandatory NotI absence follows this exact 2007 draft, not a newer four-site summary."
+  ],
+  "curation_license": "MIT (independently authored factual selection; upstream standard prose is not copied)",
+  "expected_catalog_edition": "2026-11-28.1",
+  "sources": [
+    {
+      "id": "knight-rfc10-2007",
+      "author": "Tom Knight",
+      "url": "https://openwetware.org/mediawiki/index.php?title=The_BioBricks_Foundation:BBFRFC10&oldid=297083",
+      "revision": "3 May 2007; OpenWetWare oldid 297083; MIT DSpace hdl:1721.1/45138",
+      "reviewed_on": "2026-11-28",
+      "locator": "Sections 1 (required and recommended internal sites), 2 (suffix), 3a/3b (non-coding/coding prefix and start/termination constraints)",
+      "source_license": "CC-BY-SA-3.0-or-later or GFDL-1.2-or-later (OpenWetWare text); sequence/geometry facts independently selected",
+      "upstream_sha256": null,
+      "snapshot_note": "Official standard text reviewed through the web documentation tool; no original raw-byte snapshot hash is claimed. MIT DSpace raw download returned HTTP429."
+    }
+  ],
+  "enzymes": [
+    {
+      "id": "ecori",
+      "geometry": {
+        "recognition": "GAATTC",
+        "top_cut": 1,
+        "bottom_cut": 5
+      }
+    },
+    {
+      "id": "xbai",
+      "geometry": {
+        "recognition": "TCTAGA",
+        "top_cut": 1,
+        "bottom_cut": 5
+      }
+    },
+    {
+      "id": "spei",
+      "geometry": {
+        "recognition": "ACTAGT",
+        "top_cut": 1,
+        "bottom_cut": 5
+      }
+    },
+    {
+      "id": "psti",
+      "geometry": {
+        "recognition": "CTGCAG",
+        "top_cut": 5,
+        "bottom_cut": 1
+      }
+    },
+    {
+      "id": "noti",
+      "geometry": {
+        "recognition": "GCGGCCGC",
+        "top_cut": 2,
+        "bottom_cut": 6
+      }
+    }
+  ],
+  "grammar": {
+    "minimum_parts": 1,
+    "maximum_parts": null,
+    "slots": [
+      {
+        "minimum": 0,
+        "maximum": null,
+        "left_overhang": "CTAG",
+        "right_overhang": "CTAG",
+        "left_enzyme": "xbai",
+        "right_enzyme": "spei",
+        "right_addition": "TACTAGTAGCGGCCGCTGCAG",
+        "extra_avoided_sites": [],
+        "source_ids": [
+          "knight-rfc10-2007"
+        ],
+        "id": "noncoding",
+        "name": "Non-coding part",
+        "left_addition": "GAATTCGCGGCCGCTTCTAGAG",
+        "body_rules": []
+      },
+      {
+        "minimum": 0,
+        "maximum": null,
+        "left_overhang": "CTAG",
+        "right_overhang": "CTAG",
+        "left_enzyme": "xbai",
+        "right_enzyme": "spei",
+        "right_addition": "TACTAGTAGCGGCCGCTGCAG",
+        "extra_avoided_sites": [],
+        "source_ids": [
+          "knight-rfc10-2007"
+        ],
+        "id": "coding",
+        "name": "Protein-coding part (declared)",
+        "left_addition": "GAATTCGCGGCCGCTTCTAG",
+        "body_rules": [
+          {
+            "RequiredPrefix": "ATG"
+          },
+          {
+            "PreferredInFrameSuffix": "TAATAA"
+          }
+        ]
+      }
+    ],
+    "starts": [
+      "noncoding",
+      "coding"
+    ],
+    "ends": [
+      "noncoding",
+      "coding"
+    ],
+    "transitions": [
+      {
+        "from": "noncoding",
+        "to": "noncoding"
+      },
+      {
+        "from": "noncoding",
+        "to": "coding"
+      },
+      {
+        "from": "coding",
+        "to": "noncoding"
+      },
+      {
+        "from": "coding",
+        "to": "coding"
+      }
+    ]
+  },
+  "avoided_sites": [
+    {
+      "id": "ecori",
+      "name": "EcoRI",
+      "recognition": "GAATTC",
+      "requirement": "Required",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "xbai",
+      "name": "XbaI",
+      "recognition": "TCTAGA",
+      "requirement": "Required",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "spei",
+      "name": "SpeI",
+      "recognition": "ACTAGT",
+      "requirement": "Required",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "psti",
+      "name": "PstI",
+      "recognition": "CTGCAG",
+      "requirement": "Required",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "noti",
+      "name": "NotI",
+      "recognition": "GCGGCCGC",
+      "requirement": "Required",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "pvuii",
+      "name": "PvuII",
+      "recognition": "CAGCTG",
+      "requirement": "Advisory",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "xhoi",
+      "name": "XhoI",
+      "recognition": "CTCGAG",
+      "requirement": "Advisory",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "avrii",
+      "name": "AvrII",
+      "recognition": "CCTAGG",
+      "requirement": "Advisory",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "nhei",
+      "name": "NheI",
+      "recognition": "GCTAGC",
+      "requirement": "Advisory",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    },
+    {
+      "id": "sapi",
+      "name": "SapI",
+      "recognition": "GCTCTTC",
+      "requirement": "Advisory",
+      "source_ids": [
+        "knight-rfc10-2007"
+      ]
+    }
+  ],
+  "default_avoided_sites": [
+    "ecori",
+    "xbai",
+    "spei",
+    "psti",
+    "noti",
+    "pvuii",
+    "xhoi",
+    "avrii",
+    "nhei",
+    "sapi"
+  ]
+}

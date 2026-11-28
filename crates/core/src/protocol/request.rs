@@ -45,6 +45,21 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::AnalyzeConstructQc { molecule, options } => {
+                if crate::construct_qc::revision(molecule, options)? != self.revision {
+                    return Err(Error::Format("Construct QC source/options differ".into()));
+                }
+            }
+            AnalysisJob::InspectAssemblyStandard { request } => {
+                if crate::cloning::assembly::standards::revision(request)? != self.revision {
+                    return Err(Error::Format("Assembly-standard request differs".into()));
+                }
+            }
+            AnalysisJob::SearchOligoCollection { request } => {
+                if crate::cloning::pcr::collection_binding::revision(request)? != self.revision {
+                    return Err(Error::Format("Oligo collection request differs".into()));
+                }
+            }
             AnalysisJob::AssessRestrictionConditions { selection, options } => {
                 let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
                 if crate::cloning::restriction::conditions::revision(&catalog, selection, options)?

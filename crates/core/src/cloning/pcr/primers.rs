@@ -5,6 +5,7 @@ use collagene_model::{Alphabet, Error, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 
 pub const MAX_OLIGO: usize = 200;
+pub const TM_MODEL: &str = "SantaLucia1998 perfect DNA duplex; sodium entropy correction";
 const MAX_BINDING_WORK: usize = 200_000_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -24,7 +25,7 @@ impl Default for ThermoConditions {
     }
 }
 impl ThermoConditions {
-    fn validate(&self) -> Result<(), Error> {
+    pub fn validate(&self) -> Result<(), Error> {
         if !self.sodium_molar.is_finite()
             || !(0.01..=1.0).contains(&self.sodium_molar)
             || !self.total_strand_molar.is_finite()
@@ -52,6 +53,28 @@ pub struct TmReport {
     pub delta_s_cal_per_mol_kelvin_at_1m: f64,
     pub salt_corrected_delta_s: f64,
     pub self_complementary: bool,
+}
+impl TmReport {
+    /// Shape/model/condition admission only, not proof that a supplied sequence was measured.
+    pub fn validate_for_conditions(&self, conditions: &ThermoConditions) -> Result<(), Error> {
+        conditions.validate()?;
+        if self.model != TM_MODEL
+            || self.conditions != *conditions
+            || ![
+                self.tm_c,
+                self.delta_h_kcal_per_mol,
+                self.delta_s_cal_per_mol_kelvin_at_1m,
+                self.salt_corrected_delta_s,
+            ]
+            .iter()
+            .all(|value| value.is_finite())
+        {
+            return Err(Error::Unsupported(
+                "Tm model, finite values or conditions differ".into(),
+            ));
+        }
+        Ok(())
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComplementaryRun {
@@ -241,63 +264,72 @@ fn homopolymer(text: &str) -> usize {
     }
     best
 }
-fn nn(text: &str, conditions: &ThermoConditions) -> Result<TmReport, Error> {
-    conditions.validate()?;
-    if text.len() < 2 || !concrete(text) {
-        return Err(Error::Unsupported(
-            "perfect-duplex Tm requires at least two unambiguous DNA bases".into(),
-        ));
+impl ThermoConditions {
+    /// Equal-concentration perfect DNA-duplex model; not an annealing recommendation.
+    pub fn perfect_duplex_tm(&self, text: &str) -> Result<TmReport, Error> {
+        let conditions = self;
+        if text.len() > MAX_OLIGO {
+            return Err(Error::TooLarge);
+        }
+        conditions.validate()?;
+        if text.len() < 2 || !text.bytes().all(|base| b"ACGT".contains(&base)) {
+            return Err(Error::Unsupported(
+                "perfect-duplex Tm requires at least two unambiguous DNA bases".into(),
+            ));
+        }
+        // Factual values from SantaLucia1998 Table2, not copied from software.
+        let (mut h, mut s) = (0., 0.);
+        for end in [text.as_bytes()[0], text.as_bytes()[text.len() - 1]] {
+            let (eh, es) = if end == b'A' || end == b'T' {
+                (2.3, 4.1)
+            } else {
+                (0.1, -2.8)
+            };
+            h += eh;
+            s += es;
+        }
+        for pair in text.as_bytes().windows(2) {
+            let (ph, ps) = match pair {
+                b"AA" | b"TT" => (-7.9, -22.2),
+                b"AT" => (-7.2, -20.4),
+                b"TA" => (-7.2, -21.3),
+                b"CA" | b"TG" => (-8.5, -22.7),
+                b"GT" | b"AC" => (-8.4, -22.4),
+                b"CT" | b"AG" => (-7.8, -21.0),
+                b"GA" | b"TC" => (-8.2, -22.2),
+                b"CG" => (-10.6, -27.2),
+                b"GC" => (-9.8, -24.4),
+                b"GG" | b"CC" => (-8.0, -19.9),
+                _ => unreachable!("validated concrete DNA"),
+            };
+            h += ph;
+            s += ps;
+        }
+        let self_complementary = Sequence::dna(text)?.reverse_complement()?.as_str() == text;
+        if self_complementary {
+            s -= 1.4;
+        }
+        let salt_s = s + 0.368 * (text.len() - 1) as f64 * conditions.sodium_molar.ln();
+        let concentration =
+            conditions.total_strand_molar / if self_complementary { 1. } else { 4. };
+        let tm = h * 1000. / (salt_s + 1.987 * concentration.ln()) - 273.15;
+        if !tm.is_finite() {
+            return Err(Error::Unsupported(
+                "Tm is undefined under these conditions".into(),
+            ));
+        }
+        Ok(TmReport {
+            model: TM_MODEL.into(),
+            conditions: conditions.clone(),
+            tm_c: tm,
+            delta_h_kcal_per_mol: h,
+            delta_s_cal_per_mol_kelvin_at_1m: s,
+            salt_corrected_delta_s: salt_s,
+            self_complementary,
+        })
     }
-    // Factual values from SantaLucia1998 Table2, not copied from software.
-    let (mut h, mut s) = (0., 0.);
-    for end in [text.as_bytes()[0], text.as_bytes()[text.len() - 1]] {
-        let (eh, es) = if end == b'A' || end == b'T' {
-            (2.3, 4.1)
-        } else {
-            (0.1, -2.8)
-        };
-        h += eh;
-        s += es;
-    }
-    for pair in text.as_bytes().windows(2) {
-        let (ph, ps) = match pair {
-            b"AA" | b"TT" => (-7.9, -22.2),
-            b"AT" => (-7.2, -20.4),
-            b"TA" => (-7.2, -21.3),
-            b"CA" | b"TG" => (-8.5, -22.7),
-            b"GT" | b"AC" => (-8.4, -22.4),
-            b"CT" | b"AG" => (-7.8, -21.0),
-            b"GA" | b"TC" => (-8.2, -22.2),
-            b"CG" => (-10.6, -27.2),
-            b"GC" => (-9.8, -24.4),
-            b"GG" | b"CC" => (-8.0, -19.9),
-            _ => unreachable!("validated concrete DNA"),
-        };
-        h += ph;
-        s += ps;
-    }
-    let self_complementary = Sequence::dna(text)?.reverse_complement()?.as_str() == text;
-    if self_complementary {
-        s -= 1.4;
-    }
-    let salt_s = s + 0.368 * (text.len() - 1) as f64 * conditions.sodium_molar.ln();
-    let concentration = conditions.total_strand_molar / if self_complementary { 1. } else { 4. };
-    let tm = h * 1000. / (salt_s + 1.987 * concentration.ln()) - 273.15;
-    if !tm.is_finite() {
-        return Err(Error::Unsupported(
-            "Tm is undefined under these conditions".into(),
-        ));
-    }
-    Ok(TmReport {
-        model: "SantaLucia1998 perfect DNA duplex; sodium entropy correction".into(),
-        conditions: conditions.clone(),
-        tm_c: tm,
-        delta_h_kcal_per_mol: h,
-        delta_s_cal_per_mol_kelvin_at_1m: s,
-        salt_corrected_delta_s: salt_s,
-        self_complementary,
-    })
 }
+
 fn screen(a: &str, b: &str, hairpin: bool) -> ComplementarityReport {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     let mut report=ComplementarityReport {max_run:0,max_three_prime_run:0,strongest:None,warnings:vec!["Ungapped contiguous complementarity screen only; no folding energy, loop/bulge/mismatch structure or polymerase extension probability is predicted.".into()]};
@@ -358,11 +390,14 @@ pub fn analyze_primer(
     conditions.validate()?;
     let primer = checked_primer(primer)?;
     let ordered = primer.ordered_sequence();
-    let (tm, tm_unavailable) = match nn(primer.annealing.as_str(), conditions) {
+    let (tm, tm_unavailable) = match conditions.perfect_duplex_tm(primer.annealing.as_str()) {
         Ok(v) => (Some(v), None),
         Err(e) => (None, Some(e.to_string())),
     };
-    let mut warnings=vec!["Tm describes an equal-concentration perfect DNA duplex of the annealing domain; it is not a recommended PCR annealing temperature. Magnesium, dNTPs, mismatches, modifications and additives are not modeled.".into(),"Secondary-structure screens include the ordered 5′ tail; the initial template-binding Tm excludes it.".into()];
+    let mut warnings = vec![
+        "Tm describes an equal-concentration perfect DNA duplex of the annealing domain; it is not a recommended PCR annealing temperature. Magnesium, dNTPs, mismatches, modifications and additives are not modeled.".into(),
+        "Secondary-structure screens include the ordered 5′ tail; the initial template-binding Tm excludes it.".into(),
+    ];
     if !concrete(&ordered) {
         warnings.push("Ambiguous bases yield GC bounds and possible complementarity; no single mixture Tm is assigned.".into());
     }
@@ -425,7 +460,18 @@ pub fn find_binding_sites(
             "invalid binding mismatch/3′/hit/work limits".into(),
         ));
     }
-    let mut report=BindingReport {source_revision:molecule.revision(),primer_name:primer.name.clone(),annealing:primer.annealing.as_str().into(),options:options.clone(),hits:vec![],truncated:false,placements_examined:0,warnings:vec!["Reference-sequence compatibility only: mismatch counts do not predict amplification, specificity outside this document, or experimental success. Tails are excluded from initial binding.".into()]};
+    let mut report = BindingReport {
+        source_revision: molecule.revision(),
+        primer_name: primer.name.clone(),
+        annealing: primer.annealing.as_str().into(),
+        options: options.clone(),
+        hits: vec![],
+        truncated: false,
+        placements_examined: 0,
+        warnings: vec![
+            "Reference-sequence compatibility only: mismatch counts do not predict amplification, specificity outside this document, or experimental success. Tails are excluded from initial binding.".into(),
+        ],
+    };
     if m > n {
         return Ok(report);
     }
@@ -596,7 +642,18 @@ pub fn design_primers_view(
             });
         }
     }
-    let mut report=DesignReport {template_strand:molecule.template_strand,source_revision:source_revision.into(),options:options.clone(),pairs:vec![],evaluated_pairs:0,rejected_pairs:0,warnings:vec!["Anchored endpoint selection ranks the requested length interval under explicit heuristic filters. It does not establish binding uniqueness; inspect binding hits and independently simulate every PCR alternative before using a pair.".into(),"Ranking is a reproducible heuristic: summed absolute distance from target Tm plus pair Tm difference; no kinetics or empirical success probability is assigned.".into()]};
+    let mut report = DesignReport {
+        template_strand: molecule.template_strand,
+        source_revision: source_revision.into(),
+        options: options.clone(),
+        pairs: vec![],
+        evaluated_pairs: 0,
+        rejected_pairs: 0,
+        warnings: vec![
+            "Anchored endpoint selection ranks the requested length interval under explicit heuristic filters. It does not establish binding uniqueness; inspect binding hits and independently simulate every PCR alternative before using a pair.".into(),
+            "Ranking is a reproducible heuristic: summed absolute distance from target Tm plus pair Tm difference; no kinetics or empirical success probability is assigned.".into(),
+        ],
+    };
     let pair_work = forward.iter().try_fold(0usize, |sum, f| {
         reverse.iter().try_fold(sum, |sum, r| {
             sum.checked_add(

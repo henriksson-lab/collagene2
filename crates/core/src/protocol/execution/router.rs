@@ -11,6 +11,15 @@ pub(super) fn dispatch(
     context: &RequestContext,
 ) -> Result<AnalysisResult, Error> {
     match job {
+        AnalysisJob::AnalyzeConstructQc { molecule, options } => {
+            super::design_checks::construct_qc(context, molecule, options)
+        }
+        AnalysisJob::InspectAssemblyStandard { request } => {
+            super::design_checks::assembly_standard(context, request)
+        }
+        AnalysisJob::SearchOligoCollection { request } => {
+            super::design_checks::oligo_collection(context, request)
+        }
         AnalysisJob::PrepareTraceDisplay { molecule } => {
             sequence::prepare_trace_display(context, molecule)
         }

@@ -5265,3 +5265,33 @@ checks pass, as do all103 focused cases, with current catalogue/worker/setup/exp
 versions bound in the [integration evidence](audits/restriction-conditions-current-integration.json).
 This proof excludes the separate unregistered mouse/CRISPR/QC foundations and
 assembly-standard/oligo-binding crates being prepared for the next source batch.
+
+### F36–F38 integration batch — current source, verification in progress
+
+The construct-QC owner and both new independent crates are now registered. Core
+wrappers bind results to source revisions, exact options and profile/collection
+identities. Worker schema 130 adds all three operations. The Analyze menu exposes
+three document-bound panels, and MCP exposes four tools (including the standards
+catalogue), bringing the tool count to 219. Native and WASM compiler checks are
+running together against the relocated shared cache; no browser checks have run.
+
+This is partial feature delivery. QC still needs element-chain, initiation-context,
+required-parts, causal assembly-junction and sourced vector-class checks. Standards
+currently admit only the explicitly scoped RFC10 part-sequence profile; other
+toolkits and assembly-wizard grammar integration remain. Oligo search provides
+bounded ungapped scored extension and explicit incomplete-search states, with
+perfect-duplex Tm only where its assumptions hold. A mismatch thermodynamic model
+and gap-aware extension remain separate work, requiring appropriate evidence.
+HTML/PDF protocol integration for these checks also remains. Authored fixtures and
+source registration alone do not prove scientific correctness. Initial native and
+WASM checks pass. Focused execution found two integration fixtures that incorrectly
+expected reports below the input-admission allowance. The shared budget owner now
+exposes that minimum to callers; requests below it are refused, while admitted
+scans stopped before their first endpoint report an explicit work limit. The
+connected correction now passes final native and WASM checks. All 50 unique
+focused cases pass, including actual in-memory MCP SDK calls, independent suffix
+and ambiguity oracles, literal QC and RFC10 fixtures, current binary transport,
+thermodynamic reference cases and web input/lifecycle models. Relevant source was
+formatted once per coherent edit/correction batch; the layout audit has no
+violations or warnings. No browser or application HTTP checks were run.
+[Current integration evidence](audits/design-checks-current-integration.json).

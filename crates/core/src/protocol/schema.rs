@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 129;
+pub const WORKER_SCHEMA_VERSION: u16 = 130;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -992,6 +992,16 @@ pub enum AnalysisJob {
         selection: crate::cloning::restriction::catalog::CatalogSelection,
         options: crate::cloning::restriction::conditions::ReactionConditions,
     },
+    AnalyzeConstructQc {
+        molecule: Molecule,
+        options: crate::construct_qc::Options,
+    },
+    InspectAssemblyStandard {
+        request: crate::cloning::assembly::standards::Request,
+    },
+    SearchOligoCollection {
+        request: crate::cloning::pcr::collection_binding::Request,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1197,6 +1207,9 @@ pub enum AnalysisResult {
     ImageEvidencePrepared(crate::documents::image_evidence::Prepared),
     ImageEvidencePreview(crate::documents::image_evidence::Preview),
     RestrictionConditions(crate::cloning::restriction::conditions::ConditionsReport),
+    ConstructQc(crate::construct_qc::Report),
+    AssemblyStandard(crate::cloning::assembly::standards::Report),
+    OligoCollectionBinding(crate::cloning::pcr::collection_binding::Report),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

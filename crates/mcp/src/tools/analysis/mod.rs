@@ -1,4 +1,5 @@
 mod codon;
+mod design_checks;
 
 use crate::tools::default_inspection_page;
 

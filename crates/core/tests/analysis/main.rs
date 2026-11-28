@@ -2,3 +2,5 @@
 mod alignment;
 mod reads;
 mod search;
+
+mod design_checks;

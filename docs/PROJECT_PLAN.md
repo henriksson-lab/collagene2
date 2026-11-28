@@ -62,6 +62,11 @@ No compatibility facades or forwarding APIs are permitted. The layout gate now r
 checks, complete executable discovery and 1,034 focused tests pass; cross-platform
 CI and the remaining product gates remain separate requirements.
 
+The follow-up parallel audit identifies saved-material digest export, named
+setups and gel handoff as the next connected cloning batch. Paired-oligo library
+provenance and coordinate-bearing qualifier projection follow separately; see
+the current findings and required boundaries in the [delivery audit](DELIVERY_AUDIT.md#next-connected-cloning-batch).
+
 This order supersedes the older milestone order and any format-first expansion.
 Keep the full agreed scope, existing feature IDs and scientific architecture;
 finish the cloning application before extending peripheral analysis. Existing

@@ -7,6 +7,7 @@ until in-scope implementation is complete.
 
 | Area | Current source evidence | Remaining delivery work |
 | --- | --- | --- |
+| Saved-material digest continuation | Fresh saved-origin inspection, fragment opening and assembly handoff exist; `DigestPanel` explicitly blocks saved-origin fragment GenBank export, named setups and gel handoff. `cloning::restriction::setups::Recipe` records only an event binding. | Carry exact material origin through the current recipe, fresh fragment reconstruction, setup capture/reopening, and diagnostic gel recipes. Preserve ancestry, original assumptions, source/epoch/options guards and explicit export losses; do not treat saved reports as fresh authority. Highest-priority connected cloning gap. |
 | Protected codon ranges | `codon_design::ConstrainedPolicy` includes protected ranges and allowed codons; its independent checker reports violations | Current platform/workflow acceptance; the older blanket “protected ranges missing” entry is obsolete |
 | Plate layouts | `protocol_layout` plus web/MCP capture and CSV/HTML/PDF export | Broader workflow acceptance; this is documentary cloning layout, not inventory or instruments |
 | Lab comments/review | Native collaboration store, individual member registry, discussion SDK and shared browser/Tauri remote controls | Exact-source CI, graphical acceptance and deliberate deployment cutover; no automatic offline comment queue |
@@ -19,6 +20,29 @@ until in-scope implementation is complete.
 This audit found no reason to reopen deferred BAM/BAI work or external Primer3 /
 multiple-alignment engine ports. OpenGel, inventory/ELN, instruments, scheduling,
 organizational reporting and mobile expansion retain their exclusions/deferrals.
+
+## Next connected cloning batch
+
+After exact-source refactor CI closes, complete saved-material digest export,
+named setups and gel handoff together. Use the existing `MaterialOrigin` and
+fresh replay machinery in one current recipe representation; update schemas,
+worker transport, persistence, native MCP, UI and fixtures in one integration
+batch. Reject superseded internal record versions explicitly. A fragment export
+must state any lost strand/modification/history evidence instead of presenting
+GenBank as a physical-material archive.
+
+Paired-oligo combinatorial choices remain a separate connected gap: ordinary
+annealed inserts work, but library choices retain only one source identity.
+Supporting them requires both original events and ordered strand declarations
+through capture, replay, release, sharing and protocol output. Merely lifting
+the draft validation refusal would lose provenance.
+
+Coordinate-bearing qualifier projection is also incomplete. Supported local
+`transl_except`/`anticodon` locations need bounded, fully consumed parsing and
+biological-order-preserving remapping. The current gb-io location wrapper ignores
+unconsumed suffixes, so its result alone cannot validate an embedded location.
+Native model edits, destination paste and annotation-only strand flips have
+distinct refusal boundaries; changing projection alone must not bypass them.
 
 ## Antibody analysis acceptance scope
 

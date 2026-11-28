@@ -72,6 +72,9 @@ impl Response {
         let maximum = Self::admitted_frame_limit(bytes, bytes.len())?;
         let response: Response = decode_with_limit(b"CGR\0", bytes, maximum)?;
         match &response.result {
+            AnalysisResult::RestrictionConditions(report) => {
+                report.validate_binding(&response.revision)?;
+            }
             AnalysisResult::ImageEvidencePrepared(prepared) => {
                 prepared.validate_preparation_binding(&response.revision)?;
             }

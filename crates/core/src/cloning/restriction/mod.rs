@@ -1,6 +1,7 @@
 //! restriction domain owners.
 
 pub mod catalog;
+pub mod conditions;
 pub mod cut_selection;
 pub mod enzyme_sets;
 pub mod history;

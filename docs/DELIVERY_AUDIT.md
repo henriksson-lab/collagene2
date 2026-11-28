@@ -95,9 +95,17 @@ data-integrity checks proportional to the implementation changes.
 | Priority | Concrete source gap | Required outcome |
 | --- | --- | --- |
 | Complete | F26 host codon data | Pinned MG1655 runtime profile, independent all-192-count agreement, exclusive preference sources, retained evidence and UI/MCP selection are implemented. Native/WASM checks and 61 focused cases pass; observed preferences do not imply calibrated expression. |
-| 1 | F25 bounded CRISPR extensions | Integrate bounded DNA/RNA bulge evidence and variant models, source-bound added nuclease presets, distinct design/screening PAM policy and appropriately licensed empirical scoring. The alignment kernel is authored but unregistered/unexecuted. Existing selected-record Hamming search is implemented; deferred large-reference/BAM work does not gain priority. [Research](audits/crispr-extensions-current.md). |
-| 2 | F21 restriction reaction conditions | Bind chosen supplier formulations and buffer/temperature/time to saved recipes; assess joint-digest documentary activity and compatible recorded conditions; retain star-activity uncertainty and add supported source-strain presets. Current geometry and methylation functionality remain. [Source triage](audits/cloning-gap-triage-current.md). |
+| 2 | F25 bounded CRISPR extensions | Integrate bounded DNA/RNA bulge evidence and variant models, source-bound added nuclease presets, distinct design/screening PAM policy and appropriately licensed empirical scoring. The alignment kernel is authored but unregistered/unexecuted. Existing selected-record Hamming search is implemented; deferred large-reference/BAM work does not gain priority. [Research](audits/crispr-extensions-current.md). |
+| 1 | F21 restriction reaction conditions | Current source integrates exact choices, joint unit-assay assessment/suggestions, worker/MCP/UI and named setup retention; native/WASM checks and 103 focused cases pass. Still add broader curated formulations, supported explicit source-host presets, condition-specific star evidence and full protocol-step retention/output. Current geometry/methylation functionality remains. [Source triage](audits/cloning-gap-triage-current.md) · [Preset/condition research](audits/restriction-source-presets-current.md). |
 | 3 | F34 antibody competitor coverage | User-confirmed scope: map Benchling and Geneious Biologics GUI/workflows and actual supported analysis, schemes, species/chains, liabilities and exports. Extend the conditional human-reference implementation from documented gaps, with independently supported reference coverage/calibration. |
+
+The antibody comparison now has inspected primary-source GUI evidence from
+[Benchling](audits/benchling-antibody-gui-current.md) and
+[Geneious Biologics](audits/geneious-antibody-gui-current.md). The concrete table in
+[the current plan](PROJECT_PLAN.md#antibody-gui-and-competitor-coverage-requirements)
+retains Martin/AHo, species/chain/domain coverage, compact controls, simultaneous
+alignment tracks, liability presentation and region/detail/export work. Existing
+human numbering, North regions and focused-row mapping remain implemented.
 
 Hosted MCP, portable SVG/PNG export, the27-table genetic-code catalogue and
 image attachments are implemented with their verification scopes above. Their
@@ -347,3 +355,15 @@ unresolved CDR intervals. Current implementation evidence does not establish
 universal automatic domain classification or independent biological numbering
 accuracy. The fixed external panel establishes deposited-chain identity only;
 it is not residue-position ground truth.
+
+
+## Current restriction-condition checkpoint
+
+The integrated source passes native and web/worker WASM checks and **103 unique
+focused cases**. All707 prior names in14 compared harnesses remain; expanded
+selected discovery has1,416 names in22 harnesses. Discovery is not execution.
+The F21 owner uses current catalogue schema2, worker129, named setup3 and material
+digest export2. Full reaction-condition dataset coverage and cloning-step protocol
+integration remain in the queue. The newly authored parallel crates/QC and mouse
+reference foundation are outside this proof.
+[Current evidence](audits/restriction-conditions-current-integration.json).

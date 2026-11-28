@@ -21,3 +21,8 @@ pub(crate) mod restriction_map;
 pub(crate) mod restriction_view;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod reusable_material_view;
+
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod reaction_conditions;
+#[cfg(any(target_arch = "wasm32", test))]
+pub(crate) mod reaction_conditions_model;

@@ -672,6 +672,7 @@ async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_so
         .unwrap(),
         options: InspectionOptions::default(),
         cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+        conditions: None,
     };
     let lane = json!({"label":"Historical AluI digest","document":reference(&source),"workspace":workspace_ref,"preparation":Preparation::CatalogDigest {recipe:recipe.clone()},"mass_ng":100.});
     let query = json!({"lanes":[lane],"calibration":calibration(),"image_format":"Svg"});

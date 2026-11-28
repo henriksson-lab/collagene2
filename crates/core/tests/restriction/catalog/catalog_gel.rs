@@ -45,6 +45,7 @@ fn recipe(molecule: &Molecule, ids: &[&str], options: InspectionOptions) -> Reci
         .unwrap(),
         options,
         cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+        conditions: None,
     }
 }
 fn input(molecule: Molecule, recipe: Recipe) -> LaneInput {

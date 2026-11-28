@@ -1,0 +1,661 @@
+{
+  "date": "2026-11-28",
+  "base_commit": "476127ed01a9687bfda87cd12c7e8e549685e7a5",
+  "source_scope": "F21 documentary reaction condition core/worker/MCP/web and named setup/native export batch; excludes new unregistered mouse reference, CRISPR alignment, construct QC, assembly-standards and oligo-binding sources.",
+  "versions": {
+    "worker": 129,
+    "catalog_schema": 2,
+    "catalog_edition": "2026-11-28.1",
+    "named_digest_setup": 3,
+    "material_digest_export": "material-digest-export-2",
+    "native_mcp_tools": 215
+  },
+  "compilation": {
+    "native": "passed",
+    "web_worker_wasm": "passed",
+    "native_scope": "Same broad 13-package and selected library/integration/web binary configuration; shared existing cache relocated to /big/temp.",
+    "wasm_scope": "Final source after reusable event-handler clone correction; native-gated web models unchanged and their retained cases pass."
+  },
+  "execution": {
+    "unique_cases": 103,
+    "passed": 103,
+    "failed": 0,
+    "ignored_executed": 0,
+    "cases": [
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::changing_temperature_context_or_time_cannot_create_activity_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::ecori_and_hf_are_distinct_assay_facts_and_star_absence_is_never_inferred",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::exact_membership_bounds_and_fresh_validation_reject_tampered_reports",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::joint_digest_distinguishes_recorded_failure_missing_evidence_and_common_candidates",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::less_than_values_do_not_imply_a_lower_bound",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::missing_formulation_remains_unknown_without_affecting_other_selected_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "collagene_core",
+        "test": "cloning::restriction::conditions::tests::multiple_contexts_require_choice_and_conflicting_facts_remain_conflicts",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "biochemical_identities_are_not_aliases",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "bounded_strict_json_and_future_schema",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "conflicts_and_contexts_are_not_silently_collapsed",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "documentary_methylation_distinctions",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "duplicate_shadow_and_bad_citation_rejected",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "explicit_shared_alias_is_ambiguous_in_stable_order",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "immutable_checksums_canonical_order_and_tampering",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "independent_formulation_percentages",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "independently_written_geometry_expectations",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "malformed_geometry_never_panics",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "native_proposals_apply_the_byte_budget_before_validation_or_checksum_work",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "oversized_native_alias_names_fail_before_normalization_or_citation_processing",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "relation_rejects_foreign_and_altered_equal_id_records",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "reverse_descriptor_equivalence",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "search_is_deterministic_bounded_and_case_insensitive",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "smai_chart_temperature_retains_the_extended_digest_exception",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "source_and_edition_dates_are_real_gregorian_dates_with_century_leap_rules",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "unknown_does_not_bypass_condition_validation",
+        "exit_code": 0
+      },
+      {
+        "crate": "enzyme-catalog",
+        "target": "catalog",
+        "test": "upstream_hashes_are_optional_not_fabricated",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::all_starter_catalog_geometries_preserve_existing_gel_fragment_pipeline",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::current_catalog_and_actual_source_revision_must_match_the_pinned_recipe",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::gel_fragment_limit_is_an_explicit_lane_error_without_rewriting_recipe_limits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::legacy_large_annotation_lane_keeps_native_capacity_alongside_pinned_catalog_lane",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::nonstarter_catalog_identity_works_without_name_lookup_fallback",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::oversized_borrowed_recipe_or_source_rejects_before_prediction",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::partial_ambiguous_outside_and_unmodeled_physical_products_are_withheld",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::staggered_lengths_use_both_physical_strands_and_conserve_mass",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::catalog_gel::uncut_circle_remains_unpositioned_and_one_cut_circle_is_linear",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::pinned_gel_protocol::pinned_gel_rejects_unsupported_request_and_result_versions",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::pinned_gel_protocol::pinned_gels_keep_the_ordinary_binary_message_budget",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::pinned_gel_protocol::pinned_worker_replays_nonstarter_geometry_in_current_reports",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::pinned_gel_protocol::stale_pins_and_unpinned_operation_cannot_relabel_catalog_digest",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::both_reaction_selectors_retain_the_ordinary_32_mib_frame_limit",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::raw_worker_rejects_stale_context_old_schema_and_invalid_native_options",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::reaction_worker_uses_current_selectors_literal_context_and_retains_uncertainty",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "catalog::reaction_conditions_protocol::result_decoder_refuses_forged_binding_or_mutated_documentary_evidence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::catalog_digest_protocol::catalog_tags_require_twenty_one_and_only_installation_extends_workspace_cap",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::catalog_digest_protocol::exact_catalog_geometry_source_and_options_are_bound_before_fresh_products",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::catalog_digest_protocol::installed_catalog_fragment_has_exact_event_parent_and_native_recipe_pin",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::capture_roundtrips_native_archive_and_changes_only_one_attachment",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::delete_only_removes_valid_setup_and_keeps_original_document_history",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::external_catalog_documentary_setup_loads_without_installed_membership_but_cannot_compute",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::gel_recipe_retains_actual_ordered_geometry_catalog_and_limits",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::historical_catalog_pins_remain_readable_but_cannot_rebind_to_another_catalog",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::historical_setup_survives_head_advance_and_does_not_alias_equal_dna_events",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::partial_scan_can_be_saved_without_inventing_determined_products",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::reaction_attachment_refuses_unpaired_options_stale_bindings_tampering_and_v2",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::reaction_setup_retains_typed_documentary_evidence_without_changing_ideal_digest",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::saved_run_and_target_free_material_setup_restart_gel_uses_literal_real_strand_lengths",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::saved_setup_requires_exact_origin_event_and_retained_ancestry",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::tampered_source_options_geometry_version_mode_and_evidence_flags_fail",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::unrelated_large_annotation_document_does_not_restrict_saved_digest_operations",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "restriction",
+        "test": "inspection::digest_setups::workspace_attachment_capacity_is_atomic_and_idempotent_capture_still_works",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::format_dispatch::explicit_single_stranded_genbank_is_retained_and_not_invented_as_a_duplex",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::format_dispatch::format_sniffing_preserves_text_record_terminators_and_provenance_exports",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::documentary_reply_validation_rejects_bad_context_profile_paths_and_container_shapes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::gcg_omission_warnings_stay_acknowledged_and_explicit_options_bind_the_context",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::physical_and_modified_protein_guards_are_never_overridden_by_acknowledgement",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::snapgene_review_and_prepared_bytes_share_exact_source_and_context_without_spurious_ack",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::worker_review_and_prepare_current_tags_bind_the_same_context_and_reject_obsolete_headers",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export::xdna_name_loss_requires_explicit_current_ack_and_preserves_current_sequence",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::sequence_export_review_and_preparation_are_source_bound_profiles",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "formats",
+        "test": "sequences::sequence_export_protocol::trace_worker_pins_view_precision_and_actual_signal_and_refuses_fabrication",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "catalog_digest_tools::expanded_digest_publishes_one_exact_catalog_bound_artifact",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "catalog_digest_tools::reaction_conditions_preserve_formulation_differences_unknowns_and_exact_bindings",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "catalog_digest_tools::single_catalog_artifact_refuses_full_session_without_partial_publication",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "cloning_gel_tools::exact_pcr_long_concrete_late_mismatch_finishes_without_inventing_products",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "cloning_gel_tools::gel_json_svg_and_diagnostic_digests_preserve_unknowns_mass_and_source_bindings",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "cloning_gel_tools::golden_gate_keeps_actual_strands_sources_completeness_and_separate_target_verification",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "cloning_gel_tools::inverse_pcr_creates_an_explicit_reviewable_phosphorylation_and_ligation_plan",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "cloning_gel_tools::mismatched_oligos_reconstruct_both_introduced_changes_and_capped_search_stays_incomplete",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "cloning_gel_tools::pinned_gel_requires_exact_workspace_ownership_and_replays_historical_sources",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "workspace",
+        "test": "run_catalog_digest_tools::explicit_workspace_saved_catalog_inspection_retains_outer_oh_and_cut_p_without_publishing",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "workspace",
+        "test": "run_catalog_digest_tools::predicted_catalog_gel_replays_run_and_derived_sources_with_exact_workspace_ancestry",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "actual_pcr_digest_fragment_public_and_private_closure_preserve_fresh_material_without_private_current_heads",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "later_pcr_run_closes_nested_saved_digest_recipe_and_replays_after_publication",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "named_digest_setup_closure_retains_exact_run_and_derived_origins_without_private_setups",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "newest_editable_drafts_are_presentation_only_not_publication_dependencies",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "obsolete_named_digest_setup_kind_cannot_enter_document_publication",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "orphan_reserved_producer_corrupt_record_and_wrong_product_binding_refuse_instead_of_opaque_fallback",
+        "exit_code": 0
+      },
+      {
+        "crate": "library-sharing",
+        "target": "saved_material_digest_closure",
+        "test": "unrelated_selected_document_never_publishes_derived_record_or_its_private_origin_runs",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::actual_bottom_seventeen_call_template_has_independent_slot_binding_and_native_frame",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::digest_origin_handoff_keeps_saved_parent_and_reconstructable_row_after_roundtrip",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::digest_origin_handoff_rejects_changed_scope_or_equal_content_alias_atomically",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::original_reference_fragment_handoff_binds_the_common_source_origin_inspection",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::digest_fragment_model::tests::saved_staggered_actual_bottom_intent_reverses_twice_and_ligates_after_archive_restart",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::celsius_decimal_is_exact_and_refuses_nonfinite_fractional_noise",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::opt_in_requires_valid_values_and_never_guesses_a_formulation",
+        "exit_code": 0
+      },
+      {
+        "crate": "web",
+        "target": "collagene-web",
+        "test": "restriction::reaction_conditions_model::tests::saved_none_clears_draft_and_capture_rejects_event_epoch_and_option_changes",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::ambiguous_reference_retains_recognition_without_inventing_exportable_strands",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::derived_origin_and_worker_roundtrip_keep_exact_export_binding",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::export_refuses_wrong_event_limits_and_changed_worker_identity",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::reaction_choices_bind_detached_provenance_without_changing_assumed_cleavage",
+        "exit_code": 0
+      },
+      {
+        "crate": "core",
+        "target": "materials",
+        "test": "derivation::material_digest_export::saved_staggered_fragment_export_uses_actual_strands_and_discloses_detachment",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "collagene_mcp",
+        "test": "tools::catalog::catalog_tools::tests::serialization_keeps_conflicting_values_and_requires_explicit_assay_context",
+        "exit_code": 0
+      },
+      {
+        "crate": "mcp",
+        "target": "cloning",
+        "test": "catalog_digest_tools::catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citations_are_preserved",
+        "exit_code": 0
+      }
+    ]
+  },
+  "discovery": {
+    "compared_harnesses": 14,
+    "prior_names_preserved": 707,
+    "expanded_selected_harnesses": 22,
+    "expanded_selected_names": 1416,
+    "removed_names": {},
+    "note": "Selected discovery, not execution or a claim that unrelated prior harnesses ran."
+  },
+  "integration_findings": [
+    "Internally/adjacently tagged catalogue enums could not deserialize with Postcard. Current schema2 uses standard external enum tagging; oldschema rejects, source facts/geometry preserved and checksums resealed.",
+    "Two Arc reference coercions and a reusable UI event-handler ownership error were corrected from actual WASM diagnostics.",
+    "One old MCP catalogue fixture still expected the superseded JSON shape. The literal numeric observation and pinned resource assertions are unchanged in the current representation.",
+    "Initial build hit /tmp exhaustion; exact completed executables were retired with inventory and passing execution evidence retained. A recovery invocation changed dependency features and was stopped; broad selection restored. Existing28GiB cache moved to /big/temp by explicit user instruction; interrupted checks resumed there.",
+    "Published host source scientific tests passed across Windows/macOS/Linux but its existing MCP smoke caller used superseded codon_weights. Caller now uses Explicit preferences and schema2 catalogue evidence; Python AST parses, full local application/HTTP smoke remains deferred."
+  ],
+  "acceptance": "No local browser/CDP/screenshot/application HTTP/live-provider checks. New parallel crates and unregistered core modules are not included in compiler/test claims."
+}

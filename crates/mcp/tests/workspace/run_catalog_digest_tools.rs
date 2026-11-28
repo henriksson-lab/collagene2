@@ -186,6 +186,7 @@ async fn predicted_catalog_gel_replays_run_and_derived_sources_with_exact_worksp
             selection: enzymes.clone(),
             options: InspectionOptions::default(),
             cleavage_mode: setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+            conditions: None,
         };
         let query = json!({"lanes":[{"label":"Fresh saved-material prediction",
             "document":{"id":recipe.source.revision,"revision":recipe.source.revision},"workspace":workspace_ref,

@@ -38,7 +38,7 @@ csv = "=1.4.0"
 zip = { version = "=4.6.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [features]
-json-schema = ["dep:schemars", "collagene-model/json-schema", "collagene-recombination/json-schema", "collagene-topo/json-schema", "collagene-structures/json-schema", "collagene-rna-chemistry/json-schema", "collagene-protein-liabilities/json-schema", "collagene-antibody-numbering/json-schema"]
+json-schema = ["dep:schemars", "collagene-model/json-schema", "collagene-recombination/json-schema", "collagene-topo/json-schema", "collagene-structures/json-schema", "collagene-rna-chemistry/json-schema", "collagene-protein-liabilities/json-schema", "collagene-antibody-numbering/json-schema", "collagene-enzyme-catalog/json-schema"]
 
 [dependencies.schemars]
 version = "1.2"

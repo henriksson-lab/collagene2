@@ -411,6 +411,8 @@ All scientific processing and report generation must use embedded libraries or a
 
 Excluded from the product scope: ELN, inventory/freezers, sample management, barcodes, reagent stocks, instrument/automation interfaces, workflow scheduling and organizational reporting. Protocol material lists and reagent quantities remain part of cloning instructions, without stock tracking.
 
+Also excluded, by user decision on 28 November 2026: biosecurity or controlled-sequence screening of designs, including local pre-order screening against hazard sequence lists. Collagene 2 produces no screening verdict and makes no regulatory or export-control claim. Vector-class construct QC (F36) is ordinary research-vector structural checking and is not a screening capability.
+
 Deferred pending a future scope decision:
 
 - Mobile product scope, dedicated interaction/layout work and mobile acceptance testing, until desktop completion followed by user review and edits; select limited mobile workflows afterward.
@@ -547,6 +549,12 @@ P0 is the foundation and first usable cloning release. P1 supplies everyday mole
 | F31 | P2 | Tauri desktop with full offline local plasmid library, embedded compute/MCP, and git-like pull/push to chosen database remotes on Windows/macOS/Linux | Offline startup/design/export; explicit per-remote ancestry and divergence; interrupted-sync recovery; native/WASM parity and all three OS delivery; no external executables |
 | F33 | P2 | Remote/local sequence sources, embedded sequence similarity search and data connectors | Accession/version, source and retrieval time accompany imports; search uses embedded algorithms |
 | F34 | P3 | RNA modifications, antibody/protein analysis and structure visualization | Specialized semantics and imported structure data have explicit provenance; computation uses embedded code |
+| F36 | P2 | Construct QC panel: basic expression-readiness checks (CDS integrity and frame, fusion/tag register, junction-induced frame changes, promoter/terminator presence and orientation, required plasmid parts) plus declared vector-class profiles for rAAV and SIN lentiviral transfer plasmids | Per-check verdicts bind to the exact current document revision, the current annotations and pinned reference elements; missing or unverified annotation yields an explicit indeterminate verdict, never a pass; empirical size ranges carry their source; findings carry selectable coordinates; no expression, packaging or titre claim is produced |
+| F37 | P2 | Declarative assembly-standard grammars (MoClo/YTK/EMMA/PhytoBricks, SEVA, BioBrick RFC 10 and iGEM Type IIS RFC 1000) driving slot typing, legal-successor hints and rejection of ungrammatical assemblies | Each standard is data, not code: slot name, flank overhangs, enzyme, additions and extra forbidden sites, with captured source and revision. Grammar violations are explicit; unverified standard details are refused rather than guessed |
+| F38 | P2 | Mismatch-aware binding sweep of a whole primer/oligo collection against a construct | Every binding site reports position, strand, annealing footprint, mismatch count, bound-stretch and whole-oligo Tm with stated conditions. Scored extension replaces naive 3′-anchored greedy matching; oligos binding nowhere, and off-target sites, remain visible |
+| F39 | P1 | Agent-native verification contract: structured design intent separable from route, deterministic replay to byte-identical products, typed verdicts carrying each rule's citation, and all independent blocking errors reported together | An external agent receives machine-checkable per-check verdicts, not prose; a retained route replays to identical intermediates and product; a failed design identifies which named check fired. Verdicts never originate from a language model |
+| F40 | P3 | mRNA/IVT template validation: cap-initiator compatibility, T7 start context, linearization-site selection and poly(A) encoding | Declared cap chemistry and transcription start are checked as hard template requirements with explicit conflicts surfaced; linearization candidates reuse the restriction catalogue and report cut geometry; poly(A) encodings carry their measured recombination evidence. Yield and immunogenicity are not predicted |
+| F41 | P3 | Editing design beyond cut sites: base-editor windows with bystander enumeration, published pegRNA geometry rules, donor and ssODN geometry, multiplex array repeats | Deterministic window, frame and codon-consequence results are separated from any licensed empirical model; library coverage distinguishes exact finite-library arithmetic from approximations under an explicit sampling model; uncalibrated efficiency models are absent or explicitly labelled and separately licensed |
 | F35 | P1 | Import by Addgene plasmid URL/ID, NCBI nucleotide/GenBank URL or accession.version, and direct sequence-file URLs through source adapters | Imported sequence/topology/features are validated by the same parsers; canonical source, accession/version, retrieval timestamp and evidence hash survive save/export; missing authentication, multiple sequence choices and fetch failures remain explicit |
 
 Accessibility is a cross-cutting requirement: keyboard navigation, readable labels, a DOM representation of selected sequence/features, high contrast, and reduced motion. Browser storage limitations, interrupted tasks and unsaved changes need clear recovery behavior.
@@ -4971,3 +4979,289 @@ for restriction reaction conditions and contig handling before claiming all sour
 work complete. Further scalable genome/index/BAM expansion retains its existing
 low priority; it must not displace cloning functionality. Final user review of the
 current application remains the primary acceptance step.
+
+
+### Antibody GUI and competitor coverage requirements
+
+The user explicitly confirmed that supported Benchling/Geneious antibody features
+belong in scope. Primary-source research inspected six Benchling and eight
+Geneious Biologics screenshots. Preserve their useful interaction patterns:
+compact analysis/display menus, separate residue/source-coordinate and numbering
+tracks, distinct CDR/framework bands, collapsible track settings, region-specific
+inspection, and row-aligned comparison. Do not add a permanent toolbar button for
+every analysis. [Benchling evidence](audits/benchling-antibody-gui-current.md) ·
+[Geneious Biologics evidence](audits/geneious-antibody-gui-current.md).
+
+| Requirement | Current state / concrete remaining work |
+| --- | --- |
+| Numbering and independently selected region definitions | Human-reference IMGT/Kabat/Chothia plus four region definitions including North exist. Add independently sourced Martin/AHo definitions and rules; AHo numbering does not imply AHo CDR boundaries (Geneious displays Kabat CDR definitions). |
+| Species and chain coverage | Current conditional human heavy/kappa/lambda models are insufficient. Add licensed, independently checked mouse/alpaca and the further Benchling-documented rat/rabbit/rhesus/pig references. Human/mouse TCR alpha/beta/delta/gamma require explicit IMGT-only profiles; human antibody references cannot stand in for them. |
+| Domain arrangements and ambiguity | Support explicit heavy/light, scFv/linker and tandem/VHH arrangements with source-coordinate evidence. Keep alternative assignments, missing regions, unsupported scope, incomplete search and genuinely no qualifying candidate distinct. Annotation completeness does not establish an in-frame stop-free construct. |
+| Protein display | Consolidate visibility/settings into the existing coherent menu/inspector system. Separate source coordinates, numbering and CDR/framework tracks; explain hidden labels at low zoom. Add liability marks with same-type highlighting, accessible hit inspection and exact selection. |
+| Alignment display | Extend the focused-row implementation to simultaneous source-bound per-row tracks, independent global/per-row visibility and correct gap/source mappings. This does not resume deferred MSA engine ports. |
+| Comparisons, details and exports | Inspect/select numbered residues and regions; expose reference/allele provenance, alternatives and per-region nucleotide/amino-acid detail when available. Export selected regions/rows, structured tables and displayed tracks with exact scheme/definition/source bindings. Reuse current export owners. |
+| Liability rules | Retain independently sourced configurable motif/positional rules, context and certain/possible distinction. Missing numbered positions differ from substituted residues. Heuristic rankings must disclose their derivation/applicability and never become measured PTM or success probabilities. |
+
+These requirements come from observed UI or documented features, not copied code
+or bundled proprietary screenshots/data. Competitor screenshots do not prove
+scientific accuracy or define our algorithms. Neither competitor research report
+justifies adding ELN, assay management, organizational reports or an external
+scientific executable. Current acceptance remains deferred until source completion.
+
+### F36 construct QC panel — user decision, 28 November 2026
+
+The user accepted a construct QC tool, both for ordinary expression-readiness
+checking ("checking if genes will be expressed and in frame, basic stuff") and for
+vector-class structural requirements, with the explicit instruction that it must
+state it makes no guarantees.
+
+Published evidence motivates this panel: the design review in Bai et al.,
+*Prevalence of errors in lab-made plasmids across the globe* (Nucleic Acids
+Research 2025, doi:10.1093/nar/gkaf697), identified significant design errors in
+384 of 2,521 plasmids. Separate experiments found inconsistent restriction
+patterns in 128 of 852 plasmids and sequence variations in 91 of 259 directly
+sequenced plasmids; these are distinct cohorts. The published categories help
+prioritize candidate checks, but some involve contextual biological effects that
+cannot be decided from sequence alone. They do not establish our detection
+coverage. Each implemented rule needs its own input requirements and fixtures.
+[Primary paper](https://academic.oup.com/nar/article/53/14/gkaf697/8222435).
+
+This is a design linter: a panel of independent checks run against the current
+document, each returning pass, fail or indeterminate with its reason and the
+coordinates it used. It reuses the existing target-verification pattern and the
+existing translation, annotation, ORF, search and junction owners. It introduces
+no predictive model and requires no calibration, because every check is a
+structural statement about sequence and annotation rather than an estimate of
+biological outcome.
+
+The decisive distinction, which must survive into the UI, reports and MCP results:
+the panel verifies **structural prerequisites for expression**. It does not predict
+expression. "In frame, intact, promoter present and correctly oriented" is a fact
+about the construct; "this will express" is not a claim this tool makes, in the same
+way that [codon design](CODON_DESIGN.md) already refuses to infer promoter, RBS,
+processing, expression or host fitness from codon choice.
+
+#### Tier 1 — basic checks, no declared class required
+
+These run on any coding construct and are the everyday value of the tool.
+
+| Check | Verdict basis |
+| --- | --- |
+| CDS integrity | Length divisible by three in the selected genetic code; definite start codon; definite terminal stop; no internal in-frame stop. Context-dependent sense/stop codons remain unresolved rather than silently passing, per the existing genetic-code catalogue policy. |
+| Fusion register | Tags, signal peptides, linkers, protease sites and domains that are annotated inside or adjacent to a CDS are checked for shared reading frame and for an uninterrupted junction. Report the frame offset when it is wrong. |
+| Junction-induced frame change | Every assembly or edit junction retained in the design's history is checked for a frame shift or stop introduced into a downstream annotated CDS. This connects QC to the existing junction review rather than re-deriving it. |
+| Element chain | For each annotated CDS, report whether a promoter is present upstream on the same strand, and a terminator or polyadenylation signal downstream on the same strand, with the observed distances. Presence and orientation only. |
+| Translation-initiation context | Report the presence and sequence of the initiation context immediately upstream of the start codon against a declared, pinned published reference pattern per host context. Report the observed context; do not score initiation strength. |
+| Required plasmid parts | Origin of replication and selection marker present, single-copy where expected, and intact against pinned reference elements. |
+| Unintended coding content | Report in-frame ORFs above a declared length that are not annotated, and annotated CDS features whose translation disagrees with a stored product qualifier. Report as findings, not as errors. |
+
+Explicitly not Tier 1, and not admitted without the calibration this plan does not
+have: ribosome-binding-site or promoter strength scores, mRNA folding energies,
+expression-level predictions, codon-based expression forecasts, and splice-site or
+regulatory-element predictions. These would be new predictive models. Any later
+proposal must arrive with its published method, parameter-table license and
+validation evidence, as required of [CRISPR scoring data](audits/crispr-extensions-current.md).
+
+#### Tier 2 — declared vector-class profiles
+
+The user declares the vector class; the tool never infers it. A profile declares
+required and forbidden elements with their multiplicity, relative order, strand
+orientation and spacing, plus size budgets measured between declared boundaries.
+rAAV and self-inactivating lentiviral transfer plasmids are the first two profiles;
+the profile representation must admit further classes without new code paths.
+
+| Requirement | Concrete scope |
+| --- | --- |
+| Boundaries and budgets | Payload size is measured between the declared packaging boundaries (ITR-to-ITR, LTR-to-LTR), never from total plasmid length. |
+| Element arity and geometry | Paired inverted ITRs flanking a payload, and the ordered lentiviral element series, are assertions about the annotation graph, checked as multiplicity, order, orientation and spacing. |
+| Reference element integrity | Declared elements are compared against pinned reference sequences carrying captured source, revision and license provenance, in the manner of the [published ligation profiles](PUBLISHED_LIGATION_PROFILES.md). Unpinned reference data does not admit a check. |
+| Empirical size ranges | Packaging ceilings and titre falloff are reported as published ranges carrying their source, never as thresholds with a pass/fail boundary of our own invention. |
+| Orientation rules on transcribed genomes | Payload introns and sense-orientation polyadenylation signals in retroviral transfer vectors are reported as published design practice with citations, not as calibrated predictions. |
+| Repeat instability | Long direct or inverted repeats in the design, including LTR pairs and ITRs, are reported as propagation-instability warnings with their observed length, identity and separation. |
+
+#### Verdict semantics and required statement
+
+Missing, ambiguous or unverified annotation yields an explicit indeterminate
+verdict. An unannotated element is not an absent element, and indeterminate is
+never reported as a pass. Checks bind to the exact current document revision and
+are invalidated by edits like every other verification result. Each finding carries
+its coordinates so it can be selected in the editor.
+
+Every presentation of the panel — web, HTML/PDF protocol and MCP result — carries:
+
+> Construct QC checks declared structural requirements against the current sequence
+> and annotations. Passing checks do not establish that a construct will express,
+> package, produce titre or behave as intended; failing or indeterminate checks do
+> not establish that it will not.
+
+Out of scope for F36, and not a product capability: restoring or assessing
+replication competence, packaging or helper-system design for pathogenic viruses,
+tropism or host-range modification, and the excluded biosecurity screening above.
+F36 covers ordinary construct and research-vector checking only.
+
+
+### Current F21 reaction-condition integration batch
+
+The exact-formulation owner, worker request/reply, MCP tool, collapsible digest
+controls and named setup retention are implemented as one source batch. Explicitly
+unselected formulations remain Unknown. Per-formulation evidence distinguishes
+recorded activity, below-threshold observations, unknown/conflicting data, required
+contexts and temperature mismatch. Suggestions use only common recorded conditions.
+Saved conditions and their report are paired; source-event/epoch/origin and draft
+changes invalidate current UI evidence. Detached sequence exports retain bounded
+unverified setup comments without changing ideal cleavage reconstruction.
+
+Catalogue schema 2 directly removes JSON-only enum tagging that prevented
+Postcard response decoding; the current 40 geometries/4 formulations/32 observations
+are preserved and resealed. Worker 129, named digest setup 3 and material digest
+export engine 2 reject superseded internal encodings. Combined native/WASM checks
+pass, with 103 unique focused transport/native/MCP/UI cases. No local application
+browser or HTTP checks have run. This is not completion of all F21 data coverage: broader
+formulations, explicit supported host presets, condition-specific star evidence
+and carrying choices into full cloning protocol steps remain concrete follow-up.
+[Primary source/preset research](audits/restriction-source-presets-current.md).
+
+### Beyond-competition feature queue — 28 November 2026
+
+Six parallel primary-source research agents surveyed practitioner complaints,
+methods literature, community standards and competitions, incumbent product gaps,
+long-read clone verification, and modern modalities with agent-native design. The
+findings, citations, licence flags and research limits are recorded in
+[beyond-competition research](research/BEYOND_COMPETITION.md). That document is
+research, not an implementation claim; a cited method is not evidence that our
+implementation of it is correct.
+
+The governing result: **the strongest opportunities are deterministic checks, not
+predictions.** Published, enumerated, calibration-free checks are simultaneously
+the largest documented user need and the safest capability for this project. Most
+predictive models arrive with weak calibration, restrictive data licences, or both.
+
+Ranked queue. These extend the existing scope and displace nothing in the current
+delivery queue.
+
+| Rank | Work | Basis and reuse |
+| --- | --- | --- |
+| 1 | Complete [F36 construct QC](#f36-construct-qc-panel--user-decision-28-november-2026), extending its Tier 1 checks with the published error taxonomy | Bai et al. NAR 2025 identifies design errors in 384/2,521 plasmids. Its categories motivate individual checks but are not all sequence-decidable. Reuses translation, annotation, ORF and junction owners |
+| 2 | F39 agent-native verification contract | BenchBench-Cloning (Benchling/DNAForge, Oct 2026) scores cloning agents by deterministic simulator checks; the best model reached 30.6% single-attempt. Its enumerated failure modes are exactly what our verifier already computes. Benchling's MCP is registry data access, not design; SnapGene has no public API |
+| 3 | Extend F28/F17 with design-versus-consensus verification for long-read whole-plasmid data | The reviewed provider documents leave design comparison to an alignment workflow; absence of documentation does not prove no vendor supports it. Reuses pairwise alignment, translation, features and verification reporting |
+| 4 | F38 primer-collection binding sweep | Three independent practitioner requests. Reuses exact search and primer handling |
+| 5 | Extend F20 into a screening-strategy designer against named decoy outcomes (empty vector, wrong orientation, tandem multi-insert, parent carryover) | Reuses virtual digests, gel prediction and primer handling as a scoring layer; best effort-to-value ratio found |
+| 6 | F37 assembly-standard grammars | Overhang tables exist as MIT-licensed data; the relevant toolkit papers are paywalled, so source tables from the code repositories. iGEM enforces RFC 10 / RFC 1000 compatibility at judging, after submission |
+| 7 | Extend SBOL support with CombinatorialDerivation/VariableFeature, Implementation and PROV-O | Exports one derivation instead of N enumerated plasmids, directly answering a documented practitioner need and matching our combinatorial model |
+| 8 | Extend F19 with non-destructive merge annotation and per-feature provenance | Five echoes; auto-annotation that erases existing features is a documented complaint |
+| 9 | F40 mRNA/IVT template validation | Hard vendor and published rules, including a genuine cap-initiator versus T7-start-context conflict worth surfacing. The linearization picker reuses the restriction catalogue almost for free |
+| 10 | F41 editing design beyond cut sites | Deterministic windows, frames and codon consequences only; Rule Set 3 (Apache-2.0) and PRIDICT2 (MIT) are the sole adequately licensed empirical models found |
+| 11 | Protein-design handoff: register-safe fusion compilation, host-specific construct variants, structural annotations carried onto DNA coordinates | The clearest unmet need found. A leading design lab reports that fragments are "typically manually assembled into plasmids" and that ~80% of its automated pipeline cost is synthetic DNA; protein-design services still accept amino-acid CSV only. UniProt (CC BY 4.0) supplies signal peptides, domains and disulfides; SignalP cannot be bundled. Structure-derived boundaries stay uncalibrated hypotheses |
+| 12 | Extend combinatorial libraries with degenerate-codon scheme selection, genetic barcode sets (pending scope clarification) carrying edit-distance guarantees, and defined-model coverage arithmetic | Self-contained with no licensing friction; the published dynamic program is specified in its paper, so it is reimplemented from the text rather than vendored. Measured promoter-strength conventions ship with provenance, since independent remeasurements disagree |
+| 13 | Control-construct proposal for a stated design intent, deterministic and on request only | Narrow by evidence, not caution: benchmarked models over-built factorial panels beyond what was asked while omitting required controls. Propose the controls an intent implies; enumerate a factorial panel only when explicitly requested. Not a general design-of-experiments recommender |
+
+Conditional and explicitly not admitted yet. Each would be a new predictive model
+and must arrive with its published method, parameter-table licence and validation
+evidence, as already required of empirical CRISPR scoring data. Do not implement
+them as scores on the strength of this research alone: RBS or promoter strength,
+terminator strength, mRNA folding energies, expression-level or assembly-success
+probabilities, internal Shine-Dalgarno pausing, codon-based expression forecasts,
+splice-site prediction, slippery-site frameshift risk (no supporting validation was
+found), and protein-liability motifs without burial context. There is **no public
+labelled dataset** of Gibson/HiFi or Golden Gate reaction success keyed to junction
+sequence, so any assembly-success probability beyond the existing bundled
+ligation-fidelity data would be uncalibrated and must remain a feature report.
+
+Licence conditions to resolve before the work they gate: Turner-2004 parameter
+redistribution for any folding engine (ViennaRNA permits commercial use but bars
+redistribution for a fee, so a clean-room implementation is the route); SBOL Visual
+glyph licensing, currently unresolved and blocking glyph rendering; the iGEM
+Registry's own data licence; and REBASE motif-table redistribution. Do not mirror
+the Addgene catalogue: API access requires an accepted per-scope data licence and
+its terms restrict content to informational, non-commercial use. Do not vendor
+AGPL, GPL or unlicensed reference implementations; reimplement published arithmetic.
+
+The retained Pryor 2020 ligation matrices already cover Golden Gate fidelity data,
+so the remaining opportunity there is the **optimizer** — repositioning junctions to
+maximise predicted set fidelity and distributing a fidelity budget across
+hierarchical levels — not further data capture. Its authors call their predictions
+qualitative, and our presentation must keep that wording.
+
+Existing exclusions and deferrals are unchanged by this research. Biosecurity
+screening remains excluded per the scope constraints above. ELN, inventory,
+instrument and scheduling capabilities remain excluded even where research
+surfaced demand for them. Primer3 ports and multiple-alignment engine ports remain
+deferred: the verification work ranked above needs neither, and BAM/BAI expansion
+retains its existing low priority. Research reachability limits, unverified standard
+details and competitor evidence grades are recorded in the research document and
+must not be treated as established fact.
+
+
+### Temporary-disk policy — 28 November 2026
+
+At the user's request, disk cleanup takes priority over feature work. The two
+current compiler invocations were stopped before relocating the existing 28 GiB
+shared target directory from `/tmp/collagene2-lean-target` to
+`/big/temp/collagene2-lean-target`. Future builds must reuse the relocated cache
+and `TMPDIR=/big/temp/collagene2-tmp`; no second cache or old-path symlink is needed.
+Three obsolete extracted CI frontend copies were deleted (424,268,431 logical
+bytes). Running preview directories, runtime databases, current evidence and
+registered worktrees (including uncommitted Tauri source) remain untouched.
+
+The F21 source batch remains unfinished verification work: earlier focused runs
+executed 97 distinct cases, with one stale serialization assertion identified and
+updated. The full check hit disk exhaustion; recovery checks were then stopped
+for this cleanup. Do not claim native/WASM completion until the remaining checks
+finish from the relocated cache. The published host checkpoint's cross-platform
+scientific cases passed, but its MCP smoke caller still supplied the superseded
+codon field; that script now uses current explicit preferences. The current
+catalogue smoke assertion also uses schema-2 evidence. Full smoke execution
+remains deferred with application HTTP acceptance; current in-memory SDK cases
+provide the focused scientific interface evidence.
+
+
+Cleanup completed: the cache move finished successfully, the old `/tmp` cache
+path is absent (no compatibility symlink), and `/tmp` now has approximately
+29 GiB free. Local build/temp policy is recorded in `AGENTS.md`. Compiler checks
+remain stopped; no application or preview services were restarted.
+
+
+### Implementation partition of the expanded feature queue
+
+The added features remain on the current plan. Preserve existing scope exclusions
+and distinguish independently sourced rules from empirical models. The reviewed
+implementation split is:
+
+| Feature | Owner / parallel boundary | Current action and integration rule |
+| --- | --- | --- |
+| F37 assembly-standard grammars | New independent `collagene-assembly-standards` crate | Parallel source authoring: data profiles, syntax/slot/cardinality/successor checks, exact enzyme geometry and source/licence pins. First admitted profile is explicitly RFC10 part-sequence format only; no invented functional order or whole-standard compliance. Core later adapts existing assembly/material workflows. |
+| F38 collection binding sweep | New independent `collagene-oligo-binding` crate | Parallel source authoring: bounded scored ungapped extension, original coordinates, both strands/circular sources, all supported ties or conservative IUPAC envelope and per-oligo completion. Core applies existing thermodynamics to supported facts; mismatch Tm remains unavailable until a separately sourced applicable model exists. No PCR success claim. |
+| F36 construct QC | New core-owned `construct_qc` module | Parallel source authoring: reuse canonical translation, annotation, ORF and junction owners. A standalone crate depending on core would introduce a dependency cycle or duplicate these engines. Typed per-rule verdicts, source/annotation/reference bindings and missing/unverified-evidence indeterminacy are required. No biological overall-pass claim. |
+| F39 agent verification contract | Existing typed plan, verifier and MCP owners | Extend directly; do not create a second plan/verifier representation or a prose-to-error-code adapter. Current reconstruction stops at the first failing operation, and findings remain strings: typed cited checks and independent-error accumulation are genuine gaps. Dependent steps must report why they are blocked. |
+| F28/F17 design versus consensus | Existing sequence import, pairwise alignment and verification owners | Compare supplied consensus against separately bound design, with retained differences. Do not add raw read pipelines, BAM/BAI, new MSA ports or new caches under this item. |
+| F20 screening strategy | Existing outcome enumeration, digest/PCR/gel owners | Evaluate explicitly named intended and decoy products. Distinguish models that discriminate from ambiguous/unsearched outcomes; no success probabilities. |
+| SBOL combinatorial/provenance and annotation merging | Existing external-format and annotation owners | Extend current representations and declared-loss review rather than build alternate internal histories. Preserve original annotations and per-feature provenance. Glyph assets remain separately licence-gated. |
+| F40 IVT / F41 editor geometry / fusion/library/control proposals | Existing RNA, CRISPR, translation, planning and exact-unit owners; new crates only for cohesive independent algorithms | Admit specific rules and parameter/data licences before implementation. Do not bundle external scientific executables or treat published ranges/heuristic ranks as calibrated probabilities. Genetic barcode design remains pending scope clarification. |
+
+All three parallel workers author source/tests without running compilers. Workspace,
+transport, UI, MCP and fixtures are integrated in one subsequent batch; no duplicate
+implementations, temporary forwarding facades or per-worker build caches are added.
+The pending F21 native/WASM checks have resumed from `/big/temp` independently of
+these unregistered modules/crates.
+
+Research corrections: the BenchBench primary paper includes LLM rubric judging on
+ten construct-design tasks; it is not wholly deterministic. Its aggregate result
+cannot validate our algorithms. All Collagene scientific verdicts remain native
+algorithmic results. Software licences do not automatically cover model weights or
+all underlying data. Statements that no vendor offers a feature remain bounded
+search findings. [Reviewed evidence and qualifications](research/BEYOND_COMPETITION.md#implementation-review--28-november-2026).
+
+
+Coverage arithmetic correction: `T = -S*ln(1-p)` is an approximation under uniform
+independent sampling with replacement, not an exact finite-library expression.
+Expected fraction observed after T draws is `1 - (1 - 1/S)^T`; all-members-observed
+probability is a different quantity. Any library calculator must state which one
+it reports and refuse unsupported/nonuniform assumptions rather than relabel the
+approximation as exact coverage.
+
+
+The resumed F21 verification batch is now complete: native and web/worker WASM
+checks pass, as do all103 focused cases, with current catalogue/worker/setup/export
+versions bound in the [integration evidence](audits/restriction-conditions-current-integration.json).
+This proof excludes the separate unregistered mouse/CRISPR/QC foundations and
+assembly-standard/oligo-binding crates being prepared for the next source batch.

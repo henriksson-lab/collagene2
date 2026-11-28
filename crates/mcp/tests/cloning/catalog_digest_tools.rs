@@ -72,6 +72,130 @@ async fn import(c: &Client, name: &str, dna: &str) -> Value {
     .await;
     json!({"id":r["documents"][0]["id"],"revision":r["documents"][0]["revision"]})
 }
+
+#[tokio::test]
+async fn reaction_conditions_preserve_formulation_differences_unknowns_and_exact_bindings() {
+    use collagene_core::cloning::restriction::conditions::{ConditionsReport, ReactionConditions};
+    let (client, service) = setup().await;
+    let source = import(&client, "unchanged source", "AAGAATTCTT").await;
+    let before = call(&client, "list_documents", json!({})).await;
+    let catalog = builtin_catalog().unwrap();
+    let selection = select(&catalog, &["ecori".into()]).unwrap();
+    let options = json!({
+        "schema_version":1,
+        "formulations":[{"enzyme_id":"ecori","formulation_id":"neb-r0101"}],
+        "buffer":"rCutSmart","temperature_milli_c":37000,
+        "incubation_minutes":60,"minimum_activity_percent":75,
+        "activity_context":"NEB unit-assay relative activity",
+        "temperature_context":"vendor recommended incubation"
+    });
+    let arguments = json!({"selection":selection,"options":options});
+    let ordinary = call(&client, "assess_restriction_conditions", arguments.clone()).await;
+    assert_eq!(ordinary["sequence_assessed"], false);
+    assert_eq!(ordinary["experimental_success_established"], false);
+    let full = artifact(&client, &ordinary["artifact_id"]).await;
+    assert_eq!(full["documentary_status"], "BelowThreshold");
+    let report: ConditionsReport = serde_json::from_value(full.clone()).unwrap();
+    let declared: ReactionConditions = serde_json::from_value(options.clone()).unwrap();
+    report
+        .validate_for(&catalog, &selection, &declared)
+        .unwrap();
+    report
+        .validate_binding(ordinary["revision"].as_str().unwrap())
+        .unwrap();
+    assert!(
+        full["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| { s["url"].as_str().unwrap().starts_with("https://") })
+    );
+    assert!(full.to_string().contains("star activity"));
+    let repeated = call(&client, "assess_restriction_conditions", arguments.clone()).await;
+    assert_eq!(repeated["artifact_id"], ordinary["artifact_id"]);
+
+    let mut high_fidelity = arguments.clone();
+    high_fidelity["options"]["formulations"][0]["formulation_id"] = json!("neb-r3101");
+    let hf = call(
+        &client,
+        "assess_restriction_conditions",
+        high_fidelity.clone(),
+    )
+    .await;
+    let hf_full = artifact(&client, &hf["artifact_id"]).await;
+    assert_eq!(hf_full["documentary_status"], "Known");
+    assert_ne!(hf["revision"], ordinary["revision"]);
+    let hf_options: ReactionConditions =
+        serde_json::from_value(high_fidelity["options"].clone()).unwrap();
+    assert!(
+        report
+            .validate_for(&catalog, &selection, &hf_options)
+            .is_err()
+    );
+    assert!(
+        report
+            .validate_binding(hf["revision"].as_str().unwrap())
+            .is_err()
+    );
+
+    let mixed_selection = select(&catalog, &["ecori".into(), "bamhi".into()]).unwrap();
+    let mut missing = high_fidelity.clone();
+    missing["selection"] = json!(mixed_selection);
+    missing["options"]["formulations"] = json!([
+        {"enzyme_id":"ecori","formulation_id":"neb-r3101"},
+        {"enzyme_id":"bamhi","formulation_id":null}
+    ]);
+    let mixed = call(&client, "assess_restriction_conditions", missing.clone()).await;
+    let mixed_full = artifact(&client, &mixed["artifact_id"]).await;
+    assert_eq!(mixed_full["documentary_status"], "Unknown");
+    assert_eq!(mixed_full["formulations"][1]["formulation"], Value::Null);
+    assert!(
+        report
+            .validate_for(&catalog, &mixed_selection, &declared)
+            .is_err()
+    );
+
+    let mut context = arguments.clone();
+    context["options"]["activity_context"] = json!("unrepresented assay");
+    let changed_context = call(&client, "assess_restriction_conditions", context.clone()).await;
+    assert_ne!(changed_context["revision"], ordinary["revision"]);
+    let context_options: ReactionConditions =
+        serde_json::from_value(context["options"].clone()).unwrap();
+    assert!(
+        report
+            .validate_for(&catalog, &selection, &context_options)
+            .is_err()
+    );
+
+    let mut stale = arguments.clone();
+    stale["selection"]["catalog_content_hash"] = json!("0".repeat(64));
+    reject(&client, "assess_restriction_conditions", stale).await;
+    let mut forged_geometry = arguments.clone();
+    forged_geometry["selection"]["enzymes"][0]["enzyme"]["top_cut"] = json!(2);
+    reject(&client, "assess_restriction_conditions", forged_geometry).await;
+    let mut wrong_enzyme = arguments.clone();
+    wrong_enzyme["options"]["formulations"][0]["formulation_id"] = json!("neb-r0141");
+    reject(&client, "assess_restriction_conditions", wrong_enzyme).await;
+    let mut unsupported = arguments.clone();
+    unsupported["options"]["schema_version"] = json!(2);
+    reject(&client, "assess_restriction_conditions", unsupported).await;
+    let mut invented_field = arguments;
+    invented_field["document"] = source;
+    reject(&client, "assess_restriction_conditions", invented_field).await;
+
+    let mut forged_report = full;
+    forged_report["sources"][0]["url"] = json!("https://example.invalid/unreviewed");
+    let forged: ConditionsReport = serde_json::from_value(forged_report).unwrap();
+    assert!(
+        forged
+            .validate_for(&catalog, &selection, &declared)
+            .is_err()
+    );
+    assert_eq!(call(&client, "list_documents", json!({})).await, before);
+    client.cancel().await.unwrap();
+    service.await.unwrap();
+}
+
 #[tokio::test]
 async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citations_are_preserved() {
     let (c, s) = setup().await;
@@ -113,7 +237,7 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
     );
     let resources = c.list_all_resources().await.unwrap();
     let uri = first["catalog_resource_uri"].as_str().unwrap();
-    assert!(uri.contains("/v1/"));
+    assert!(uri.contains("/v2/"));
     assert!(uri.ends_with(first["catalog_content_hash"].as_str().unwrap()));
     assert!(resources.iter().any(|r| r.uri == uri));
     let resource = c
@@ -133,7 +257,7 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
     );
     assert!(
         c.read_resource(ReadResourceRequestParams::new(
-            "collagene://enzyme-catalog/v1/latest"
+            "collagene://enzyme-catalog/v2/latest"
         ))
         .await
         .is_err()
@@ -152,7 +276,7 @@ async fn catalog_discovery_is_versioned_and_assay_qualifiers_unknown_and_citatio
     assert_eq!(known["resolution"]["status"], "Known");
     assert_eq!(
         known["resolution"]["value"],
-        json!({"kind":"less_than_percent","value":10})
+        json!({"less_than_percent":10})
     );
     let evidence = &known["resolution"]["evidence"][0];
     assert_eq!(evidence["context"], "NEB unit-assay relative activity");

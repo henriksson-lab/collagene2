@@ -1,0 +1,30 @@
+{
+  "date": "2026-11-28",
+  "source_commit": "9d3c76ea9e8956cf478cd9bec6d30d5f6bd574ec",
+  "scientific_workflow_run": 46139788255,
+  "scientific_conclusion": "success",
+  "jobs": [
+    {
+      "id": 140962947414,
+      "platform": "ubuntu-latest",
+      "conclusion": "success"
+    },
+    {
+      "id": 140962947527,
+      "platform": "windows-latest",
+      "conclusion": "success"
+    },
+    {
+      "id": 140962947674,
+      "platform": "macos-latest",
+      "conclusion": "success"
+    },
+    {
+      "id": 140962947561,
+      "platform": "web",
+      "conclusion": "success"
+    }
+  ],
+  "scope": "Exact published image/resource-error source plus verbatim captured fixture checkout correction. Strict scientific assertions unchanged. Later host and reaction-condition integrations are separate source batches.",
+  "desktop_evidence": "desktop-packages-current.json"
+}

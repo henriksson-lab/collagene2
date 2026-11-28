@@ -26,3 +26,4 @@
 - Parallel workers contribute to the same integration batch; their individual patches do not each trigger a build. Keep Cargo package/feature selections consistent so rechecks reuse the existing cache.
 - Do not run browser, CDP, screenshot, or application HTTP checks until in-scope code is complete, as requested by the user.
 - Run necessary compiler checks in the background while continuing implementation. Use the existing shared Cargo cache; do not introduce additional caches or automatic release-build verification.
+- On this workstation, keep build and large temporary data off `/tmp`. The existing shared Cargo cache is `/big/temp/collagene2-lean-target`; set `CARGO_TARGET_DIR` to that path and `TMPDIR=/big/temp/collagene2-tmp` for future builds. Reuse this relocated cache rather than creating another one. Preserve running preview assets and application databases during cleanup.

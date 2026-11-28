@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 128;
+pub const WORKER_SCHEMA_VERSION: u16 = 129;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -988,6 +988,10 @@ pub enum AnalysisJob {
     ReopenImageEvidence {
         prepared: crate::documents::image_evidence::Prepared,
     },
+    AssessRestrictionConditions {
+        selection: crate::cloning::restriction::catalog::CatalogSelection,
+        options: crate::cloning::restriction::conditions::ReactionConditions,
+    },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AnalysisResult {
@@ -1192,6 +1196,7 @@ pub enum AnalysisResult {
     GelImageExported(crate::output::gel_export::Rendered),
     ImageEvidencePrepared(crate::documents::image_evidence::Prepared),
     ImageEvidencePreview(crate::documents::image_evidence::Preview),
+    RestrictionConditions(crate::cloning::restriction::conditions::ConditionsReport),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

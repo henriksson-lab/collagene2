@@ -125,7 +125,7 @@ def main():
         resource=send("resources/read",{"uri":catalog["catalog_resource_uri"]})
         assert json.loads(resource["contents"][0]["text"])["identity"]["catalog_content_hash"]==catalog["catalog_content_hash"]
         fact=tool("resolve_enzyme_evidence",{"formulation":"neb-r3101","condition":{"kind":"buffer_activity","buffer":"NEBuffer r3.1","temperature_milli_c":37000}})
-        assert fact["resolution"]["status"]=="Known" and fact["resolution"]["value"]=={"kind":"less_than_percent","value":10} and fact["resolution"]["evidence"][0]["qualifiers"]
+        assert fact["resolution"]["status"]=="Known" and fact["resolution"]["value"]=={"less_than_percent":10} and fact["resolution"]["evidence"][0]["qualifiers"]
         missing_fact=tool("resolve_enzyme_evidence",{"formulation":"neb-r3101","condition":{"kind":"buffer_activity","buffer":"not-curated","temperature_milli_c":37000}})
         assert missing_fact["resolution"]["status"]=="Unknown" and "value" not in missing_fact["resolution"]
         dilution_args={"stock":{"kind":"molar","value":"10","unit":"uM"},"target":{"kind":"molar","value":"100","unit":"nM"},"final_volume":{"value":"20","unit":"uL"}}
@@ -213,7 +213,7 @@ def main():
         assert properties["mass"]["average_da"]["minimum"]>0 and properties["artifact_id"]
         codon_source=tool("import_document",{"text":">required_codon_protein [molecule=protein]\nMK*\n"})["documents"][0]
         codon_source_ref={"id":codon_source["id"],"revision":codon_source["revision"]}
-        codon_options={"genetic_code":1,"codon_weights":[{"codon":"AAG","weight":100}],"forbidden_motifs":[],"left_context":"","right_context":"","gc":{"minimum_bp":0,"maximum_bp":10000},"max_homopolymer":12,"window_gc":None,"beam_width":128,"max_work":2000000}
+        codon_options={"genetic_code":1,"preferences":{"Explicit":{"weights":[{"codon":"AAG","weight":100}]}},"forbidden_motifs":[],"left_context":"","right_context":"","gc":{"minimum_bp":0,"maximum_bp":10000},"max_homopolymer":12,"window_gc":None,"beam_width":128,"max_work":2000000}
         codon_design=tool("design_codons",{"document":codon_source_ref,"options":codon_options})
         assert codon_design["source_revision"]==codon_source_ref["revision"] and codon_design["candidate_sequence_preview"]=="ATGAAGTAA",codon_design
         codon_candidate={"id":codon_design["candidate"]["id"],"revision":codon_design["candidate"]["revision"]}

@@ -13,13 +13,13 @@ scientific operations use Rust libraries, without external scientific programs.
 
 | Item | Current version |
 | --- | --- |
-| Worker protocol | 128 |
+| Worker protocol | 129 |
 | Candidate / workspace plan | 31 / 29 |
 | Assembly draft / batch / release | 20 / 3 / 2 |
 | Scientific / search engine | science-35 / sequence-search-2 |
 | Documentary image engine | documentary-image-1 |
 | Desktop sync | 5 |
-| Native MCP tools | 214 |
+| Native MCP tools | 215 |
 
 Cloning methods, supported external format profiles and platforms are summarized
 in the [README](../README.md). Current workflows include target verification,
@@ -45,6 +45,14 @@ The user confirmed antibody capabilities remain in scope where supported by
 Benchling and Geneious. Parallel primary-source GUI/workflow research is mapping
 concrete gaps beyond the existing conditional human-reference tracks.
 
+The restriction-condition batch adds explicit formulations, contextual unit-assay
+assessment/common-condition suggestions, guarded digest controls and paired
+historical setup evidence. Catalogue schema 2 fixes typed Postcard admission;
+named digest setups use version 3. Native/WASM checks and **103 focused cases
+pass**. This does not establish cleavage, kinetics, star risk or experimental
+success. Broader condition coverage and full cloning-step protocol integration
+remain. [Integration evidence](audits/restriction-conditions-current-integration.json).
+
 ## Verification and CI
 
 Native and web/worker WASM checks pass. The connected batch executes **302 unique
@@ -68,12 +76,13 @@ smoke checks. These are unsigned development artifacts, not installation or GUI
 acceptance. [Package evidence](audits/desktop-packages-current.json) ·
 [Package instructions](DESKTOP_PACKAGING.md).
 
-Scientific CI at that checkpoint found four resource-error classification
-regressions: oversized models were rejected early as `Format` instead of
-`TooLarge`. Typed scope outcomes now preserve resource status, malformed input
-remains `Format`, and the unchanged strict cases pass in the current batch.
-Exact-source scientific/frontend/package CI follows publication. The final
-File-picker ordering adjustment is explicitly recorded in the current evidence.
+The resource-error and captured-byte fixes pass scientific CI on all three native
+platforms plus web at `9d3c76e`; desktop packages also succeed there. At the host
+checkpoint `476127e`, scientific cases and web/package jobs pass, while the final
+MCP smoke step still used the removed codon field. Its caller now uses current
+Explicit preferences, and its catalogue assertion uses schema-2 evidence. Full
+local application/HTTP smoke remains deferred; exact-source CI follows publication.
+[Cross-platform evidence](audits/cross-platform-fixture-fix-current.json).
 
 No browser, CDP, screenshot, application HTTP or live-provider acceptance was run
 in these batches. Such checks remain deferred until in-scope code is complete.
@@ -90,8 +99,14 @@ filesystem API. Do not infer current product acceptance from this older preview.
   supported nuclease/scoring profiles recorded in the delivery queue.
 - Extend antibody analysis from the Benchling/Geneious GUI and feature comparison,
   including independently supported scheme/species/chain coverage and calibration.
-- Reconcile older restriction-condition and contig requirements against current
-  cloning source. The short queue previously omitted these plan qualifications.
+- Complete restriction condition data/presets and cloning protocol-step retention;
+  current documentary digest controls and setup retention are implemented.
+- Implement the reviewed F36–F41 additions and queue extensions. Parallel source
+  work has begun on assembly-standard and oligo-binding crates and core construct
+  QC; these are not included in the current integration proof. Barcode scope is
+  awaiting clarification. [Current partition](PROJECT_PLAN.md#implementation-partition-of-the-expanded-feature-queue).
+- Retain the documented advanced contig-layout and real corpus gaps alongside
+  current implemented read assembly; do not reopen deferred BAM/BAI work.
 - Finish connected ownership follow-up with the next relevant feature changes,
   then current-source graphical/performance/platform review. The published image
   layout inventory covers 1,273 Rust files in 223 directories, at most 17 direct

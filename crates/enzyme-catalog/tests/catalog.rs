@@ -308,9 +308,11 @@ fn immutable_checksums_canonical_order_and_tampering() {
 }
 #[test]
 fn bounded_strict_json_and_future_schema() {
-    let mut e = proposal();
-    e.schema_version = 2;
-    assert!(seal(e).is_err());
+    for version in [1, 3] {
+        let mut e = proposal();
+        e.schema_version = version;
+        assert!(seal(e).is_err());
+    }
     assert!(Catalog::from_json(&vec![b' '; MAX_JSON_BYTES + 1]).is_err());
     let mut json = serde_json::to_value(proposal()).unwrap();
     json["unexpected"] = true.into();

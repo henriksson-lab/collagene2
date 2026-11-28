@@ -7,6 +7,7 @@ use collagene_core::{
     chemistry::{End, Polarity},
     cloning::restriction::{
         catalog::{self as catalog_digest, CatalogSelection, catalog},
+        conditions::ReactionConditions,
         history as restriction_history,
         inspection::{
             self as restriction_inspection, InspectionLimit, InspectionOptions, InspectionSite,
@@ -69,6 +70,7 @@ struct Inputs {
     names: Vec<String>,
     limits: Limits,
     selection: CatalogSelection,
+    conditions: Option<ReactionConditions>,
 }
 #[derive(Clone)]
 struct Bound {
@@ -89,6 +91,7 @@ impl Bound {
             ),
             selection: self.inputs.selection.clone(),
             options: self.inputs.limits.options(),
+            conditions: self.inputs.conditions.clone(),
             cleavage_mode: collagene_core::cloning::restriction::setups::CleavageMode::AssumedCompleteMethylationUnassessed,
         }
     }
@@ -232,7 +235,10 @@ pub fn DigestPanel(
     let max_sites = RwSignal::new("10000".to_string());
     let max_fragments = RwSignal::new("10000".to_string());
     let report_bytes = RwSignal::new("4194304".to_string());
-    let inputs = Memo::new(move |_| -> Result<Inputs, String> {
+    let conditions = RwSignal::new(None::<ReactionConditions>);
+    let conditions_error = RwSignal::new(None::<String>);
+    let conditions_loaded = RwSignal::new(0u64);
+    let condition_selection = Memo::new(move |_| -> Result<CatalogSelection, String> {
         let catalog = catalog.get_value()?;
         let names = names.get();
         let ids = enzyme_choices.with_value(|choices| {
@@ -256,9 +262,23 @@ pub fn DigestPanel(
         } else {
             catalog_digest::select(&catalog, &ids).map_err(|e| e.to_string())?
         };
+        Ok(selection)
+    });
+    let inputs = Memo::new(move |_| -> Result<Inputs, String> {
+        if let Some(error) = conditions_error.get() {
+            return Err(error);
+        }
+        let selection = condition_selection.get()?;
+        let configured_conditions = conditions.get();
+        if let Some(options) = &configured_conditions {
+            options
+                .validate_for(catalog.get_value()?.as_ref(), &selection)
+                .map_err(|e| e.to_string())?;
+        }
         Ok(Inputs {
-            names,
+            names: names.get(),
             selection,
+            conditions: configured_conditions,
             limits: Limits {
                 comparisons: number(&comparisons.get(), "comparison limit")?,
                 sites: number(&max_sites.get(), "site limit")?,
@@ -464,6 +484,7 @@ pub fn DigestPanel(
                         |pin| collagene_core::material::derivation::SourceOrigin::Saved(pin.as_ref().clone()),
                     ),
                     selection: selection.clone(), options: options.clone(),
+                    conditions: inputs.conditions.clone(),
                     cleavage_mode: collagene_core::cloning::restriction::setups::CleavageMode::AssumedCompleteMethylationUnassessed,
                 };
                 let revision = recipe
@@ -1039,6 +1060,9 @@ pub fn DigestPanel(
                         .collect(),
                 );
                 pinned_selection.set(Some(record.recipe.selection.clone()));
+                conditions.set(record.recipe.conditions.clone());
+                conditions_error.set(None);
+                conditions_loaded.update(|generation| *generation = generation.wrapping_add(1));
                 comparisons.set(options.max_comparisons.to_string());
                 max_sites.set(options.max_sites.to_string());
                 max_fragments.set(options.max_fragments.to_string());
@@ -1104,7 +1128,7 @@ pub fn DigestPanel(
         }
         let recipe = data.recipe();
         let artifact = Evidence {
-            kind: "virtual-digest-review-v3",
+            kind: "virtual-digest-review-v4",
             authority: "Historical source-bound prediction; not measured cleavage or reusable verification authority",
             source: &data.source,
             recipe: &recipe,
@@ -1129,9 +1153,9 @@ pub fn DigestPanel(
         }
     };
     view! {
-            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::history::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|*p.event()!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: opening, assembly handoff, named digest setups and predicted gels retain the exact origin. Fragment GenBank exports preserve a reference view; full strand chemistry and ancestry stay in the native workspace."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage; methylation, reaction conditions and laboratory success are not assessed."</p>
+            <section class="inspector-content digest-panel"><h2>"Virtual digest"</h2><crate::history::run_origin_view::SourceOriginPicker source=Memo::new(move |_|Some(source.get())) epoch get_workspace selected=Memo::new(move |_|origin.get()) on_select=Callback::new(move |pin:Option<PinnedOrigin>|{if pin.as_ref().is_some_and(|p|*p.event()!=source.get_untracked().binding){return Err("Saved origin source changed.".into());}origin.set(pin);Ok(())})/><Show when=move||origin.with(Option::is_some)><p class="helper">"Saved-material mode: opening, assembly handoff, named digest setups and predicted gels retain the exact origin. Fragment GenBank exports preserve a reference view; full strand chemistry and ancestry stay in the native workspace."</p></Show><p class="helper">"Choose enzymes to inspect recognition sites and predicted fragments. Products assume complete cleavage. Optional reaction-condition evidence is reviewed separately; predicted cleavage does not establish laboratory success."</p>
             <details class="saved-digest-setups"><summary>"Named digest setups"</summary>
-                <p class="helper">"Save the exact source event, ordered catalog geometry, cleavage assumption, limits and historical evidence together. Reopening a saved setup does not move document heads or restore a current result."</p>
+                <p class="helper">"Save the exact source event, ordered catalog geometry, cleavage assumption, optional reaction setup, limits and historical evidence together. Reopening a saved setup does not move document heads or restore a current result."</p>
                 <label>"Digest name"<input aria-label="Saved digest setup name" maxlength="256" placeholder="Name this digest" prop:value=move||setup_name.get() on:input=move|e|{setup_name.set(event_target_value(&e));}/></label>
                 <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{save_setup.run(());}>"Save fresh digest setup and evidence"</button>
                 <button class="button secondary full" disabled=move||{busy.get()||bound.with(Option::is_none)} on:click=move|_|{add_current_to_gel.run(());}>"Add current digest to predicted gel"</button>
@@ -1152,6 +1176,7 @@ pub fn DigestPanel(
             <label>"Find an enzyme"<input aria-label="Find digest enzyme" prop:value=move||filter.get() on:input=move|e|filter.set(event_target_value(&e)) placeholder="Name or recognition sequence"/></label>
             <div class="digest-enzyme-picker">{move||{let needle=filter.get().trim().to_ascii_lowercase();enzyme_choices.get_value().into_iter().filter(|e|e.name.to_ascii_lowercase().contains(&needle)||e.geometry.recognition.to_ascii_lowercase().contains(&needle)).map(|enzyme|{let name=enzyme.name.clone();let change=enzyme.name.clone();view!{<label class="checkbox-label digest-enzyme-choice"><input type="checkbox" data-enzyme=enzyme.name.clone() data-catalog-id=enzyme.id.clone() aria-label=format!("Digest enzyme {}",enzyme.name) prop:checked=move||names.with(|names|names.contains(&name)) on:change=move|e|{let checked=event_target_checked(&e);pinned_selection.set(None);names.update(|names|{names.retain(|n|n!=&change);if checked{names.push(change.clone());}});}/><span><strong>{enzyme.name}</strong><small>{enzyme.geometry.recognition}</small></span></label>}}).collect_view()}}</div>
             <p class="helper">{move||format!("Selected: {}",names.get().join(", "))}</p>
+            <crate::restriction::reaction_conditions::ReactionConditionsPanel catalog selection=condition_selection source epoch origin conditions error=conditions_error loaded=conditions_loaded/>
             <details class="digest-catalog" data-catalog-edition=move||catalog.with_value(|c|c.as_ref().map(|c|c.edition().edition.clone()).unwrap_or_default()) data-catalog-hash=move||catalog.with_value(|c|c.as_ref().map(|c|c.content_hash().to_string()).unwrap_or_default())><summary>"Catalog and formulation evidence"</summary><p class="helper">{move||catalog.with_value(|c|match c {Ok(c)=>format!("{} enzyme identities · edition {} · content hash {}",c.edition().enzymes.len(),c.edition().edition,c.content_hash()),Err(e)=>format!("Catalog unavailable: {e}")})}</p><p class="helper">"Recognition and strand-cut geometry determine the virtual digest. Same-cut enzymes remain distinct identities; vendor formulations and their documentary conditions are reviewed separately and never change or validate predicted cleavage."</p>{move||catalog.with_value(|c|c.as_ref().ok().map(|c|catalog_evidence(c,&names.get())))}</details><div class="digest-actions"><button class="button primary" disabled=move||busy.get()||names.with(Vec::is_empty)||source.get().alphabet!=Alphabet::Dna on:click=run>"Run virtual digest"</button><button class="button secondary" disabled=move||!busy.get() on:click=move|_|{stop.run(());status.set("Digest request cancelled; no pending result or product was accepted.".into());}>"Cancel digest"</button></div>
             <p class="digest-status helper" role="status">{move||status.get()}</p>
             <details class="digest-options"><summary>"Assumptions and analysis limits"</summary><p class="helper">"The pinned catalog selection describes recognition and strand-cut geometry. Documentary vendor formulation evidence is separate and is not a reaction-compatibility assessment. Recognition can be certain while cuts lack sufficient substrate, and ambiguous sites can prevent a complete product set."</p><button class="text-tool" on:click=move|_|on_methylation.run(())>"Review methylation assumptions"</button><label>"Maximum comparisons"<input aria-label="Digest comparison limit" prop:value=move||comparisons.get() on:input=move|e|comparisons.set(event_target_value(&e))/></label><label>"Maximum recognition sites"<input aria-label="Digest site limit" prop:value=move||max_sites.get() on:input=move|e|max_sites.set(event_target_value(&e))/></label><label>"Maximum fragments"<input aria-label="Digest fragment limit" prop:value=move||max_fragments.get() on:input=move|e|max_fragments.set(event_target_value(&e))/></label><label>"Maximum report bytes"<input aria-label="Digest report byte limit" prop:value=move||report_bytes.get() on:input=move|e|report_bytes.set(event_target_value(&e))/></label></details>
@@ -1194,9 +1219,16 @@ fn SavedDigestView(
             <details><summary>"Exact source, catalog and options"</summary>
                 <p>{bound.with_value(|r|format!("Document {} · event {} · revision {}",r.recipe.source.document_id,r.recipe.source.event_id,r.recipe.source.revision))}</p>
                 <p>{bound.with_value(|r|format!("Catalog {} · content {} · saved engine {} · batch {}",r.recipe.selection.catalog_edition,r.recipe.selection.catalog_content_hash,r.report.engine_version,r.report.context_revision))}</p>
-                <p>{bound.with_value(|r|format!("Assumed complete cleavage; methylation and reaction conditions unassessed. Limits: {} comparisons · {} sites · {} fragments · {} report bytes.",r.recipe.options.max_comparisons,r.recipe.options.max_sites,r.recipe.options.max_fragments,r.recipe.options.max_report_bytes))}</p>
+                <p>{bound.with_value(|r|format!("Assumed complete cleavage; reaction setup is documentary and methylation remains unassessed. Limits: {} comparisons · {} sites · {} fragments · {} report bytes.",r.recipe.options.max_comparisons,r.recipe.options.max_sites,r.recipe.options.max_fragments,r.recipe.options.max_report_bytes))}</p>
                 <ul>{bound.with_value(|r|r.recipe.selection.enzymes.iter().map(|enzyme|view!{<li>{format!("{} [{}] · {} · top cut {} · bottom cut {}",enzyme.enzyme.name,enzyme.id,enzyme.enzyme.recognition,enzyme.enzyme.top_cut,enzyme.enzyme.bottom_cut)}</li>}).collect_view())}</ul>
             </details>
+            {bound.with_value(|r| r.recipe.conditions.as_ref().map(|options| view! {
+                <details><summary>"Saved reaction conditions · historical"</summary>
+                    <p class="helper">"Retained setup and assessment are documentary. Load the exact settings and explicitly assess again for a current result."</p>
+                    <p>{format!("{} · {} °C · {} minutes · minimum recorded activity {}%", options.buffer, crate::restriction::reaction_conditions_model::celsius(options.temperature_milli_c), options.incubation_minutes, options.minimum_activity_percent)}</p>
+                    {r.condition_report.as_ref().map(|report| view! {<crate::restriction::reaction_conditions::ConditionsEvidence report=Arc::new(report.clone()) on_choose=None/>})}
+                </details>
+            }))}
             {catalog_status.map(|error|view!{<p class="digest-warning">{format!("The saved catalog pin cannot currently be replayed: {error}. Historical evidence remains inspectable; no enzyme substitution is made.")}</p>})}
             <p class="helper">{bound.with_value(|r|format!("Saved recognition scan: {} · saved product set: {} · {} sites · {} fragments.",if r.report.inspection.scan_complete{"complete"}else{"incomplete"},if r.report.inspection.products_determined{"determined under its stated model"}else{"undetermined"},r.report.inspection.sites.len(),r.report.inspection.fragments.len()))}</p>
             {bound.with_value(|r|r.report.inspection.limits.iter().map(|limit|view!{<p class="digest-warning">{format!("Saved limit reached: {}",limit_label(*limit))}</p>}).collect_view())}

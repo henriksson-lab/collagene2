@@ -5,7 +5,7 @@ use crate::{chemistry::DuplexSummary, cloning::restriction::setups::Recipe};
 use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 
-pub const ENGINE_VERSION: &str = "material-digest-export-1";
+pub const ENGINE_VERSION: &str = "material-digest-export-2";
 const LOSS: &str = "Detached sequence export does not preserve reusable physical material, exact native history, both strand sequences and offsets, terminal chemistry, internal nicks or positional modification evidence. Any included comments and summaries are documentary only. Retain the native workspace and replay its exact origin for subsequent cloning. Complete cleavage and experimental fragment isolation remain assumptions; no intended target is assessed.";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +46,7 @@ impl Request {
         crate::encoding::bounded_json::hash(&(
             ENGINE_VERSION,
             inspection,
+            &self.recipe.conditions,
             self.fragment_index,
             &self.name,
         ))
@@ -74,6 +75,15 @@ impl Request {
         molecule
             .metadata
             .insert("source:material_digest_export:losses".into(), LOSS.into());
+        molecule
+            .metadata
+            .remove("source:restriction_conditions:options");
+        if let Some(conditions) = &self.recipe.conditions {
+            molecule.metadata.insert(
+                "source:restriction_conditions:options".into(),
+                serde_json::to_string(conditions).map_err(|_| Error::TooLarge)?,
+            );
+        }
         findings.insert(0, LOSS.into());
         let (findings, findings_total, findings_truncated) = super::limitations(
             findings,
@@ -130,9 +140,21 @@ impl Product {
 
     pub fn validate_bindings_for(&self, request: &Request, source: &Molecule) -> Result<(), Error> {
         self.validate()?;
+        let declared_conditions = request
+            .recipe
+            .conditions
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .map_err(|_| Error::TooLarge)?;
         if self.context_revision != request.revision(source)?
             || self.inspection_revision != request.recipe.inspection_revision(source)?
             || self.molecule.name != request.name
+            || self
+                .molecule
+                .metadata
+                .get("source:restriction_conditions:options")
+                != declared_conditions.as_ref()
         {
             return Err(super::bad(
                 "detached digest export source/origin/options changed",

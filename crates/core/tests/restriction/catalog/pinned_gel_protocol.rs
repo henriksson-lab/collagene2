@@ -33,6 +33,7 @@ fn request(pinned: bool) -> Request {
         .unwrap(),
         options: InspectionOptions::default(),
         cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+        conditions: None,
     };
     let lane = LaneInput {
         label: "Pinned AluI".into(),

@@ -346,6 +346,22 @@ pub fn provenance_comments(molecule: &Molecule) -> Vec<String> {
             digest_claim_comments(&mut comments, "CG-CATALOG-REVISION-v1", value);
         }
     }
+    if let Some(value) = molecule
+        .metadata
+        .get("source:restriction_conditions:options")
+    {
+        comments.push("Restriction reaction setup is unverified producer data, not supplier authentication, complete cleavage, methylation permission or laboratory success. Retain the native recipe and recompute current condition evidence.".into());
+        let mut chars = value.chars().filter(|c| !c.is_control());
+        let text: String = chars.by_ref().take(32 * 1024).collect();
+        let suffix = if chars.next().is_some() {
+            " [truncated; retain native evidence]"
+        } else {
+            ""
+        };
+        comments.push(format!(
+            "Collagene provenance restriction_conditions:options={text}{suffix}"
+        ));
+    }
     // Limits cover the full supported codon profile, including 10,000 residues
     // and its 32 KiB options; larger manually inserted values disclose truncation.
     let codon_keys = [

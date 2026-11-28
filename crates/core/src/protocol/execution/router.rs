@@ -830,6 +830,9 @@ pub(super) fn dispatch(
         AnalysisJob::ReopenImageEvidence { prepared } => {
             output::reopen_image_evidence(context, prepared)
         }
+        AnalysisJob::AssessRestrictionConditions { selection, options } => {
+            restriction::assess_conditions(context, selection, options)
+        }
         AnalysisJob::RenderMap { request } => output::render_map(context, request),
         AnalysisJob::RenderGelImage { request } => output::render_gel_image(context, request),
         AnalysisJob::InspectMaterialMismatchPcr {

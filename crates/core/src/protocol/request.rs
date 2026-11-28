@@ -45,6 +45,14 @@ impl Request {
             crate::alignment::context::preflight(report, reference, query, *translate)?;
         }
         match &self.job {
+            AnalysisJob::AssessRestrictionConditions { selection, options } => {
+                let catalog = crate::cloning::restriction::catalog::builtin_catalog()?;
+                if crate::cloning::restriction::conditions::revision(&catalog, selection, options)?
+                    != self.revision
+                {
+                    return Err(Error::Format("Restriction reaction context differs".into()));
+                }
+            }
             AnalysisJob::InversePcr {
                 molecule,
                 target,

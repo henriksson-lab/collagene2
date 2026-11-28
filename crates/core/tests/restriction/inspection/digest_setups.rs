@@ -2,6 +2,7 @@
 use collagene_core::{
     cloning::restriction::{
         catalog::{self as catalog_digest, catalog},
+        conditions::{self, ChosenFormulation, EvidenceStatus, ReactionConditions, Unassessed},
         history as restriction_history,
         inspection::InspectionOptions,
         setups::{self as digest_setups, CleavageMode, Record},
@@ -32,6 +33,7 @@ fn recipe(source: &EventBinding, report: &DigestPreview) -> digest_setups::Recip
         selection: report.selection.clone(),
         options: report.inspection.options.clone(),
         cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+        conditions: None,
     }
 }
 fn fixture() -> (catalog::Catalog, Workspace, EventBinding, DigestPreview) {
@@ -55,6 +57,27 @@ fn fixture() -> (catalog::Catalog, Workspace, EventBinding, DigestPreview) {
     )
     .unwrap();
     (catalog, frame, source, report)
+}
+fn reaction() -> ReactionConditions {
+    ReactionConditions {
+        schema_version: 1,
+        formulations: vec![
+            ChosenFormulation {
+                enzyme_id: "ecori".into(),
+                formulation_id: Some("neb-r3101".into()),
+            },
+            ChosenFormulation {
+                enzyme_id: "bamhi".into(),
+                formulation_id: None,
+            },
+        ],
+        buffer: "rCutSmart".into(),
+        temperature_milli_c: 37_000,
+        incubation_minutes: 60,
+        minimum_activity_percent: 75,
+        activity_context: Some("NEB unit-assay relative activity".into()),
+        temperature_context: Some("vendor recommended incubation".into()),
+    }
 }
 fn insert(frame: &Workspace, value: &serde_json::Value) -> (Workspace, String) {
     let bytes = serde_json::to_vec(value).unwrap();
@@ -329,6 +352,15 @@ fn external_catalog_documentary_setup_loads_without_installed_membership_but_can
     record.recipe.selection =
         catalog_digest::select(&unavailable, &["ecori".into(), "bamhi".into()]).unwrap();
     record.report.selection = record.recipe.selection.clone();
+    record.recipe.conditions = Some(reaction());
+    record.condition_report = Some(
+        conditions::assess(
+            &unavailable,
+            &record.recipe.selection,
+            record.recipe.conditions.as_ref().unwrap(),
+        )
+        .unwrap(),
+    );
     // Documentary declaration identity is independent of installed-catalog lookup.
     record.report.context_revision = blake3::hash(
         &serde_json::to_vec(&(
@@ -351,6 +383,25 @@ fn external_catalog_documentary_setup_loads_without_installed_membership_but_can
         reopened.recipe.selection.catalog_edition,
         "independent unavailable catalog edition"
     );
+    let condition_report = reopened.condition_report.as_ref().unwrap();
+    condition_report
+        .validate_binding(
+            &conditions::documentary_revision(
+                &reopened.recipe.selection,
+                reopened.recipe.conditions.as_ref().unwrap(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(
+        condition_report
+            .validate_for(
+                &catalog,
+                &reopened.recipe.selection,
+                reopened.recipe.conditions.as_ref().unwrap()
+            )
+            .is_err()
+    );
     assert!(
         reopened
             .recipe
@@ -366,6 +417,120 @@ fn external_catalog_documentary_setup_loads_without_installed_membership_but_can
     let restored =
         workspace::load_workspace(&workspace::save_workspace(&documentary).unwrap()).unwrap();
     assert!(digest_setups::load(&restored, &external_hash).is_ok());
+}
+
+#[test]
+fn reaction_setup_retains_typed_documentary_evidence_without_changing_ideal_digest() {
+    let (catalog, frame, source, report) = fixture();
+    let mut chosen = recipe(&source, &report);
+    let ideal_revision = chosen
+        .inspection_revision(&frame.revisions[&source.revision])
+        .unwrap();
+    chosen.conditions = Some(reaction());
+    assert_eq!(
+        chosen
+            .inspection_revision(&frame.revisions[&source.revision])
+            .unwrap(),
+        ideal_revision
+    );
+    assert_eq!(
+        serde_json::to_value(chosen.inspect(&frame.revisions[&source.revision]).unwrap()).unwrap(),
+        serde_json::to_value(&report).unwrap()
+    );
+    let (saved, hash) =
+        digest_setups::capture(&catalog, &frame, &chosen, "Recorded reaction", &report).unwrap();
+    let record = digest_setups::load(&saved, &hash).unwrap();
+    assert_eq!(record.schema_version, 3);
+    assert_eq!(record.recipe.source, source);
+    assert_eq!(record.recipe.conditions, chosen.conditions);
+    let evidence = record.condition_report.as_ref().unwrap();
+    evidence
+        .validate_for(
+            &catalog,
+            &chosen.selection,
+            chosen.conditions.as_ref().unwrap(),
+        )
+        .unwrap();
+    assert_eq!(evidence.documentary_status, EvidenceStatus::Unknown);
+    assert_eq!(
+        evidence.formulations[0].activity.status,
+        EvidenceStatus::Known
+    );
+    assert_eq!(
+        evidence.formulations[1].activity.status,
+        EvidenceStatus::Unknown
+    );
+    assert!(evidence.formulations[1].formulation.is_none());
+    assert_eq!(evidence.formulations[0].star_risk, Unassessed::Unknown);
+    assert_eq!(
+        evidence.formulations[0].incubation_duration,
+        Unassessed::Unknown
+    );
+    let restored = workspace::load_workspace(&workspace::save_workspace(&saved).unwrap()).unwrap();
+    let reopened = digest_setups::load(&restored, &hash).unwrap();
+    assert_eq!(reopened.condition_report, record.condition_report);
+    assert_eq!(reopened.recipe.source, source);
+    let original_preview = serde_json::to_value(&record.report).unwrap();
+    chosen.conditions.as_mut().unwrap().incubation_minutes = 30;
+    let (second, other) =
+        digest_setups::capture(&catalog, &saved, &chosen, "Recorded reaction", &report).unwrap();
+    assert_ne!(hash, other);
+    let changed = digest_setups::load(&second, &other).unwrap();
+    assert_eq!(
+        serde_json::to_value(changed.report).unwrap(),
+        original_preview
+    );
+    assert_ne!(
+        changed.condition_report.as_ref().unwrap().request_revision,
+        evidence.request_revision
+    );
+    assert_eq!(second.documents.len(), frame.documents.len());
+    assert_eq!(second.history.len(), frame.history.len());
+    assert_eq!(second.revisions, frame.revisions);
+}
+
+#[test]
+fn reaction_attachment_refuses_unpaired_options_stale_bindings_tampering_and_v2() {
+    let (catalog, frame, source, report) = fixture();
+    let mut chosen = recipe(&source, &report);
+    chosen.conditions = Some(reaction());
+    let (saved, hash) =
+        digest_setups::capture(&catalog, &frame, &chosen, "Reaction", &report).unwrap();
+    let original = serde_json::to_value(digest_setups::load(&saved, &hash).unwrap()).unwrap();
+    let mut cases = Vec::new();
+    let mut v = original.clone();
+    v["recipe"]["conditions"]["incubation_minutes"] = 30.into();
+    cases.push(v);
+    let mut v = original.clone();
+    v["condition_report"] = serde_json::Value::Null;
+    cases.push(v);
+    let mut v = original.clone();
+    v["recipe"]["conditions"] = serde_json::Value::Null;
+    cases.push(v);
+    let mut v = original.clone();
+    v["condition_report"]["formulations"][0]["activity"]["status"] = "Unknown".into();
+    cases.push(v);
+    let mut v = original.clone();
+    v["condition_report"]["sources"][0]["publisher"] = "forged".into();
+    cases.push(v);
+    let mut v = original.clone();
+    v["schema_version"] = 2.into();
+    cases.push(v);
+    for value in cases {
+        let (invalid, hash) = insert(&frame, &value);
+        assert!(digest_setups::load(&invalid, &hash).is_err());
+        assert!(workspace::save_workspace(&invalid).is_err());
+    }
+    let mut obsolete = saved.clone();
+    obsolete.attachments.get_mut(&hash).unwrap().kind = "named-digest-setup-v2".into();
+    assert!(digest_setups::load(&obsolete, &hash).is_err());
+    assert!(workspace::save_workspace(&obsolete).is_err());
+    let mut malformed = chosen;
+    malformed.conditions.as_mut().unwrap().formulations[0].formulation_id =
+        Some("neb-r0141".into());
+    assert!(
+        digest_setups::capture(&catalog, &frame, &malformed, "Wrong formulation", &report).is_err()
+    );
 }
 
 #[test]
@@ -689,6 +854,7 @@ fn saved_material_recipe(derived: bool) -> (Workspace, digest_setups::Recipe) {
             selection: selected,
             options: InspectionOptions::default(),
             cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+            conditions: None,
         },
     )
 }

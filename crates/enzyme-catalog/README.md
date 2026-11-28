@@ -5,7 +5,7 @@ This crate has no dependency on Collagene's core, browser, native process APIs,
 or matching algorithms. It performs no network requests, digestion simulation,
 site matching, methylation propagation, or reaction validation.
 
-The independently curated `2026-11-24.2` edition contains **40 enzyme identities**
+The independently curated `2026-11-28.1` edition contains **40 enzyme identities**
 (including the original twelve starter geometries) and **four explicitly scoped
 NEB formulations**, with 32 documentary condition observations. Additional
 geometries do not imply that vendor conditions have been curated for them.
@@ -148,9 +148,13 @@ order; documentary qualifier order is retained. Import has no mutable global
 registry or filesystem requirement. Only the optional authoring example uses
 filesystem I/O, reading at most the byte limit plus one byte before rejecting an oversized proposal.
 
-The crate is a member of the Collagene workspace. The initial desktop digest
-still uses its established starter set; catalog-backed application selection is
-a separate integration step. Verification:
+The crate is a member of the Collagene workspace. Catalog-backed application
+selection exposes all 40 geometries with separate formulation evidence. The core
+reaction-condition owner compares exact selected formulations and assay contexts;
+it does not turn documentary activity into complete-digest success. Current schema
+2 uses externally tagged JSON enums and the same Rust variants in Postcard. The
+superseded schema 1 is rejected. Optional `json-schema` exposes current typed DTOs.
+Verification:
 
 ```sh
 cargo test -p collagene-enzyme-catalog --locked

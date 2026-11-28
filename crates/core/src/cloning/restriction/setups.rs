@@ -3,6 +3,7 @@
 use crate::{
     cloning::restriction::{
         catalog::{CatalogSelection, catalog},
+        conditions::{self, ConditionsReport, ReactionConditions},
         history as restriction_history,
         inspection::InspectionOptions,
     },
@@ -16,8 +17,8 @@ use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 
-pub const KIND: &str = "named-digest-setup-v2";
-pub const SCHEMA_VERSION: u16 = 2;
+pub const KIND: &str = "named-digest-setup-v3";
+pub const SCHEMA_VERSION: u16 = 3;
 pub const MAX_SAVED_BYTES: usize = workspace::MAX_ENTRY_BYTES;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -39,6 +40,8 @@ pub struct Recipe {
     pub selection: CatalogSelection,
     pub options: InspectionOptions,
     pub cleavage_mode: CleavageMode,
+    /// Optional explicit supplier reaction setup, separate from ideal cleavage.
+    pub conditions: Option<ReactionConditions>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +53,8 @@ pub struct Record {
     pub recipe: Recipe,
     /// Historical producer evidence only, including incomplete scans/products.
     pub report: DigestPreview,
+    /// Retained documentary supplier evidence, never a complete-digest verdict.
+    pub condition_report: Option<ConditionsReport>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -89,6 +94,9 @@ impl Recipe {
             origin.validate_documentary()?;
         }
         self.selection.validate()?;
+        if let Some(conditions) = &self.conditions {
+            conditions.validate(&self.selection)?;
+        }
         self.options.validate()
     }
     pub fn validate_for_workspace(&self, frame: &Workspace) -> Result<(), Error> {
@@ -217,6 +225,13 @@ fn historical_binding(frame: &Workspace, record: &Record) -> Result<(), Error> {
         return Err(bad("unsupported record version or invalid name"));
     }
     record.recipe.validate_for_workspace(frame)?;
+    match (&record.recipe.conditions, &record.condition_report) {
+        (Some(options), Some(report)) => report.validate_binding(
+            &conditions::documentary_revision(&record.recipe.selection, options)?,
+        )?,
+        (None, None) => (),
+        _ => return Err(bad("reaction setup and retained condition evidence differ")),
+    }
     if matches!(&record.recipe.origin, SourceOrigin::Saved(_))
         && record.report.source_material.is_none()
     {
@@ -287,12 +302,18 @@ pub fn capture(
             "current digest report differs from the declared recipe",
         ));
     }
+    let condition_report = recipe
+        .conditions
+        .as_ref()
+        .map(|options| conditions::assess(catalog, &recipe.selection, options))
+        .transpose()?;
     #[derive(Serialize)]
     struct Borrowed<'a> {
         schema_version: u16,
         name: &'a str,
         recipe: &'a Recipe,
         report: &'a DigestPreview,
+        condition_report: &'a Option<ConditionsReport>,
     }
     let mut encoded = Limited(Vec::new());
     serde_json::to_writer(
@@ -302,6 +323,7 @@ pub fn capture(
             name,
             recipe,
             report,
+            condition_report: &condition_report,
         },
     )
     .map_err(|_| Error::TooLarge)?;

@@ -234,6 +234,7 @@ fn named_digest_setup_closure_retains_exact_run_and_derived_origins_without_priv
             selection: enzymes.clone(),
             options: InspectionOptions::default(),
             cleavage_mode: setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+            conditions: None,
         };
         let source = &workspace.revisions[&recipe.source.revision];
         let inspection = recipe.inspect(source).unwrap();
@@ -260,6 +261,7 @@ fn named_digest_setup_closure_retains_exact_run_and_derived_origins_without_priv
             selection: enzymes.clone(),
             options: InspectionOptions::default(),
             cleavage_mode: setups::CleavageMode::AssumedCompleteMethylationUnassessed,
+            conditions: None,
         };
         let private_report = private_recipe
             .inspect(&staged.revisions[&private_revision])

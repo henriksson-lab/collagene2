@@ -79,6 +79,7 @@ mod tests {
             selection: catalog::select(&catalog, &[enzyme.id.clone()]).unwrap(),
             options: InspectionOptions::default(),
             cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+            conditions: None,
         };
         let inspected = recipe.inspect(&molecule).unwrap();
         let fragment = &inspected.inspection.fragments[0];

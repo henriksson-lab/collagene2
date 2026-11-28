@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 pub const MAX_JSON_BYTES: usize = 2 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Error(pub String);
@@ -21,6 +21,7 @@ fn fail<T>(s: &str) -> Result<T, Error> {
 }
 macro_rules! dto { ($name:ident { $($field:ident : $ty:ty),* $(,)? }) => {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)] pub struct $name { $(pub $field:$ty),* }
 }; }
 dto!(Citation {
@@ -42,7 +43,8 @@ dto!(Geometry {
 });
 dto!(Enzyme { id:String, name:String, geometry:Geometry, aliases:Vec<Alias>, citations:Vec<Citation> });
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum Condition {
     IncubationTemperature,
     BufferActivity {
@@ -54,6 +56,7 @@ pub enum Condition {
     },
 }
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MethylationSystem {
     Dam,
@@ -61,6 +64,7 @@ pub enum MethylationSystem {
     CpG,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum Sensitivity {
     NotSensitive,
@@ -72,12 +76,8 @@ pub enum Sensitivity {
     ImpairedSomeOverlappingCombinations,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(
-    tag = "kind",
-    content = "value",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub enum FactValue {
     TemperatureMilliC(i32),
     Percent(u8),

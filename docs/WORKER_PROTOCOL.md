@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **128**,
+same deterministic scientific engines. Current schemas are worker **129**,
 candidate **31** and native workspace plan **29**; the verifier is **science-35**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -632,9 +632,35 @@ comparison, quantification or OpenGel integration is performed.
 ## Codon preference representation
 
 Worker 128 uses one required `CodonPreferences` source: Uniform, Explicit weights,
-or a ReferenceHost catalogue identity. Reports retain all 64 expanded weights
-and the pinned host profile when selected. Empty explicit weights, unknown host
+or a ReferenceHost catalogue identity. Reports retain the selected preference weights
+and the pinned host profile when selected (all 64 weights for a reference host). Empty explicit weights, unknown host
 identities and incompatible genetic codes reject. Codon engines are
 `codon-design-2` / `codon-constrained-2`; superseded development outputs have no
 fallback decoder. Report binding independently recomputes the selected preference
 evidence. [Scientific contract](CODON_DESIGN.md).
+
+
+## Restriction reaction conditions
+
+Worker 129 adds ordinary request 202 `AssessRestrictionConditions { selection,
+options }` and result 192 `RestrictionConditions(ConditionsReport)`. The request
+revision binds the engine, exact catalog/selection and ordered formulation choices,
+buffer, temperature, incubation time, threshold and explicit assay contexts. It
+has no molecular source argument; the digest inspector additionally guards its
+source event, origin and workspace epoch before accepting display results.
+
+Current catalogue schema 2 / edition `2026-11-28.1` uses standard externally tagged
+Serde enums in JSON and Postcard. The former internally/adjacently tagged shape
+could not deserialize in Postcard and is removed, without a fallback decoder.
+All 40 geometries, 4 formulation records and 32 observations remain; their current
+canonical curated-fact checksums are resealed. Reaction reports are bounded to
+512 KiB, including typed provenance/evidence; both envelopes retain the ordinary
+32 MiB cap. Missing formulation choices produce Unknown, not an arbitrary vendor
+choice. Fresh assessment is independent of assumed-complete digest products.
+
+Named digest setups use kind/schema 3 and retain optional explicit conditions
+paired with their documentary report. Historical validation binds both to the same
+recipe without granting freshness; new capture recomputes the catalogue evidence.
+Unsupported prior setup kinds reject. Detached digest export engine 2 binds the
+condition choices separately from physical inspection identity, retains bounded
+unverified producer comments and never changes the ideal cleavage algorithm.

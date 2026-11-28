@@ -4,6 +4,22 @@ use crate::protocol::schema::AnalysisResult;
 use crate::sequence::analysis::Enzyme;
 use collagene_model::{Error, Molecule};
 
+pub(super) fn assess_conditions(
+    context: &RequestContext,
+    selection: crate::cloning::restriction::catalog::CatalogSelection,
+    options: crate::cloning::restriction::conditions::ReactionConditions,
+) -> Result<AnalysisResult, Error> {
+    use crate::cloning::restriction::{catalog, conditions};
+    let installed = catalog::builtin_catalog()?;
+    if conditions::revision(&installed, &selection, &options)? != *context.revision {
+        return Err(Error::Format("Restriction reaction context changed".into()));
+    }
+    context.admit(None)?;
+    Ok(conditions::assess(&installed, &selection, &options)
+        .map(AnalysisResult::RestrictionConditions)
+        .unwrap_or_else(|e| AnalysisResult::Error(e.to_string())))
+}
+
 pub(super) fn inspect_restriction(
     context: &RequestContext,
     source_role: String,

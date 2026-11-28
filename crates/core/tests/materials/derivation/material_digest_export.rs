@@ -34,6 +34,7 @@ fn request(
             selection: catalog::select(&catalog, &[eco.id.clone()]).unwrap(),
             options: Default::default(),
             cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
+            conditions: None,
         },
         fragment_index: 1,
         name: "Detached right fragment".into(),
@@ -238,4 +239,75 @@ fn ambiguous_reference_retains_recognition_without_inventing_exportable_strands(
     assert_eq!(report.context_revision, revision);
     assert!(report.source_material.is_none());
     assert!(report.incomplete);
+}
+
+#[test]
+fn reaction_choices_bind_detached_provenance_without_changing_assumed_cleavage() {
+    use collagene_core::cloning::restriction::conditions::{ChosenFormulation, ReactionConditions};
+    let (w, source, origin) =
+        fixture::native_source("AATTGCTACGGAATTCTTACG", "AATTCGTAAGAATTCCGTAGC", 17);
+    let molecule = &w.revisions[&source.revision];
+    let mut req = request(source, d::SourceOrigin::Saved(origin));
+    let reference = req.materialize(molecule).unwrap();
+    let scientific_revision = req.recipe.inspection_revision(molecule).unwrap();
+    req.recipe.conditions = Some(ReactionConditions {
+        schema_version: 1,
+        formulations: vec![ChosenFormulation {
+            enzyme_id: "ecori".into(),
+            formulation_id: Some("neb-r3101".into()),
+        }],
+        buffer: "rCutSmart".into(),
+        temperature_milli_c: 37000,
+        incubation_minutes: 30,
+        minimum_activity_percent: 75,
+        activity_context: Some("NEB unit-assay relative activity".into()),
+        temperature_context: Some("vendor recommended incubation".into()),
+    });
+    let chosen = req.materialize(molecule).unwrap();
+    assert_ne!(reference.context_revision, chosen.context_revision);
+    assert_eq!(chosen.inspection_revision, scientific_revision);
+    assert_eq!(chosen.molecule.sequence, reference.molecule.sequence);
+    assert_eq!(
+        serde_json::to_value(&chosen.duplex).unwrap(),
+        serde_json::to_value(&reference.duplex).unwrap()
+    );
+    let expected = serde_json::to_string(req.recipe.conditions.as_ref().unwrap()).unwrap();
+    assert_eq!(
+        chosen.molecule.metadata["source:restriction_conditions:options"],
+        expected
+    );
+    for format in [TextFormat::GenBank, TextFormat::Embl] {
+        let output = sequence::export_with_report(&chosen.molecule, format).unwrap();
+        assert!(output.text.contains("restriction_conditions:options="));
+        assert!(output.text.contains("unverified producer data"));
+        let imported = sequence::import_text(&output.text)
+            .unwrap()
+            .molecules
+            .remove(0);
+        assert_eq!(imported.sequence, chosen.molecule.sequence);
+        assert!(
+            !imported
+                .metadata
+                .contains_key("restriction_conditions:verified")
+        );
+    }
+    let mut changed = req.clone();
+    changed
+        .recipe
+        .conditions
+        .as_mut()
+        .unwrap()
+        .incubation_minutes = 31;
+    assert_eq!(
+        changed.recipe.inspection_revision(molecule).unwrap(),
+        scientific_revision
+    );
+    assert_ne!(changed.revision(molecule).unwrap(), chosen.context_revision);
+    assert!(chosen.validate_bindings_for(&changed, molecule).is_err());
+    let mut tampered = chosen.clone();
+    tampered
+        .molecule
+        .metadata
+        .remove("source:restriction_conditions:options");
+    assert!(tampered.validate_bindings_for(&req, molecule).is_err());
 }

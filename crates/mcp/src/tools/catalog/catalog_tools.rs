@@ -280,6 +280,9 @@ mod tests {
         explicit.context = Some("Independent different assay".into());
         let selected = evidence_for(&c, explicit).unwrap();
         assert_eq!(selected["resolution"]["status"], "Known");
-        assert_eq!(selected["resolution"]["value"]["value"], 25000);
+        assert_eq!(
+            selected["resolution"]["value"]["temperature_milli_c"],
+            25000
+        );
     }
 }

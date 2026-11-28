@@ -6,7 +6,7 @@ use crate::cloning::preparation::{
     golden_gate_pool_form::PoolForm,
     review::TargetContext,
 };
-use crate::{io::download::prepare_download, platform::worker::CachedWorker};
+use crate::{io::download::ExportArtifact, platform::worker::CachedWorker};
 use collagene_core::{
     chemistry::EndTreatment,
     documents::transfer::Candidate,
@@ -658,7 +658,7 @@ fn PreparedPool(
                 </article>}}).collect_view()}
                 <p>{format!("Page {} of {} · candidates {}–{} of {}",page.get().min(pages-1)+1,pages,if count==0{0}else{start+1},(start+50).min(count),count)}</p><button class="text-tool" disabled=move||page.get()==0 on:click=move|_|page.update(|p|*p=p.saturating_sub(1))>"Previous pool candidates"</button><button class="text-tool" disabled=move||{page.get()+1>=pages} on:click=move|_|page.update(|p|*p=(*p+1).min(pages-1))>"Next pool candidates"</button>
             }})}
-            <button class="button secondary" on:click=move|_|{let saved=request.get_value();let result=pool_guard.run(saved.clone()).and_then(|()|saved.report.json()).and_then(|bytes|prepare_download("prepared-golden-gate-pool.json","application/json",&bytes));crate::io::download::complete_download_guarded(result,move||pool_guard.run(saved.clone()),move|result|{if status.try_get_untracked().is_some(){if let Err(error)=result{status.set(error);}}});}>"Download full prepared-pool evidence"</button>
+            <button class="button secondary" on:click=move|_|{let saved=request.get_value();let result=pool_guard.run(saved.clone()).and_then(|()|saved.report.json()).and_then(|bytes|ExportArtifact::prepare("prepared-golden-gate-pool.json","application/json",&bytes));crate::io::download::complete_download_guarded(result,move||pool_guard.run(saved.clone()),move|result|{if status.try_get_untracked().is_some(){if let Err(error)=result{status.set(error);}}});}>"Download full prepared-pool evidence"</button>
         </section>}})}
     </section>}
 }

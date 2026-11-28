@@ -1,6 +1,6 @@
 //! Exact-source virtual restriction inspection. Scientific work stays in the worker.
 use crate::history::run_origin_model::PinnedOrigin;
-use crate::io::download::prepare_download;
+use crate::io::download::ExportArtifact;
 use crate::platform::worker::CachedWorker;
 use crate::sources::identity::SourceInfo;
 use collagene_core::{
@@ -1226,7 +1226,7 @@ fn SavedDigestView(
             </details>
             <button class="text-tool" on:click=move|_|{
                 let mut bytes=Json(Vec::new());
-                let result=bound.with_value(|record|serde_json::to_writer_pretty(&mut bytes,record.as_ref()).map_err(|e|e.to_string())).and_then(|()|prepare_download("saved-digest.json","application/json",&bytes.0));
+                let result=bound.with_value(|record|serde_json::to_writer_pretty(&mut bytes,record.as_ref()).map_err(|e|e.to_string())).and_then(|()|ExportArtifact::prepare("saved-digest.json","application/json",&bytes.0));
                 crate::io::download::complete_download(result,move|result|{if status.try_get_untracked().is_some(){if let Err(error)=result{status.set(error);}}});
             }>"Download historical digest recipe and evidence"</button>
             <p class="helper" role="status">{move||status.get()}</p>

@@ -5,18 +5,27 @@ use collagene_model::{Error, Molecule};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+const MAX_PLANNING_DOCUMENTS: usize = 1000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlanningWorkspace {
     pub target_revision: String,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, Molecule, MAX_PLANNING_DOCUMENTS>"
+    )]
     pub documents: Vec<Molecule>,
 }
 impl PlanningWorkspace {
     pub fn validate(&self) -> Result<(), Error> {
-        if self.documents.is_empty() || self.documents.len() > 1000 {
+        if self.documents.is_empty() || self.documents.len() > MAX_PLANNING_DOCUMENTS {
             return Err(Error::Format(
                 "planning snapshot needs 1–1000 documents".into(),
             ));
         }
+        collagene_model::bounds::native_frame_preflight(
+            &self.documents,
+            crate::formats::sequence::MAX_IMPORT_BYTES,
+        )?;
         let mut revisions = BTreeSet::new();
         for m in &self.documents {
             m.validate()?;
@@ -42,7 +51,12 @@ pub struct Candidate {
 impl Candidate {
     pub fn new(plan: DesignPlan) -> Self {
         Self {
-            plan_revision: if crate::material::capsule::plan_preflight(&plan).is_ok()
+            plan_revision: if collagene_model::bounds::native_frame_preflight(
+                plan.inputs.iter().map(|input| &input.molecule),
+                crate::formats::sequence::MAX_IMPORT_BYTES,
+            )
+            .is_ok()
+                && crate::material::capsule::plan_preflight(&plan).is_ok()
                 && crate::verification::sources::validate_reference_steps(&plan).is_ok()
             {
                 crate::planning::plan::DesignPlan::revision(&plan)
@@ -54,6 +68,10 @@ impl Candidate {
     }
     pub fn validate(&self) -> Result<(), Error> {
         let plan = &self.plan;
+        collagene_model::bounds::native_frame_preflight(
+            plan.inputs.iter().map(|input| &input.molecule),
+            crate::formats::sequence::MAX_IMPORT_BYTES,
+        )?;
         crate::material::capsule::plan_preflight(plan)?;
         crate::verification::sources::validate_reference_steps(plan)?;
         if plan.name.trim().is_empty()

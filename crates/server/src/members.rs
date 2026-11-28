@@ -79,6 +79,15 @@ impl MemberRegistry {
         }
         found
     }
+    /// Identity-only revocation check for bounded hosted-session cleanup. This
+    /// never substitutes for credential authentication on an incoming request.
+    pub(crate) fn contains_actor(&self, actor: &str) -> bool {
+        self.0.read().is_ok_and(|members| {
+            members
+                .iter()
+                .any(|member| member.author.id.as_str() == actor)
+        })
+    }
     /// Reads a bounded owner-only registry and individually protected key files.
     /// Relative key paths are resolved against the registry's own directory.
     pub fn read_file(path: &Path, assets_root: &Path) -> Result<Self> {

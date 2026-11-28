@@ -131,6 +131,7 @@ pub struct BoundGelLane {
 pub struct GelQuery {
     pub lanes: Vec<BoundGelLane>,
     pub calibration: collagene_core::output::gel::Calibration,
+    pub image_format: collagene_core::output::raster::Format,
 }
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -435,7 +436,7 @@ impl CollageneServer {
         }).await
     }
     #[tool(
-        description = "Predict a reference gel from revision-bound uncut, complete-digest or PCR lanes under an explicit ladder/calibration. CatalogDigest lanes require a native workspace reference proving the recipe's exact retained document/event/revision and a matching session document; historical sources need not be current heads. Native inspection is recomputed. Circular/unsupported profiles remain unpositioned. JSON retains declared lane recipes and references; SVG remains a prediction. No observed-gel/OpenGel integration."
+        description = "Predict a reference gel from revision-bound uncut, complete-digest or PCR lanes under an explicit ladder/calibration. CatalogDigest lanes require a native workspace reference proving the recipe's exact retained document/event/revision and a matching session document; historical sources need not be current heads. Native inspection is recomputed. Circular/unsupported profiles remain unpositioned. Select image_format Svg or Png with explicit pixel width. JSON retains declared lane recipes and references; rendered images remain predictions. No observed-gel/OpenGel integration."
     )]
     pub(crate) async fn predict_gel(
         &self,
@@ -443,6 +444,7 @@ impl CollageneServer {
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
         self.compute(move||{
+            args.image_format.validate().map_err(bad)?;
             if args.lanes.is_empty() || args.lanes.len() > 32 {
                 return Err(bad("gel needs 1–32 source lanes"));
             }
@@ -506,10 +508,39 @@ impl CollageneServer {
                 }
             }
             let report=collagene_core::output::gel::predict_gel(&lanes,&args.calibration).map_err(bad)?;
-            let svg=collagene_core::output::gel::render_svg(&report).map_err(bad)?;
-            let svg_artifact=server.session.text_artifact(svg,"image/svg+xml","predicted-gel.svg")?;
-            let artifact=server.session.analysis_artifact(&json!({"documents":args.lanes.iter().map(|l|&l.document).collect::<Vec<_>>(),"lanes":args.lanes,"engine_version":verification::ENGINE_VERSION,"gel":report}))?;
-            output(json!({"model":report.model,"lane_count":report.lanes.len(),"lanes":report.lanes.iter().map(|l|json!({"label":l.label,"source_revision":l.source_revision,"fragment_count":l.fragments.len(),"resolved_band_count":l.bands.len(),"unpositioned_fragment_count":l.unpositioned_fragments.len(),"complete_under_model":l.complete_under_model,"error":l.error,"warnings":l.warnings})).collect::<Vec<_>>(),"artifact_id":artifact,"svg_artifact_id":svg_artifact}))
+            let image = collagene_core::output::gel_export::Request::new(report.clone(), args.image_format).map_err(bad)?.render().map_err(bad)?;
+            let image_artifact = blake3::hash(image.image.bytes()).to_hex().to_string();
+            let (image_data, image_mime, image_encoding, image_filename) = match image.image {
+                collagene_core::output::raster::Image::Svg(svg) => (ArtifactData::Text(svg), "image/svg+xml", "utf-8", "predicted-gel.svg"),
+                collagene_core::output::raster::Image::Png(png) => (ArtifactData::Binary(png.bytes), "image/png", "base64", "predicted-gel.png"),
+            };
+            let evidence = bounded_json_limit(&json!({"documents":args.lanes.iter().map(|l|&l.document).collect::<Vec<_>>(),"lanes":args.lanes,"engine_version":verification::ENGINE_VERSION,"gel":report,"image_format":args.image_format,"image_context_revision":image.context_revision,"image_warnings":image.warnings}),32*1024*1024)?;
+            let artifact = blake3::hash(evidence.as_bytes()).to_hex().to_string();
+            if artifact == image_artifact { return Err(bad("gel artifact identities collide")); }
+            let result = output(json!({"model":report.model,"lane_count":report.lanes.len(),"lanes":report.lanes.iter().map(|l|json!({"label":l.label,"source_revision":l.source_revision,"fragment_count":l.fragments.len(),"resolved_band_count":l.bands.len(),"unpositioned_fragment_count":l.unpositioned_fragments.len(),"complete_under_model":l.complete_under_model,"error":l.error,"warnings":l.warnings})).collect::<Vec<_>>(),"artifact_id":artifact,"image_artifact_id":image_artifact,"image_format":args.image_format,"image_context_revision":image.context_revision,"image_warnings":image.warnings}))?;
+            // Reserve and publish the complete image/report pair atomically. A large PNG
+            // must not leave an orphan artifact when the report cannot fit the session.
+            let mut store = server.session.store.lock().unwrap();
+            if let Some(existing) = store.artifacts.get(&image_artifact) {
+                if !matches!((&existing.data,&image_data),(ArtifactData::Text(_),ArtifactData::Text(_))|(ArtifactData::Binary(_),ArtifactData::Binary(_)))
+                    || existing.mime_type != image_mime || existing.encoding != image_encoding || existing.filename != image_filename {
+                    return Err(bad("gel image artifact has another representation; nothing published"));
+                }
+            }
+            if let Some(existing) = store.artifacts.get(&artifact) {
+                if !matches!(existing.data, ArtifactData::Text(_)) || existing.mime_type != "application/json" || existing.encoding != "utf-8" || existing.filename != "sequence-analysis.json" {
+                    return Err(bad("gel evidence artifact has another representation; nothing published"));
+                }
+            }
+            let new_image = !store.artifacts.contains_key(&image_artifact);
+            let new_report = !store.artifacts.contains_key(&artifact);
+            if store.artifacts.len() + usize::from(new_image) + usize::from(new_report) > MAX_ITEMS { return Err(bad("gel artifact capacity reached; nothing published")); }
+            let image_len = match &image_data { ArtifactData::Text(text) => text.len(), ArtifactData::Binary(bytes) => bytes.len() };
+            let total = (if new_image {image_len}else{0}).checked_add(if new_report {evidence.len()}else{0}).ok_or_else(||bad("gel artifact size overflow"))?;
+            store.reserve(total)?;
+            if new_image { store.artifacts.insert(image_artifact, Artifact { data:image_data, mime_type:image_mime, encoding:image_encoding, filename:image_filename }); }
+            if new_report { store.artifacts.insert(artifact, Artifact { data:ArtifactData::Text(evidence), mime_type:"application/json", encoding:"utf-8", filename:"sequence-analysis.json" }); }
+            Ok(result)
         }).await
     }
 

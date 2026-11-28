@@ -511,7 +511,7 @@ pub fn ReusableMaterialView(
             }
             .map_err(|e| e.to_string())?;
             Ok((
-                crate::io::download::prepare_download(
+                crate::io::download::ExportArtifact::prepare(
                     kind.evidence_name(),
                     "application/json",
                     &bytes,

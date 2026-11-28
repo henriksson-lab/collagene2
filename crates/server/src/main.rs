@@ -69,6 +69,7 @@ async fn run() -> Result<()> {
                     "--origin",
                     "--max-concurrent",
                     "--max-lab-bytes",
+                    "--mcp-storage-root",
                 ],
             )?;
             let bind: SocketAddr = options
@@ -121,14 +122,20 @@ async fn run() -> Result<()> {
                     .parse()
                     .map_err(|_| Error::Configuration("max concurrent"))?;
             }
-            let state = ServerState::new(database, access, members, &origin, assets, limits)?;
+            let mut state = ServerState::new(database, access, members, &origin, assets, limits)?;
+            if let Some(path) = options.get("--mcp-storage-root") {
+                let mcp_root = collagene_local_storage::StorageRoot::existing(path)?;
+                state = state.with_hosted_mcp(mcp_root, Default::default())?;
+            }
+            let shutdown = state.clone();
             let listener = tokio::net::TcpListener::bind(bind).await?;
             println!(
-                "Shared-library server on {bind}; {file_count} immutable static assets; lab {lab_id}. Individual member credentials are required for library requests."
+                "Shared-library server on {bind}; {file_count} immutable static assets; lab {lab_id}. Individual member credentials are required for API requests."
             );
             axum::serve(listener, collagene_server::router(state))
-                .with_graceful_shutdown(async {
+                .with_graceful_shutdown(async move {
                     let _ = tokio::signal::ctrl_c().await;
+                    shutdown.shutdown_hosted_mcp();
                 })
                 .await?;
         }
@@ -289,7 +296,7 @@ fn database_path(root: &Path, must_exist: bool) -> Result<PathBuf> {
     }
     Ok(path)
 }
-const USAGE: &str = "Usage:\n  collagene-server keygen --key-file PATH\n  collagene-server init --storage-root DIRECTORY --lab-name NAME [--max-lab-bytes N]\n  collagene-server backup --storage-root DIRECTORY --lab-id ID --backup-id NAME [--max-backup-bytes N] [--max-lab-bytes N]\n  collagene-server verify-backup --storage-root DIRECTORY --lab-id ID --backup-id NAME [--max-backup-bytes N]\n  collagene-server restore-new --storage-root DIRECTORY --lab-id ID --backup-id NAME --destination-root NEW_DIRECTORY [--max-backup-bytes N]\n  collagene-server serve --storage-root DIRECTORY --lab-id ID --members-file PATH --assets DIRECTORY [--bind 127.0.0.1:8084] [--origin https://your-host] [--max-concurrent N] [--max-lab-bytes N]";
+const USAGE: &str = "Usage:\n  collagene-server keygen --key-file PATH\n  collagene-server init --storage-root DIRECTORY --lab-name NAME [--max-lab-bytes N]\n  collagene-server backup --storage-root DIRECTORY --lab-id ID --backup-id NAME [--max-backup-bytes N] [--max-lab-bytes N]\n  collagene-server verify-backup --storage-root DIRECTORY --lab-id ID --backup-id NAME [--max-backup-bytes N]\n  collagene-server restore-new --storage-root DIRECTORY --lab-id ID --backup-id NAME --destination-root NEW_DIRECTORY [--max-backup-bytes N]\n  collagene-server serve --storage-root DIRECTORY --lab-id ID --members-file PATH --assets DIRECTORY [--bind 127.0.0.1:8084] [--origin https://your-host] [--max-concurrent N] [--max-lab-bytes N] [--mcp-storage-root DIRECTORY]";
 
 #[cfg(test)]
 mod backup_cli_tests {

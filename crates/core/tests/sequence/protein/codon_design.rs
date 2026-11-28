@@ -271,7 +271,7 @@ fn strict_json_and_option_bounds_do_not_silently_normalize_or_ignore_declaration
             ..Default::default()
         },
         DesignOptions {
-            genetic_code: 4,
+            genetic_code: 99,
             ..Default::default()
         },
         DesignOptions {
@@ -389,4 +389,45 @@ fn violation_detail_truncation_and_binding_preflight_are_explicit() {
         source_revision(&oversized, &o),
         Err(collagene_model::Error::TooLarge)
     ));
+}
+
+#[test]
+fn expanded_tables_are_usable_but_dual_stop_codons_never_become_safe_design_choices() {
+    let fixed = DesignOptions {
+        genetic_code: 4,
+        ..Default::default()
+    };
+    let r = design(&dna("TGA"), &fixed).unwrap();
+    assert_eq!(r.target_protein, "W");
+    assert_eq!(
+        check(&protein("W"), &dna("TGA"), &fixed).unwrap().satisfies,
+        Some(true)
+    );
+    for (id, residue, uncertain) in [(27, "W", "TGA"), (28, "Q", "TAA"), (31, "E", "TAG")] {
+        let o = DesignOptions {
+            genetic_code: id,
+            codon_weights: vec![CodonWeight {
+                codon: uncertain.into(),
+                weight: 100_000,
+            }],
+            ..Default::default()
+        };
+        let r = design(&protein(residue), &o).unwrap();
+        assert_ne!(chosen(&r), uncertain);
+        assert_eq!(
+            check(&protein(residue), &dna(uncertain), &o)
+                .unwrap()
+                .satisfies,
+            Some(false)
+        );
+        assert!(design(&dna(uncertain), &o).is_err());
+        r.validate_for_source(&protein(residue), &o).unwrap();
+    }
+    let no_definite_stop = DesignOptions {
+        genetic_code: 28,
+        ..Default::default()
+    };
+    let report = design(&protein("M*"), &no_definite_stop).unwrap();
+    assert_eq!(report.status, DesignStatus::Unsatisfiable);
+    assert!(report.candidate.is_none());
 }

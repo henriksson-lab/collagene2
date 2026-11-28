@@ -4,7 +4,7 @@ set -euo pipefail
 
 case "${1:-build}" in
   build) collagene_extra_packages=() ;;
-  package) collagene_extra_packages=(patchelf xdg-utils libfuse2) ;;
+  package) collagene_extra_packages=(patchelf xdg-utils) ;;
   *) echo 'Expected build or package dependency profile.' >&2; exit 2 ;;
 esac
 

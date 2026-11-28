@@ -13,6 +13,10 @@ collagene-lab-library = { path = "../lab-library" }
 collagene-library-protocol = { path = "../library-protocol" }
 collagene-library-host = { path = "../library-host" }
 collagene-library-sync = { path = "../library-sync" }
+collagene-mcp = { path = "../mcp" }
+collagene-local-storage = { path = "../local-storage" }
+rmcp = { version = "=3.11.0", default-features = false, features = ["server", "transport-streamable-http-server"] }
+futures-util = "0.3"
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio"] }
 tokio = { version = "=1.54.1", features = ["net", "rt-multi-thread", "time", "sync", "macros", "signal"] }
 subtle = "=2.6.1"

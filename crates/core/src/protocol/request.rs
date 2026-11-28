@@ -244,7 +244,12 @@ impl Request {
             AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
                 crate::material::review::request_revision(workspace, run_id)?;
             }
-            AnalysisJob::RenderMapSvg { request } => request.validate()?,
+            AnalysisJob::RenderMap { request } => request.validate()?,
+            AnalysisJob::RenderGelImage { request } => {
+                if request.revision()? != self.revision {
+                    return Err(Error::Format("Gel image request context differs".into()));
+                }
+            }
             AnalysisJob::MaterializeMaterialDigestFragment { source, request } => {
                 request.revision(source)?;
             }

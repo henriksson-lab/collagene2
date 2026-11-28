@@ -248,7 +248,7 @@ pub fn AssemblyArchiveView(
             let archive = prepared
                 .get_untracked()
                 .ok_or("Prepare the archive first.")?;
-            let artifact = crate::io::download::prepare_download(
+            let artifact = crate::io::download::ExportArtifact::prepare(
                 "collagene-constructs.zip",
                 &archive.mime,
                 &archive.bytes,

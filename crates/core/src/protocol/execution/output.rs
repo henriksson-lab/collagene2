@@ -174,9 +174,9 @@ pub(super) fn predict_pinned_gel(
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 
-pub(super) fn render_map_svg(
+pub(super) fn render_map(
     context: &RequestContext,
-    request: crate::output::svg_export::Request,
+    request: crate::output::map_export::Request,
 ) -> Result<AnalysisResult, Error> {
     {
         let request = &request;
@@ -198,7 +198,7 @@ pub(super) fn render_map_svg(
         context.admit(molecule)?;
     }
     let outcome: Result<AnalysisResult, Error> =
-        { crate::output::svg_export::render(&request).map(AnalysisResult::MapSvgExported) };
+        { request.render().map(AnalysisResult::MapExported) };
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }
 
@@ -443,4 +443,19 @@ pub(super) fn prepare_structure(
         crate::protein::structure::prepare(&bytes, format, selection)
             .map(AnalysisResult::StructurePrepared);
     Ok(outcome.unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
+}
+
+/// Documentary rendering is bound to the full original report and explicit image settings.
+pub(super) fn render_gel_image(
+    context: &RequestContext,
+    request: crate::output::gel_export::Request,
+) -> Result<AnalysisResult, Error> {
+    if request.revision()? != *context.revision {
+        return Err(Error::Format("Gel export context changed".into()));
+    }
+    context.admit(None)?;
+    Ok(request
+        .render()
+        .map(AnalysisResult::GelImageExported)
+        .unwrap_or_else(|error| AnalysisResult::Error(error.to_string())))
 }

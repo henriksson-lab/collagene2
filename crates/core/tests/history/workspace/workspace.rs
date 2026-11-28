@@ -653,3 +653,43 @@ fn tailing_candidate_preserves_current_schema_and_literal_operation() {
         ));
     }
 }
+
+#[test]
+fn native_zip_preserves_import_scale_features() {
+    let mut molecule = Molecule::dna("Import-scale annotation", "ACGT", Topology::Linear).unwrap();
+    molecule.features = vec![
+        Feature {
+            kind: "x".into(),
+            location: Location::range(0, 1),
+            qualifiers: vec![],
+            needs_review: false,
+        };
+        100_000
+    ];
+    let workspace = Workspace::from_documents("Annotation archive", vec![molecule], 0).unwrap();
+    let bytes = save_workspace(&workspace).unwrap();
+    let loaded = load_workspace(&bytes).unwrap();
+    assert_eq!(
+        loaded.head(&loaded.active_document).unwrap().features.len(),
+        100_000
+    );
+    assert_eq!(save_workspace(&loaded).unwrap(), bytes);
+}
+
+#[test]
+fn native_zip_preserves_full_document_and_retained_revision_capacities() {
+    let molecule = Molecule::dna("Source", "ACGT", Topology::Linear).unwrap();
+    let mut workspace =
+        Workspace::from_documents("Retained history", vec![molecule.clone(); MAX_DOCUMENTS], 0)
+            .unwrap();
+    for index in 1..MAX_REVISIONS {
+        let mut retained = molecule.clone();
+        retained.name = format!("Retained revision {index}");
+        workspace.revisions.insert(retained.revision(), retained);
+    }
+    let bytes = save_workspace(&workspace).unwrap();
+    let loaded = load_workspace(&bytes).unwrap();
+    assert_eq!(loaded.documents.len(), MAX_DOCUMENTS);
+    assert_eq!(loaded.revisions.len(), MAX_REVISIONS);
+    assert_eq!(save_workspace(&loaded).unwrap(), bytes);
+}

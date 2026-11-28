@@ -36,7 +36,7 @@ impl Options {
     pub fn validate(&self) -> Result<(), Error> {
         if self.flank_bases == 0
             || self.flank_bases > 150
-            || !matches!(self.genetic_code, 1 | 2 | 11)
+            || translation::CodeDescriptor::for_id(self.genetic_code).is_err()
             || self.frames.is_empty()
             || self.frames.len() > 6
             || self.max_junctions == 0
@@ -1262,7 +1262,7 @@ impl Report {
                         || t.junction_coding_offset > MAX_CDS_LENGTH
                         || t.protein.len() != t.codon_count
                         || !matches!(t.codon_start, 1..=3)
-                        || !matches!(t.genetic_code, 1 | 2 | 11)
+                        || translation::CodeDescriptor::for_id(t.genetic_code).is_err()
                         || t.code_name.len() > 256
                         || !cds.spans_boundary
                     {

@@ -1,4 +1,5 @@
 //! The single typed cloning plan and its owned dependency/identity behavior.
+use crate::planning::editing::{MAX_INPUTS, MAX_SOURCES_PER_STEP, MAX_STEPS};
 use crate::{
     chemistry::{self, EndTreatment, tracked_duplex::GenerationAssumptions},
     sequence::analysis::Primer,
@@ -47,13 +48,20 @@ pub enum Operation {
     },
     /// An explicit ordered candidate, not an exhaustive assembly search.
     Overlap {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, Source, MAX_SOURCES_PER_STEP>"
+        )]
         fragments: Vec<Source>,
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, MAX_SOURCES_PER_STEP>"
+        )]
         overlaps: Vec<usize>,
         circular: bool,
     },
     /// Complete digestion; select a zero-based fragment in ascending top-cut order.
     Digest {
         template: Source,
+        #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 128>")]
         enzymes: Vec<String>,
         fragment_index: usize,
     },
@@ -63,6 +71,9 @@ pub enum Operation {
     },
     /// Declared intended ligation and bounded one-copy alternatives, with explicit orientation and nick acceptance.
     Ligate {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, OrientedSource, MAX_SOURCES_PER_STEP>"
+        )]
         fragments: Vec<OrientedSource>,
         circular: bool,
         allow_nicked: bool,
@@ -75,6 +86,9 @@ pub enum Operation {
         options: crate::cloning::pcr::mutagenesis::PcrOptions,
     },
     GoldenGate {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, Source, MAX_SOURCES_PER_STEP>"
+        )]
         templates: Vec<Source>,
         options: crate::cloning::golden_gate::GoldenGateOptions,
         candidate_index: usize,
@@ -96,7 +110,13 @@ pub enum Operation {
         base: crate::cloning::ligation::tailing::TailingBase,
     },
     ProfiledOverlap {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, OrientedSource, MAX_SOURCES_PER_STEP>"
+        )]
         fragments: Vec<OrientedSource>,
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, usize, MAX_SOURCES_PER_STEP>"
+        )]
         overlaps: Vec<usize>,
         circular: bool,
         options: crate::cloning::overlap::profiles::ProfileOptions,
@@ -122,6 +142,9 @@ pub enum Operation {
     /// Fresh full physical graph. A proven contour is only a restrictive reference
     /// view; no target acceptance or downstream chemical state is inferred.
     Topo {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, TopoSource, MAX_SOURCES_PER_STEP>"
+        )]
         sources: Vec<TopoSource>,
         request: crate::cloning::topo::Request,
         selection: crate::cloning::topo::Selection,
@@ -129,6 +152,9 @@ pub enum Operation {
     /// Final-only independent-target acceptance under an explicit physical policy.
     /// Accepted reference coordinates never establish downstream duplex authority.
     CheckedTopo {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, TopoSource, MAX_SOURCES_PER_STEP>"
+        )]
         sources: Vec<TopoSource>,
         request: crate::cloning::topo::Request,
         selection: crate::cloning::topo::Selection,
@@ -151,6 +177,9 @@ pub enum Operation {
     /// Explicit path identity checked against the same fresh native enumeration.
     /// Neither an imported report nor correspondence to the target chooses a path.
     SelectedGoldenGate {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, Source, MAX_SOURCES_PER_STEP>"
+        )]
         templates: Vec<Source>,
         options: crate::cloning::golden_gate::GoldenGateOptions,
         candidate_index: usize,
@@ -159,11 +188,17 @@ pub enum Operation {
     },
     /// Accounted explicit graph actions; includes every retained byproduct.
     TopoActions {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, TopoSource, MAX_SOURCES_PER_STEP>"
+        )]
         sources: Vec<TopoSource>,
         request: crate::cloning::topo::actions::Request,
     },
     /// Complete declared multi-parent reference network; no physical duplex authority.
     MultiSiteRecombineReference {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, TopoSource, MAX_SOURCES_PER_STEP>"
+        )]
         sources: Vec<TopoSource>,
         request: crate::cloning::recombination::multisite::Request,
         selection: crate::cloning::recombination::Selection,
@@ -184,6 +219,9 @@ pub enum Operation {
     /// Fresh physical resection/pairing/fill/seal under a versioned declared model.
     /// Historical ProfiledOverlap remains a sequence-reference operation.
     HomologyAssembly {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, OrientedSource, MAX_SOURCES_PER_STEP>"
+        )]
         fragments: Vec<OrientedSource>,
         options: crate::cloning::overlap::profiles::ProfileOptions,
         policy: crate::cloning::overlap::assembly::Options,
@@ -196,6 +234,9 @@ pub enum Operation {
     /// Generic3′ processing/exposed5′tail annealing only. Every joined strand
     /// remains separate; no polymerase, ligase or cellular rescue is inferred.
     HomologyAnnealing {
+        #[serde(
+            deserialize_with = "collagene_model::decode::bounded_vec::<_, OrientedSource, MAX_SOURCES_PER_STEP>"
+        )]
         fragments: Vec<OrientedSource>,
         options: crate::cloning::overlap::profiles::ProfileOptions,
         policy: crate::cloning::overlap::annealing::Options,
@@ -213,7 +254,9 @@ pub enum Operation {
 pub struct DesignPlan {
     pub name: String,
     pub target_revision: String,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, PlanInput, MAX_INPUTS>")]
     pub inputs: Vec<PlanInput>,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Operation, MAX_STEPS>")]
     pub steps: Vec<Operation>,
 }
 

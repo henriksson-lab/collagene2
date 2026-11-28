@@ -211,7 +211,7 @@ pub fn ScfExportControls(
                 status.set(e.to_string());
                 return;
             }
-            let artifact = match crate::io::download::prepare_download(
+            let artifact = match crate::io::download::ExportArtifact::prepare(
                 &value.name,
                 "application/octet-stream",
                 &value.report.report.bytes,

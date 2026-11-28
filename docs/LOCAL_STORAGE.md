@@ -66,3 +66,20 @@ python3 scripts/mcp_smoke.py /absolute/path/collagene-mcp --storage-root /absolu
 ```
 
 Tests cover root validity, canonicalization, session isolation, platform permissions, exclusive files, symlink/replacement sentinels, cleanup ownership, CLI stdout isolation and a complete configured-root SDK reference import/export/disposal lifecycle. Windows-specific delete-sharing/cleanup tests remain enabled on Windows. Scientific core, web and worker dependency graphs do not acquire this native storage crate.
+
+
+## Hosted MCP scientific workspaces
+
+The shared server enables `/api/mcp/{workspace}` only with an explicit existing
+`--mcp-storage-root`. Each member/label scope owns its own ordinary MCP state and
+managed session child. It receives no shared-library or arbitrary-path authority.
+The public native configuration method also rejects roots overlapping the asset
+snapshot's canonical directory in either direction and refuses reconfiguration
+after server state is shared. See [hosted MCP](MCP.md#hosted-streamable-http) for
+credentials, fixed lab pinning, quotas, revocation and bounded response lifetime.
+
+Retirement closes new native compute admission. A canceled HTTP future does not
+stop already running blocking work: the retired workspace retains quota/storage
+until its native permit actually returns and all live response leases finish.
+Cleanup never rebinds an old engine to a newly created workspace under the same
+label. Process crashes may still leave managed files as documented above.

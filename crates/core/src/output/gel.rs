@@ -179,6 +179,15 @@ pub struct GelReport {
     pub lanes: Vec<LaneReport>,
     pub assumptions: Vec<String>,
 }
+impl GelReport {
+    /// Identity of the complete bounded documentary report, not proof of a sample.
+    pub fn revision(&self) -> Result<String, Error> {
+        self.calibration.validate()?;
+        bound(self)?;
+        let bytes = serde_json::to_vec(self).map_err(|e| Error::Format(e.to_string()))?;
+        Ok(blake3::hash(&bytes).to_hex().to_string())
+    }
+}
 fn error(message: &str) -> Error {
     Error::Unsupported(message.into())
 }

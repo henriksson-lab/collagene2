@@ -1,7 +1,7 @@
 //! Explicit event bindings for retained, replayable cloning products.
 use crate::history::run_event_model::Request as EventRequest;
 use crate::history::run_event_model::Role;
-use crate::io::download::prepare_download;
+use crate::io::download::ExportArtifact;
 use crate::platform::storage;
 use crate::platform::worker;
 use crate::workspace::session::encode_workspace;
@@ -570,7 +570,7 @@ pub fn RunDetailsPanel(
         let result = serde_json::to_writer_pretty(&mut bytes, &report)
             .map_err(|e| e.to_string())
             .and_then(|()| {
-                prepare_download("cloning-run-replay.json", "application/json", &bytes.0)
+                ExportArtifact::prepare("cloning-run-replay.json", "application/json", &bytes.0)
             });
         crate::io::download::complete_download(result, move |result| {
             if status.try_get_untracked().is_some() {

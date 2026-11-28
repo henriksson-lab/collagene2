@@ -44,7 +44,7 @@ These tables summarize implemented capabilities; see the linked profiles for lim
 | FASTQ, GFF3/GTF/BED, primer CSV/TSV | Quality, annotation and oligo exchange |
 | SBOL 3.1 JSON-LD | Selected structural profile |
 | Native Collagene 2 | Documents, workspaces, designs and history |
-| HTML/PDF, SVG | Protocol and map export |
+| HTML/PDF, SVG/PNG | Protocols, maps and predicted gel export |
 
 [Format profiles and limitations](docs/FORMAT_DELIVERY_MATRIX.md) · [NCBI/Addgene URL imports](docs/URL_IMPORT.md)
 

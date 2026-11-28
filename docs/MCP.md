@@ -127,6 +127,67 @@ Create and protect that folder beforehand. The server canonicalizes it, rejects 
 
 This option does **not** enable arbitrary file imports/exports, access to existing files in that folder, a public filesystem HTTP API or browser access to the native root. Upload/download chunks and opaque session handles remain the only file-backed interface. It limits managed application I/O, not all OS access by other same-user processes. Unix creation modes are0700/0600; Windows privacy follows the configured parent's ACL. Cleanup is best-effort for owned files and empty session directories on normal disposal; crashes, foreign handles or external namespace changes may leave data behind. Keep the parent folder protected. The reusable implementation is [collagene-local-storage](../crates/local-storage/README.md).
 
+### Hosted Streamable HTTP
+
+Hosted MCP is an explicit opt-in on the existing shared-library server listener:
+add `--mcp-storage-root DIRECTORY` to `collagene-server serve`. The directory
+must already exist and must neither contain nor be inside the static asset root.
+The same rule is enforced by `ServerState::with_hosted_mcp` for native embedding,
+which must run before that server state is cloned. No request can configure or
+expand storage. Omitting the option leaves the MCP endpoint disabled.
+
+Clients connect to `/api/mcp/{workspace}`. Choose a label of 1–64 ASCII letters,
+digits, underscores or hyphens, for example `/api/mcp/assembly-review`. Labels
+are scientific session selectors, never paths or authorization secrets. Supply
+the ordinary individual member `Authorization: Bearer …` credential and
+`x-collagene-expected-lab` header with the exact startup lab ID. Query strings,
+absolute request targets, duplicate authorization/session headers and encoded
+path labels are refused. Host and any supplied Origin must match the operator's
+canonical origin. Credentials are removed before handing the request to the SDK
+and are never passed to scientific handlers or printed.
+
+One scientific workspace is keyed by startup lab, currently authenticated member
+identity and label. Reusing a label intentionally retains that member's imported
+sequences, plans and artifacts. Another member using the same label receives
+separate state. The pinned rmcp SDK's modern stateless HTTP calls retain the
+selected scientific workspace; supported older external MCP protocol sessions
+have an independent session manager within that same explicit scope. A protocol
+session ID cannot cross members or workspace labels and never substitutes for
+authentication. Registry membership is rechecked after body/handshake waits.
+Revocation cancels active scopes during the bounded cleanup sweep.
+
+The hosted service uses the ordinary MCP scientific handlers and verifier.
+Private document/plan operations do not mutate the shared library. A library
+Reader may work on its private scientific imports; that grants no library write
+permission. Import a deliberately chosen, exact source/workspace snapshot using
+the existing MCP tools. There is no implicit library enumeration, automatic
+browser synchronization, hidden shared scientific session or filesystem tool.
+Browser results still require exact current revision checks before application.
+
+Defaults bound the hosted service to 16 workspace slots globally, four per
+member, two live requests per workspace, 16 live requests globally, four older
+protocol sessions per workspace, 12 MiB per request, a 30-second body timeout,
+and a 30-minute total response lifetime. Response/SSE leases retain request
+quotas until completion or drop. A 30-second sweep expires a quiescent workspace
+after 30 minutes idle. Native embedders may choose validated limits through
+`HostedMcpLimits`; the CLI uses these defaults.
+
+`DELETE` with an older MCP session header closes that protocol connection.
+Authenticated `DELETE` without that header explicitly retires the selected
+scientific workspace; a later session starts with fresh state. Retirement stops
+new compute admission and cancels transport, but does not pretend that a running
+`spawn_blocking` task has stopped. Retired slots and managed storage remain
+charged until live request leases and the actual native compute permit finish.
+Old completions cannot publish into the replacement workspace. Graceful server
+shutdown cancels all scopes before draining the listener. Managed files receive
+the same capability-root privacy/cleanup rules as local MCP storage.
+
+Current source includes pure owner/quota/retirement tests and a native blocking
+compute lifecycle fixture. HTTP auth/tool/older-session acceptance cases are
+intentionally ignored until the product's application HTTP deferral is lifted;
+compiling them does not establish transport acceptance.
+
+
 ## Browser exchange
 
 The web Plan panel provides an explicit file exchange without exposing a network bridge:
@@ -255,7 +316,7 @@ The `.cg2plan` candidate and native workspace plan use the current internal enco
 
 `design_inverse_pcr` takes an immutable circular `document`, independent circular `target` and `InversePcrOptions`. It returns actual primers, computed diagnostics and a stored candidate `plan_revision` with explicit PCR, terminal phosphorylation and sealed circular ligation. Review/reverify that candidate before export/use. This stores a session proposal, not a project edit or experimental result. Full evidence is a JSON artifact.
 
-`predict_gel` takes bound `lanes` (label, document, preparation, optional loaded mass) and an explicit `Calibration`. It returns full JSON and standalone SVG artifact IDs, with bounded lane summaries. Uncut circular conformation, unsupported/error profiles and out-of-calibration fragments remain visible and unpositioned. `design_diagnostic_digest` takes immutable `documents` and `DiagnosticOptions`; ranked enzyme sets distinguish supported band profiles under that calibration and resolution, while unknown profiles stay unknown. Index-pair results refer to the ordered document list/source revisions. Search caps and completeness accompany all reports. There is no observed-gel comparison or OpenGel integration.
+`predict_gel` takes bound `lanes` (label, document, preparation, optional loaded mass), explicit `Calibration`, and `image_format` (`"Svg"` or `{"Png":{"width":1600}}`). It returns full JSON and the selected image via `image_artifact_id`, with bounded lane summaries and image warnings/context. PNG is a source-report-bound static rendering, not an observed image. Uncut circular conformation, unsupported/error profiles and out-of-calibration fragments remain visible and unpositioned. `design_diagnostic_digest` takes immutable `documents` and `DiagnosticOptions`; ranked enzyme sets distinguish supported band profiles under that calibration and resolution, while unknown profiles stay unknown. Index-pair results refer to the ordered document list/source revisions. Search caps and completeness accompany all reports. There is no observed-gel comparison or OpenGel integration.
 
 Model details: [Golden Gate](GOLDEN_GATE.md), [mutagenesis](MUTAGENESIS.md), [gel prediction](GEL_PREDICTION.md). All five tools use the same embedded core and immutable revision checks; schemas are available through `tools/list`. Export artifacts and proposals do not acquire browser/project-write authority.
 
@@ -1019,7 +1080,7 @@ explicit processing. [Scientific contract](THREE_PRIME_HOMOLOGY.md).
 
 `prepare_saved_run_review {workspace, run_id}` prepares the exact retained native run with its original source and independent-target events. It returns the documentary review JSON and a portable unverified candidate artifact; it does not adopt the recorded verdict, material status or workspace heads. Fresh verification is required.
 
-`export_map_svg {id, revision}` exports canonical features of that exact immutable native document to a bounded UTF-8 SVG artifact. It returns the exact source revision, warnings and artifact identity. The MCP route requests no restriction overlay; it makes no cloning/physical-material claim and changes no source or native catalog.
+`export_map {document: {id, revision}, format}` exports canonical features of that exact immutable native document. Select `"Svg"` for a UTF-8 vector artifact or `{"Png":{"width":1600}}` for a binary PNG artifact. It returns the exact source revision, selected format, warnings and artifact identity. The MCP route requests no restriction overlay; it makes no cloning/physical-material claim and changes no source or native catalog.
 
 
 ## Documentary plate layouts

@@ -52,60 +52,74 @@ impl<'a> TemplateView<'a> {
 pub fn find_matches(mol: &Molecule, query: &str, both_strands: bool) -> Result<Vec<Match>, Error> {
     find_matches_view(TemplateView::reference(mol), query, both_strands)
 }
+/// Shared limit for one exact search or all four exact-PCR binding searches.
+/// Concrete inputs use linear KMP; ambiguous comparisons consume this budget.
+pub const MAX_EXACT_SEARCH_WORK: usize = 200_000_000;
+const EXACT_WORK_ERROR: &str =
+    "exact search/PCR binding exceeded its 200-million work budget; shorten or refine the inputs";
+
 pub fn find_matches_view(
     mol: TemplateView<'_>,
     query: &str,
     both_strands: bool,
 ) -> Result<Vec<Match>, Error> {
+    let mut work = super::matching::Work::new(MAX_EXACT_SEARCH_WORK);
+    find_with_work(mol, query, both_strands, &mut work)
+}
+fn find_with_work(
+    mol: TemplateView<'_>,
+    query: &str,
+    both_strands: bool,
+    work: &mut super::matching::Work,
+) -> Result<Vec<Match>, Error> {
     if mol.sequence.alphabet() == Alphabet::Protein {
         return Err(Error::Unsupported("nucleotide search on protein".into()));
     }
+    if !work.take(query.len()) {
+        return Err(Error::Unsupported(EXACT_WORK_ERROR.into()));
+    }
     let pattern = Sequence::new(mol.sequence.alphabet(), query)?;
-    let n = mol.sequence.len();
-    let m = pattern.len();
-    if m > n {
+    if pattern.len() > mol.sequence.len() {
         return Ok(vec![]);
     }
-    let rc = pattern.reverse_complement()?;
-    let mut patterns = vec![(pattern.as_str(), false)];
-    if both_strands && rc != pattern {
-        patterns.push((rc.as_str(), true));
+    let mut patterns = vec![(pattern, false)];
+    if both_strands {
+        if !work.take(patterns[0].0.len()) {
+            return Err(Error::Unsupported(EXACT_WORK_ERROR.into()));
+        }
+        let rc = patterns[0].0.reverse_complement()?;
+        if rc != patterns[0].0 {
+            patterns.push((rc, true));
+        }
     }
-    let limit = if mol.topology == Topology::Circular {
-        n
-    } else {
-        n - m + 1
-    };
-    let bases = mol.sequence.as_str().as_bytes();
     let mut hits = vec![];
-    for (p, reverse) in patterns {
-        for start in 0..limit {
-            let mut certain = true;
-            let mut matched = true;
-            for (j, b) in p.bytes().enumerate() {
-                let a = base_mask(bases[(start + j) % n]);
-                let b = base_mask(b);
-                if a & b == 0 {
-                    matched = false;
-                    break;
-                }
-                if a & !b != 0 {
-                    certain = false;
-                }
-            }
-            if matched {
+    for (pattern, reverse) in patterns {
+        let mut hit_limit = false;
+        let complete = super::matching::scan(
+            mol.sequence,
+            &pattern,
+            mol.topology == Topology::Circular,
+            work,
+            |placement| {
                 if hits.len() >= 100_000 {
-                    return Err(Error::Unsupported(
-                        "search has over 100,000 matches; use a longer query".into(),
-                    ));
+                    hit_limit = true;
+                    return false;
                 }
                 hits.push(Match {
-                    start,
-                    length: m,
+                    start: placement.start,
+                    length: pattern.len(),
                     reverse,
-                    certain,
+                    certain: placement.certain,
                 });
-            }
+                true
+            },
+        )?;
+        if !complete {
+            return Err(Error::Unsupported(if hit_limit {
+                "search has over 100,000 matches; use a longer query".into()
+            } else {
+                EXACT_WORK_ERROR.into()
+            }));
         }
     }
     hits.sort_by_key(|h| (h.start, h.reverse));
@@ -351,12 +365,16 @@ pub fn simulate_pcr_geometry_view(
         ));
     }
     let primers = [forward, reverse];
+    let mut work = super::matching::Work::new(MAX_EXACT_SEARCH_WORK);
     let bindings = primers
         .iter()
         .map(|primer| {
-            let forward = find_matches_view(mol, primer.annealing.as_str(), false)?;
-            let reverse =
-                find_matches_view(mol, primer.annealing.reverse_complement()?.as_str(), false)?;
+            let forward = find_with_work(mol, primer.annealing.as_str(), false, &mut work)?;
+            if !work.take(primer.annealing.len()) {
+                return Err(Error::Unsupported(EXACT_WORK_ERROR.into()));
+            }
+            let reverse_sequence = primer.annealing.reverse_complement()?;
+            let reverse = find_with_work(mol, reverse_sequence.as_str(), false, &mut work)?;
             if forward.iter().chain(&reverse).any(|h| !h.certain) {
                 return Err(Error::Unsupported(
                     "ambiguous template binding prevents complete PCR enumeration".into(),

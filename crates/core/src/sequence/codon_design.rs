@@ -197,9 +197,7 @@ fn bounded_json<T: Serialize>(v: &T, max: usize) -> Result<(), Error> {
 }
 impl DesignOptions {
     pub fn validate(&self) -> Result<(), Error> {
-        if ![1, 2, 11].contains(&self.genetic_code) {
-            return Err(bad("supported genetic codes are1,2,11"));
-        }
+        translation::CodeDescriptor::for_id(self.genetic_code)?;
         bounds(self.gc)?;
         if self.beam_width == 0
             || self.beam_width > 4096

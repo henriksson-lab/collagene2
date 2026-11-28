@@ -11,6 +11,7 @@ mod validation;
 use self::envelope::{decode, encode};
 use collagene_model::{Error, Molecule};
 pub fn save_document(mol: &Molecule) -> Result<Vec<u8>, Error> {
+    collagene_model::bounds::annotation_edit_preflight(&[mol])?;
     mol.validate()?;
     encode(b"CG2\0", mol)
 }

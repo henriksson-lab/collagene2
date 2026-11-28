@@ -195,7 +195,7 @@ pub fn PrimerEvidenceView(
                 })
             })
             .and_then(|bytes| {
-                crate::io::download::prepare_download(
+                crate::io::download::ExportArtifact::prepare(
                     "primer-evidence.json",
                     "application/json",
                     &bytes,

@@ -822,7 +822,8 @@ pub(super) fn dispatch(
         AnalysisJob::PrepareSavedRunReview { workspace, run_id } => {
             material::prepare_saved_run_review(context, workspace, run_id)
         }
-        AnalysisJob::RenderMapSvg { request } => output::render_map_svg(context, request),
+        AnalysisJob::RenderMap { request } => output::render_map(context, request),
+        AnalysisJob::RenderGelImage { request } => output::render_gel_image(context, request),
         AnalysisJob::InspectMaterialMismatchPcr {
             source,
             origin,

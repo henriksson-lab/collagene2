@@ -119,6 +119,68 @@ fn note(success: &wire::Success) -> String {
     }
 }
 
+/// Owns folder-clone pagination and exact-parent acknowledgment state.
+/// Remote dispatch and native scope authority remain with the pane/client.
+#[derive(Clone, Copy)]
+struct CloneReview {
+    trees: RwSignal<Vec<wire::TreeStatus>>,
+    offset: RwSignal<u16>,
+    next: RwSignal<Option<u16>>,
+    parent: RwSignal<Option<wire::TreeParentReview>>,
+    acknowledged: RwSignal<bool>,
+}
+impl CloneReview {
+    fn new() -> Self {
+        Self {
+            trees: RwSignal::new(Vec::new()),
+            offset: RwSignal::new(0),
+            next: RwSignal::new(None),
+            parent: RwSignal::new(None),
+            acknowledged: RwSignal::new(false),
+        }
+    }
+    fn clear_parent(&self) {
+        self.parent.set(None);
+        self.acknowledged.set(false);
+    }
+    fn update_status(&self, tree: wire::TreeStatus) {
+        self.trees.update(|rows| {
+            rows.retain(|row| row.job != tree.job);
+            rows.push(tree);
+        });
+    }
+    fn admit_parent(&self, review: wire::TreeParentReview, current_context: bool) {
+        if current_context {
+            self.clear_parent();
+            self.parent.set(Some(review));
+        }
+    }
+    fn set_page(&self, rows: Vec<wire::TreeStatus>, next: Option<u16>) {
+        self.trees.set(rows);
+        self.next.set(next);
+    }
+    fn page_request(&self, page: wire::LocalPageRequest) -> wire::Command {
+        self.offset.set(page.offset);
+        wire::Command::TreeJobs { page }
+    }
+    fn acceptance(&self) -> Result<Option<wire::Command>, &'static str> {
+        if !self.acknowledged.get_untracked() {
+            return Ok(None);
+        }
+        let Some(review) = self.parent.get_untracked() else {
+            return Ok(None);
+        };
+        if !self
+            .trees
+            .with_untracked(|rows| rows.iter().any(|tree| tree == &review.tree))
+        {
+            self.clear_parent();
+            return Err("The clone changed. Inspect its current parent again.");
+        }
+        Ok(Some(wire::Command::AcceptTreeParentChange { review }))
+    }
+}
+
 #[component]
 pub fn RemoteLibraryPane(
     client: Client,
@@ -149,11 +211,7 @@ pub fn RemoteLibraryPane(
     let pending = RwSignal::new(Vec::<wire::PendingPush>::new());
     let pending_offset = RwSignal::new(0u16);
     let pending_next = RwSignal::new(None::<u16>);
-    let trees = RwSignal::new(Vec::<wire::TreeStatus>::new());
-    let tree_offset = RwSignal::new(0u16);
-    let tree_next = RwSignal::new(None::<u16>);
-    let parent_review = RwSignal::new(None::<wire::TreeParentReview>);
-    let parent_acknowledged = RwSignal::new(false);
+    let clone_review = CloneReview::new();
     let checkout = RwSignal::new(false);
     let review = RwSignal::new(None::<PullReview>);
     let bookmarks = RwSignal::new(None::<wire::BookmarkPage>);
@@ -171,8 +229,7 @@ pub fn RemoteLibraryPane(
     });
     Effect::new(move |_| {
         let _ = (selected.get(), destination.get(), locked.get());
-        parent_review.set(None);
-        parent_acknowledged.set(false);
+        clone_review.clear_parent();
     });
     on_cleanup(move || {
         life.with_value(|v| v.set(v.get().wrapping_add(1)));
@@ -214,11 +271,13 @@ pub fn RemoteLibraryPane(
                 | wire::Command::RestartTreeClone { job }
                 | wire::Command::InspectTreeParentChange { job }
                 | wire::Command::QueueTreeFolderMetadata { job, .. }
-                | wire::Command::QueueTreeDocumentMetadata { job, .. } => trees.with(|rows| {
-                    rows.iter()
-                        .find(|t| &t.job == job)
-                        .map(|t| t.remote.clone())
-                }),
+                | wire::Command::QueueTreeDocumentMetadata { job, .. } => {
+                    clone_review.trees.with(|rows| {
+                        rows.iter()
+                            .find(|t| &t.job == job)
+                            .map(|t| t.remote.clone())
+                    })
+                }
                 _ => None,
             });
         let expected =
@@ -247,8 +306,7 @@ pub fn RemoteLibraryPane(
             navigation.set(nav.clone());
         }
         let parent_context = (selected.get_untracked(), destination.get_untracked());
-        parent_review.set(None);
-        parent_acknowledged.set(false);
+        clone_review.clear_parent();
         // Credentials are handed directly to native execution, never retained in a
         // signal, status, debug formatter, retry closure or local storage.
         busy.set(true);
@@ -355,26 +413,19 @@ pub fn RemoteLibraryPane(
                             pending.update(|rows| rows.retain(|p| p.job != job))
                         }
                         wire::Success::TreeStarted(tree) | wire::Success::TreeUpdated(tree) => {
-                            trees.update(|rows| {
-                                rows.retain(|p| p.job != tree.job);
-                                rows.push(tree);
-                            })
+                            clone_review.update_status(tree)
                         }
                         wire::Success::TreeParentReview(value) => {
-                            if parent_context
-                                == (selected.get_untracked(), destination.get_untracked())
-                                && !locked.get_untracked()
-                            {
-                                parent_review.set(Some(value));
-                            }
+                            clone_review.admit_parent(
+                                value,
+                                parent_context
+                                    == (selected.get_untracked(), destination.get_untracked())
+                                    && !locked.get_untracked(),
+                            );
                         }
-                        wire::Success::TreeParentAccepted(tree) => trees.update(|rows| {
-                            rows.retain(|p| p.job != tree.job);
-                            rows.push(tree);
-                        }),
+                        wire::Success::TreeParentAccepted(tree) => clone_review.update_status(tree),
                         wire::Success::TreeJobs(page) => {
-                            trees.set(page.items.into_vec());
-                            tree_next.set(page.next_offset);
+                            clone_review.set_page(page.items.into_vec(), page.next_offset);
                         }
                         _ => {}
                     }
@@ -664,8 +715,8 @@ pub fn RemoteLibraryPane(
                 <button class="text-tool" disabled=move||busy.get()||locked.get()||pending_next.get().is_none() on:click=move|_|if let Some(offset)=pending_next.get_untracked(){pending_offset.set(offset);send.run(Action::command(wire::Command::Pending{page:wire::LocalPageRequest{offset,limit:100}}));}>"Next"</button>
             </details>
             <details><summary>"Folder clones"</summary>
-                <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{tree_offset.set(0);send.run(Action::command(wire::Command::TreeJobs{page:wire::LocalPageRequest::default()}));}>"Refresh folder clones"</button>
-                <ul class="lab-library-entries">{move||trees.get().into_iter().map(|t|{
+                <button class="text-tool" disabled=move||busy.get()||locked.get() on:click=move|_|{send.run(Action::command(clone_review.page_request(wire::LocalPageRequest::default())));}>"Refresh folder clones"</button>
+                <ul class="lab-library-entries">{move||clone_review.trees.get().into_iter().map(|t|{
                     let resume=t.job.clone();let retry=t.job.clone();let restart=t.job.clone();let inspect=t.job.clone();let doc_metadata=t.job.clone();let folder_metadata=t.job.clone();
                     let stopped=matches!(t.phase,wire::TreePhase::Complete|wire::TreePhase::Blocked|wire::TreePhase::Invalidated);
                     let blocked=t.phase==wire::TreePhase::Blocked;
@@ -682,25 +733,24 @@ pub fn RemoteLibraryPane(
                         <button class="text-tool" disabled=move||busy.get()||locked.get()||destination.get().is_none() on:click=move|_|if let Some(local_folder)=destination.get_untracked(){send.run(Action::command(wire::Command::QueueTreeFolderMetadata{job:folder_metadata.clone(),local_folder}));}>"Queue selected local folder metadata"</button>
                     </details></li>}
                 }).collect_view()}</ul>
-                {move||parent_review.get().map(|value|{
+                {move||clone_review.parent.get().map(|value|{
                     let summary=format!("Clone {} · database {} · local parent {} ({}) · generation {} · parent {}",value.tree.job.as_str(),value.tree.remote.as_str(),value.folder.name.as_str(),value.folder.id.as_str(),value.folder.generation,value.folder.parent.as_ref().map(|id|id.as_str()).unwrap_or("local catalog root"));
                     view!{<div class="library-review"><p>{summary}</p>
                         <p class="helper">"This accepts the displayed local folder rename or placement for future descendant imports. Existing plasmids stay unchanged; acknowledgment does not resume the clone."</p>
-                        <label><input type="checkbox" prop:checked=move||parent_acknowledged.get() on:change=move|event|parent_acknowledged.set(event_target_checked(&event))/>"I reviewed this exact local parent and want the clone to retain it."</label>
-                        <button class="text-tool" disabled=move||busy.get()||locked.get()||!parent_acknowledged.get() on:click=move|_|{
-                            if !parent_acknowledged.get_untracked(){return;}
-                            if let Some(review)=parent_review.get_untracked(){
-                                if trees.with_untracked(|rows|rows.iter().any(|t|t==&review.tree)){
-                                    send.run(Action::command(wire::Command::AcceptTreeParentChange{review}));
-                                }else{parent_review.set(None);parent_acknowledged.set(false);status.set("The clone changed. Inspect its current parent again.".into());}
+                        <label><input type="checkbox" prop:checked=move||clone_review.acknowledged.get() on:change=move|event|clone_review.acknowledged.set(event_target_checked(&event))/>"I reviewed this exact local parent and want the clone to retain it."</label>
+                        <button class="text-tool" disabled=move||busy.get()||locked.get()||!clone_review.acknowledged.get() on:click=move|_|{
+                            match clone_review.acceptance() {
+                                Ok(Some(command)) => send.run(Action::command(command)),
+                                Ok(None) => {},
+                                Err(message) => status.set(message.into()),
                             }
                         }>"Acknowledge reviewed parent"</button>
-                        <button class="text-tool" disabled=move||busy.get() on:click=move|_|{parent_review.set(None);parent_acknowledged.set(false);}>"Dismiss parent review"</button>
+                        <button class="text-tool" disabled=move||busy.get() on:click=move|_|{clone_review.clear_parent();}>"Dismiss parent review"</button>
                     </div>}
                 })}
                 <p class="helper">"Clones preserve their scanned revisions and completed local edits. Metadata actions require membership in this clone and never turn its local mount into a remote move."</p>
-                <button class="text-tool" disabled=move||busy.get()||locked.get()||tree_offset.get()==0 on:click=move|_|{let offset=tree_offset.get_untracked().saturating_sub(100);tree_offset.set(offset);send.run(Action::command(wire::Command::TreeJobs{page:wire::LocalPageRequest{offset,limit:100}}));}>"Previous"</button>
-                <button class="text-tool" disabled=move||busy.get()||locked.get()||tree_next.get().is_none() on:click=move|_|if let Some(offset)=tree_next.get_untracked(){tree_offset.set(offset);send.run(Action::command(wire::Command::TreeJobs{page:wire::LocalPageRequest{offset,limit:100}}));}>"Next"</button>
+                <button class="text-tool" disabled=move||busy.get()||locked.get()||clone_review.offset.get()==0 on:click=move|_|{let offset=clone_review.offset.get_untracked().saturating_sub(100);send.run(Action::command(clone_review.page_request(wire::LocalPageRequest{offset,limit:100})));}>"Previous"</button>
+                <button class="text-tool" disabled=move||busy.get()||locked.get()||clone_review.next.get().is_none() on:click=move|_|if let Some(offset)=clone_review.next.get_untracked(){send.run(Action::command(clone_review.page_request(wire::LocalPageRequest{offset,limit:100})));}>"Next"</button>
             </details>
             <p class="library-status" role="status" aria-live="polite">{move||status.get()}</p>
         </details>

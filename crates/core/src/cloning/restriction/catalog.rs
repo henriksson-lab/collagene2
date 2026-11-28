@@ -25,7 +25,7 @@ pub const ENGINE_KEY: &str = "restriction_catalog:engine";
 pub const PRODUCT_REVISION_KEY: &str = "restriction_catalog:batch_revision";
 macro_rules! dto{($($x:tt)*)=>{#[derive(Debug,Clone,Serialize,Deserialize)]#[cfg_attr(feature="json-schema",derive(schemars::JsonSchema))]#[serde(deny_unknown_fields)]$($x)*};}
 dto! {#[derive(PartialEq,Eq)] pub struct SelectedEnzyme{pub id:String,pub enzyme:EnzymeSpec}}
-dto! {#[derive(PartialEq,Eq)] pub struct CatalogSelection{pub schema_version:u16,pub catalog_edition:String,pub catalog_content_hash:String,pub enzymes:Vec<SelectedEnzyme>}}
+dto! {#[derive(PartialEq,Eq)] pub struct CatalogSelection{pub schema_version:u16,pub catalog_edition:String,pub catalog_content_hash:String,#[serde(deserialize_with="collagene_model::decode::bounded_vec::<_, SelectedEnzyme, 64>")]pub enzymes:Vec<SelectedEnzyme>}}
 dto! {pub struct CatalogRestrictionInspection{pub engine_version:String,pub selection:CatalogSelection,pub batch_revision:String,pub inspection:RestrictionInspection}}
 dto! {pub struct CatalogDigestProduct{pub engine_version:String,pub selection:CatalogSelection,pub batch_revision:String,pub product:DigestProduct}}
 // batch_revision here is the installation request revision, including the original

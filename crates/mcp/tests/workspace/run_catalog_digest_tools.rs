@@ -189,7 +189,7 @@ async fn predicted_catalog_gel_replays_run_and_derived_sources_with_exact_worksp
         };
         let query = json!({"lanes":[{"label":"Fresh saved-material prediction",
             "document":{"id":recipe.source.revision,"revision":recipe.source.revision},"workspace":workspace_ref,
-            "preparation":Preparation::CatalogDigest{recipe:recipe.clone()},"mass_ng":null}],"calibration":Calibration::default()});
+            "preparation":Preparation::CatalogDigest{recipe:recipe.clone()},"mass_ng":null}],"calibration":Calibration::default(),"image_format":"Svg"});
         let predicted = call(&client, "predict_gel", query.clone()).await;
         assert!(predicted["lanes"][0]["error"].is_null(), "{predicted}");
         assert!(predicted["lanes"][0]["fragment_count"].as_u64().unwrap() > 0);

@@ -313,7 +313,7 @@ pub fn ProtocolLayoutView(
                 output
                     .validate_binding(&context)
                     .map_err(|e| e.to_string())?;
-                let artifact = crate::io::download::prepare_download(
+                let artifact = crate::io::download::ExportArtifact::prepare(
                     &output.filename,
                     &output.media_type,
                     &output.bytes,

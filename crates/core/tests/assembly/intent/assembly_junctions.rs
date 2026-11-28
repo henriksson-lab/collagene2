@@ -218,3 +218,34 @@ fn failed_final_operation_never_exposes_preparation_as_final_but_wrong_target_do
     assert_eq!(report.junctions[0].window.dna, "AAATGATTT");
     assert!(report.product_revision.is_some());
 }
+
+#[test]
+fn expanded_junction_translation_retains_context_dependent_termination_evidence() {
+    let (plan, target) = overlap("AAAT", "TGATTT", 1, "AAATGATTT", false);
+    for (code, expected, possible) in [
+        (4, "KWF", 0),
+        (10, "KCF", 0),
+        (27, "KXF", 1),
+        (28, "KXF", 1),
+        (31, "KWF", 0),
+    ] {
+        let options = j::Options {
+            genetic_code: code,
+            flank_bases: 6,
+            frames: vec![j::Frame {
+                reverse: false,
+                frame: 0,
+            }],
+            ..Default::default()
+        };
+        let report = j::inspect_plan(&plan, &target, &options).unwrap();
+        report.validate().unwrap();
+        let frame = &report.junctions[0].frames[0];
+        assert_eq!(frame.translation.protein, expected);
+        assert_eq!(frame.translation.possible_stop_codons, possible);
+        assert_eq!(
+            frame.crossing_codon.as_ref().unwrap().amino_acid,
+            expected.as_bytes()[1] as char
+        );
+    }
+}

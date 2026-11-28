@@ -166,7 +166,7 @@ pub fn AssemblyProductView(
                 if bytes.len() > 64 * 1024 * 1024 {
                     return Err("The diagnostic JSON exceeds the 64MiB export profile.".into());
                 }
-                crate::io::download::prepare_download(
+                crate::io::download::ExportArtifact::prepare(
                     "cloning-reconstruction.json",
                     "application/json",
                     &bytes,

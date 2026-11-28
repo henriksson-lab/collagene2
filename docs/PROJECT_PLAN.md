@@ -49,6 +49,46 @@ not remove outstanding features or weaken the final completion requirements.
 
 ## Current execution order — cloning first, 24 November 2026
 
+**Execution clarification, 28 November:** prioritize concrete feature gaps.
+The user's review of the finished application is the primary product acceptance
+step. Required compiler, scientific-correctness and data-integrity checks support
+implementation; they are not a separate expanding acceptance project. Keep the
+current feature queue explicit and do not count already implemented features as
+missing merely because a live provider/browser/platform acceptance run is deferred.
+Finish the in-scope functionality before browser/screenshot/application HTTP
+checks, then make the complete product available for the user's review.
+
+**Bounded security audit, fixes checked:** independent parallel reviewers inspected web/
+untrusted inputs and native authority/storage/concurrency. Confirmed findings
+enter this current plan with concrete fixes. The first source finding is a
+[stale hosted-MCP DELETE](audits/security-hosted-delete-current.md): key-only
+removal could retire a replacement workspace. Exact captured-owner admission is
+implemented, with a passing deterministic owner regression.
+This does not expand product acceptance into a separate audit programme.
+Further confirmed findings are part of this batch: bounded native collection
+admission before allocation (including planning snapshots and ZIP workspace JSON),
+SDK initialization quota admission for every negotiated version, and a shared
+linear/bounded matching kernel for exact search and PCR. Matching writer/reopen admission and streaming ZIP JSON decoding are now
+implemented. Native/WASM checks and the 490-case focused integration pass; deployment and
+full-product acceptance remain separate. The [security findings queue](DELIVERY_AUDIT.md#security-findings) tracks
+source status and reports; a refuted folder-generation suspicion is closed.
+The finite DOM/HTML source review found no confirmed injection path in the
+inspected code; its report records the reviewed boundaries and limits.
+
+**Current connected source batch, checked:** the complete finite NCBI genetic-code
+catalogue (27 extant tables) retains context-dependent sense/stop uncertainty;
+portable PNG map/gel exports share one bounded Rust rasterizer; hosted ordinary
+MCP reuses scientific handlers with authenticated member/lab/workspace isolation
+and operator-scoped storage. Parallel workers contribute to one integration
+batch. `CloneReview` and `ExportArtifact::prepare` own the reviewed state and
+constructor invariants, with direct caller updates. The complete
+source/caller/schema/fixture batch passes native/WASM checks and 490 unique
+focused cases. Discovery preserves all 2,617 prior names (2,675 current cases /
+54 harnesses); ignored HTTP/provider tests were not executed. Exact-source CI
+and requested package production follow publication. Bounded TIFF/JPEG/PNG documentary evidence sources are authored
+in a separate, unregistered crate and attachment owner for the next connected batch; it does not add
+OpenGel comparison or measurement. See the [current delivery queue](DELIVERY_AUDIT.md#current-implementation-queue).
+
 **Current organization audit, 28 November:** three parallel reviewers inspected
 web/worker, scientific core/model, and native/MCP/repository ownership against the
 current working tree. The [current refactor plan](audits/REFACTOR_PLAN.md) is the

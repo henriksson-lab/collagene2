@@ -513,7 +513,7 @@ pub fn ReactionQuantitiesView(
                     }
                     None => format!("Quantities exported. Arithmetic complete: {}.", output.arithmetic_complete),
                 };
-                let artifact = crate::io::download::prepare_download(
+                let artifact = crate::io::download::ExportArtifact::prepare(
                     &output.filename,
                     &output.media_type,
                     &output.bytes,

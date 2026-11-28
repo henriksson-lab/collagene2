@@ -6,7 +6,7 @@ use collagene_core::{
         lineage::{self as run_lineage, EventBinding, InputEventBinding},
         review as run_review,
     },
-    output::svg_export,
+    output::map_export,
     planning::plan::{DesignPlan, Operation, PlanInput, Source},
     protocol::{
         self,
@@ -148,35 +148,39 @@ fn map179_reply169_keeps_safe_xml_and_exact_supplied_cut_coordinates() {
         .unwrap()
         .sites;
     assert_eq!(sites.len(), 1);
-    let request = svg_export::Request {
+    let request = map_export::Request {
         source_revision: source.revision(),
         source: source.clone(),
         restriction_sites: Some(sites),
+        format: collagene_core::output::raster::Format::Svg,
     };
-    let direct = svg_export::render(&request).unwrap();
+    let direct = request.render().unwrap();
     let response = call(
-        AnalysisJob::RenderMapSvg {
+        AnalysisJob::RenderMap {
             request: request.clone(),
         },
         "a".repeat(64),
         174,
         164,
     );
-    let AnalysisResult::MapSvgExported(map) = response.result else {
+    let AnalysisResult::MapExported(map) = response.result else {
         unreachable!()
     };
     map.validate_binding(&source.revision()).unwrap();
-    assert_eq!(map.svg, direct.svg);
-    assert!(map.svg.contains("A&lt;&amp;&gt;"));
-    assert!(map.svg.contains("data-restriction-total=\"1\""));
-    assert!(map.svg.contains("data-recognition-start=\"2\""));
-    assert!(map.svg.contains("data-top-boundary=\"3\""));
-    assert!(map.svg.contains("data-bottom-boundary=\"7\""));
-    assert!(!map.svg.contains("<script"));
+    assert_eq!(map.image.bytes(), direct.image.bytes());
+    let collagene_core::output::raster::Image::Svg(svg) = &map.image else {
+        panic!("expected SVG")
+    };
+    assert!(svg.contains("A&lt;&amp;&gt;"));
+    assert!(svg.contains("data-restriction-total=\"1\""));
+    assert!(svg.contains("data-recognition-start=\"2\""));
+    assert!(svg.contains("data-top-boundary=\"3\""));
+    assert!(svg.contains("data-bottom-boundary=\"7\""));
+    assert!(!svg.contains("<script"));
     assert!(!map.warnings.is_empty());
     let mut stale = request;
     stale.source_revision = "b".repeat(64);
-    assert!(svg_export::render(&stale).is_err());
+    assert!(stale.render().is_err());
 }
 #[test]
 fn current_plan_data_replays_only_through_current_transport() {
@@ -220,11 +224,12 @@ fn session_and_stateless_admission_keep_review_and_map_size_policies_distinct() 
             true,
         ),
         (
-            AnalysisJob::RenderMapSvg {
-                request: svg_export::Request {
+            AnalysisJob::RenderMap {
+                request: map_export::Request {
                     source_revision: source.revision(),
                     source: source.clone(),
                     restriction_sites: None,
+                    format: collagene_core::output::raster::Format::Svg,
                 },
             },
             source.revision(),

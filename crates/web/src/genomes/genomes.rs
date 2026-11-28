@@ -3,7 +3,7 @@ use crate::genomes::genome_store;
 use crate::genomes::genome_store::DatasetRecord;
 use crate::genomes::genome_view::GenomeWindowView;
 use crate::genomes::genome_view::WindowDisplay;
-use crate::io::download::prepare_download;
+use crate::io::download::ExportArtifact;
 use crate::platform::worker::CachedWorker;
 use collagene_core::{
     protocol::{
@@ -466,7 +466,7 @@ fn json_download(
 ) -> Result<crate::io::download::ExportArtifact, String> {
     let mut bytes = Json(vec![]);
     serde_json::to_writer_pretty(&mut bytes, value).map_err(|e| e.to_string())?;
-    prepare_download(name, "application/json", &bytes.0)
+    ExportArtifact::prepare(name, "application/json", &bytes.0)
 }
 
 #[component]

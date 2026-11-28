@@ -489,7 +489,7 @@ async fn gel_json_svg_and_diagnostic_digests_preserve_unknowns_mass_and_source_b
     s.import(vec![linear.clone(), circle.clone(), alternative.clone()])
         .await;
     let lane = |m: &Molecule, preparation: Preparation, mass: Option<f64>| json!({"label":m.name,"document":reference(m),"preparation":preparation,"mass_ng":mass});
-    let query = json!({"lanes":[lane(&linear,Preparation::Digest{enzymes:vec!["EcoRV".into()]},Some(240.)),lane(&circle,Preparation::Uncut,None)],"calibration":calibration()});
+    let query = json!({"lanes":[lane(&linear,Preparation::Digest{enzymes:vec!["EcoRV".into()]},Some(240.)),lane(&circle,Preparation::Uncut,None)],"calibration":calibration(),"image_format":"Svg"});
     let response = s.call("predict_gel", query.clone()).await;
     assert_eq!(response["lane_count"], 2);
     assert_eq!(response["lanes"][0]["fragment_count"], 3);
@@ -517,15 +517,42 @@ async fn gel_json_svg_and_diagnostic_digests_preserve_unknowns_mass_and_source_b
         240.
     );
     let svg = s
-        .text(&response["svg_artifact_id"], "image/svg+xml", "utf-8")
+        .text(&response["image_artifact_id"], "image/svg+xml", "utf-8")
         .await;
     assert_eq!(
         blake3::hash(svg.as_bytes()).to_hex().as_str(),
-        response["svg_artifact_id"].as_str().unwrap()
+        response["image_artifact_id"].as_str().unwrap()
     );
     assert!(svg.contains("collagene-gel-evidence"));
     assert!(svg.contains(&circle.revision()));
     assert!(svg.contains("1 unplaced"));
+    let mut png_query = query.clone();
+    png_query["image_format"] = json!({"Png":{"width":920}});
+    let png_response = s.call("predict_gel", png_query.clone()).await;
+    let png_bytes = STANDARD
+        .decode(
+            s.text(&png_response["image_artifact_id"], "image/png", "base64")
+                .await,
+        )
+        .unwrap();
+    assert_eq!(&png_bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(
+        u32::from_be_bytes(png_bytes[16..20].try_into().unwrap()),
+        920
+    );
+    assert_eq!(
+        blake3::hash(&png_bytes).to_hex().as_str(),
+        png_response["image_artifact_id"].as_str().unwrap()
+    );
+    let png_evidence = s.artifact(&png_response).await;
+    assert_eq!(png_evidence["gel"], artifact["gel"]);
+    assert_eq!(
+        png_evidence["image_context_revision"],
+        png_response["image_context_revision"]
+    );
+    png_query["image_format"] = json!({"Png":{"width":4097}});
+    s.reject("predict_gel", png_query).await;
+
     for i in 0..2 {
         let mut bad = query.clone();
         bad["lanes"][i]["document"]["revision"] = json!("stale");
@@ -647,7 +674,7 @@ async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_so
         cleavage_mode: CleavageMode::AssumedCompleteMethylationUnassessed,
     };
     let lane = json!({"label":"Historical AluI digest","document":reference(&source),"workspace":workspace_ref,"preparation":Preparation::CatalogDigest {recipe:recipe.clone()},"mass_ng":100.});
-    let query = json!({"lanes":[lane],"calibration":calibration()});
+    let query = json!({"lanes":[lane],"calibration":calibration(),"image_format":"Svg"});
     let response = s.call("predict_gel", query.clone()).await;
     assert_eq!(response["lane_count"], 1);
     assert_eq!(response["lanes"][0]["fragment_count"], 2);
@@ -729,4 +756,35 @@ async fn pinned_gel_requires_exact_workspace_ownership_and_replays_historical_so
         2
     );
     s.finish().await;
+}
+
+#[tokio::test]
+async fn exact_pcr_long_concrete_late_mismatch_finishes_without_inventing_products() {
+    let session = Session::new().await;
+    let template = dna(
+        "Long concrete template",
+        &"A".repeat(200_000),
+        Topology::Circular,
+    );
+    session.import(vec![template.clone()]).await;
+    let forward = Primer::new("late mismatch", &format!("{}C", "A".repeat(39_999)), "").unwrap();
+    let reverse = Primer::new("absent", &"C".repeat(40_000), "").unwrap();
+    let report = session
+        .call(
+            "simulate_pcr",
+            json!({
+                "document": reference(&template), "forward": forward, "reverse": reverse
+            }),
+        )
+        .await;
+    assert_eq!(report["product_count"], 0);
+    assert_eq!(report["products"], json!([]));
+    assert_eq!(
+        session.call("list_documents", json!({})).await["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    session.finish().await;
 }

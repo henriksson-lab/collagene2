@@ -117,8 +117,10 @@ pub(super) fn decode_with_limit<T: for<'de> Deserialize<'de>>(
     if blake3::hash(&bytes[HEADER..]).as_bytes() != &bytes[10..42] {
         return Err(Error::Format("binary checksum mismatch".into()));
     }
-    let (result, rest) =
-        postcard::take_from_bytes(&bytes[HEADER..]).map_err(|e| Error::Format(e.to_string()))?;
+    let (result, rest) = collagene_model::decode::with_native_frame_budget(maximum, || {
+        postcard::take_from_bytes(&bytes[HEADER..])
+    })
+    .map_err(|e| Error::Format(e.to_string()))?;
     if !rest.is_empty() {
         return Err(Error::Format("unexpected trailing payload".into()));
     }

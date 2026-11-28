@@ -1,7 +1,7 @@
 # Binary worker protocol
 
 The web worker and native adapters share Rust DTOs in `core::protocol` and the
-same deterministic scientific engines. Current schemas are worker **125**,
+same deterministic scientific engines. Current schemas are worker **126**,
 candidate **31** and native workspace plan **29**; the verifier is **science-35**.
 Only current internal encodings are accepted. Unsupported development versions
 have no decoder, migration or capability ladder.
@@ -51,6 +51,37 @@ browser copies the complete buffer. All current worker request/reply revisions
 are bounded to 128 bytes, including ordinary frames. Full checksum, typed payload
 and complete-consumption checks still follow prefix admission. Old worker
 versions are rejected; no fallback decoder or old payload adapter exists.
+
+## Static map and gel images
+
+The current map owner is `core::output::map_export`. `RenderMap` (request 174)
+and `MapExported` (result 164) accept explicit `raster::Format::Svg` or
+`Png(PngOptions { width })`; there is no SVG-only internal adapter or old-schema
+decoder. Map source and supplied restriction evidence remain bound to the exact
+source revision. The web capture also binds source event, workspace epoch, view,
+format and pixel settings. Filename/MIME follow the selected format.
+
+`RenderGelImage` (request 199) and `GelImageExported` (result 189) bind the complete
+serialized documentary gel report, calibration and image options. Report identity
+is not physical sample authority. The request context is independently recomputed
+from report identity and format. The UI worker completion and save admission
+retain displayed-report generation and workspace-epoch guards.
+
+Both image requests and replies use the ordinary 32 MiB envelope budget. PNG width
+is 16–4096 px, height follows the canonical SVG aspect ratio, each dimension is at
+most4096px and the total is at most 4,000,000 pixels (16MB RGBA). Encoding has a
+24MiB output ceiling. PNG framing, RGBA dimensions, chunk order/CRCs, embedded
+context and content hash are validated without decompressing pixels on the UI
+thread. The worker/native encoder checks pixels with bounded row-by-row
+decoding; independent fixtures also fully decode. No untrusted dimensions trigger
+full-image allocation during admission.
+
+The portable Rust renderer uses resvg 0.47 with text only, our existing embedded
+Liberation Sans font and explicitly disabled image/resource resolvers. Generated
+SVG only is admitted; there are no external paths, URLs, uploaded SVG, system
+font scans or raster-image codecs. Unsupported font scalars become visible
+[U+XXXX] label escapes with warnings. PNG is pixels, without selectable vector
+text or full source coordinate metadata; retain the native source or JSON report.
 
 ## Scientific boundary
 
@@ -246,7 +277,7 @@ when an internal enum layout changes.
 | 171 | `InstallMaterialDerivation` |
 | 172 | `InspectMaterialDigest` |
 | 173 | `PrepareSavedRunReview` |
-| 174 | `RenderMapSvg` |
+| 174 | `RenderMap` |
 | 175 | `InspectMaterialMismatchPcr` |
 | 176 | `InspectMaterialRepair` |
 | 177 | `PreviewProtocolLayout` |
@@ -271,6 +302,7 @@ when an internal enum layout changes.
 | 196 | `AnalyzeAlignmentAntibody` |
 | 197 | `MaterializeMaterialDigestFragment` |
 | 198 | `PrepareTraceDisplay` |
+| 199 | `RenderGelImage` |
 
 ## Current result tags
 
@@ -443,7 +475,7 @@ when an internal enum layout changes.
 | 161 | `MaterialDerivationInstalled` |
 | 162 | `MaterialDigestInspection` |
 | 163 | `SavedRunReviewPrepared` |
-| 164 | `MapSvgExported` |
+| 164 | `MapExported` |
 | 165 | `MaterialMismatchPcrPreview` |
 | 166 | `MaterialRepairPreview` |
 | 167 | `ProtocolLayoutPreview` |
@@ -468,6 +500,7 @@ when an internal enum layout changes.
 | 186 | `AlignmentAntibody` |
 | 187 | `MaterialDigestProduct` |
 | 188 | `TraceDisplayPrepared` |
+| 189 | `GelImageExported` |
 
 ## Current source and evidence contracts
 

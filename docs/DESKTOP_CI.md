@@ -1,33 +1,50 @@
 # Desktop build CI
 
-The opt-in [unsigned packaging workflow](DESKTOP_PACKAGING.md) additionally builds
-NSIS, app/DMG and AppImage/deb artifacts, with development or release profiles.
-Automatic desktop CI below builds development executables; it does not install
-or publish those packages.
+`.github/workflows/desktop.yml` automatically builds downloadable desktop
+artifacts for relevant source changes: a portable Windows `.exe`, macOS `.dmg`
+and `.app.tar.gz`, and Linux `.deb`. The [packaging contract](DESKTOP_PACKAGING.md)
+describes file contents, prerequisites and manual development/release selection.
+Scientific CI remains independent, and a platform failure does not cancel the
+other package builds.
 
-`.github/workflows/desktop.yml` builds the real Tauri desktop executable on Windows, macOS, and Linux. It runs independently of the scientific checks in `check.yml`; a platform failure does not cancel the other native builds. Relevant Rust, frontend, Cargo lockfile, Trunk configuration, and workflow changes trigger it, and it also supports manual dispatch.
+One Linux frontend job builds the current Leptos application and scientific
+worker. The reusable packaging workflow receives that exact same-run artifact,
+then performs one native build per platform. It skips its own frontend job when
+called this way; manual package dispatch builds a fresh frontend itself. Relevant
+Rust/frontend/Cargo/Trunk, packaging-script and workflow changes trigger automatic
+CI. There is no extra native-only compilation after creating the packages.
 
-The Linux frontend job builds the current Leptos application and scientific worker once. All three native jobs download that exact workflow artifact from the same source revision. It starts with an empty `dist`, permits exactly one current content-addressed worker bundle, and bounds the snapshot to 512 files, 128 MiB per file, 256 MiB total, and depth 16. Symlinks and special files are rejected. The desktop build independently checks the snapshot and the `collagene_rpc` bridge in the actual referenced main WASM, so an old browser-only frontend cannot silently supply ephemeral browser storage instead of native persistence.
+Frontend construction starts with an empty `dist`, permits exactly one current
+content-addressed worker bundle, and bounds the snapshot to 512 files, 128 MiB
+per file, 256 MiB total and depth 16. Symlinks and special files are rejected.
+Desktop compilation independently checks those bounds and the `collagene_rpc`
+bridge in the actual referenced main WASM. A browser-only frontend cannot silently
+replace durable native storage. The default `custom-protocol` feature embeds the
+frontend, including for the portable Windows executable.
 
-Trunk 0.21.14 and wasm-bindgen-cli 0.2.128 are pinned to the application bindings. The workflow uses checksum-verified upstream prebuilt tools through [taiki-e/install-action](https://github.com/taiki-e/install-action), with `fallback: none`; a missing prebuilt tool fails instead of starting a Cargo CLI compilation. `cargo fetch --locked` populates the dependency cache, including target metadata, and `cargo build --locked -p collagene-web-assets` prepares the native asset helper before Trunk invokes its offline post-build hook.
+Trunk 0.21.14, wasm-bindgen-cli 0.2.128 and cargo-tauri 2.11.3 are pinned upstream
+prebuilt tools, with checksums and no source-build fallback. Native dependencies
+remain locked. Shared frontend/package caches are reused; Cargo uses two jobs,
+no incremental compilation and no development/test debug information. Linux
+packages build on Ubuntu 22.04 using `scripts/install_linux_desktop_deps.sh`, which
+retains Ubuntu TLS/signature verification and avoids unrelated third-party feeds.
+Windows explicitly targets x86_64 MSVC with static CRT settings for portability.
 
-Native jobs run `cargo build --locked -p collagene-desktop` using the coherent Tauri SDK family pinned in Cargo. Linux installs the WebKitGTK 4.1 and native development packages from the [official Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) on its hosted Ubuntu 24.04 runner. Windows uses the hosted MSVC/Windows SDK environment, and macOS uses the hosted Xcode toolchain. The [official Tauri GitHub pipeline documentation](https://v2.tauri.app/distribute/pipelines/github/) describes these platform build requirements. No SDK is installed on the developer's local machine by this workflow.
+`scripts/stage_desktop_packages.py` inspects the actual platform executable,
+extracting Debian packages without installing them and using the executable
+inside the macOS app. It runs `desktop_mcp_smoke.py` with `--mcp`, checks expected
+artifact counts and size limits, and records exact source/frontend/profile/hash
+metadata. The Windows portable executable additionally passes a native-import
+check. Development and manual release builds use this same headless path.
 
-Compilation uses two Cargo jobs, incremental compilation disabled, and debug information disabled for development/test profiles. Frontend and native build artifacts expire after seven days. Native artifacts are development executables for CI inspection; they are not installers or public releases, and downloading one does not establish its runtime prerequisites or executable permissions.
+The stdio check launches no GUI, browser, listener, repository or credential
+vault and invokes no external scientific program. It verifies MCP initialization,
+cloning-tool availability, synthetic FASTA import and a virtual EcoRI digest.
+Windows release-mode checks retain explicit inherited pipes; no console attachment
+replaces them. [Microsoft's inherited standard-handle documentation](https://learn.microsoft.com/en-us/windows/console/getstdhandle)
+describes that distinction.
 
-After compilation, `scripts/desktop_mcp_smoke.py` launches that same executable
-with `--mcp`. It initializes the stdio protocol, checks cloning-tool availability,
-imports synthetic FASTA and verifies an EcoRI virtual digest. The command exits
-without entering the GUI builder or opening the local repository or vault.
-The development build check does not exercise the Windows release GUI subsystem.
-Release acceptance must repeat stdio checks with explicit inherited pipes:
-Windows GUI-subsystem programs can receive those handles through
-[`STARTF_USESTDHANDLES`](https://learn.microsoft.com/en-us/windows/win32/api/processthreadsapi/ns-processthreadsapi-startupinfow),
-as described by
-[`GetStdHandle`](https://learn.microsoft.com/en-us/windows/console/getstdhandle).
-Do not attach a console during MCP startup, since that can replace redirected
-handles. A release-mode execution check remains outstanding.
-
-This workflow does not launch a GUI, browser, listener, or credential vault, and does not invoke external scientific programs. Packaging, signing/notarization, installation, graphical acceptance, live platform credential-store acceptance, and offline restart acceptance on each supported OS remain separate unfinished deliverables. A passing build demonstrates compilation and asset embedding, and the headless check covers the embedded MCP command; neither establishes those remaining runtime properties. Native repository, protocol, and scientific fixtures remain in the existing checks.
-
-Linux prerequisite setup uses the runner's Ubuntu source list through `scripts/install_linux_desktop_deps.sh`. This avoids unrelated preinstalled feeds blocking WebView SDK resolution; Ubuntu TLS and package-signature verification remain enabled. The observed `3020c0a` Linux desktop job failed on a Microsoft feed HTTP403 before compiling, while its scientific Linux and Windows/macOS desktop jobs passed.
+Artifacts expire after seven days. These are unsigned prerelease downloads, not
+a signed release or updater pipeline. The user's review of the finished product
+is the primary usability acceptance step. No local desktop build, installer run,
+GUI or browser check was added while changing this CI configuration.

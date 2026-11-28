@@ -1,6 +1,11 @@
 //! Exact source/view capture for portable maps. Exporting never changes biology.
 use collagene_core::{
-    cloning::restriction::inspection::InspectionSite, material::lineage::EventBinding, output::svg,
+    cloning::restriction::inspection::InspectionSite,
+    material::lineage::EventBinding,
+    output::{
+        raster::{Format, Image},
+        svg,
+    },
 };
 use collagene_model::{Molecule, Topology};
 use serde::Serialize;
@@ -45,6 +50,7 @@ pub struct Snapshot {
 pub struct Capture {
     pub snapshot: Snapshot,
     pub context_revision: String,
+    pub format: Format,
 }
 #[derive(Clone)]
 pub struct RenderRequest {
@@ -52,12 +58,13 @@ pub struct RenderRequest {
     pub source_revision: String,
     pub context_revision: String,
     pub restriction_sites: Option<Vec<InspectionSite>>,
+    pub format: Format,
 }
 #[derive(Clone)]
 pub struct Rendered {
     pub source_revision: String,
     pub context_revision: String,
-    pub svg: String,
+    pub image: Image,
     pub warnings: Vec<String>,
 }
 #[derive(Clone)]
@@ -74,7 +81,8 @@ fn identifier(s: &str) -> bool {
     !s.is_empty() && s.len() <= 128 && !s.chars().any(|c| c.is_control() || c.is_whitespace())
 }
 impl Capture {
-    pub fn new(snapshot: Snapshot) -> Result<Self, String> {
+    pub fn new(snapshot: Snapshot, format: Format) -> Result<Self, String> {
+        format.validate().map_err(|e| e.to_string())?;
         collagene_model::bounds::model_preflight(&[&snapshot.source]).map_err(|e| e.to_string())?;
         snapshot.source.validate().map_err(|e| e.to_string())?;
         let n = snapshot.source.sequence.len();
@@ -149,7 +157,8 @@ impl Capture {
             }
         }
         let bytes = serde_json::to_vec(&(
-            "collagene-map-export-v1",
+            "collagene-map-export-v2",
+            format,
             &snapshot.event,
             snapshot.epoch,
             &snapshot.view,
@@ -160,12 +169,21 @@ impl Capture {
         Ok(Self {
             snapshot,
             context_revision,
+            format,
         })
     }
     pub fn matches(&self, current: Snapshot) -> Result<(), String> {
-        if Self::new(current)?.context_revision != self.context_revision {
+        if Self::new(current, self.format)?.context_revision != self.context_revision {
             return Err(
-                "Document, event, selection or map settings changed; prepare a new SVG.".into(),
+                "Document, event, selection or map settings changed; prepare a new image.".into(),
+            );
+        }
+        Ok(())
+    }
+    pub fn matches_capture(&self, current: &Self) -> Result<(), String> {
+        if self.context_revision != current.context_revision {
+            return Err(
+                "Document, event, view or export format changed; prepare a new image.".into(),
             );
         }
         Ok(())
@@ -176,20 +194,24 @@ impl Capture {
             source_revision: self.snapshot.event.revision.clone(),
             context_revision: self.context_revision.clone(),
             restriction_sites: self.snapshot.restrictions.as_ref().map(|s| s.sites.clone()),
+            format: self.format,
         }
     }
     pub fn accept(self, rendered: Rendered) -> Result<Prepared, String> {
         if rendered.context_revision != self.context_revision
             || rendered.source_revision != self.snapshot.event.revision
-            || rendered.svg.is_empty()
-            || rendered.svg.len() > svg::MAX_SVG_BYTES
+            || rendered.image.format() != self.format
             || rendered.warnings.len() > 128
             || rendered.warnings.iter().any(|w| w.len() > 4096)
         {
             return Err(
-                "SVG response does not match the captured source/view or its bounds.".into(),
+                "Image response does not match the captured source/view or its bounds.".into(),
             );
         }
+        rendered
+            .image
+            .validate_binding(&self.snapshot.event.revision)
+            .map_err(|e| e.to_string())?;
         Ok(Prepared {
             capture: self,
             rendered,
@@ -219,9 +241,13 @@ impl Prepared {
         }
         let stem = stem.trim().trim_matches('.').trim();
         if stem.is_empty() {
-            format!("map-{}.svg", &self.capture.snapshot.event.revision[..12])
+            format!(
+                "map-{}.{}",
+                &self.capture.snapshot.event.revision[..12],
+                self.capture.format.extension()
+            )
         } else {
-            format!("map-{stem}.svg")
+            format!("map-{stem}.{}", self.capture.format.extension())
         }
     }
 }
@@ -253,7 +279,7 @@ mod tests {
     #[test]
     fn equal_sequence_other_document_event_epoch_or_view_invalidates_capture() {
         let initial = snapshot();
-        let bound = Capture::new(initial.clone()).unwrap();
+        let bound = Capture::new(initial.clone(), Format::Svg).unwrap();
         bound.matches(initial.clone()).unwrap();
         for changed in 0..8 {
             let mut next = initial.clone();
@@ -277,7 +303,7 @@ mod tests {
         }
         let mut stale = initial;
         stale.source.name = "changed name".into();
-        assert!(Capture::new(stale).is_err());
+        assert!(Capture::new(stale, Format::Svg).is_err());
     }
     #[test]
     fn renderer_reply_and_restriction_filter_context_cannot_cross_captures() {
@@ -288,30 +314,78 @@ mod tests {
             sites: vec![],
             selected_site: None,
         });
-        let first = Capture::new(initial.clone()).unwrap();
+        let first = Capture::new(initial.clone(), Format::Svg).unwrap();
         let request = first.request();
-        let rendered = collagene_core::output::svg_export::render(
-            &collagene_core::output::svg_export::Request {
-                source: request.source,
-                source_revision: request.source_revision,
-                restriction_sites: request.restriction_sites,
-            },
-        )
+        let rendered = collagene_core::output::map_export::Request {
+            source: request.source,
+            source_revision: request.source_revision,
+            restriction_sites: request.restriction_sites,
+            format: request.format,
+        }
+        .render()
         .unwrap();
         let output = Rendered {
             source_revision: rendered.source_revision,
             context_revision: request.context_revision,
-            svg: rendered.svg,
+            image: rendered.image,
             warnings: rendered.warnings,
         };
         let mut other = initial.clone();
         other.restrictions.as_mut().unwrap().display_context = "all enzymes".into();
         assert!(first.matches(other.clone()).is_err());
-        assert!(Capture::new(other).unwrap().accept(output.clone()).is_err());
+        assert!(
+            Capture::new(other, Format::Svg)
+                .unwrap()
+                .accept(output.clone())
+                .is_err()
+        );
         let prepared = first.accept(output).unwrap();
         assert_eq!(prepared.filename(), "map-literal plasmid.svg");
         let mut invalid = initial;
         invalid.view.rotation_radians = f64::NAN;
-        assert!(Capture::new(invalid).is_err());
+        assert!(Capture::new(invalid, Format::Svg).is_err());
+    }
+    #[test]
+    fn image_format_and_pixel_width_are_part_of_the_captured_map_context() {
+        let original = snapshot();
+        let svg = Capture::new(original.clone(), Format::Svg).unwrap();
+        let png = Capture::new(
+            original.clone(),
+            Format::Png(collagene_core::output::raster::PngOptions { width: 400 }),
+        )
+        .unwrap();
+        let wider = Capture::new(
+            original.clone(),
+            Format::Png(collagene_core::output::raster::PngOptions { width: 800 }),
+        )
+        .unwrap();
+        assert!(svg.matches_capture(&png).is_err());
+        assert!(png.matches_capture(&wider).is_err());
+        assert!(
+            Capture::new(
+                original,
+                Format::Png(collagene_core::output::raster::PngOptions { width: 0 })
+            )
+            .is_err()
+        );
+        let request = png.request();
+        let rendered = collagene_core::output::map_export::Request {
+            source: request.source,
+            source_revision: request.source_revision,
+            restriction_sites: request.restriction_sites,
+            format: request.format,
+        }
+        .render()
+        .unwrap();
+        let returned = Rendered {
+            source_revision: rendered.source_revision,
+            context_revision: request.context_revision,
+            image: rendered.image,
+            warnings: rendered.warnings,
+        };
+        assert!(svg.accept(returned.clone()).is_err());
+        let prepared = png.accept(returned).unwrap();
+        assert_eq!(prepared.filename(), "map-literal plasmid.png");
+        assert_eq!(prepared.capture.format.mime_type(), "image/png");
     }
 }

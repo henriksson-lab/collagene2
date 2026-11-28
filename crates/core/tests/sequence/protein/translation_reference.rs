@@ -330,3 +330,79 @@ fn oversized_borrowed_models_locations_and_unknown_fields_are_rejected() {
     value["verified"] = serde_json::json!(true);
     assert!(serde_json::from_value::<Request>(value).is_err());
 }
+
+#[test]
+fn expanded_reference_regions_and_cds_preserve_context_stop_uncertainty_and_source_binding() {
+    for (code, expected) in [
+        (4, "M**W"),
+        (6, "MQQ*"),
+        (27, "MQQX"),
+        (28, "MXXX"),
+        (31, "MXXW"),
+    ] {
+        let mut r = request("ATGTAATAGTGA");
+        let Selection::Region { options, .. } = &mut r.selection else {
+            unreachable!()
+        };
+        options.genetic_code = code;
+        let report = reference::inspect(&r).unwrap();
+        assert_eq!(report.protein, expected);
+        report.validate_sources(&r).unwrap();
+        if [27, 28, 31].contains(&code) {
+            assert_eq!(report.translation.ambiguous_codons, 0);
+            assert!(report.translation.unresolved_codons > 0);
+            // A context-aware bound does not admit inconsistent counts or
+            // change the selected table's canonical identity.
+            let mut malformed = report.clone();
+            malformed.translation.possible_stop_codons =
+                malformed.translation.unresolved_codons + 1;
+            assert!(
+                malformed
+                    .validate_binding(&report.context_revision)
+                    .is_err()
+            );
+            let mut malformed = report.clone();
+            malformed.translation.unresolved_codons = malformed.translation.translated_codons + 1;
+            assert!(
+                malformed
+                    .validate_binding(&report.context_revision)
+                    .is_err()
+            );
+        }
+        let mut wrong_name = report.clone();
+        wrong_name.translation.code_name = "unrelated table".into();
+        assert!(
+            wrong_name
+                .validate_binding(&report.context_revision)
+                .is_err()
+        );
+        let output = reference::prepare(&r, "explicit conceptual protein").unwrap();
+        assert_eq!(output.protein.sequence.as_str(), expected);
+        assert_eq!(
+            output
+                .annotation
+                .as_ref()
+                .unwrap()
+                .qualifiers
+                .iter()
+                .find(|(k, _)| k == "transl_table")
+                .unwrap()
+                .1
+                .as_deref(),
+            Some(code.to_string().as_str())
+        );
+        let unchanged = r.source.clone();
+        cds(
+            &mut r.source,
+            Location::range(0, 12),
+            vec![("transl_table", &code.to_string())],
+        );
+        r.selection = Selection::Cds { feature_index: 0 };
+        let cds_report = reference::inspect(&r).unwrap();
+        if [27, 28, 31].contains(&code) {
+            assert!(!cds_report.cds.as_ref().unwrap().complete_under_model);
+            assert!(cds_report.translation.possible_stop_codons > 0);
+        }
+        assert_eq!(unchanged.sequence, r.source.sequence);
+    }
+}

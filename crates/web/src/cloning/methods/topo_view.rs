@@ -4,7 +4,7 @@ use crate::cloning::methods::topo_preparation;
 use crate::cloning::methods::topo_preparation::CaptureRequest;
 use crate::cloning::methods::topo_preparation::Captured;
 use crate::cloning::methods::topo_preparation::Draft;
-use crate::io::download::prepare_download;
+use crate::io::download::ExportArtifact;
 use crate::platform::worker::CachedWorker;
 use crate::sources::identity::SourceInfo;
 use collagene_core::{
@@ -143,7 +143,7 @@ impl Write for BoundedJson {
 fn json_download(value: &impl Serialize) -> Result<crate::io::download::ExportArtifact, String> {
     let mut output = BoundedJson(vec![]);
     serde_json::to_writer(&mut output, value).map_err(|e| e.to_string())?;
-    prepare_download("topo-source-evidence.json", "application/json", &output.0)
+    ExportArtifact::prepare("topo-source-evidence.json", "application/json", &output.0)
 }
 fn number(text: &str, label: &str) -> Result<usize, String> {
     text.trim()

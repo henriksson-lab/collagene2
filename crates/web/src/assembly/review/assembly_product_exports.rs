@@ -2,7 +2,7 @@
 use crate::assembly::review::assembly_product_export_model as model;
 use crate::assembly::review::assembly_product_export_model::Format;
 use crate::assembly::review::assembly_product_export_model::Prepared;
-use crate::io::download::prepare_download;
+use crate::io::download::ExportArtifact;
 use collagene_model::Molecule;
 use leptos::prelude::*;
 use std::sync::Arc;
@@ -62,13 +62,13 @@ pub fn AssemblyProductExports(
             bound.export.require_source(&capture.run(())?)?;
             if loss_report {
                 let bytes = bound.export.loss_report(&bound.identity)?;
-                prepare_download(
+                ExportArtifact::prepare(
                     &format!("{}.losses.json", bound.export.filename),
                     "application/json",
                     &bytes,
                 )
             } else {
-                prepare_download(
+                ExportArtifact::prepare(
                     &bound.export.filename,
                     "text/plain;charset=utf-8",
                     bound.export.text.as_bytes(),

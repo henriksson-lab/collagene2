@@ -51,7 +51,7 @@ fn name_valid(name: &str) -> bool {
     !name.trim().is_empty() && name.len() <= 1024 && !name.chars().any(char::is_control)
 }
 fn options_valid(options: &TranslationOptions) -> Result<(), Error> {
-    if options.frame > 2 || !matches!(options.genetic_code, 1 | 2 | 11) {
+    if options.frame > 2 || translation::CodeDescriptor::for_id(options.genetic_code).is_err() {
         return Err(bad("unsupported genetic code or frame"));
     }
     Ok(())
@@ -296,6 +296,15 @@ fn warnings_valid(warnings: &[String]) -> bool {
 }
 fn translation_valid(report: &TranslationReport) -> Result<(), Error> {
     options_valid(&report.options)?;
+    let descriptor = translation::CodeDescriptor::for_id(report.options.genetic_code)?;
+    // Ordinary tables can be unresolved only through nucleotide ambiguity.
+    // Dual-use sense/stop tables additionally have unresolved concrete codons.
+    // This is a shape bound; validate_sources independently recomputes calls.
+    let maximum_unresolved = if descriptor.context_dependent_stop_codons.is_empty() {
+        report.ambiguous_codons
+    } else {
+        report.translated_codons
+    };
     let remaining = report
         .nucleotide_length
         .saturating_sub(usize::from(report.options.frame));
@@ -304,15 +313,15 @@ fn translation_valid(report: &TranslationReport) -> Result<(), Error> {
         || report.protein.len() != remaining / 3
         || report.translated_codons != remaining / 3
         || report.trailing_bases != remaining % 3
-        || report.code_name.len() > 128
+        || report.code_name != descriptor.name
         || !report
             .protein
             .bytes()
             .all(|b| b.is_ascii_uppercase() || b == b'*')
         || report.ambiguous_codons > report.translated_codons
-        || report.unresolved_codons > report.ambiguous_codons
+        || report.unresolved_codons > maximum_unresolved
         || report.unresolved_codons != report.protein.bytes().filter(|&b| b == b'X').count()
-        || report.possible_stop_codons > report.ambiguous_codons
+        || report.possible_stop_codons > report.unresolved_codons
         || report.initiator_methionine_applied
             && (report.options.initiation == translation::InitiationPolicy::Ordinary
                 || !report.protein.starts_with('M'))

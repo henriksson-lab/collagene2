@@ -15,13 +15,15 @@ type and its meaningful implementations together. Prefer inherent methods for
 operations that own or query its invariants. Split by genuine domain or
 lifecycle boundaries, never arbitrary chunks or a desire to hit a line count.
 
-The [current full inventory](refactor-layout-current.json) covers **1,254 Rust
-files / 217 directories** with **zero violations and zero size warnings**.
+The [current full inventory](refactor-layout-current.json) covers **1,265 connected Rust
+files / 221 directories** with **zero violations and zero size warnings**.
 The largest directory has **17** direct Rust files; the largest file is
-`web/src/app/mod.rs`, **2,413 lines** after the current controller/owner source batch.
+`web/src/app/mod.rs`, **2,412 lines**. The separate unregistered image sources
+are excluded from this published inventory; the working-tree gate also passes
+with all 1,269 files / 223 directories.
 The existing `/home/mahogny/github/claude/rust_refactor` release binary's read-only
-`module-size-check --include-generated` independently reports **667 compliant
-production files**. It excludes non-production files and supplements the
+`module-size-check --include-generated` previously reported **667 compliant
+production files** at the earlier audit checkpoint. It excludes non-production files and supplements the
 repository-wide gate. No helper build, automatic rewrite, compiler run or
 semantic scatter analysis was performed for this audit. Ownership findings are source review,
 not exhaustive semantic proof or scientific verification.
@@ -34,9 +36,7 @@ justified domain/lifecycle splits. They feed this queue, not separate plans.
 
 | Priority | Concrete change and evidence | Required boundaries |
 | --- | --- | --- |
-| 1 | **Own remote clone review state.** Extract tree pagination, parent review/acknowledgment, invalidation and recovery controls from `web/src/library/remote_library_view.rs` into a cohesive owner. | Retain one command dispatch, exact context pins, host CAS checks, cancellation, and separate acknowledgment/Retry actions. Keep unrelated sync lifecycles separate. |
 | 2 | **Contig evidence methods.** In `web/src/reads/contigs.rs`, make `current_contig` and `needs_ack` methods of `BoundAssembly`; let `EvidenceState` own construction, reset and selection instead of callback duplication. | Preserve evidence freshness and uncertainty acknowledgment. Keep complete owners together; no physical file split is required. |
-| 3 | **Download preparation constructor, with the next export edit.** Replace `prepare_download` with `ExportArtifact::prepare` and update callers. | Preserve reservation before copying, byte bounds and guarded durable completion. |
 | 3 | **TreeJob encoding, with its next persistence edit.** Move `repository/src/folders.rs`'s `encoded(job)` to private `TreeJob::encode` in the same owner file. | Preserve exact encoding, validation and CAS. Keep Repository transaction methods with Repository; no schema bump for a receiver-only change. |
 | 1 | **Contig identity methods, with the next contig change.** Move `options_revision:223` and `report_revision:1902` in `core/src/review/contigs/mod.rs` to `ContigOptions` and `ContigReport`. | Preserve exact hash inputs/bytes and freshness. Keep multi-input batch identity free; no generic identity abstraction. This does not advance deferred BAM/BAI work. |
 | 2 | **Group growing domains before adding more siblings.** Start with the 17-file core sequence-format suite; review the 16-file core read, material-derivation, annotation and protein suites, MCP analysis/cloning and sharing tests, and web workspace/preparation/method directories with their next relevant addition. | Group actual shared concepts into registered children, preserving complete owners. No speculative empty tree. Update Cargo/module registration and compare executable test names/counts before and after moves. The ceiling is not a target. |
@@ -48,11 +48,20 @@ an isolated cosmetic batch for imports.
 
 ## Completed work and justified owners
 
-The refreshed audit's trace-channel duplication is fixed in the pending delivery
-batch: `TraceChannels::all` is the sole borrowed A/C/G/T accessor; core display
+The current connected delivery batch implements two more reviewed ownership changes
+and passes native/WASM checks plus the 490-case focused integration: `CloneReview` now
+owns folder-clone pagination, exact-parent review invalidation/admission and
+acknowledgment; `ExportArtifact::prepare` owns export admission and byte capture.
+All constructor callers are updated directly, with the PNG export worker owning
+its map-view caller. Single remote dispatch, exact source/context/CAS checks,
+separate acknowledgment/Retry, reservation-before-copy and durable completion
+remain the governing invariants. No forwarding helper remains.
+
+The refreshed audit's trace-channel duplication is fixed in the verified trace
+delivery batch: `TraceChannels::all` is the sole borrowed A/C/G/T accessor; core display
 and web rendering use it directly. The duplicate free function is deleted. No
-wire change or new test is needed for that receiver-only consolidation; the
-connected trace fixtures and native/WASM checks cover the batch.
+wire change was needed for that receiver-only consolidation; the preceding
+111-case connected trace integration and native/WASM checks cover the batch.
 
 
 The [controller/scientific-owner batch](controller-ownership-2026-11-28.md) is

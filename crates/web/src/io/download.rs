@@ -13,49 +13,46 @@ pub(crate) struct ExportArtifact {
     reservation: Option<crate::platform::desktop_rpc::ExportReservation>,
     notice: Option<RwSignal<String>>,
 }
-pub(crate) fn prepare_download(
-    name: &str,
-    mime: &str,
-    bytes: &[u8],
-) -> Result<ExportArtifact, String> {
-    if bytes.len() > 64 * 1024 * 1024 {
-        return Err("Export exceeds the 64 MiB file limit.".into());
-    }
-    let reservation = if crate::platform::desktop_rpc::is_desktop() {
-        Some(crate::platform::desktop_rpc::reserve_export()?)
-    } else {
-        None
-    };
-    let name = if reservation.is_some() {
-        let mut safe: String = name
-            .chars()
-            .map(|c| {
-                if c.is_control() || matches!(c, '/' | '\\' | ':') {
-                    '_'
-                } else {
-                    c
-                }
-            })
-            .collect();
-        while safe.len() > 256 {
-            safe.pop();
-        }
-        if safe.trim().is_empty() {
-            safe = "export.bin".into();
-        }
-        safe
-    } else {
-        name.into()
-    };
-    Ok(ExportArtifact {
-        name,
-        mime: mime.into(),
-        bytes: bytes.to_vec(),
-        reservation,
-        notice: EXPORT_NOTICE.with(|notice| *notice.borrow()),
-    })
-}
 impl ExportArtifact {
+    pub(crate) fn prepare(name: &str, mime: &str, bytes: &[u8]) -> Result<Self, String> {
+        if bytes.len() > 64 * 1024 * 1024 {
+            return Err("Export exceeds the 64 MiB file limit.".into());
+        }
+        let reservation = if crate::platform::desktop_rpc::is_desktop() {
+            Some(crate::platform::desktop_rpc::reserve_export()?)
+        } else {
+            None
+        };
+        let name = if reservation.is_some() {
+            let mut safe: String = name
+                .chars()
+                .map(|c| {
+                    if c.is_control() || matches!(c, '/' | '\\' | ':') {
+                        '_'
+                    } else {
+                        c
+                    }
+                })
+                .collect();
+            while safe.len() > 256 {
+                safe.pop();
+            }
+            if safe.trim().is_empty() {
+                safe = "export.bin".into();
+            }
+            safe
+        } else {
+            name.into()
+        };
+        Ok(Self {
+            name,
+            mime: mime.into(),
+            bytes: bytes.to_vec(),
+            reservation,
+            notice: EXPORT_NOTICE.with(|notice| *notice.borrow()),
+        })
+    }
+
     pub async fn save(self, guard: impl Fn() -> Result<(), String>) -> Result<(), String> {
         if let Some(reservation) = self.reservation {
             let name = crate::platform::desktop_rpc::export_reserved(
@@ -94,7 +91,9 @@ impl ExportArtifact {
     }
 }
 pub(crate) async fn download(name: &str, mime: &str, bytes: &[u8]) -> Result<(), String> {
-    prepare_download(name, mime, bytes)?.save(|| Ok(())).await
+    ExportArtifact::prepare(name, mime, bytes)?
+        .save(|| Ok(()))
+        .await
 }
 pub(crate) async fn download_guarded(
     name: &str,
@@ -102,7 +101,9 @@ pub(crate) async fn download_guarded(
     bytes: &[u8],
     guard: impl Fn() -> Result<(), String>,
 ) -> Result<(), String> {
-    prepare_download(name, mime, bytes)?.save(guard).await
+    ExportArtifact::prepare(name, mime, bytes)?
+        .save(guard)
+        .await
 }
 /// Completion runs after the native durable receipt or browser dispatch, never
 /// merely after queueing. Capturing owned bytes keeps later edits out of the file.
@@ -112,7 +113,7 @@ pub(crate) fn download_with_completion(
     bytes: &[u8],
     done: impl FnOnce(Result<(), String>) + 'static,
 ) {
-    match prepare_download(name, mime, bytes) {
+    match ExportArtifact::prepare(name, mime, bytes) {
         Ok(artifact) => artifact.complete(done),
         Err(error) => done(Err(error)),
     }
@@ -124,7 +125,7 @@ pub(crate) fn download_with_completion_guarded(
     guard: impl Fn() -> Result<(), String> + 'static,
     done: impl FnOnce(Result<(), String>) + 'static,
 ) {
-    complete_download_guarded(prepare_download(name, mime, bytes), guard, done);
+    complete_download_guarded(ExportArtifact::prepare(name, mime, bytes), guard, done);
 }
 pub(crate) fn complete_download(
     result: Result<ExportArtifact, String>,

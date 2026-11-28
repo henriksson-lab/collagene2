@@ -7,12 +7,12 @@ until in-scope implementation is complete.
 
 | Area | Current source evidence | Remaining delivery work |
 | --- | --- | --- |
-| Saved-material digest continuation | Implemented: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Current worker schema 125; closure engine 5. | Native/WASM compilation and 823 affected regression cases pass; cross-platform scientific CI and desktop packaging passed at `83eb6c4`. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
-| Paired-oligo source libraries | Both ordered source events survive choice projection, immutable batch capture, release, native run records, protocol output and complete plate publication. Current draft 20, batch 3, release 2, worker 125 and sharing closure 5. | The base passed focused checks/529 cases and scientific/desktop CI at `ded0067`; current-source CI and deferred graphical/platform acceptance remain. |
+| Saved-material digest continuation | Implemented: origin-aware recipe v2, fresh tracked-strand fragment export, named setup reopening, predicted gel and exact-event sharing closure. Current worker schema 126; closure engine 5. | Native/WASM compilation and 823 affected regression cases pass; cross-platform scientific CI and desktop packaging passed at `83eb6c4`. Current-source GUI/platform acceptance remains deferred; GenBank is a detached reference with explicit physical/history losses. |
+| Paired-oligo source libraries | Both ordered source events survive choice projection, immutable batch capture, release, native run records, protocol output and complete plate publication. Current draft 20, batch 3, release 2, worker 126 and sharing closure 5. | The base passed focused checks/529 cases and scientific/desktop CI at `ded0067`; current-source CI and deferred graphical/platform acceptance remain. |
 | Protected codon ranges | `codon_design::ConstrainedPolicy` includes protected ranges and allowed codons; its independent checker reports violations | Current platform/workflow acceptance; the older blanket “protected ranges missing” entry is obsolete |
 | Plate layouts | `protocol_layout` plus web/MCP capture and CSV/HTML/PDF export | Broader workflow acceptance; this is documentary cloning layout, not inventory or instruments |
 | Lab comments/review | Native collaboration store, individual member registry, discussion SDK and shared browser/Tauri remote controls | Exact-source CI, graphical acceptance and deliberate deployment cutover; no automatic offline comment queue |
-| F33 collection similarity | `sequence_similarity` plus current binary worker schema 125, event-bound Compare controls and immutable-reference MCP discovery rank explicitly selected DNA/RNA sources | Current-source graphical/platform acceptance; server-wide/indexed similarity is outside this implemented profile |
+| F33 collection similarity | `sequence_similarity` plus current binary worker schema 126, event-bound Compare controls and immutable-reference MCP discovery rank explicitly selected DNA/RNA sources | Current-source graphical/platform acceptance; server-wide/indexed similarity is outside this implemented profile |
 | F34 specialized biology | Protein properties model an unmodified free chain; structure import/viewing has worker, workspace and MCP paths; `collagene-rna-chemistry` adds source-bound base/sugar/backbone/end declarations, stoichiometry, explicit imported-annotation review, event-bound saved declarations and Biology controls | RNA graphical/platform acceptance, broader independently validated antibody numbering/region coverage, graphical/performance acceptance remain. [Structures](STRUCTURE_IMPORT.md) · [RNA chemistry](RNA_MODIFICATIONS.md) |
 | M4 source interoperability | URL adapters, retained-source parsers and native MCP binary sequence/trace import plus XDNA/SCF export exist | Real provider/interoperability evidence remains separate from mocked fixtures |
 | M6 installed desktop | Native CI packaging exists for Windows/macOS/Linux | Actual installation, offline graphical use and chosen-remote workflow acceptance on the supported platforms |
@@ -22,7 +22,7 @@ This audit found no reason to reopen deferred BAM/BAI work or external Primer3 /
 multiple-alignment engine ports. OpenGel, inventory/ELN, instruments, scheduling,
 organizational reporting and mobile expansion retain their exclusions/deferrals.
 
-## Verified connected delivery batch
+## Previous verified trace and recovery batch
 
 Canonical mutation-intent annotation admission and domestication feature handling,
 desktop folder-clone recovery (sync schema 5), and worker trace preparation with
@@ -34,13 +34,50 @@ live provider test; that test was not executed. The captured-record offline case
 passes. Exact-source cross-platform CI and deferred product acceptance remain.
 [Detailed integration evidence](audits/refactor-current-integration.json).
 
+## Current connected delivery batch
+
+Portable map/gel SVG/PNG export (worker 126), all 27 extant NCBI genetic codes,
+authenticated hosted MCP and the confirmed decoding/search/concurrency corrections
+pass native/WASM checks and **490 unique focused cases**. Discovery retains all
+2,617 preceding names and exposes 2,675 cases in 54 harnesses; discovery includes
+ignored HTTP/provider cases and is not an execution count. The initial execution
+caught and corrected dual-stop report validation and four new fixture diagnostic
+mistakes. No browser, application HTTP or live-provider acceptance ran.
+[Detailed current integration evidence](audits/features-security-current-integration.json).
+Exact-source CI/package production follows publication; final product review remains.
+
+## Security findings
+
+Parallel source audits cover web/HTML boundaries, native authority/storage and
+scientific/resource limits. Confirmed findings are fixed in source or included
+in the current implementation batch; this is not an all-clear certificate.
+
+| Confirmed issue | Current action |
+| --- | --- |
+| Stale hosted-MCP DELETE could retire a replacement workspace under the same label. | Exact captured-owner comparison under the pool mutex is implemented; deterministic interleaving regression passes. [Finding](audits/security-hosted-delete-current.md). |
+| An initialize request naming the modern MCP version still creates a legacy SDK session, bypassing version-based quota admission. | Every initialize now shares the same handshake mutex and session cap. Pure quota regression passes; application HTTP fixtures remain deliberately ignored. [Native audit](audits/security-native-auth-current.md). |
+| Native model, plan and snapshot collections could allocate amplified owned data before validation. | Model-owned seeded decoding, frame-wide aggregate budgets and preallocation collection limits are implemented; matching save/readback admission and bounded streaming ZIP workspace JSON decoding are implemented; focused decoder, archive and save/reopen regressions pass. [Input audit](audits/security-web-inputs-current.md). |
+| Exact search/PCR could perform quadratic work on a long concrete near-match or ambiguous input. | One shared KMP/bounded-IUPAC kernel now serves exact and typed searches; PCR shares a finite work budget and never returns a truncated success. Focused kernel and actual native MCP PCR regressions pass. [Scientific audit](audits/security-scientific-current.md). |
+
+These fixes pass the connected native/WASM checks and focused regressions above. This does not establish exhaustive security or deployment acceptance.
+A suspected normal desktop folder-generation race was refuted by the existing
+atomic repository checkpoint CAS; it does not justify a mutation-schema rewrite.
+The dedicated [HTML/DOM source review](audits/security-dom-html-current.md) found no confirmed injection path in the inspected code; this is a bounded review, not a general security guarantee.
+
 ## Current implementation queue
+
+This is the feature queue. The user's final product review is the primary
+acceptance step. Existing code awaiting graphical/live-provider/platform review
+is not an additional missing feature. Keep compiler, scientific correctness and
+data-integrity checks proportional to the implementation changes.
+
 
 | Priority | Concrete source gap or connected batch | Required outcome |
 | --- | --- | --- |
-| 4 | Hosted ordinary MCP | Stdio and thin WebMCP exist; authenticated Streamable HTTP with member/project/session isolation remains required by the plan. |
-| 5 | PNG map/gel export | SVG exists; the promised PNG export surface remains absent. TIFF/JPEG evidence-attachment import also needs its defined surface/evidence. |
-| 6 | F18 genetic-code coverage | Translation currently supplies codes 1/2/11. Extend the finite primary-NCBI catalogue; context-dependent stop tables require explicit uncertainty semantics rather than static guessed stops. |
+| 4 | Hosted ordinary MCP | Implemented and checked: authenticated Streamable HTTP reuses scientific MCP handlers, with member/lab/workspace isolation, explicit capability storage and bounded scope lifecycles. Application HTTP acceptance remains deferred. |
+| 5 | PNG map/gel export | Implemented and checked: one portable Rust renderer with the bundled font, no external resources, bounded PNG dimensions/bytes, worker/MCP and web exports. TIFF/JPEG evidence-attachment import remains separate work. |
+| 6 | F18 genetic-code coverage | Implemented and checked: all 27 extant NCBI tables through one catalogue, including explicit dual-use sense/stop uncertainty for 27/28/31. Nine new scientific cases pass with native/WASM checks. |
+| 6b | Documentary image evidence | A separate unregistered Rust crate now admits bounded JPEG/PNG/classic TIFF/BigTIFF, preserves exact originals, and generates orientation-correct previews with explicit losses. Fourteen codec tests and seven workspace-owner tests are authored. The separate, unregistered attachment owner preserves historical document associations and stages an atomic application; module/worker/MCP/UI wiring and checks remain. No OpenGel comparison or measurement. |
 | 7 | F25 bounded CRISPR extensions | Current selected-record search uses ungapped Hamming distance. DNA/RNA bulge/variant models, further nuclease profiles and licensed calibrated scoring remain; deferred large-reference/BAM work does not gain priority. |
 | 8 | F26 host data and F34 calibration | Curated licensed host-frequency/expression profiles and broader independent antibody reference/species/residue validation remain. Protected codon ranges and North regions are implemented and should not be reopened. |
 

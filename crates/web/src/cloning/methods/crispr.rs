@@ -1,5 +1,5 @@
 //! Revision-bound guide design, selected-record search and literal donor review.
-use crate::io::download::prepare_download;
+use crate::io::download::ExportArtifact;
 use crate::platform::worker::CachedWorker;
 use crate::reads::contigs::ReadBinding;
 use crate::reads::contigs::ReadNavigation;
@@ -948,14 +948,14 @@ pub fn CrisprPanel(
                         let result = (|| -> Result<crate::io::download::ExportArtifact, String> {
                             let product = producer_product(&fresh, false)?;
                             if kind == "fasta" {
-                                prepare_download(
+                                ExportArtifact::prepare(
                                     "crispr-donor.fasta",
                                     "text/plain",
                                     collagene_core::formats::sequence::export_fasta(&product)
                                         .as_bytes(),
                                 )
                             } else {
-                                prepare_download(
+                                ExportArtifact::prepare(
                                     "crispr-donor.gb",
                                     "text/plain",
                                     collagene_core::formats::sequence::export_genbank(&product)
@@ -995,7 +995,7 @@ pub fn CrisprPanel(
                     })
                 })
                 .and_then(|bytes| {
-                    prepare_download("crispr-guides.json", "application/json", &bytes)
+                    ExportArtifact::prepare("crispr-guides.json", "application/json", &bytes)
                 });
             crate::io::download::complete_download(result, move |result| {
                 if guide_status.try_get_untracked().is_some() {
@@ -1033,7 +1033,7 @@ pub fn CrisprPanel(
                 report: data.report.as_ref(),
             })
             .and_then(|bytes| {
-                prepare_download("crispr-off-targets.json", "application/json", &bytes)
+                ExportArtifact::prepare("crispr-off-targets.json", "application/json", &bytes)
             });
             crate::io::download::complete_download(result, move |result| {
                 if search_status.try_get_untracked().is_some() {
@@ -1050,7 +1050,7 @@ pub fn CrisprPanel(
                 .run(data.clone())
                 .and_then(|_| donor_json(&data))
                 .and_then(|bytes| {
-                    prepare_download("crispr-donor-review.json", "application/json", &bytes)
+                    ExportArtifact::prepare("crispr-donor-review.json", "application/json", &bytes)
                 });
             crate::io::download::complete_download(result, move |result| {
                 if donor_status.try_get_untracked().is_some() {

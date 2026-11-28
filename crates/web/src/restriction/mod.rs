@@ -9,6 +9,8 @@ pub(crate) mod digest_fragment_model;
 pub(crate) mod digest_product;
 #[cfg(target_arch = "wasm32")]
 pub(crate) mod gel;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod gel_export;
 #[cfg(any(target_arch = "wasm32", test))]
 pub(crate) mod material_derivation_model;
 #[cfg(any(target_arch = "wasm32", test))]

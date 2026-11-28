@@ -25,6 +25,18 @@ pub struct CollageneServer {
     pub(crate) genomes: Arc<Mutex<GenomeResources>>,
 }
 impl CollageneServer {
+    /// Retire this scientific session: queued and future compute admission fails,
+    /// while already running native work retains its permit until completion.
+    pub fn close_compute(&self) {
+        self.compute_gate.close();
+    }
+
+    /// After close_compute(), a true result prevents a hosted owner from
+    /// releasing its retired session quota or managed storage prematurely.
+    pub fn has_pending_compute(&self) -> bool {
+        self.compute_gate.available_permits() == 0
+    }
+
     /// Trusted native embedding only: import already selected archive bytes into
     /// this memory-only MCP session. This grants no path or database authority.
     pub fn preload_archive_bytes(&self, bytes: &[u8]) -> Result<CallToolResult, ErrorData> {
@@ -104,4 +116,52 @@ pub async fn serve_stdio(
         .waiting()
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod compute_lifecycle_tests {
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn retired_compute_remains_pending_after_caller_abort_until_native_task_finishes() {
+        let server = CollageneServer::default();
+        let worker = server.clone();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let task = tokio::spawn(async move {
+            worker
+                .compute(move || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(CallToolResult::success(vec![]))
+                })
+                .await
+        });
+        started_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        assert!(server.has_pending_compute());
+        server.close_compute();
+        task.abort();
+        assert!(
+            server.has_pending_compute(),
+            "RPC cancellation cannot release running native work"
+        );
+        assert!(
+            server
+                .compute(|| Ok(CallToolResult::success(vec![])))
+                .await
+                .is_err(),
+            "retired engine cannot admit queued/replacement work"
+        );
+        release_tx.send(()).unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while server.has_pending_compute() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        assert!(!server.has_pending_compute());
+    }
 }

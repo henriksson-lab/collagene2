@@ -1,7 +1,6 @@
 //! Explicit SBOL design-graph review. Native export must not erase restrictive
 //! physical/reference-only source evidence; imported SBOL remains a reference.
 use crate::io::download::ExportArtifact;
-use crate::io::download::prepare_download;
 use collagene_core::documents::workspace::WorkspaceAttachment;
 use collagene_design_exchange::{
     self as exchange, Document, Export, ExportIds, FeatureKind, Issue, Kind, Projection,
@@ -299,10 +298,10 @@ pub fn SbolExchangeDialog(
                     .get_value()
                     .ok_or("No validated retained graph is available.")?;
                 let bytes = doc.expanded_bytes().map_err(|e| e.to_string())?;
-                prepare_download("retained-design.expanded.jsonld", MEDIA_TYPE, &bytes)
+                ExportArtifact::prepare("retained-design.expanded.jsonld", MEDIA_TYPE, &bytes)
             } else {
                 let bytes = original.get_value().ok_or("No source file is loaded.")?;
-                prepare_download("original-design.sbol.jsonld", MEDIA_TYPE, &bytes)
+                ExportArtifact::prepare("original-design.sbol.jsonld", MEDIA_TYPE, &bytes)
             }
         })();
         complete(
@@ -401,7 +400,7 @@ pub fn SbolExchangeDialog(
             Ok(())
         };
         let result = check().and_then(|()| {
-            prepare_download("current-design.sbol.jsonld", MEDIA_TYPE, &saved.value.bytes)
+            ExportArtifact::prepare("current-design.sbol.jsonld", MEDIA_TYPE, &saved.value.bytes)
         });
         complete(
             result,

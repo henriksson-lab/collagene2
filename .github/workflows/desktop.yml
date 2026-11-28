@@ -11,6 +11,8 @@ on:
       - "scripts/desktop_mcp_smoke.py"
       - "scripts/install_linux_desktop_deps.sh"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-packages.yml"
+      - "scripts/stage_desktop_packages.py"
   pull_request:
     paths:
       - "Cargo.toml"
@@ -20,6 +22,8 @@ on:
       - "scripts/desktop_mcp_smoke.py"
       - "scripts/install_linux_desktop_deps.sh"
       - ".github/workflows/desktop.yml"
+      - ".github/workflows/desktop-packages.yml"
+      - "scripts/stage_desktop_packages.py"
 
 permissions:
   contents: read
@@ -100,45 +104,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  native:
-    name: Desktop / ${{ matrix.os }}
+  packages:
+    name: Portable Windows, macOS installer and Debian package
     needs: frontend
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            executable: collagene-desktop
-          - os: windows-latest
-            executable: collagene-desktop.exe
-          - os: macos-latest
-            executable: collagene-desktop
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: desktop-native
-      - name: Install Linux native WebView SDK prerequisites
-        if: runner.os == 'Linux'
-        run: bash scripts/install_linux_desktop_deps.sh build
-      - uses: actions/download-artifact@v8
-        with:
-          name: desktop-frontend-${{ github.sha }}
-          path: dist
-      # build.rs checks the actual referenced main WASM for its native bridge,
-      # confined snapshot bounds, and absence of historical worker bundles.
-      - run: cargo build --locked -p collagene-desktop
-      - name: Check embedded MCP without opening the GUI
-        run: python scripts/desktop_mcp_smoke.py target/debug/${{ matrix.executable }}
-      - name: Retain native build output for inspection
-        uses: actions/upload-artifact@v7
-        with:
-          name: desktop-native-${{ matrix.os }}-${{ github.sha }}
-          path: target/debug/${{ matrix.executable }}
-          if-no-files-found: error
-          retention-days: 7
+    uses: ./.github/workflows/desktop-packages.yml
+    with:
+      build_profile: development
+      frontend_artifact: desktop-frontend-${{ github.sha }}

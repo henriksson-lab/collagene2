@@ -253,7 +253,7 @@ pub fn ReferencePastePanel(
             if bytes.len() > collagene_core::formats::sequence::MAX_IMPORT_BYTES {
                 return Err("Reference preview exceeds the JSON export limit.".into());
             }
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 "annotated-reference-paste.json",
                 "application/json",
                 &bytes,

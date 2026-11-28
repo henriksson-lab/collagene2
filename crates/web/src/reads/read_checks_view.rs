@@ -453,7 +453,11 @@ pub fn SavedReadChecksPanel(
             if bytes.len() > 32 << 20 {
                 return Err("JSON exceeds the32MiB download limit.".into());
             }
-            crate::io::download::prepare_download("read-check.json", "application/json", &bytes)
+            crate::io::download::ExportArtifact::prepare(
+                "read-check.json",
+                "application/json",
+                &bytes,
+            )
         })();
         match result {
             Ok(artifact) => {

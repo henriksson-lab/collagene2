@@ -1,11 +1,11 @@
 {
-  "scope": "Current tracked and unignored working-tree Rust sources, including pending delivery changes; layout evidence only, not scientific or compiler verification.",
-  "files": 1254,
-  "directories": 217,
+  "scope": "Connected delivery Rust sources, tracked and unignored, excluding the separately authored unregistered image-evidence crate and core attachment module. Layout evidence only, not scientific/compiler verification.",
+  "files": 1265,
+  "directories": 221,
   "largest_files": [
     {
       "path": "crates/web/src/app/mod.rs",
-      "lines": 2413
+      "lines": 2412
     },
     {
       "path": "crates/topo/src/lib.rs",
@@ -57,7 +57,7 @@
     },
     {
       "path": "crates/core/src/sequence/codon_design.rs",
-      "lines": 1833
+      "lines": 1831
     },
     {
       "path": "crates/web/src/viewer/map/renderer.rs",
@@ -207,11 +207,5 @@
     }
   ],
   "violations": 0,
-  "size_warnings": 0,
-  "rust_refactor": {
-    "command": "module-size-check --include-generated --format json",
-    "production_files": 667,
-    "status": "compliant",
-    "semantic_scatter_run": false
-  }
+  "size_warnings": 0
 }

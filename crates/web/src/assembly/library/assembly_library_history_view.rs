@@ -161,7 +161,7 @@ pub fn LibraryHistoryView(
     });
     let before_download = Callback::new(move |saved: Arc<Loaded>| {
         let result = guard.run(saved.clone()).and_then(|()| {
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 &format!(
                     "assembly-library-{}-{}.json",
                     saved.record.library_id, saved.record.before_hash

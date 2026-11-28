@@ -366,7 +366,7 @@ pub fn AssemblyPoolView(
             )
             .map_err(|e| e.to_string())?;
             guard.run(saved.clone())?;
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 "construct-reaction.json",
                 "application/json",
                 &bytes.0,

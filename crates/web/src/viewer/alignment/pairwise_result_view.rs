@@ -153,7 +153,7 @@ pub fn PairwiseResultView(
             let mut out = Limited(Vec::new());
             serde_json::to_writer_pretty(&mut out, &review.record).map_err(|e| e.to_string())?;
             guard.run(review.clone())?;
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 "pairwise-comparison.json",
                 "application/json",
                 &out.0,

@@ -2,7 +2,7 @@
 use crate::sequence::analysis::{CutSite, Enzyme, Match};
 use collagene_model::{Alphabet, Molecule};
 use serde::{Deserialize, Serialize};
-pub const WORKER_SCHEMA_VERSION: u16 = 125;
+pub const WORKER_SCHEMA_VERSION: u16 = 126;
 pub const CANDIDATE_SCHEMA_VERSION: u16 = 31;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -858,8 +858,8 @@ pub enum AnalysisJob {
         workspace: crate::documents::workspace::Workspace,
         run_id: String,
     },
-    RenderMapSvg {
-        request: crate::output::svg_export::Request,
+    RenderMap {
+        request: crate::output::map_export::Request,
     },
     InspectMaterialMismatchPcr {
         source: Molecule,
@@ -972,6 +972,9 @@ pub enum AnalysisJob {
     },
     PrepareTraceDisplay {
         molecule: Molecule,
+    },
+    RenderGelImage {
+        request: crate::output::gel_export::Request,
     },
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1145,7 +1148,7 @@ pub enum AnalysisResult {
     MaterialDerivationInstalled(crate::material::derivation::Installed),
     MaterialDigestInspection(crate::material::derivation::digest::DigestPreview),
     SavedRunReviewPrepared(crate::material::review::PreparedReview),
-    MapSvgExported(crate::output::svg_export::Rendered),
+    MapExported(crate::output::map_export::Rendered),
     MaterialMismatchPcrPreview(crate::material::derivation::pcr::MismatchPreview),
     MaterialRepairPreview(crate::material::derivation::end_repair::RepairPreview),
     ProtocolLayoutPreview(crate::output::layout::Layout),
@@ -1174,6 +1177,7 @@ pub enum AnalysisResult {
     AlignmentAntibody(crate::protein::antibody_alignment::Report),
     MaterialDigestProduct(crate::material::derivation::digest_export::Product),
     TraceDisplayPrepared(crate::review::reads::traces::display::PlotData),
+    GelImageExported(crate::output::gel_export::Rendered),
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnnotationExportReport {

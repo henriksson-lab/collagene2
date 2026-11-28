@@ -15,8 +15,8 @@ pub struct Response {
 }
 
 const LARGE_REPLY_SELECTORS: &[u32] = &[
-    20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163, 164, 165,
-    166, 168, 169, 171, 174, 176, 178, 179, 180, 182, 187, 188,
+    20, 21, 40, 41, 62, 65, 92, 95, 98, 120, 124, 125, 157, 158, 159, 160, 161, 162, 163, 165, 166,
+    168, 169, 171, 174, 176, 178, 179, 180, 182, 187, 188,
 ];
 /// Bounded serialization of only the id/revision/selector prefix. Bulk fields
 /// are never serialized into a temporary full-size buffer to choose a budget.
@@ -106,7 +106,10 @@ impl Response {
             AnalysisResult::SavedRunReviewPrepared(report) => {
                 report.validate_request_binding(&response.revision)?;
             }
-            AnalysisResult::MapSvgExported(report) => {
+            AnalysisResult::GelImageExported(report) => {
+                report.validate_binding(&response.revision)?
+            }
+            AnalysisResult::MapExported(report) => {
                 report.validate_binding(&report.source_revision)?;
             }
             AnalysisResult::MaterialOriginInspection(report) => {

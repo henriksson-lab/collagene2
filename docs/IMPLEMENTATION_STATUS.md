@@ -4,6 +4,16 @@ The implementation goal is active. The working application covers substantial pa
 
 ## Current source and public preview
 
+The current connected batch adds portable SVG/PNG map and gel exports (worker
+126), all 27 extant NCBI genetic-code tables, authenticated hosted MCP and the
+confirmed resource/concurrency fixes in the [security queue](DELIVERY_AUDIT.md#security-findings).
+Native/WASM checks and **490 unique focused cases pass**. Discovery preserves all
+2,617 prior names (2,675 cases / 54 harnesses); ignored HTTP/provider tests were not
+executed. [Current integration evidence](audits/features-security-current-integration.json)
+records scope, versions and cases. Exact-source CI and requested executable/installer
+production follow publication. Documentary image codec/attachment sources remain
+unregistered and unwired. Public port 8082 is unchanged.
+
 The connected delivery batch adds canonical annotation handling for mutation
 intent/domestication, explicit desktop folder-clone recovery (sync schema 5), and
 worker-prepared trace display/document-bound SCF export (worker 125). Native compilation and 111 focused cases pass. Discovery preserves all 2,540
@@ -34,8 +44,8 @@ Native/WASM checks and 107 focused cases pass; all 2,509 baseline case names
 in 33 harnesses are preserved. Its `7f6951b` checkpoint passed scientific and desktop
 CI; current source changes retain their own gate. The
 [current refactor queue](audits/REFACTOR_PLAN.md) retains connected remaining work.
-The [layout inventory](audits/refactor-layout-current.json) covers 1,254 Rust files /
-217 directories, at most 17 direct files per directory, with no size violations or
+The [layout inventory](audits/refactor-layout-current.json) covers 1,265 connected Rust files /
+221 directories, at most 17 direct files per directory, with no size violations or
 3,000-line warnings.
 
 The connected [native annotation edit batch](NATIVE_ANNOTATION_EDITING.md) passes
@@ -57,7 +67,7 @@ maximum of 17 direct files per directory and no file reaching 3,000 lines at
 cases; its scientific CI and desktop packaging passed on Windows/macOS/Linux. See the
 [refactor status](audits/CODE_ORGANIZATION.md) for scope and evidence.
 
-Current source uses worker schema 125, candidate schema 31, draft schema 20,
+Current source uses worker schema 126, candidate schema 31, draft schema 20,
 scientific engine science-35 and 209 native MCP tools. Native sequence edits,
 paste and annotation-only strand flips now share annotation proofs and bounded
 source-evidence handling; MCP receipts expose annotation review counts. The
@@ -72,8 +82,7 @@ screening and imported structure viewing are integrated. Antibody analysis now
 connects conditional human-reference IMGT/Kabat1991/Chothia1997 numbering and
 independently selected IMGT/Kabat1991/canonical-chart Chothia regions through
 workers, protein/alignment inspectors and viewers, and MCP. Unsupported mappings remain explicit. Natural
-residue-level validation, broader reference/species coverage and North region
-definitions remain unfinished. This does not establish whole-application,
+residue-level validation, broader reference/species coverage and independent calibration remain unfinished. This does not establish whole-application,
 installed-platform or visual acceptance.
 
 Public port 8082 now serves successful CI frontend `48a82bc` (worker schema 121),

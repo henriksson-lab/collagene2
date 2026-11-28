@@ -4,9 +4,9 @@ use crate::sequence::analysis::base_mask;
 use collagene_model::{Alphabet, Error, Feature, Location, Molecule, Sequence, Topology};
 use serde::{Deserialize, Serialize};
 
-const STANDARD: &[u8; 64] = b"FFLLSSSSYY**CC*WLLLLPPPPHHQQRRRRIIIMTTTTNNKKSSRRVVVVAAAADDEEGGGG";
-const MITOCHONDRIAL: &[u8; 64] =
-    b"FFLLSSSSYY**CCWWLLLLPPPPHHQQRRRRIIMMTTTTNNKKSS**VVVVAAAADDEEGGGG";
+mod codes;
+use codes::Code;
+
 const MAX_ORFS: usize = 10_000;
 const MAX_ORF_AMINO_ACIDS: usize = 8_000_000;
 const NO_BOUNDARY: u32 = u32::MAX;
@@ -17,60 +17,17 @@ pub struct CodeDescriptor {
     pub id: u8,
     pub name: String,
     pub start_codons: Vec<String>,
+    /// Codons whose termination versus sense assignment requires biological context.
+    pub context_dependent_stop_codons: Vec<String>,
 }
-#[derive(Clone, Copy)]
-struct Code {
-    id: u8,
-    name: &'static str,
-    amino_acids: &'static [u8; 64],
-    starts: &'static [usize],
-}
-fn code(id: u8) -> Result<Code, Error> {
-    Ok(match id {
-        1 => Code {
-            id,
-            name: "Standard",
-            amino_acids: STANDARD,
-            starts: &[3, 19, 35],
-        },
-        2 => Code {
-            id,
-            name: "Vertebrate mitochondrial",
-            amino_acids: MITOCHONDRIAL,
-            starts: &[32, 33, 34, 35, 51],
-        },
-        11 => Code {
-            id,
-            name: "Bacterial, archaeal and plant plastid",
-            amino_acids: STANDARD,
-            starts: &[3, 19, 32, 33, 34, 35, 51],
-        },
-        _ => {
-            return Err(Error::Unsupported(format!(
-                "genetic code {id} is not in the audited code set (1, 2, 11)"
-            )));
-        }
-    })
-}
-fn index_codon(index: usize) -> String {
-    let bases = b"TCAG";
-    [bases[index / 16], bases[index / 4 % 4], bases[index % 4]]
-        .into_iter()
-        .map(char::from)
-        .collect()
+impl CodeDescriptor {
+    /// Resolve one supported NCBI table; removed/reserved IDs fail explicitly.
+    pub fn for_id(id: u8) -> Result<Self, Error> {
+        Code::lookup(id).map(Code::descriptor)
+    }
 }
 pub fn genetic_codes() -> Vec<CodeDescriptor> {
-    [1, 2, 11]
-        .into_iter()
-        .map(|id| {
-            let c = code(id).unwrap();
-            CodeDescriptor {
-                id: c.id,
-                name: c.name.into(),
-                start_codons: c.starts.iter().map(|i| index_codon(*i)).collect(),
-            }
-        })
-        .collect()
+    codes::descriptors()
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -151,6 +108,7 @@ impl Decoder {
         let mut unique = true;
         let mut starts = 0;
         let mut stops = 0;
+        let mut context_stops = 0;
         let mut count = 0;
         let bits = [8, 2, 1, 4]; // TCAG indexing of the NCBI code table.
         for a in 0..4 {
@@ -167,7 +125,13 @@ impl Decoder {
                     }
                     amino.get_or_insert(aa);
                     count += 1;
-                    starts += usize::from(self.code.starts.contains(&index));
+                    starts += usize::from(self.code.is_start(index));
+                    if self.code.context_stop(index) {
+                        // Without organism/position context, sense and termination
+                        // are both possible. Never invent a definite residue/stop.
+                        unique = false;
+                        context_stops += 1;
+                    }
                     stops += usize::from(aa == b'*');
                 }
             }
@@ -177,7 +141,7 @@ impl Decoder {
             start_all: starts == count,
             start_any: starts > 0,
             stop_all: stops == count,
-            stop_any: stops > 0,
+            stop_any: stops > 0 || context_stops > 0,
             ambiguous: masks.iter().any(|m| m.count_ones() > 1),
         };
         self.cache[key] = Some(outcome);
@@ -210,7 +174,7 @@ pub fn translate(
     options: &TranslationOptions,
 ) -> Result<TranslationReport, Error> {
     nucleotide(sequence)?;
-    let code = code(options.genetic_code)?;
+    let code = Code::lookup(options.genetic_code)?;
     if options.frame > 2 {
         return Err(Error::Coordinates(
             "translation frame must be 0, 1 or 2".into(),
@@ -270,9 +234,11 @@ pub fn translate(
         warnings.push("This frame contains no complete codon.".into());
     }
     if possible_stop > 0 {
-        warnings.push(format!(
-            "{possible_stop} ambiguous codon(s) could encode a stop; their amino acid is X."
-        ));
+        warnings.push(if code.has_context_stops() {
+            format!("{possible_stop} codon(s) could encode a stop because of sequence ambiguity or context-dependent termination; their amino acid is X. No biological termination context is inferred.")
+        } else {
+            format!("{possible_stop} ambiguous codon(s) could encode a stop; their amino acid is X.")
+        });
     }
     Ok(TranslationReport {
         options: options.clone(),
@@ -445,7 +411,7 @@ pub(crate) fn translate_cds_validated(
         return Err(Error::Format("CDS /codon_start must be 1, 2 or 3".into()));
     }
     let genetic_code = scalar(feature, "transl_table", 1)?;
-    code(genetic_code)?;
+    Code::lookup(genetic_code)?;
     let sequence = cds_sequence(&molecule.sequence, &feature.location)?;
     let partial = feature.qualifiers.iter().any(|(key, _)| key == "partial");
     let options = TranslationOptions {
@@ -643,7 +609,7 @@ pub(crate) fn find_orfs_validated(
     source_revision: &str,
 ) -> Result<OrfReport, Error> {
     nucleotide(&molecule.sequence)?;
-    let code = code(options.genetic_code)?;
+    let code = Code::lookup(options.genetic_code)?;
     if options.max_orfs == 0
         || options.max_orfs > MAX_ORFS
         || options.min_amino_acids > collagene_model::MAX_SEQUENCE_LEN / 3
@@ -653,6 +619,9 @@ pub(crate) fn find_orfs_validated(
         ));
     }
     let mut report=OrfReport{source_revision:source_revision.into(),options:options.clone(),orfs:vec![],truncated:false,warnings:vec!["ORFs are codon-model candidates, not evidence of expression. Ambiguous possible-stop codons form uncertain boundaries. Circular candidates cover at most one source turn.".into()]};
+    if code.has_context_stops() {
+        report.warnings.push("This genetic code has context-dependent sense/stop assignments. Such codons form uncertain boundaries, including at a CDS terminus; no organism-specific termination context is inferred.".into());
+    }
     let n = molecule.sequence.len();
     if n < 3 {
         report

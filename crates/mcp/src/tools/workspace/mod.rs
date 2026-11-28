@@ -36,6 +36,12 @@ use collagene_core::verification;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+pub struct MapExport {
+    pub document: DocumentRef,
+    pub format: collagene_core::output::raster::Format,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ImportWorkspace {
     /// Base64 of a .cg2design snapshot exported by the web workspace; at most 8 MiB decoded.
     pub data_base64: String,
@@ -550,26 +556,44 @@ impl CollageneServer {
         .await
     }
     #[tool(
-        description = "Export the canonical feature map of one explicit immutable session document revision as bounded native SVG. Returns exact source identity, renderer warnings and a complete image/svg+xml artifact. No arbitrary paths, external renderer or user-supplied SVG. This profile requests no restriction-enzyme overlay; map visibility is presentation only and never physical/material or verification authority."
+        description = "Export the canonical feature map of one exact immutable session document as SVG or PNG. Select Svg or Png with explicit pixel width (16–4096, at most 4 million pixels). PNG uses our bundled font and embedded source identity. Complete artifact, exact source revision and renderer warnings are returned. No paths, external renderer, uploaded SVG, restriction overlay or physical/material authority."
     )]
-    pub(crate) async fn export_map_svg(
+    pub(crate) async fn export_map(
         &self,
-        Parameters(reference): Parameters<DocumentRef>,
+        Parameters(args): Parameters<MapExport>,
     ) -> Result<CallToolResult, ErrorData> {
         let server = self.clone();
-        self.compute(move||{
-            let source={let store=server.session.store.lock().unwrap();let source=store.document(&reference)?;collagene_model::bounds::model_preflight(&[source]).map_err(bad)?;source.clone()};
-            let rendered=collagene_core::output::svg_export::render(&collagene_core::output::svg_export::Request{source,source_revision:reference.revision.clone(),restriction_sites:None}).map_err(bad)?;
+        self.compute(move || {
+            let reference = args.document;
+            let source = {
+                let store = server.session.store.lock().unwrap();
+                let source = store.document(&reference)?;
+                collagene_model::bounds::model_preflight(&[source]).map_err(bad)?;
+                source.clone()
+            };
+            let rendered = collagene_core::output::map_export::Request {
+                source, source_revision: reference.revision.clone(), restriction_sites: None, format: args.format,
+            }.render().map_err(bad)?;
             rendered.validate_binding(&reference.revision).map_err(bad)?;
-            let size=rendered.svg.len();let artifact=blake3::hash(rendered.svg.as_bytes()).to_hex().to_string();
-            let result=output(json!({"document":reference,"source_revision":rendered.source_revision,"artifact_id":artifact,"filename":"map.svg","encoding":"utf-8","mime_type":"image/svg+xml","bytes":size,"warnings":rendered.warnings,"warning_count":rendered.warnings.len(),"warnings_truncated":false,"restriction_overlay":"none_requested","scope":"Canonical features of this exact native revision; no restriction-site overlay requested.","authority":"Documentary display only. Map export does not verify a cloning design, prove physical material, alter a source or write a native catalog."}))?;
-            let mut store=server.session.store.lock().unwrap();
-            if let Some(existing)=store.artifacts.get(&artifact){
-                if !matches!(&existing.data,ArtifactData::Text(_))||existing.mime_type!="image/svg+xml"||existing.filename!="map.svg"{return Err(bad("map SVG artifact already has another representation"))}
-            }else{
-                if store.artifacts.len()>=MAX_ITEMS{return Err(bad("at most 128 artifacts; no map published"))}
-                store.reserve(size)?;store.artifacts.insert(artifact,Artifact{data:ArtifactData::Text(rendered.svg),mime_type:"image/svg+xml",encoding:"utf-8",filename:"map.svg"});
-            }Ok(result)
+            let size = rendered.image.bytes().len();
+            let artifact = blake3::hash(rendered.image.bytes()).to_hex().to_string();
+            let (data, mime_type, encoding, filename) = match rendered.image {
+                collagene_core::output::raster::Image::Svg(text) => (ArtifactData::Text(text), "image/svg+xml", "utf-8", "map.svg"),
+                collagene_core::output::raster::Image::Png(image) => (ArtifactData::Binary(image.bytes), "image/png", "base64", "map.png"),
+            };
+            let result = output(json!({"document":reference,"source_revision":rendered.source_revision,"format":args.format,"artifact_id":artifact,"filename":filename,"encoding":encoding,"mime_type":mime_type,"bytes":size,"warnings":rendered.warnings,"warning_count":rendered.warnings.len(),"warnings_truncated":false,"restriction_overlay":"none_requested","scope":"Canonical features of this exact native revision; no restriction-site overlay requested.","authority":"Documentary display only. Map export does not verify a cloning design, prove physical material, alter a source or write a native catalog."}))?;
+            let mut store = server.session.store.lock().unwrap();
+            if let Some(existing) = store.artifacts.get(&artifact) {
+                if !matches!((&existing.data, &data), (ArtifactData::Text(_), ArtifactData::Text(_)) | (ArtifactData::Binary(_), ArtifactData::Binary(_)))
+                    || existing.mime_type != mime_type || existing.filename != filename || existing.encoding != encoding {
+                    return Err(bad("map artifact already has another representation"));
+                }
+            } else {
+                if store.artifacts.len() >= MAX_ITEMS { return Err(bad("at most 128 artifacts; no map published")); }
+                store.reserve(size)?;
+                store.artifacts.insert(artifact, Artifact { data, mime_type, encoding, filename });
+            }
+            Ok(result)
         }).await
     }
     #[tool(

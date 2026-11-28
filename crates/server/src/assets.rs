@@ -5,7 +5,11 @@ use cap_std::{
     ambient_authority,
     fs::{Dir, OpenOptions},
 };
-use std::{collections::BTreeMap, io::Read, path::Path};
+use std::{
+    collections::BTreeMap,
+    io::Read,
+    path::{Path, PathBuf},
+};
 
 pub const MAX_ASSET_FILES: usize = 4096;
 pub const MAX_ASSET_FILE_BYTES: usize = 128 * 1024 * 1024;
@@ -21,13 +25,15 @@ pub(crate) struct Asset {
 /// path is ever used for a filesystem operation.
 pub struct AssetSnapshot {
     pub(crate) files: BTreeMap<String, Asset>,
+    canonical_root: PathBuf,
 }
 impl AssetSnapshot {
     pub fn load(root: &Path) -> Result<Self> {
         if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
             return Err(Error::Configuration("asset root symlink"));
         }
-        let root = Dir::open_ambient_dir(root, ambient_authority())?;
+        let canonical_root = root.canonicalize()?;
+        let root = Dir::open_ambient_dir(&canonical_root, ambient_authority())?;
         let mut files = BTreeMap::new();
         let mut total = 0;
         snapshot(&root, "", 0, &mut files, &mut total)?;
@@ -42,10 +48,18 @@ impl AssetSnapshot {
         }
         index.etag = format!("\"{}\"", blake3::hash(&enabled).to_hex());
         index.bytes = Bytes::from(enabled);
-        Ok(Self { files })
+        Ok(Self {
+            files,
+            canonical_root,
+        })
     }
     pub fn file_count(&self) -> usize {
         self.files.len()
+    }
+    /// Reject managed-data roots inside assets or containing assets, including
+    /// future snapshots loaded from the same operator-selected location.
+    pub(crate) fn overlaps_root(&self, canonical: &Path) -> bool {
+        canonical.starts_with(&self.canonical_root) || self.canonical_root.starts_with(canonical)
     }
 }
 fn snapshot(

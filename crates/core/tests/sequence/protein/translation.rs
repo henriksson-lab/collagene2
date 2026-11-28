@@ -185,7 +185,7 @@ fn alternative_start_recoding_and_code_two_differences_are_recorded() {
         translate(
             &dna("ATG"),
             &TranslationOptions {
-                genetic_code: 14,
+                genetic_code: 99,
                 ..TranslationOptions::default()
             }
         )
@@ -193,7 +193,10 @@ fn alternative_start_recoding_and_code_two_differences_are_recorded() {
     );
     assert_eq!(
         genetic_codes().iter().map(|c| c.id).collect::<Vec<_>>(),
-        [1, 2, 11]
+        [
+            1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26, 27, 28, 29,
+            30, 31, 32, 33
+        ]
     );
 }
 
@@ -521,4 +524,262 @@ fn repeated_cds_ranges_are_bounded_before_sequence_materialization() {
     let m = molecule(&"A".repeat(1000), Topology::Linear);
     let feature = cds(Location::Join(vec![Location::range(0, 1000); 10_001]));
     assert!(matches!(translate_cds(&m, &feature), Err(Error::TooLarge)));
+}
+
+#[test]
+fn ncbi_catalogue_has_all_extant_ids_and_explicit_context_dependent_stop_metadata() {
+    let expected = [
+        1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+        31, 32, 33,
+    ];
+    let codes = genetic_codes();
+    assert_eq!(codes.iter().map(|c| c.id).collect::<Vec<_>>(), expected);
+    for entry in codes {
+        assert_eq!(entry, CodeDescriptor::for_id(entry.id).unwrap());
+        assert!(!entry.name.is_empty() && entry.name.len() <= 256);
+        assert!(entry.start_codons.iter().any(|c| c == "ATG"));
+        let dual = match entry.id {
+            27 => vec!["TGA"],
+            28 => vec!["TAA", "TAG", "TGA"],
+            31 => vec!["TAA", "TAG"],
+            _ => vec![],
+        };
+        assert_eq!(entry.context_dependent_stop_codons, dual);
+    }
+    for absent in [0, 7, 8, 17, 18, 19, 20, 34, 99, 255] {
+        assert!(CodeDescriptor::for_id(absent).is_err());
+    }
+    assert_eq!(
+        CodeDescriptor::for_id(3).unwrap().start_codons,
+        ["ATA", "ATG", "GTG"]
+    );
+    assert_eq!(
+        CodeDescriptor::for_id(25).unwrap().start_codons,
+        ["TTG", "ATG", "GTG"]
+    );
+}
+
+#[test]
+fn added_tables_translate_literal_reassigned_codons_without_silent_standard_fallback() {
+    // Literal codon expectations taken from the primary NCBI difference tables;
+    // this does not regenerate expected amino acids from the implementation table.
+    for (id, text, expected) in [
+        (3, "CTTATA", "TM"),
+        (4, "TGA", "W"),
+        (5, "AGAATA", "SM"),
+        (6, "TAATAG", "QQ"),
+        (9, "AAAAGA", "NS"),
+        (10, "TGA", "C"),
+        (12, "CTG", "S"),
+        (13, "AGAAGG", "GG"),
+        (14, "TAAAAA", "YN"),
+        (15, "TAG", "Q"),
+        (16, "TAG", "L"),
+        (21, "AAAATA", "NM"),
+        (22, "TCATAG", "*L"),
+        (23, "TTA", "*"),
+        (24, "AGAAGG", "SK"),
+        (25, "TGA", "G"),
+        (26, "CTG", "A"),
+        (27, "TAATAGTGA", "QQX"),
+        (28, "TAATAGTGA", "XXX"),
+        (29, "TAATAG", "YY"),
+        (30, "TAATAG", "EE"),
+        (31, "TAATAGTGA", "XXW"),
+        (32, "TAG", "W"),
+        (33, "TAAAGG", "YK"),
+    ] {
+        let options = TranslationOptions {
+            genetic_code: id,
+            ..Default::default()
+        };
+        let report = translate(&dna(text), &options).unwrap();
+        assert_eq!(report.protein, expected, "table {id}, {text}");
+        let rna = Sequence::new(Alphabet::Rna, &text.replace('T', "U")).unwrap();
+        assert_eq!(translate(&rna, &options).unwrap().protein, expected);
+        let reverse = dna(text).reverse_complement().unwrap();
+        assert_eq!(
+            translate(
+                &reverse,
+                &TranslationOptions {
+                    reverse: true,
+                    ..options
+                }
+            )
+            .unwrap()
+            .protein,
+            expected
+        );
+    }
+    let options = TranslationOptions {
+        genetic_code: 3,
+        initiation: InitiationPolicy::RequireRecognizedStart,
+        ..Default::default()
+    };
+    assert_eq!(
+        translate(&dna("GTGCTTTAA"), &options).unwrap().protein,
+        "MT*"
+    );
+    assert!(translate(&dna("ATC"), &options).is_err());
+}
+
+#[test]
+fn context_dependent_stops_remain_uncertain_in_literal_and_iupac_translation() {
+    for (id, text, expected, possible, ambiguous) in [
+        (27, "TAATAGTGATGG", "QQXW", 1, 0),
+        (28, "TAATAGTGATGG", "XXXW", 3, 0),
+        (31, "TAATAGTGATGG", "XXWW", 2, 0),
+        (27, "TGR", "X", 1, 1),
+        (28, "TAR", "X", 1, 1),
+        (31, "TAR", "X", 1, 1),
+        (27, "TAR", "Q", 0, 1),
+    ] {
+        let report = translate(
+            &dna(text),
+            &TranslationOptions {
+                genetic_code: id,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(report.protein, expected);
+        assert_eq!(report.possible_stop_codons, possible);
+        assert_eq!(report.ambiguous_codons, ambiguous);
+        assert_eq!(
+            report.unresolved_codons,
+            expected.bytes().filter(|b| *b == b'X').count()
+        );
+        if possible > 0 {
+            assert!(
+                report
+                    .warnings
+                    .iter()
+                    .any(|s| s.contains("context-dependent termination"))
+            );
+        }
+    }
+}
+
+#[test]
+fn context_dependent_terminal_codons_do_not_assert_complete_cds_or_complete_orfs() {
+    for (id, ending) in [
+        (27, "TGA"),
+        (28, "TAA"),
+        (28, "TAG"),
+        (28, "TGA"),
+        (31, "TAA"),
+        (31, "TAG"),
+    ] {
+        let m = molecule(&format!("ATGAAA{ending}"), Topology::Linear);
+        let mut feature = cds(Location::range(0, 9));
+        feature
+            .qualifiers
+            .push(("transl_table".into(), Some(id.to_string())));
+        let report = translate_cds(&m, &feature).unwrap();
+        assert_eq!(report.protein, "MKX");
+        assert!(!report.has_terminal_stop && !report.complete_under_model);
+        assert_eq!(report.translation.possible_stop_codons, 1);
+        let mut options = orf_options();
+        options.genetic_code = id;
+        assert!(find_orfs(&m, &options).unwrap().orfs.is_empty());
+        options.incomplete = IncompletePolicy::IncludeAllPartials;
+        let partial = find_orfs(&m, &options)
+            .unwrap()
+            .orfs
+            .into_iter()
+            .find(|o| o.oriented_start == 0)
+            .unwrap();
+        assert_eq!(partial.termination, Termination::AmbiguousStop);
+        assert_eq!(partial.protein, "MK");
+        assert!(!partial.has_stop_codon && partial.partial_3prime);
+        assert_eq!(partial.location, Location::range(0, 6));
+        let mut circular = m.clone();
+        circular.topology = Topology::Circular;
+        let circle = find_orfs(&circular, &options).unwrap();
+        let partial = circle.orfs.iter().find(|o| o.oriented_start == 0).unwrap();
+        assert_eq!(partial.termination, Termination::AmbiguousStop);
+        assert!(!partial.has_stop_codon && partial.partial_3prime);
+    }
+    // New table 6 has definite TGA termination: unlike dual-use tables it can
+    // establish the ordinary codon-model completeness predicate.
+    let m = molecule("ATGTAATGA", Topology::Linear);
+    let mut feature = cds(Location::range(0, 9));
+    feature
+        .qualifiers
+        .push(("transl_table".into(), Some("6".into())));
+    let report = translate_cds(&m, &feature).unwrap();
+    assert_eq!(report.protein, "MQ");
+    assert!(report.has_terminal_stop && report.complete_under_model);
+}
+
+#[test]
+fn captured_ncbi_catalogue_retains_all_primary_rows_and_provenance() {
+    let data = include_str!("../../data/genetic_codes/gc.prt");
+    assert!(data.contains("Version 4.6"));
+    // Provenance is separate from scientific literal-codon expectations above.
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../../data/genetic_codes/provenance.json")).unwrap();
+    assert_eq!(manifest["bytes"], data.len());
+    let mut ids = Vec::new();
+    for block in data.split("\n {\n").skip(1) {
+        let id = block
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("id "))
+            .unwrap()
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse::<u8>()
+            .unwrap();
+        ids.push(id);
+        let row = |key: &str| {
+            block
+                .lines()
+                .find_map(|line| line.trim().strip_prefix(key))
+                .unwrap()
+                .split('"')
+                .nth(1)
+                .unwrap()
+        };
+        let aas = row("ncbieaa").as_bytes();
+        let starts = row("sncbieaa").as_bytes();
+        assert_eq!(aas.len(), 64);
+        assert_eq!(starts.len(), 64);
+        let mut expected_starts = Vec::new();
+        for (index, &amino) in aas.iter().enumerate() {
+            let order = b"TCAG";
+            let codon = String::from_utf8(vec![
+                order[index / 16],
+                order[index / 4 % 4],
+                order[index % 4],
+            ])
+            .unwrap();
+            let dual = starts[index] == b'*' && amino != b'*';
+            let report = translate(
+                &dna(&codon),
+                &TranslationOptions {
+                    genetic_code: id,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                report.protein.as_bytes(),
+                &[if dual { b'X' } else { amino }],
+                "table {id}, {codon}"
+            );
+            assert_eq!(report.possible_stop_codons, usize::from(dual));
+            if starts[index] == b'M' {
+                expected_starts.push(codon);
+            }
+        }
+        assert_eq!(
+            CodeDescriptor::for_id(id).unwrap().start_codons,
+            expected_starts
+        );
+    }
+    assert_eq!(
+        ids,
+        genetic_codes().iter().map(|c| c.id).collect::<Vec<_>>()
+    );
 }

@@ -4,6 +4,7 @@ use crate::io::map_export_model::Prepared;
 use crate::io::map_export_model::RenderRequest;
 use crate::io::map_export_model::Rendered;
 use crate::io::map_export_model::Snapshot;
+use collagene_core::output::raster::{Format, PngOptions};
 use leptos::prelude::*;
 use std::{
     future::Future,
@@ -30,11 +31,12 @@ pub fn worker_renderer() -> Callback<RenderRequest, LocalResult<Rendered>> {
             let response = crate::platform::worker::analyze(Request {
                 id,
                 revision: context.clone(),
-                job: AnalysisJob::RenderMapSvg {
-                    request: collagene_core::output::svg_export::Request {
+                job: AnalysisJob::RenderMap {
+                    request: collagene_core::output::map_export::Request {
                         source: request.source,
                         source_revision: source_revision.clone(),
                         restriction_sites: request.restriction_sites,
+                        format: request.format,
                     },
                 },
             })
@@ -43,16 +45,14 @@ pub fn worker_renderer() -> Callback<RenderRequest, LocalResult<Rendered>> {
                 return Err("Map worker response belongs to a different captured view.".into());
             }
             match response.result {
-                AnalysisResult::MapSvgExported(value)
-                    if value.source_revision == source_revision =>
-                {
+                AnalysisResult::MapExported(value) if value.source_revision == source_revision => {
                     value
                         .validate_binding(&source_revision)
                         .map_err(|error| error.to_string())?;
                     Ok(Rendered {
                         source_revision: value.source_revision,
                         context_revision: context,
-                        svg: value.svg,
+                        image: value.image,
                         warnings: value.warnings,
                     })
                 }
@@ -71,7 +71,9 @@ pub fn MapExportDialog(
     render: Callback<RenderRequest, LocalResult<Rendered>>,
     on_saved: Callback<String>,
 ) -> impl IntoView {
-    let opening = StoredValue::new(snapshot.run(()).and_then(Capture::new));
+    let opening = StoredValue::new(snapshot.run(()));
+    let format = RwSignal::new(Format::Svg);
+    let png_width = RwSignal::new(1600u32);
     let prepared = RwSignal::new(None::<Arc<Prepared>>);
     let busy = RwSignal::new(false);
     let generation = RwSignal::new(0u64);
@@ -82,8 +84,14 @@ pub fn MapExportDialog(
         cleanup.store(false, Ordering::Relaxed);
     });
     let current = Callback::new(move |()| -> Result<Capture, String> {
-        let captured = Capture::new(snapshot.run(())?)?;
-        opening.get_value()?.matches(captured.snapshot.clone())?;
+        let selected = match format.get_untracked() {
+            Format::Svg => Format::Svg,
+            Format::Png(_) => Format::Png(PngOptions {
+                width: png_width.get_untracked(),
+            }),
+        };
+        let captured = Capture::new(snapshot.run(())?, selected)?;
+        Capture::new(opening.get_value()?, selected)?.matches(captured.snapshot.clone())?;
         Ok(captured)
     });
     let prepare = {
@@ -112,7 +120,7 @@ pub fn MapExportDialog(
                 }
                 busy.set(false);
                 let result = (|| {
-                    capture.matches(current.run(())?.snapshot)?;
+                    capture.matches_capture(&current.run(())?)?;
                     capture.accept(reply?)
                 })();
                 match result {
@@ -133,16 +141,16 @@ pub fn MapExportDialog(
             };
             if let Err(error) = current
                 .run(())
-                .and_then(|now| value.capture.matches(now.snapshot))
+                .and_then(|now| value.capture.matches_capture(&now))
             {
                 prepared.set(None);
                 status.set(error);
                 return;
             }
-            let artifact = match crate::io::download::prepare_download(
+            let artifact = match crate::io::download::ExportArtifact::prepare(
                 &value.filename(),
-                "image/svg+xml",
-                value.rendered.svg.as_bytes(),
+                value.capture.format.mime_type(),
+                value.rendered.image.bytes(),
             ) {
                 Ok(artifact) => artifact,
                 Err(error) => {
@@ -156,7 +164,8 @@ pub fn MapExportDialog(
             let saving = alive.clone();
             let completion = alive.clone();
             let description = format!(
-                "Saved SVG map of {} · document {} · event {}.",
+                "Saved {} map of {} · document {} · event {}.",
+                value.capture.format.extension().to_uppercase(),
                 value.capture.snapshot.source.name,
                 value.capture.snapshot.event.document_id,
                 value.capture.snapshot.event.event_id
@@ -168,7 +177,7 @@ pub fn MapExportDialog(
                     {
                         return Err("Map export dialog changed before save admission.".into());
                     }
-                    guard_capture.matches(current.run(())?.snapshot)
+                    guard_capture.matches_capture(&current.run(())?)
                 },
                 move |result| {
                     // Acknowledged bytes belong to the captured source. A later
@@ -192,15 +201,19 @@ pub fn MapExportDialog(
         }
     };
     view! {<section class="map-export-dialog">
-        <h3>"Export map as SVG"</h3>
-        <p>"Export a standalone vector reference map of the whole document. Annotations and supplied restriction coordinates describe the source; they do not verify experimental cleavage or cloning outcomes."</p>
+        <h3>"Export map"</h3>
+        <p>"Export a standalone SVG or PNG reference map of the whole document. Annotations and supplied restriction coordinates describe the source; they do not verify experimental cleavage or cloning outcomes."</p>
         <p class="helper">"The portable renderer uses its own canonical orientation and feature/label layout. Viewport rotation, zoom, selected-range shading, hidden-feature filters, search/PCR overlays and hovered-site highlights are not reproduced. Displayed restriction-site filters are preserved when supplied. The source, event and current view must remain unchanged until save admission."</p>
         <p class="helper">"Rendering is bounded to 512 features, 4096 feature spans, 32 feature labels and 64 printed restriction labels. Additional annotations may be omitted or abbreviated; review renderer warnings below. The native workspace retains full annotations."</p>
-        <button class="button secondary" disabled=move||busy.get() on:click=prepare>"Prepare SVG"</button>
+        <label>"Format "<select disabled=move||busy.get() on:change=move|event|{prepared.set(None);format.set(if event_target_value(&event)=="png"{Format::Png(PngOptions{width:png_width.get_untracked()})}else{Format::Svg});}>
+            <option value="svg">"SVG vector"</option><option value="png">"PNG image"</option>
+        </select></label>
+        <Show when=move||matches!(format.get(),Format::Png(_))><label>"Width in pixels "<input type="number" min="16" max="4096" prop:value=move||png_width.get() disabled=move||busy.get() on:input=move|event|{prepared.set(None);png_width.set(event_target_value(&event).parse().unwrap_or(0));}/></label><p class="helper">"Height preserves the diagram's aspect ratio. Maximum 4096 pixels per side and 4 million pixels total. PNG uses the bundled font; unrepresentable label characters are visibly escaped and reported."</p></Show>
+        <button class="button secondary" disabled=move||busy.get() on:click=prepare>"Prepare image"</button>
         {move||prepared.get().map(|value|view!{<div>
-            <p>{format!("{} · {} bytes · source {}",value.filename(),value.rendered.svg.len(),value.capture.snapshot.event.revision)}</p>
+            <p>{format!("{} · {} bytes · source {}",value.filename(),value.rendered.image.bytes().len(),value.capture.snapshot.event.revision)}</p>
             <ul>{value.rendered.warnings.iter().cloned().map(|warning|view!{<li>{warning}</li>}).collect_view()}</ul>
-            <button class="button primary" disabled=move||busy.get() on:click=save.clone()>"Save SVG"</button>
+            <button class="button primary" disabled=move||busy.get() on:click=save.clone()>"Save image"</button>
         </div>})}
         <p role="status" aria-live="polite">{move||status.get()}</p>
     </section>}

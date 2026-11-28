@@ -1,7 +1,10 @@
 //! Bounded, source-bound searches. Coordinates are zero-based half-open.
-use crate::sequence::analysis::{base_mask, starter_enzymes};
+use super::matching::{self, Work};
+use crate::sequence::analysis::starter_enzymes;
 use collagene_model::*;
 use serde::{Deserialize, Serialize};
+
+pub const SEARCH_ENGINE_VERSION: &str = "sequence-search-2";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
@@ -115,8 +118,7 @@ impl SearchReport {
             || self.source_feature_count > 100_000
             || self.source_revision.len() != 64
             || !self.source_revision.bytes().all(|b| b.is_ascii_hexdigit())
-            || self.engine_version.is_empty()
-            || self.engine_version.len() > 256
+            || self.engine_version != SEARCH_ENGINE_VERSION
             || self.hits.len() > self.options.max_hits
             || self.work > self.options.max_work
             || self.rows > self.options.max_rows
@@ -295,44 +297,32 @@ fn sequence_scan(
     if k > n {
         return Ok(());
     }
+    let mut work = Work::resume(r.work, r.options.max_work);
+    if !work.take(k) {
+        r.work = work.used();
+        r.complete = false;
+        return Ok(());
+    }
     let mut patterns = vec![(pattern.clone(), false)];
     if r.options.both_strands && m.sequence.alphabet() != Alphabet::Protein {
+        if !work.take(k) {
+            r.work = work.used();
+            r.complete = false;
+            return Ok(());
+        }
         let rc = pattern.reverse_complement()?;
         if rc != *pattern {
             patterns.push((rc, true));
         }
     }
-    let limit = if m.topology == Topology::Circular {
-        n
-    } else {
-        n - k + 1
-    };
     for (p, reverse) in patterns {
-        for start in 0..limit {
-            let mut certain = true;
-            let mut matched = true;
-            for (j, b) in p.as_str().bytes().enumerate() {
-                if r.work == r.options.max_work {
-                    r.complete = false;
-                    return Ok(());
-                }
-                r.work += 1;
-                let a = m.sequence.as_str().as_bytes()[(start + j) % n];
-                if m.sequence.alphabet() == Alphabet::Protein {
-                    if a != b {
-                        matched = false;
-                        break;
-                    }
-                } else {
-                    let (a, b) = (base_mask(a), base_mask(b));
-                    if a & b == 0 {
-                        matched = false;
-                        break;
-                    }
-                    certain &= a & !b == 0;
-                }
-            }
-            if matched {
+        let complete = matching::scan(
+            &m.sequence,
+            &p,
+            m.topology == Topology::Circular,
+            &mut work,
+            |placement| {
+                let start = placement.start;
                 let mut h = hit(
                     if enzyme.is_some() {
                         SearchKind::Enzyme
@@ -342,36 +332,39 @@ fn sequence_scan(
                     enzyme.map_or_else(|| r.options.query.clone(), |e| e.name.clone()),
                     spans(start, k, n, reverse),
                 );
-                h.certain = certain;
+                h.certain = placement.certain;
                 if let Some(e) = enzyme {
                     h.enzyme = Some(e.name.clone());
-                    let (t, b) = if reverse {
+                    let (top, bottom) = if reverse {
                         (
-                            start as i64 + k as i64 - e.bottom_cut as i64,
-                            start as i64 + k as i64 - e.top_cut as i64,
+                            start as i64 + k as i64 - i64::from(e.bottom_cut),
+                            start as i64 + k as i64 - i64::from(e.top_cut),
                         )
                     } else {
                         (
-                            start as i64 + e.top_cut as i64,
-                            start as i64 + e.bottom_cut as i64,
+                            start as i64 + i64::from(e.top_cut),
+                            start as i64 + i64::from(e.bottom_cut),
                         )
                     };
-                    let pos = |x: i64| {
+                    let position = |value: i64| {
                         if m.topology == Topology::Circular {
-                            Some(x.rem_euclid(n as i64) as usize)
-                        } else if (0..=n as i64).contains(&x) {
-                            Some(x as usize)
+                            Some(value.rem_euclid(n as i64) as usize)
+                        } else if (0..=n as i64).contains(&value) {
+                            Some(value as usize)
                         } else {
                             None
                         }
                     };
-                    h.top_cut = pos(t);
-                    h.bottom_cut = pos(b);
+                    h.top_cut = position(top);
+                    h.bottom_cut = position(bottom);
                 }
-                if !push(r, h) {
-                    return Ok(());
-                }
-            }
+                push(r, h)
+            },
+        )?;
+        r.work = work.used();
+        if !complete {
+            r.complete = false;
+            return Ok(());
         }
     }
     Ok(())
@@ -388,7 +381,7 @@ pub fn search_document(m: &Molecule, o: &SearchOptions) -> Result<SearchReport, 
         source_length: m.sequence.len(),
         source_feature_count: m.features.len(),
         source_revision: m.revision(),
-        engine_version: crate::verification::ENGINE_VERSION.into(),
+        engine_version: SEARCH_ENGINE_VERSION.into(),
         options: o.clone(),
         hits: vec![],
         complete: true,

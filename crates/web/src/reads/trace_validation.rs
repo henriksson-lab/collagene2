@@ -447,7 +447,7 @@ fn EvidenceView(
                 );
             }
             let bytes = serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?;
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 "read-validation.json",
                 "application/json",
                 &bytes,
@@ -472,7 +472,7 @@ fn EvidenceView(
         <h4>"Support-only consensus"</h4><pre class="read-consensus-preview">{bound.with_value(|b|format!("{}{}",b.report.consensus.chars().take(600).collect::<String>(),if b.report.consensus.len()>600{"… (preview; export retains all bases)"}else{""}))}</pre>
         <p class="helper">"Uncovered and unresolved positions remain explicit. This reference does not assert experimental sample identity or physical end/strand chemistry."</p>
         <button class="button secondary full" on:click=move|_|match consensus.run(()).and_then(|m|on_consensus.run(m)){Ok(())=>on_message.run("Support-only consensus reference opened; original read evidence remains separate.".into()),Err(error)=>on_message.run(error)}>"Open support-only consensus"</button>
-        <button class="button secondary full" on:click=move|_|{let outcome=consensus.run(()).and_then(|m|crate::io::download::prepare_download("read-consensus.fasta","text/plain",collagene_core::formats::sequence::export_fasta(&m).as_bytes()));crate::io::download::complete_download(outcome,move|result|if let Err(error)=result{on_message.run(error);});}>"Download consensus FASTA"</button>
+        <button class="button secondary full" on:click=move|_|{let outcome=consensus.run(()).and_then(|m|crate::io::download::ExportArtifact::prepare("read-consensus.fasta","text/plain",collagene_core::formats::sequence::export_fasta(&m).as_bytes()));crate::io::download::complete_download(outcome,move|result|if let Err(error)=result{on_message.run(error);});}>"Download consensus FASTA"</button>
         <button class="button secondary full" on:click=download>"Download read validation JSON"</button>
         <h4>"Read mapping and native evidence"</h4>
         {bound.with_value(|b|(0..b.report.reads.len()).map(|index|view!{<ReadEvidence bound=b.clone() index reference read_call/>}).collect_view())}

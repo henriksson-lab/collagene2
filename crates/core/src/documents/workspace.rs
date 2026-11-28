@@ -6,16 +6,16 @@ use crate::{
 };
 use base64::{Engine, engine::general_purpose::STANDARD};
 use collagene_model::{Alphabet, Error, Feature, Molecule, Sequence, Topology};
-use serde::{
-    Deserialize, Serialize,
-    de::{DeserializeOwned, MapAccess, SeqAccess, Visitor},
-};
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     fmt,
     io::{self, Cursor, Read, Write},
 };
 use zip::{CompressionMethod, ZipArchive, ZipWriter, write::SimpleFileOptions};
+
+mod json;
+use json::{json, json_exact};
 
 pub const MAX_ARCHIVE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_EXPANDED_BYTES: usize = 128 * 1024 * 1024;
@@ -37,10 +37,14 @@ pub const PLAN_SCHEMA_VERSION: u32 = 29;
 pub struct WorkspaceDocument {
     pub id: String,
     pub head: String,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_STACK>")]
     pub undo: Vec<String>,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_STACK>")]
     pub redo: Vec<String>,
     pub head_event: Option<String>,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_STACK>")]
     pub undo_events: Vec<String>,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_STACK>")]
     pub redo_events: Vec<String>,
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,6 +54,7 @@ pub struct RevisionEvent {
     pub document_id: String,
     pub revision: String,
     /// Ordered parent event IDs. Cross-document parents can describe a derived design.
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, String, 128>")]
     pub parents: Vec<String>,
     /// A descriptive operation label, not executable replay code or a grant of authority.
     pub operation: String,
@@ -194,6 +199,10 @@ impl Workspace {
         {
             return Err(bad("invalid workspace dimensions or name"));
         }
+        collagene_model::bounds::native_frame_preflight(
+            self.revisions.values(),
+            MAX_EXPANDED_BYTES,
+        )?;
         json_size(
             &(
                 &self.name,
@@ -483,6 +492,7 @@ fn json_size(value: &impl Serialize, maximum: usize) -> Result<usize, Error> {
     Ok(out.bytes)
 }
 fn molecule_size(value: &Molecule) -> Result<usize, Error> {
+    collagene_model::bounds::annotation_edit_preflight(&[value])?;
     json_size(value, MAX_ENTRY_BYTES)
 }
 
@@ -500,13 +510,28 @@ struct Manifest {
     plan_schema: u32,
     name: String,
     active_document: String,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, WorkspaceDocument, MAX_DOCUMENTS>"
+    )]
     documents: Vec<WorkspaceDocument>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, RevisionEvent, MAX_HISTORY_EVENTS>"
+    )]
     history: Vec<RevisionEvent>,
+    #[serde(deserialize_with = "json::bounded_map::<_, String, MAX_REVISIONS>")]
     revisions: BTreeMap<String, String>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_CANDIDATES>"
+    )]
     candidates: Vec<String>,
     active_candidate: Option<String>,
+    #[serde(
+        deserialize_with = "collagene_model::decode::bounded_vec::<_, String, MAX_CANDIDATES>"
+    )]
     unresolved_candidate_targets: Vec<String>,
+    #[serde(deserialize_with = "json::bounded_map::<_, AttachmentRecord, MAX_ATTACHMENTS>")]
     attachments: BTreeMap<String, AttachmentRecord>,
+    #[serde(deserialize_with = "json::bounded_map::<_, BlobInfo, MAX_ENTRIES>")]
     blobs: BTreeMap<String, BlobInfo>,
 }
 #[derive(Debug, Serialize, Deserialize)]
@@ -517,19 +542,36 @@ struct MoleculeRecord {
     alphabet: Alphabet,
     topology: Topology,
     features: String,
+    #[serde(deserialize_with = "json::bounded_map::<_, ValueRecord, 10_000>")]
     metadata: BTreeMap<String, ValueRecord>,
     original_genbank: Option<String>,
 }
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(
-    tag = "encoding",
-    content = "blob",
-    rename_all = "snake_case",
-    deny_unknown_fields
-)]
+#[derive(Debug, Serialize)]
+#[serde(tag = "encoding", content = "blob", rename_all = "snake_case")]
 enum ValueRecord {
     Utf8(String),
     Base64(String),
+}
+impl<'de> Deserialize<'de> for ValueRecord {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        // Read the two strings directly, including when content precedes the tag.
+        // Serde's general adjacent-tag buffering otherwise builds an untyped tree.
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Fields {
+            encoding: String,
+            blob: String,
+        }
+        let fields = Fields::deserialize(d)?;
+        match fields.encoding.as_str() {
+            "utf8" => Ok(Self::Utf8(fields.blob)),
+            "base64" => Ok(Self::Base64(fields.blob)),
+            _ => Err(serde::de::Error::unknown_variant(
+                &fields.encoding,
+                &["utf8", "base64"],
+            )),
+        }
+    }
 }
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -537,6 +579,7 @@ struct PlanRecord {
     plan_revision: String,
     name: String,
     target_revision: String,
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, InputRecord, 1000>")]
     inputs: Vec<InputRecord>,
     steps: String,
 }
@@ -554,6 +597,27 @@ struct AttachmentRecord {
     media_type: String,
     blob: String,
 }
+// Transparent wrappers enforce the owners' existing capacities on standalone chunks.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct FeatureList(Vec<Feature>);
+impl<'de> Deserialize<'de> for FeatureList {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let features = collagene_model::decode::bounded_vec::<_, Feature, 100_000>(d)?;
+        // Individual Feature decoders charge the enclosing frame; this also checks
+        // the complete molecule's import-scale aggregate before canonical JSON exists.
+        collagene_model::bounds::ModelBudget::annotation_edit()
+            .features(&features)
+            .map_err(serde::de::Error::custom)?;
+        Ok(Self(features))
+    }
+}
+#[derive(Serialize, Deserialize)]
+#[serde(transparent)]
+struct StepList(
+    #[serde(deserialize_with = "collagene_model::decode::bounded_vec::<_, Operation, 1000>")]
+    Vec<Operation>,
+);
 #[derive(Default)]
 struct Blobs {
     values: BTreeMap<String, Vec<u8>>,
@@ -717,79 +781,6 @@ pub fn save_workspace(workspace: &Workspace) -> Result<Vec<u8>, Error> {
     Ok(bytes)
 }
 
-// serde_json normally accepts duplicate object keys. Archive maps cannot do so: which
-// revision/manifest value wins must not depend on a parser's duplicate-key policy.
-struct UniqueJson(serde_json::Value);
-impl<'de> Deserialize<'de> for UniqueJson {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct V;
-        impl<'de> Visitor<'de> for V {
-            type Value = UniqueJson;
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("JSON without duplicate object keys")
-            }
-            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Self::Value, E> {
-                Ok(UniqueJson(v.into()))
-            }
-            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Self::Value, E> {
-                Ok(UniqueJson(v.into()))
-            }
-            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Self::Value, E> {
-                Ok(UniqueJson(v.into()))
-            }
-            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Self::Value, E> {
-                serde_json::Number::from_f64(v)
-                    .map(|n| UniqueJson(n.into()))
-                    .ok_or_else(|| E::custom("non-finite JSON"))
-            }
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
-                Ok(UniqueJson(v.into()))
-            }
-            fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
-                Ok(UniqueJson(v.into()))
-            }
-            fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-                Ok(UniqueJson(serde_json::Value::Null))
-            }
-            fn visit_none<E: serde::de::Error>(self) -> Result<Self::Value, E> {
-                self.visit_unit()
-            }
-            fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
-                let mut values = Vec::new();
-                while let Some(value) = seq.next_element::<UniqueJson>()? {
-                    values.push(value.0);
-                }
-                Ok(UniqueJson(values.into()))
-            }
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
-                let mut values = serde_json::Map::new();
-                while let Some((key, value)) = map.next_entry::<String, UniqueJson>()? {
-                    if values.insert(key, value.0).is_some() {
-                        return Err(serde::de::Error::custom("duplicate JSON object key"));
-                    }
-                }
-                Ok(UniqueJson(values.into()))
-            }
-        }
-        deserializer.deserialize_any(V)
-    }
-}
-fn json<T: DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
-    let mut parser = serde_json::Deserializer::from_slice(bytes);
-    let value = UniqueJson::deserialize(&mut parser).map_err(format_error)?;
-    parser.end().map_err(format_error)?;
-    serde_json::from_value(value.0).map_err(format_error)
-}
-fn json_exact<T: DeserializeOwned + Serialize>(bytes: &[u8]) -> Result<T, Error> {
-    let value: serde_json::Value = json(bytes)?;
-    let parsed: T = serde_json::from_value(value.clone()).map_err(format_error)?;
-    if serde_json::to_value(&parsed).map_err(format_error)? != value {
-        return Err(bad(
-            "workspace typed data contains unsupported or noncanonical fields",
-        ));
-    }
-    Ok(parsed)
-}
 fn text(bytes: &[u8]) -> Result<String, Error> {
     String::from_utf8(bytes.to_vec()).map_err(format_error)
 }
@@ -1016,17 +1007,16 @@ pub fn is_workspace_archive(bytes: &[u8]) -> bool {
     {
         return false;
     }
-    json::<serde_json::Value>(&content)
-        .ok()
-        .and_then(|v| {
-            v.get("format")
-                .and_then(|v| v.as_str())
-                .map(|f| f == FORMAT)
-        })
-        .unwrap_or(false)
+    serde_json::from_slice::<json::Header>(&content)
+        .is_ok_and(|header| header.format.as_deref() == Some(FORMAT))
 }
 /// Load all data and validate graph/integrity before exposing any mutable application state.
 pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
+    collagene_model::decode::with_native_frame_budget(MAX_EXPANDED_BYTES, || {
+        load_workspace_inner(bytes)
+    })
+}
+fn load_workspace_inner(bytes: &[u8]) -> Result<Workspace, Error> {
     let entries = zip_directory(bytes)?;
     let mut archive = ZipArchive::new(Cursor::new(bytes)).map_err(format_error)?;
     if archive.len() != entries.len()
@@ -1065,19 +1055,19 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
     let manifest_bytes = files
         .remove("manifest.json")
         .ok_or_else(|| bad("workspace manifest is missing"))?;
-    let header: serde_json::Value = json(&manifest_bytes)?;
-    if header.get("format").and_then(|v| v.as_str()) != Some(FORMAT) {
+    let header: json::Header = serde_json::from_slice(&manifest_bytes).map_err(format_error)?;
+    if header.format.as_deref() != Some(FORMAT) {
         return Err(bad("not a Collagene workspace manifest"));
     }
-    if header.get("version").and_then(|v| v.as_u64()) != Some(VERSION as u64)
-        || header.get("molecule_schema").and_then(|v| v.as_u64()) != Some(1)
-        || header.get("plan_schema").and_then(|v| v.as_u64()) != Some(PLAN_SCHEMA_VERSION as u64)
+    if header.version != Some(VERSION as u64)
+        || header.molecule_schema != Some(1)
+        || header.plan_schema != Some(PLAN_SCHEMA_VERSION as u64)
     {
         return Err(Error::Unsupported(
             "workspace archive/model schema version".into(),
         ));
     }
-    let manifest: Manifest = serde_json::from_value(header).map_err(format_error)?;
+    let manifest: Manifest = json(&manifest_bytes)?;
     if manifest.revisions.len() > MAX_REVISIONS
         || manifest.documents.len() > MAX_DOCUMENTS
         || manifest.history.len() > MAX_HISTORY_EVENTS
@@ -1168,7 +1158,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
         if sequence.as_str().as_bytes() != raw {
             return Err(bad("noncanonical workspace sequence chunk"));
         }
-        let features: Vec<Feature> = json_exact(get(&blobs, &record.features)?)?;
+        let features = json_exact::<FeatureList>(get(&blobs, &record.features)?)?.0;
         let mut metadata = BTreeMap::new();
         for (key, value) in record.metadata {
             let value = match value {
@@ -1231,7 +1221,7 @@ pub fn load_workspace(bytes: &[u8]) -> Result<Workspace, Error> {
                     .clone(),
             });
         }
-        let steps: Vec<Operation> = json_exact(get(&blobs, &record.steps)?)?;
+        let steps = json_exact::<StepList>(get(&blobs, &record.steps)?)?.0;
         let candidate = Candidate {
             plan_revision: record.plan_revision,
             plan: DesignPlan {

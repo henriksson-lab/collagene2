@@ -284,3 +284,34 @@ fn ordinary_32_mib_caps_apply_to_both_jobs_and_results() {
         Err(Error::TooLarge)
     ));
 }
+
+#[test]
+fn added_code_profiles_cross_current_binary_boundary_without_collapsing_dual_stops() {
+    for (code, expected, possible) in [
+        (4, "M**W", 0),
+        (27, "MQQX", 1),
+        (28, "MXXX", 3),
+        (31, "MXXW", 2),
+    ] {
+        let source = Molecule::dna("literal new table", "ATGTAATAGTGA", Topology::Linear).unwrap();
+        let input = translation_reference::Request {
+            source: source.clone(),
+            selection: Selection::Region {
+                location: Location::range(0, 12),
+                options: TranslationOptions {
+                    genetic_code: code,
+                    ..Default::default()
+                },
+            },
+        };
+        let request = job(input.clone(), false);
+        let (_, response) = roundtrip(&request);
+        let AnalysisResult::TranslatedReference(report) = response.result else {
+            panic!("wrong result")
+        };
+        assert_eq!(report.protein, expected);
+        assert_eq!(report.translation.possible_stop_codons, possible);
+        report.validate_sources(&input).unwrap();
+        assert_eq!(report.source_revision, source.revision());
+    }
+}

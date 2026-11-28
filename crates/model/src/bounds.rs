@@ -7,23 +7,32 @@ struct Limits {
     features: usize,
     nodes: usize,
     qualifiers: usize,
+    metadata: usize,
+    text_bytes: usize,
     original_bytes: usize,
     original_shares_text: bool,
+    retained_metadata_original: bool,
 }
 impl Limits {
     const MODEL: Self = Self {
         features: 4096,
         nodes: 16384,
         qualifiers: 16384,
+        metadata: 4096,
+        text_bytes: 8 * 1024 * 1024,
         original_bytes: 4 * 1024 * 1024,
         original_shares_text: true,
+        retained_metadata_original: false,
     };
     const ANNOTATION_EDIT: Self = Self {
         features: 100_000,
         nodes: 1_000_000,
         qualifiers: 1_000_000,
+        metadata: 4096,
+        text_bytes: 8 * 1024 * 1024,
         original_bytes: 32 * 1024 * 1024,
         original_shares_text: false,
+        retained_metadata_original: true,
     };
 }
 pub struct ModelBudget {
@@ -58,6 +67,44 @@ impl ModelBudget {
     pub fn annotation_edit() -> Self {
         Self::with_limits(Limits::ANNOTATION_EDIT)
     }
+    /// Aggregate allocation limits for one admitted native envelope, distinct
+    /// from the import-scale limits of each individual molecule.
+    pub(crate) fn native_frame(maximum_bytes: usize) -> Self {
+        Self::with_limits(Limits {
+            features: 1_000_000,
+            nodes: 1_000_000,
+            qualifiers: 1_000_000,
+            metadata: 1_000_000,
+            text_bytes: maximum_bytes,
+            original_bytes: maximum_bytes,
+            original_shares_text: true,
+            retained_metadata_original: true,
+        })
+    }
+    pub(crate) fn retained_metadata(key: &str) -> bool {
+        matches!(
+            key,
+            "trace_original_base64"
+                | "source:snapgene:original_base64"
+                | "legacy:original_base64"
+                | "fastq:original_base64"
+                | "fastq:quality_base64"
+        ) || key
+            .strip_prefix("annotation_import:")
+            .and_then(|s| s.strip_suffix(":original_base64"))
+            .is_some_and(|s| {
+                s.len() == 64
+                    && s.bytes()
+                        .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+            })
+    }
+    pub(crate) fn metadata_value(&mut self, key: &str, value: &str) -> Result<(), Error> {
+        if self.limits.retained_metadata_original && Self::retained_metadata(key) {
+            self.original(value)
+        } else {
+            self.text(value, 1024 * 1024)
+        }
+    }
     fn models(&mut self, molecules: &[&Molecule]) -> Result<(), Error> {
         if molecules.len() > 1024 {
             return Err(Error::TooLarge);
@@ -75,40 +122,67 @@ impl ModelBudget {
             .ok_or(Error::TooLarge)?;
         Ok(())
     }
-    fn text(&mut self, s: &str, cap: usize) -> Result<(), Error> {
+    pub(crate) fn text(&mut self, s: &str, cap: usize) -> Result<(), Error> {
         if s.len() > cap {
             return Err(Error::TooLarge);
         }
-        Self::add(&mut self.text, s.len(), 8 * 1024 * 1024)
+        Self::add(&mut self.text, s.len(), self.limits.text_bytes)
+    }
+    pub(crate) fn feature_count(&mut self, count: usize) -> Result<(), Error> {
+        Self::add(&mut self.features, count, self.limits.features)
+    }
+    pub(crate) fn qualifier_count(&mut self, count: usize) -> Result<(), Error> {
+        Self::add(&mut self.qualifiers, count, self.limits.qualifiers)
+    }
+    pub(crate) fn node_count(&mut self, count: usize) -> Result<(), Error> {
+        Self::add(&mut self.nodes, count, self.limits.nodes)
+    }
+    pub(crate) fn metadata_count(&mut self, count: usize) -> Result<(), Error> {
+        Self::add(&mut self.metadata, count, self.limits.metadata)
+    }
+    pub(crate) fn remaining_features(&self) -> usize {
+        self.limits.features - self.features
+    }
+    pub(crate) fn remaining_qualifiers(&self) -> usize {
+        self.limits.qualifiers - self.qualifiers
+    }
+    pub(crate) fn remaining_nodes(&self) -> usize {
+        self.limits.nodes - self.nodes
+    }
+    pub(crate) fn remaining_metadata(&self) -> usize {
+        self.limits.metadata - self.metadata
+    }
+    pub(crate) fn original(&mut self, text: &str) -> Result<(), Error> {
+        if self.limits.original_shares_text {
+            self.text(text, self.limits.original_bytes)
+        } else {
+            Self::add(
+                &mut self.original_text,
+                text.len(),
+                self.limits.original_bytes,
+            )
+        }
     }
     pub fn molecule(&mut self, m: &Molecule) -> Result<(), Error> {
         self.text(&m.name, 1024)?;
-        Self::add(&mut self.metadata, m.metadata.len(), 4096)?;
+        self.metadata_count(m.metadata.len())?;
         for (k, v) in &m.metadata {
             self.text(k, 4096)?;
-            self.text(v, 1024 * 1024)?;
+            self.metadata_value(k, v)?;
         }
         if let Some(s) = &m.original_genbank {
-            if self.limits.original_shares_text {
-                self.text(s, self.limits.original_bytes)?;
-            } else {
-                Self::add(&mut self.original_text, s.len(), self.limits.original_bytes)?;
-            }
+            self.original(s)?;
         }
         self.features(&m.features)
     }
     pub fn features(&mut self, features: &[Feature]) -> Result<(), Error> {
-        Self::add(&mut self.features, features.len(), self.limits.features)?;
+        self.feature_count(features.len())?;
         for feature in features {
             self.text(&feature.kind, 256)?;
             if feature.qualifiers.len() > 16384 {
                 return Err(Error::TooLarge);
             }
-            Self::add(
-                &mut self.qualifiers,
-                feature.qualifiers.len(),
-                self.limits.qualifiers,
-            )?;
+            self.qualifier_count(feature.qualifiers.len())?;
             for (k, v) in &feature.qualifiers {
                 self.text(k, 4096)?;
                 if let Some(v) = v {
@@ -134,7 +208,7 @@ impl ModelBudget {
         while let Some(frame) = stack.last_mut() {
             if !frame.entered {
                 frame.entered = true;
-                Self::add(&mut self.nodes, 1, self.limits.nodes)?;
+                self.node_count(1)?;
                 match frame.node {
                     Location::Join(parts) | Location::Order(parts) => {
                         if parts.len() > 16384 {
@@ -198,6 +272,21 @@ pub fn feature_preflight(groups: &[&[Feature]]) -> Result<(), Error> {
     let mut budget = ModelBudget::default();
     for features in groups {
         budget.features(features)?;
+    }
+    Ok(())
+}
+
+/// Borrowed admission matching native decoding: each molecule has its own import-
+/// scale budget, while all models share one enclosing envelope allocation budget.
+/// Checks precede revision hashing or serialization and do not clone model data.
+pub fn native_frame_preflight<'a>(
+    molecules: impl IntoIterator<Item = &'a Molecule>,
+    maximum_bytes: usize,
+) -> Result<(), Error> {
+    let mut frame = ModelBudget::native_frame(maximum_bytes);
+    for molecule in molecules {
+        ModelBudget::annotation_edit().molecule(molecule)?;
+        frame.molecule(molecule)?;
     }
     Ok(())
 }

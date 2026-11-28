@@ -1,4 +1,5 @@
 // Integration tests grouped by scientific responsibility.
+mod image_export;
 mod pdf;
 mod protocol_layout;
 mod protocol_layout_transport;

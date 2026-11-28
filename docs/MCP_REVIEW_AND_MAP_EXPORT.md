@@ -1,8 +1,8 @@
 # MCP saved-run review and map export
 
-The native MCP registry has189 tools. Two additions use the same deterministic
-Core adapters as the web worker (worker93); they do not require new scientific,
-candidate or native-plan versions. No external executables or network services
+The native MCP registry has 209 tools. Saved-run review and map exports use the same
+deterministic core owners as the current web worker (worker 126); image presentation
+does not change scientific, candidate or native-plan versions. No external executables or network services
 are involved.
 
 ## prepare_saved_run_review
@@ -43,27 +43,34 @@ Historical engine agreement is metadata, not current verification. In particular
 old saved-material recipes can still be refused by a later current verifier.
 Inspection/preparation does not bypass that boundary or create reusable stock.
 
-## export_map_svg
+## export_map
 
-Request fields are exactly `id` and `revision` of an immutable session document.
-The tool performs native model preflight, calls `svg_export::render`, validates the
-returned source identity and bounds, and returns a complete UTF-8 `image/svg+xml`
-artifact named `map.svg`. The response includes document/source pins, byte count,
-all renderer warnings (natively bounded32×4096), and
-`restriction_overlay: "none_requested"`.
+Request fields are exactly `document: {id, revision}` and `format`: `"Svg"` or
+`{"Png":{"width":1600}}`. The tool performs native model preflight, calls
+`core::output::map_export::Request::render`, validates source identity/image bounds, and
+returns a complete artifact: UTF-8 `image/svg+xml` named `map.svg`, or base64
+binary `image/png` named `map.png`. The source remains immutable. All bounded
+renderer warnings and `restriction_overlay: "none_requested"` are included.
 
-This initial tool profile exports canonical native feature geometry only. It does
-not accept raw SVG, raw site lists, paths, arbitrary URLs, hidden viewport state or
-invented enzyme calls. It does not reproduce viewport rotation/zoom/selection,
-feature-visibility filters, search/primer overlays or selected-site highlights.
-Native renderer warnings state layout/feature-label limitations. Map output is a
-reference display, not evidence of reaction activity, target success, isolation or
-physical-material authority. The full native source remains unchanged.
+This tool exports canonical native feature geometry only. It accepts no raw SVG,
+site lists, paths, arbitrary URLs, hidden viewport state or invented enzyme calls.
+Viewport rotation/zoom/selection, feature-visibility filters, search/primer
+overlays and selected-site highlights are not reproduced. Native warnings state
+layout/label limitations. Rendering is documentary display; it does not prove
+reaction activity, intended target success, isolation or reusable material.
 
-The source-bound SVG and result metadata are prepared before the artifact is
-reserved/published. Existing artifact representation and capacity are checked
-under the same store lock. SVG uses the native2MiB ceiling and standard bounded
-`read_artifact` chunks; there is no external rendering or filesystem write.
+PNG uses the same canonical SVG geometry, native portable Rust rasterization and
+bundled Liberation Sans font. Missing glyphs are visibly escaped and reported.
+Width is 16–4096 px, height preserves aspect ratio, each side is at most 4096 px and
+total pixels at most 4 million. Encoded bytes are capped at 24 MiB and carry the
+source revision in PNG text metadata. PNG retains pixels rather than full SVG
+coordinate metadata; keep the native source for complete annotation evidence.
+
+Source-bound bytes/result metadata are prepared before artifact reservation and
+publication. Existing representation and capacity checks stay under one store
+lock. SVG retains its 2 MiB ceiling; binary PNG uses the same bounded artifact
+pagination mechanism. Neither format invokes an external program or grants
+filesystem/network authority.
 
 ## Authored SDK coverage
 

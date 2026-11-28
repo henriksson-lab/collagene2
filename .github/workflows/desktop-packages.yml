@@ -1,6 +1,18 @@
 name: Desktop packages (unsigned)
 
 on:
+  workflow_call:
+    inputs:
+      build_profile:
+        description: Native Cargo profile
+        required: false
+        default: development
+        type: string
+      frontend_artifact:
+        description: Exact same-run frontend artifact; empty builds it once here
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       build_profile:
@@ -17,7 +29,7 @@ permissions:
 
 concurrency:
   group: desktop-packages-${{ github.ref }}-${{ inputs.build_profile }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_INCREMENTAL: "0"
@@ -29,6 +41,7 @@ env:
 
 jobs:
   frontend:
+    if: ${{ inputs.frontend_artifact == '' }}
     name: Fresh offline desktop frontend
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -94,15 +107,16 @@ jobs:
   packages:
     name: Unsigned / ${{ matrix.os }} / ${{ inputs.build_profile }}
     needs: frontend
+    if: ${{ !cancelled() && (needs.frontend.result == 'success' || needs.frontend.result == 'skipped') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-22.04
-            bundles: appimage,deb
+            bundles: deb
           - os: windows-latest
-            bundles: nsis
+            bundles: ""
           - os: macos-latest
             bundles: app,dmg
     runs-on: ${{ matrix.os }}
@@ -160,87 +174,59 @@ jobs:
               output.write(str(target) + "\n")
       - uses: actions/download-artifact@v8
         with:
-          name: desktop-package-frontend-${{ github.sha }}
+          name: ${{ inputs.frontend_artifact || format('desktop-package-frontend-{0}', github.sha) }}
           path: dist
       - name: Generate platform icon layers from the existing application icon
         working-directory: crates/desktop
         run: cargo tauri icon icons/icon.png --output icons
-      - name: Build unsigned packages with the selected Cargo profile
+      - name: Build the requested portable executable or unsigned packages
         shell: python
         env:
           BUILD_PROFILE: ${{ inputs.build_profile }}
           BUNDLES: ${{ matrix.bundles }}
         run: |
-          import os, subprocess
-          command = ["cargo", "tauri", "build", "--ci", "--no-sign", "--config", "tauri.package.conf.json", "--bundles", os.environ["BUNDLES"]]
-          if os.environ["BUILD_PROFILE"] == "development":
+          from pathlib import Path
+          import os, platform, shutil, subprocess
+          profile = os.environ["BUILD_PROFILE"]
+          if profile not in {"development", "release"}:
+              raise SystemExit("unsupported build profile")
+          cargo_profile = "debug" if profile == "development" else "release"
+          command = ["cargo", "tauri", "build", "--ci", "--no-sign", "--config", "tauri.package.conf.json"]
+          environment = os.environ.copy()
+          if platform.system() == "Windows":
+              # Explicit target keeps static CRT flags off host proc macros.
+              target = "x86_64-pc-windows-msvc"
+              command += ["--target", target, "--no-bundle"]
+              environment["CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS"] = "-C target-feature=+crt-static"
+              environment["STATIC_VCRUNTIME"] = "true"
+              output = Path("target") / target / cargo_profile
+          else:
+              command += ["--bundles", os.environ["BUNDLES"]]
+              output = Path("target") / cargo_profile
+          # Cached bundle files from a different commit must not become artifacts.
+          bundle = output / "bundle"
+          if bundle.is_symlink():
+              raise SystemExit("cached bundle directory cannot be a symlink")
+          if bundle.exists():
+              shutil.rmtree(bundle)
+          if profile == "development":
               command.append("--debug")
           command += ["--", "--locked"]
-          subprocess.run(command, cwd="crates/desktop", check=True)
-      - name: Check actual package payload MCP without opening a GUI
-        shell: python
-        env:
-          BUILD_PROFILE: ${{ inputs.build_profile }}
-        run: |
-          from pathlib import Path
-          import os, platform, subprocess, sys
-          profile = "debug" if os.environ["BUILD_PROFILE"] == "development" else "release"
-          root = Path("target") / profile
-          if platform.system() == "Darwin":
-              candidates = list((root / "bundle/macos").glob("*.app/Contents/MacOS/collagene-desktop"))
-              if len(candidates) != 1:
-                  raise SystemExit("missing/ambiguous macOS application payload")
-              binary = candidates[0]
-          elif platform.system() == "Linux":
-              packages = list((root / "bundle/deb").glob("*.deb"))
-              if len(packages) != 1:
-                  raise SystemExit("missing/ambiguous Debian package")
-              extracted = Path(os.environ["RUNNER_TEMP"]) / "collagene-deb-payload"
-              subprocess.run(["dpkg-deb", "--extract", str(packages[0]), str(extracted)], check=True)
-              binary = extracted / "usr/bin/collagene-desktop"
-          else:
-              # This is the exact executable consumed by NSIS. Do not run the installer.
-              binary = root / "collagene-desktop.exe"
-          subprocess.run([sys.executable, "scripts/desktop_mcp_smoke.py", str(binary)], check=True)
-      - name: Stage only expected package formats and record checksums
+          subprocess.run(command, cwd="crates/desktop", env=environment, check=True)
+      - name: Check actual payloads and stage only requested artifacts
         shell: python
         env:
           BUILD_PROFILE: ${{ inputs.build_profile }}
           SOURCE_REVISION: ${{ github.sha }}
+          FRONTEND_ARTIFACT: ${{ inputs.frontend_artifact || format('desktop-package-frontend-{0}', github.sha) }}
         run: |
-          from pathlib import Path
-          import hashlib, json, os, platform, shutil, tarfile
-          profile = "debug" if os.environ["BUILD_PROFILE"] == "development" else "release"
-          bundle = Path("target") / profile / "bundle"
-          output = Path("desktop-packages")
-          output.mkdir()
-          patterns = {"Linux": ["appimage/*.AppImage", "deb/*.deb"], "Windows": ["nsis/*-setup.exe"], "Darwin": ["dmg/*.dmg", "macos/*.app"]}[platform.system()]
-          for pattern in patterns:
-              files = list(bundle.glob(pattern))
-              if len(files) != 1:
-                  raise SystemExit("missing/ambiguous expected package: " + pattern)
-              source = files[0]
-              if source.suffix == ".app":
-                  # Tar preserves executable bits and application symlinks across artifact upload.
-                  with tarfile.open(output / (source.name + ".tar.gz"), "w:gz") as archive:
-                      archive.add(source, arcname=source.name)
-              else:
-                  shutil.copy2(source, output / source.name)
-          checksums = {}
-          total = 0
-          for path in output.iterdir():
-              if path.stat().st_size > 1024 * 1024 * 1024:
-                  raise SystemExit("package exceeds 1 GiB artifact limit")
-              total += path.stat().st_size
-              digest = hashlib.sha256()
-              with path.open("rb") as stream:
-                  for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-                      digest.update(chunk)
-              checksums[path.name] = digest.hexdigest()
-          if total > 2 * 1024 * 1024 * 1024:
-              raise SystemExit("package artifacts exceed 2 GiB total")
-          metadata = {"source_revision": os.environ["SOURCE_REVISION"], "profile": os.environ["BUILD_PROFILE"], "os": platform.system(), "architecture": platform.machine(), "cargo_tauri": "2.11.3", "signed": False, "sha256": checksums}
-          (output / "BUILD.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+          import os, subprocess, sys
+          subprocess.run([
+              sys.executable, "scripts/stage_desktop_packages.py",
+              "--profile", os.environ["BUILD_PROFILE"],
+              "--source-revision", os.environ["SOURCE_REVISION"],
+              "--frontend-artifact", os.environ["FRONTEND_ARTIFACT"],
+          ], check=True)
       - uses: actions/upload-artifact@v7
         with:
           name: desktop-packages-unsigned-${{ matrix.os }}-${{ inputs.build_profile }}-${{ github.sha }}

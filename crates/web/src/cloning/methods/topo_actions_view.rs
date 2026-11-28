@@ -804,7 +804,7 @@ pub fn TopoActionsView(
             }
         };
         let result = result.map_err(|e| e.to_string()).and_then(|()| {
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 "topo-ordered-actions-evidence.json",
                 "application/json",
                 &output.0,

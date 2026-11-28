@@ -1,76 +1,77 @@
-# Portable map SVG export
+# Portable SVG and PNG map export
 
-`web/src/map_export_model.rs` and `web/src/map_export.rs` implement the
-**Export map SVG** action in the existing File menu. The dialog prepares its
-artifact in the Rust worker before saving it. Source integration is complete;
-the parent-managed compiler/native fixture batch is still pending. No browser,
-renderer screenshot or application check has been performed.
+The canonical map owner is `core::output::map_export`. It accepts a molecule,
+its exact revision, optional displayed restriction-site evidence, and explicit
+`raster::Format::Svg` or `Png(PngOptions { width })`. The output owns its source
+revision, selected image representation and bounded renderer warnings. No older
+map request/result or SVG-only internal adapter remains.
 
-The output uses the existing Rust `svg::render_map` or
-`svg::render_map_with_restriction_sites` implementation. It exports a reference
-map, not an experimental cleavage prediction or material/provenance archive.
-No browser canvas capture, third-party renderer, external program, raster image,
-script, external font or additional dependency is introduced.
+Both formats share existing deterministic feature and restriction geometry.
+The renderer exports the whole document in canonical orientation with bounded
+feature/label layout. It does not reproduce viewport rotation, zoom, range
+shading, hidden-feature filters, search/PCR overlays or selected-site highlights.
+The exact supplied restriction list survives; export neither rescans nor invents
+enzyme cleavage. Map display is documentary reference geometry, not evidence of
+experimental cleavage, isolated material or cloning success.
 
-The native renderer has a distinct portable layout: canonical orientation,
-whole-document extent, all source features subject to its documented caps,
-32 feature labels and 64 printed restriction labels. Its warnings describe
-omitted or unresolved annotation geometry. Viewport rotation, zoom, selection
-shading, hidden-feature filters, search/PCR overlays and selected/hovered-site
-highlighting are not reproduced. These limitations are visible before saving.
-The exact displayed restriction-coordinate list is passed through when supplied;
-there is no new scan or silently substituted enzyme set. Native workspace export
-remains the route for retaining full annotation and biological history.
+## Pixels and resources
 
-## Source and worker contract
+SVG is vector text capped at 2 MiB. PNG is produced entirely in Rust from the same
+bounded SVG, using pinned resvg 0.47 with text support and the existing Liberation
+Sans font. No CLI/browser, external program, system-font scan, uploaded SVG,
+remote image, local path or raster codec is used. Image resource resolvers are
+explicitly disabled. Unsupported font scalars are visibly escaped as [U+XXXX]
+and reported instead of silently disappearing. Original names remain in source.
 
-The model is registered for native fixture tests and WASM; the dialog is
-WASM-only. `MapExportDialog` receives:
+PNG width is 16–4096 pixels; height follows the diagram's aspect ratio. Each side
+is at most 4096 pixels and total pixels at most 4,000,000 (16MB RGBA). Encoding uses
+a 24 MiB byte budget and source revision text metadata. Response validation checks
+PNG signature, bounded dimensions, RGBA encoding, chunk order/CRCs, exact source
+context and encoded-content hash without pixel decompression on the UI thread.
+The worker/native renderer and independent fixtures fully decode output with
+bounded row buffers; no untrusted dimensions trigger full-image admission allocation. PNG is pixels rather than searchable vector text or full coordinate
+metadata; retain the source document or SVG for complete evidence.
 
-- `snapshot: Callback<(), Result<map_export_model::Snapshot, String>>`;
-- `render: Callback<RenderRequest, map_export::LocalResult<Rendered>>`;
-- `on_saved: Callback<String>`.
+The upstream renderer is a portable Rust library available under MIT or Apache2:
+[resvg source and license](https://github.com/linebender/resvg). This is general
+rendering infrastructure, not borrowed cloning-software logic.
 
-App supplies the pinned snapshot and `worker_renderer()` supplies the isolated
-worker adapter. The renderer's new read-only `export_view()` getter returns
-actual camera state, current highlight/feature visibility, restriction evidence
-and immutable overlay context; it never resets a gesture or substitutes a camera
-default. An active drag refuses capture until the gesture finishes.
+## Captured web workflow
 
-The snapshot callback must reject workspace restoration/unloaded state and bind
-its opening exact document/head event using App's export-context guard. It then
-returns the unchanged full molecule, exact `EventBinding`, workspace epoch,
-reference selection, actual finite renderer rotation/zoom, selected feature,
-sorted hidden-feature indices and presentation-settings context. Restriction
-state is `None` when hidden, or the exact displayed list plus its source revision,
-scan/filter context and selected/hovered-site index. Do not fill actual rotation
-with a default. App refuses capture while source, selection, visibility or
-restriction-filter
-effects are still updating, and refuses stale/missing restriction scans rather
-than substituting an empty complete scan.
+One `MapExportDialog` offers SVG and PNG with explicit width controls. App takes
+an exact source/event/epoch/view snapshot, including actual rotation, zoom,
+selection, feature visibility, restriction list/filter and selected-site context.
+No synchronous duplicate SVG button bypasses that dialog. Heavy PNG rendering
+runs in the worker.
 
-The dialog binds its opening capture. Source/event/epoch/selection/view changes
-require reopening it; a response for a different capture is refused even when DNA
-is identical. Snapshot capture occurs before rendering, on render completion,
-before export preparation, and again at native save admission. The native file
-helper returns acknowledged completion. A source change after acknowledgement
-never turns a real saved file into a claimed failure: the completion message names
-the captured document/event. The parent callback should use live/try-set guards
-for its own UI lifetime, but must not require that captured source is still active.
-Browser completion retains the existing browser-download dispatch semantics.
+The context also binds image format and pixel settings. Preparation checks the
+opening source/view, current context on completion, exact worker ID/revision,
+source revision and image format. Save preparation and native save admission
+check the complete capture again. A stale completion, changed format/width or
+closed dialog cannot publish bytes. Native success is acknowledged for the
+captured document/event; later source changes cannot reverse a real completed
+save. Filename and MIME match the selected format.
 
-Worker93 appends `RenderMapSvg { request: core::svg_export::Request }` and
-`MapSvgExported(core::svg_export::Rendered)`. The request contains the unchanged
-molecule, exact source revision and optional displayed restriction-site list.
-The response contains its source revision, SVG bytes as UTF-8 text and bounded
-warnings. The outer request/reply revision is the complete capture context;
-`worker_renderer()` checks both it and the request ID before accepting the typed
-result. `core::svg_export::render` is the shared native renderer adapter used by
-both the worker and pure model fixtures. No rendering runs synchronously in an
-App event handler. This adds no scientific operation or material authority.
+Current worker 126 uses `RenderMap`/`MapExported` at tags 174/164, both under the
+ordinary 32 MiB framing budget. Source/model validation remains authoritative;
+serialization integrity never grants physical-material authority.
 
-Pure fixtures exercise equal-content wrong document/event refusal, workspace
-change, rotation/zoom/selection changes, stale molecule event binding,
-restriction-filter changes with identical empty displayed lists, crossed worker
-responses, filename binding and invalid numeric view state. They await the
-parent-managed combined native test batch.
+## Predicted gels
+
+`core::output::gel_export` similarly binds a full documentary report/calibration,
+its report revision and selected format. Worker `RenderGelImage`/`GelImageExported`
+(tags 199/189) independently recomputes that context. The gel pane prepares PNG
+in a worker with a displayed-report generation/workspace epoch guard, then
+checks it again before download/save admission. SVG/report exports remain
+intentional external formats. No observed-image/OpenGel comparison is included.
+
+## Authored verification
+
+Native fixtures independently check PNG backbone/feature pixels and font output,
+calibrated 1000 bp gel position, unknown circular mobility, exact source/report
+pins, malformed CRC/compressed-stream refusal, dimension/pixel/byte limits and
+stateless/session current-format behavior. Web model fixtures bind format and
+width as well as source/view. Actual MCP SDK cases download SVG and PNG artifacts,
+preserve immutable sources, and reject stale sources/oversized settings. These
+fixtures await the parent-managed coherent native/WASM check batch; they are not
+browser, screenshot or installed-platform acceptance.

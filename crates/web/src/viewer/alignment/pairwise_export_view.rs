@@ -148,7 +148,7 @@ pub fn PairwiseExportView(
         let result = (|| {
             guard.run(bound.get_value())?;
             let output = prepared.get_untracked().ok_or("Prepare an export first.")?;
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 &format!("pairwise-comparison.{}", output.extension),
                 &output.mime,
                 &output.bytes,

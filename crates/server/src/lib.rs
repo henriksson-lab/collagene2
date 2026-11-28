@@ -2,6 +2,7 @@
 //! permission; operator-configured individual credentials share one startup lab.
 mod assets;
 mod auth;
+mod hosted_mcp;
 mod members;
 pub use assets::AssetSnapshot;
 pub use auth::AccessKey;
@@ -12,11 +13,12 @@ use axum::{
     http::{HeaderMap, HeaderValue, Method, Request, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
-    routing::post,
+    routing::{any, post},
 };
 use collagene_lab_library::{LabAccess, Library};
 use collagene_library_host as host;
 use collagene_library_protocol as wire;
+pub use hosted_mcp::HostedMcpLimits;
 pub use members::{AuthenticatedMember, MemberCredential, MemberRegistry};
 use wire::discussion;
 
@@ -142,6 +144,7 @@ struct Inner {
     assets: AssetSnapshot,
     permits: Arc<Semaphore>,
     limits: Limits,
+    hosted_mcp: Option<hosted_mcp::HostedMcp>,
 }
 #[derive(Clone)]
 pub struct ServerState(Arc<Inner>);
@@ -194,7 +197,40 @@ impl ServerState {
             assets,
             permits: Arc::new(Semaphore::new(limits.max_concurrent_library_requests)),
             limits,
+            hosted_mcp: None,
         })))
+    }
+
+    /// Trusted opt-in: hosted scientific workspaces have no shared-library or
+    /// arbitrary filesystem authority. Configure before cloning this state.
+    pub fn with_hosted_mcp(
+        mut self,
+        root: collagene_local_storage::StorageRoot,
+        limits: HostedMcpLimits,
+    ) -> Result<Self> {
+        let inner = Arc::get_mut(&mut self.0).ok_or(Error::Configuration(
+            "configure MCP before sharing server state",
+        ))?;
+        if inner.assets.overlaps_root(root.canonical_path()) {
+            return Err(Error::Configuration(
+                "MCP storage and asset roots must be separate",
+            ));
+        }
+        inner.hosted_mcp = Some(hosted_mcp::HostedMcp::new(
+            root,
+            limits,
+            inner.members.clone(),
+            inner.access.lab_id().as_str().to_owned(),
+            inner.origin.clone(),
+        )?);
+        Ok(self)
+    }
+
+    /// Close scientific workspace transports before graceful listener shutdown.
+    pub fn shutdown_hosted_mcp(&self) {
+        if let Some(hosted) = &self.0.hosted_mcp {
+            hosted.shutdown();
+        }
     }
 }
 pub fn router(state: ServerState) -> Router {
@@ -203,6 +239,7 @@ pub fn router(state: ServerState) -> Router {
         .route("/api/library/sync", post(reliable_library))
         .route(sources::PATH, post(source_import))
         .route(discussion::ENDPOINT, post(discussion_request))
+        .route("/api/mcp/{workspace}", any(hosted_mcp::request))
         .fallback(static_asset)
         .layer(middleware::from_fn(response_headers))
         .with_state(state)

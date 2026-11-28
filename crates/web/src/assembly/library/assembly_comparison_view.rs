@@ -222,7 +222,7 @@ pub(crate) fn AssemblyComparison(
             if bytes.len() > collagene_core::alignment::history::MAX_SAVED_BYTES {
                 return Err("Comparison export exceeds the native report limit.".into());
             }
-            crate::io::download::prepare_download(
+            crate::io::download::ExportArtifact::prepare(
                 "cloning-target-comparison.json",
                 "application/json",
                 &bytes,

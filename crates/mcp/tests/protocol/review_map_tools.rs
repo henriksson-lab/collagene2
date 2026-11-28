@@ -181,7 +181,7 @@ async fn retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped
     let tools = c.list_all_tools().await.unwrap();
     assert_eq!(tools.len(), collagene_mcp::CURRENT_TOOL_COUNT);
     assert!(tools.iter().any(|t| t.name == "prepare_saved_run_review"));
-    assert!(tools.iter().any(|t| t.name == "export_map_svg"));
+    assert!(tools.iter().any(|t| t.name == "export_map"));
     let imported = call(
         &c,
         "import_workspace_archive",
@@ -224,8 +224,8 @@ async fn retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped
     assert_eq!(checked["target_revision"], target_event.revision);
     let svg = call(
         &c,
-        "export_map_svg",
-        json!({"id":source.revision(),"revision":source.revision()}),
+        "export_map",
+        json!({"document":{"id":source.revision(),"revision":source.revision()},"format":"Svg"}),
     )
     .await;
     assert_eq!(svg["source_revision"], source.revision());
@@ -233,20 +233,36 @@ async fn retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped
     assert_eq!(svg["warnings_truncated"], false);
     let (svg_bytes, meta) = artifact(&c, &svg["artifact_id"]).await;
     assert_eq!(meta["mime_type"], "image/svg+xml");
-    let expected =
-        collagene_core::output::svg_export::render(&collagene_core::output::svg_export::Request {
-            source: source.clone(),
-            source_revision: source.revision(),
-            restriction_sites: None,
-        })
-        .unwrap();
-    assert_eq!(svg_bytes, expected.svg.as_bytes());
+    let expected = collagene_core::output::map_export::Request {
+        source: source.clone(),
+        source_revision: source.revision(),
+        restriction_sites: None,
+        format: collagene_core::output::raster::Format::Svg,
+    }
+    .render()
+    .unwrap();
+    assert_eq!(svg_bytes, expected.image.bytes());
     assert_eq!(svg["warnings"], json!(expected.warnings));
     let text = String::from_utf8(svg_bytes).unwrap();
     assert!(text.contains("&lt;"));
     assert!(text.contains("&amp;"));
     assert!(!text.contains("<source>"));
     assert!(!text.contains("<script"));
+    let png = call(&c, "export_map", json!({"document":{"id":source.revision(),"revision":source.revision()},"format":{"Png":{"width":800}}})).await;
+    let (png_bytes, png_meta) = artifact(&c, &png["artifact_id"]).await;
+    assert_eq!(png_meta["mime_type"], "image/png");
+    assert_eq!(png_meta["encoding"], "base64");
+    assert_eq!(&png_bytes[..8], b"\x89PNG\r\n\x1a\n");
+    assert_eq!(
+        u32::from_be_bytes(png_bytes[16..20].try_into().unwrap()),
+        800
+    );
+    assert!(
+        png_bytes
+            .windows(source.revision().len())
+            .any(|s| s == source.revision().as_bytes())
+    );
+    reject(&c, "export_map", json!({"document":{"id":source.revision(),"revision":source.revision()},"format":{"Png":{"width":4097}}})).await;
     let again = call(&c, "prepare_saved_run_review", args.clone()).await;
     assert_eq!(again["artifact_id"], review["artifact_id"]);
     assert_eq!(
@@ -275,14 +291,14 @@ async fn retained_run_review_is_exact_unverified_and_map_export_is_bound_escaped
     reject(&c, "prepare_saved_run_review", extra).await;
     reject(
         &c,
-        "export_map_svg",
-        json!({"id":source.revision(),"revision":"0".repeat(64)}),
+        "export_map",
+        json!({"document":{"id":source.revision(),"revision":"0".repeat(64)},"format":"Svg"}),
     )
     .await;
     reject(
         &c,
-        "export_map_svg",
-        json!({"id":source.revision(),"revision":source.revision(),"restriction_sites":[]}),
+        "export_map",
+        json!({"document":{"id":source.revision(),"revision":source.revision()},"format":"Svg","restriction_sites":[]}),
     )
     .await;
     c.cancel().await.unwrap();

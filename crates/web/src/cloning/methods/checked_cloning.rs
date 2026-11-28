@@ -96,7 +96,7 @@ pub fn prepare_report_export(
     }
     let mut bytes = Json(vec![]);
     serde_json::to_writer_pretty(&mut bytes, report).map_err(|e| e.to_string())?;
-    crate::io::download::prepare_download(
+    crate::io::download::ExportArtifact::prepare(
         "cloning-reconstruction.json",
         "application/json",
         &bytes.0,

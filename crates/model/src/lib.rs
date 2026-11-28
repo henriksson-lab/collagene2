@@ -1,5 +1,6 @@
 pub mod annotations;
 pub mod bounds;
+pub mod decode;
 pub mod genbank_edit;
 
 use serde::{Deserialize, Serialize};
@@ -223,56 +224,9 @@ pub enum Location {
     Unresolved(String),
 }
 
-std::thread_local! { static LOCATION_DECODE_DEPTH: std::cell::Cell<usize> = const { std::cell::Cell::new(0) }; }
-
 impl<'de> Deserialize<'de> for Location {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        // The recursive children use Location's bounded decoder, not the unbounded raw enum.
-        #[derive(Deserialize)]
-        enum Raw {
-            Range {
-                start: usize,
-                end: usize,
-                before: bool,
-                after: bool,
-            },
-            Complement(Box<Location>),
-            Join(Vec<Location>),
-            Order(Vec<Location>),
-            Unresolved(String),
-        }
-        struct Guard;
-        impl Drop for Guard {
-            fn drop(&mut self) {
-                LOCATION_DECODE_DEPTH.with(|d| d.set(d.get() - 1));
-            }
-        }
-        LOCATION_DECODE_DEPTH.with(|depth| {
-            if depth.get() >= 32 {
-                return Err(serde::de::Error::custom(
-                    "location nesting exceeds 32 levels",
-                ));
-            }
-            depth.set(depth.get() + 1);
-            let _guard = Guard;
-            Ok(match Raw::deserialize(deserializer)? {
-                Raw::Range {
-                    start,
-                    end,
-                    before,
-                    after,
-                } => Location::Range {
-                    start,
-                    end,
-                    before,
-                    after,
-                },
-                Raw::Complement(v) => Location::Complement(v),
-                Raw::Join(v) => Location::Join(v),
-                Raw::Order(v) => Location::Order(v),
-                Raw::Unresolved(v) => Location::Unresolved(v),
-            })
-        })
+        decode::location(deserializer)
     }
 }
 
@@ -401,7 +355,7 @@ impl Location {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Feature {
     pub kind: String,
@@ -409,6 +363,12 @@ pub struct Feature {
     pub qualifiers: Vec<(String, Option<String>)>,
     pub needs_review: bool,
 }
+impl<'de> Deserialize<'de> for Feature {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        decode::feature(deserializer)
+    }
+}
+
 impl Feature {
     pub fn label(&self) -> &str {
         for key in ["label", "gene", "product", "note"] {
@@ -420,7 +380,7 @@ impl Feature {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
 pub struct Molecule {
     pub name: String,
@@ -430,6 +390,12 @@ pub struct Molecule {
     pub metadata: BTreeMap<String, String>,
     /// Original evidence remains immutable; it is not an instruction or current sequence.
     pub original_genbank: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for Molecule {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        decode::molecule(deserializer)
+    }
 }
 
 impl Molecule {
